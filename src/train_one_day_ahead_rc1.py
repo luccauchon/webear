@@ -70,7 +70,7 @@ def main(cc):
 
     num_input_features   = 2 * len(feature_cols) + -1 + -1  # For SPY and VIX + -1 for day_of_week and -1 No volume for VIX
     num_output_vars      = len(target_col)
-    tav_dates            = ["2019-01-01", "2024-08-31"]
+    tav_dates            = ["2019-12-01", "2024-08-31"]
     mes_dates            = ["2024-08-01", "2099-12-31"]
     x_seq_length         = 15
     y_seq_length         = 3
@@ -131,7 +131,7 @@ def main(cc):
     running_train_losses, running_test_losses, running_train_precision = -1, -1, -1
     iterator = itertools.cycle(train_dataloader)
     the_X, the_y, x_data_norm, y_data_norm = next(iterator)
-    checkpoint_filename = os.path.join('stubs', 'models', f'best_test_loss_{best_test_loss[0]:.8f}_at_{iter_num}.pt')
+    checkpoint_filename = os.path.join(output_dir, 'models', f'best_test_loss_{best_test_loss[0]:.8f}_at_{iter_num}.pt')
     os.makedirs(Path(checkpoint_filename).parent, exist_ok=True)
     while iter_num < max_iters:
         lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=learning_rate, _min_lr=min_lr, _lr_decay_iters=lr_decay_iters) if decay_lr else learning_rate
