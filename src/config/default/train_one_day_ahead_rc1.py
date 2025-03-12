@@ -1,10 +1,13 @@
 toda__debug_level          = "DEBUG"
 toda__device               = 'cuda'
-toda__num_input_features   = 10
-toda__num_output_vars      = 1
-toda__t_length_output_vars = 5
+toda__feature_cols         = ['Close', 'High', 'Low', 'Open', 'Volume', 'Close_direction'] + ['day_of_week']  # For SPY and VIX
+toda__mes_dates            = ["2024-12-01", "2099-12-31"]
+toda__run_id               = 123
 toda__seed_offset          = 123
-toda__seq_length           = 14
+toda__precision_spread     = 1.
+toda__target_col           = [('Close', 'SPY')]
+toda__tav_dates            = ["2019-12-01", "2024-11-30"]
 toda__version              = "rc1"
-
-
+toda__x_cols_to_norm       = ['Close', 'High', 'Low', 'Open', 'Volume']
+toda__x_seq_length         = 15
+toda__y_cols_to_norm       = [('Close', 'SPY')]

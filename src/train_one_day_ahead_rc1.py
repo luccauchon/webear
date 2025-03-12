@@ -41,7 +41,7 @@ def main(cc):
     torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
 
-    output_dir = os.path.join(get_stub_dir(), f"trainer_one_day_ahead__{toda__version}")
+    output_dir = os.path.join(get_stub_dir(), f"trainer_one_day_ahead__{cc.toda__version}__run_{cc.toda__run_id}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.remove()
@@ -63,30 +63,30 @@ def main(cc):
     ###########################################################################
     # Configuration
     ###########################################################################
-    feature_cols         = ['Close', 'High', 'Low', 'Open', 'Volume', 'Close_direction'] + ['day_of_week']  # For SPY and VIX
-    target_col           = [('Close', 'SPY')]
-    x_cols_to_norm       = ['Close', 'High', 'Low', 'Open', 'Volume']
-    y_cols_to_norm       = [('Close', 'SPY')]
+    feature_cols         = cc.toda__feature_cols
+    target_col           = cc.toda__target_col
+    x_cols_to_norm       = cc.toda__x_cols_to_norm
+    y_cols_to_norm       = cc.toda__y_cols_to_norm
 
-    num_input_features   = 2 * len(feature_cols) + -1 + -1  # For SPY and VIX + -1 for day_of_week and -1 No volume for VIX
-    num_output_vars      = len(target_col)
-    tav_dates            = ["2019-12-01", "2024-08-31"]
-    mes_dates            = ["2024-08-01", "2099-12-31"]
-    x_seq_length         = 15
+    num_input_features   = 2 * len(cc.toda__feature_cols) + -1 + -1  # For SPY and VIX + -1 for day_of_week and -1 No volume for VIX
+    num_output_vars      = len(cc.toda__target_col)
+    tav_dates            = cc.toda__tav_dates
+    mes_dates            = cc.toda__mes_dates
+    x_seq_length         = cc.toda__x_seq_length
+    assert 0 == cc.toda__x_seq_length % 5
     y_seq_length         = 3
 
-    batch_size           = 256
+    batch_size           = 512
     betas                = (0.9, 0.95)
     decay_lr             = True
     device               = "cuda"
     eval_interval        = 1000
     iter_num             = 0
-    learning_rate        = 1e-3
-    log_interval         = 500
+    learning_rate        = 1e-4
+    log_interval         = 10000
     lr_decay_iters       = 999999
     max_iters            = 999999
-    min_lr               = 1e-5
-    precision_spread     = 0.75
+    min_lr               = 1e-6
     warmup_iters         = 0
     weight_decay         = 0.1
     model_args = {'bidirectional': False,
@@ -125,13 +125,13 @@ def main(cc):
     ###########################################################################
     # Train
     ###########################################################################
-    logger.info(f"{batch_size=}   {len(train_indices)=}   {len(test_indices)=}   {len(train_df.columns)=}   {precision_spread=}")
+    logger.info(f"{batch_size=}   {len(train_indices)=}   {len(test_indices)=}   {len(train_df.columns)=}   {cc.toda__precision_spread=}")
     loss_function = torch.nn.MSELoss(reduction='mean').to(device)  # mean-squared error for regression
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=device)
     train_loss, best_test_loss = torch.tensor(999999999), (999999999, 999999999)
     running_train_losses, running_test_losses, running_train_precision = -1, -1, -1
     iterator = itertools.cycle(train_dataloader)
-    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best_test_loss_{best_test_loss[0]:.8f}_at_{iter_num}.pt')
+    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'123.pt')
     os.makedirs(Path(checkpoint_filename).parent, exist_ok=True)
     while iter_num < max_iters:
         lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=learning_rate, _min_lr=min_lr, _lr_decay_iters=lr_decay_iters) if decay_lr else learning_rate
@@ -148,16 +148,31 @@ def main(cc):
                 ground_truth = the_y * y_data_norm.unsqueeze(-2)
                 _loss = loss_function(prediction, ground_truth)
                 test_losses.append(0 if torch.isnan(_loss) else _loss.item())
-                numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < precision_spread)
+                numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
                 denominator = np.prod(test_logits.shape)
                 test_precision = numerator / denominator
             assert 1 == len(test_losses)
-            best_test_loss_achieved = np.mean(test_losses) < best_test_loss[0]
-            running_test_losses     = np.mean(test_losses) if running_test_losses == -1.0 else 0.95 * running_test_losses + 0.05 * np.mean(test_losses)
-            if best_test_loss_achieved or 0 == iter_num:
+            running_test_losses        = np.mean(test_losses) if running_test_losses == -1.0 else 0.95 * running_test_losses + 0.05 * np.mean(test_losses)
+            is_best_test_loss_achieved = np.mean(test_losses) < best_test_loss[0]
+            if is_best_test_loss_achieved or 0 == iter_num:
                 best_test_loss = (np.mean(test_losses), iter_num)
+            if is_best_test_loss_achieved and 0 != iter_num:
+                checkpoint = {
+                    'model': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'model_args': model_args,
+                    'iter_num': iter_num,
+                    'best_test_loss': best_test_loss,
+                    'train_loss': train_loss.item(),
+                }
+                try:
+                    os.remove(checkpoint_filename)
+                except:
+                    pass
+                checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best_test__loss_{best_test_loss[0]:.8f}__precision_{test_precision:.8f}_at_{iter_num}.pt')
+                torch.save(checkpoint, checkpoint_filename)
             if 0 == iter_num % log_interval or 1 == iter_num:
-                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   test loss: ({running_test_losses:.4f})   test precision: ({test_precision:.4f}) "
+                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E} [TEST]   loss: ({running_test_losses:.4f})   test precision: ({test_precision:.4f}) "
                             f">> best test loss: {best_test_loss[0]:.4f} @ iter {best_test_loss[1]}")
             model.train()
 
@@ -175,14 +190,14 @@ def main(cc):
         assert train_logits.shape == the_y.shape
         prediction   = train_logits * y_data_norm.unsqueeze(-2)
         ground_truth = the_y        * y_data_norm.unsqueeze(-2)
-        numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < precision_spread)
+        numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
         denominator = np.prod(train_logits.shape)
         training_precision = numerator / denominator
         running_train_precision = training_precision if running_train_precision == -1.0 else 0.99 * running_train_precision + 0.01 * training_precision
 
         running_train_losses = train_loss.item() if running_train_losses == -1.0 else 0.99 * running_train_losses + 0.01 * train_loss.item()
         if 0 == iter_num % log_interval:
-            logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train loss: ({running_train_losses:.4f})   precision: ({running_train_precision:.4f})")
+            logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E} [TRAIN]  loss: ({running_train_losses:.4f})   precision: ({running_train_precision:.4f})")
 
         iter_num += 1
 
