@@ -76,6 +76,7 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
     cutoff_day                            = 1  # Monday
     flush_target_week_with_wrong_sequence = False  # Means that y shall be tuesday, wednesday and thursday
     indices                               = []
+    assert 0 == seq_length%5
     monday_indexes = [index for index, row in df[df.day_of_week == cutoff_day].iterrows()]
     for idx in monday_indexes:
         idx = df.index.get_loc(idx) + 1
@@ -90,7 +91,8 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
                 continue
         assert target_length == len(the_y)
         assert the_X.iloc[-1].day_of_week.values[0] == 1
-        assert 1 == len(list(set([ the_y.iloc[uu].week_of_year.values[0] for uu in range(0,target_length)])))
+        assert 1 == len(list(set([the_y.iloc[uu].week_of_year.values[0] for uu in range(0, target_length)])))
+        assert len(list(set([the_X.iloc[uu].week_of_year.values[0] for uu in range(0, len(the_X))]))) in [seq_length%5,seq_length/5+1]
         dismiss = False
         if flush_target_week_with_wrong_sequence:
             for uu in range(0, target_length):

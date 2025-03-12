@@ -49,6 +49,12 @@ def main(cc):
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')
 
     ###########################################################################
+    # Description
+    ###########################################################################
+    # The goal is to predict the SPY close value of tuesday,wednesday and thursday
+    # based on the preceding 15 days, including the monday of this week.
+
+    ###########################################################################
     # Load source data
     ###########################################################################
     df_filename = os.path.join(output_dir, "df.pkl")
@@ -95,9 +101,9 @@ def main(cc):
                   'num_layers': 1,
                   'num_output_vars': num_output_vars,
                   'num_input_features': num_input_features,
-                  't_length_output_vars': -1,
+                  't_length_output_vars': -1,  # Updated below
                   'device': device,
-                  'activation_minmax': (-2, 2),
+                  'activation_minmax': (-4, 4),
                   'seq_length': x_seq_length,
                   }
 
@@ -114,6 +120,9 @@ def main(cc):
                                          _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
     train_dataloader        = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader         = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    for a_dataloader in [train_dataloader, test_dataloader]:
+        for batch_idx, (the_X, the_y, x_data_norm, y_data_norm) in enumerate(a_dataloader):
+            assert torch.min(the_y) > model_args['activation_minmax'][0] and torch.max(the_y) < model_args['activation_minmax'][1]
 
     ###########################################################################
     # Model preparation
