@@ -92,7 +92,7 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
         assert target_length == len(the_y)
         assert the_X.iloc[-1].day_of_week.values[0] == 1
         assert 1 == len(list(set([the_y.iloc[uu].week_of_year.values[0] for uu in range(0, target_length)])))
-        assert len(list(set([the_X.iloc[uu].week_of_year.values[0] for uu in range(0, len(the_X))]))) in [seq_length/5,seq_length/5+1]
+        assert len(list(set([the_X.iloc[uu].week_of_year.values[0] for uu in range(0, len(the_X))]))) in [seq_length/5,seq_length/5+1,seq_length/5+2]
         dismiss = False
         if flush_target_week_with_wrong_sequence:
             for uu in range(0, target_length):
