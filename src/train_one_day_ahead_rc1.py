@@ -20,6 +20,18 @@ from config.default.train_one_day_ahead_rc1 import *
 ###############################################################################
 
 
+def _get_batch(_batch_size, iterator):
+    the_x, the_y, x_data_norm, y_data_norm = next(iterator)
+    while len(the_x) < _batch_size:
+        x, y, xn, yn = next(iterator)
+        the_x = torch.concatenate([the_x, x])
+        the_y = torch.concatenate([the_y, y])
+        x_data_norm = torch.concatenate([x_data_norm, xn])
+        y_data_norm = torch.concatenate([y_data_norm, yn])
+    the_x, the_y, x_data_norm, y_data_norm = the_x[:_batch_size, ...], the_y[:_batch_size, ...], x_data_norm[:_batch_size, ...], y_data_norm[:_batch_size, ...]
+    return the_x, the_y, x_data_norm, y_data_norm
+
+
 def _get_lr(_it, _warmup_iters, _learning_rate, _min_lr, _lr_decay_iters):
     # 1) linear warmup for warmup_iters steps
     if _it < _warmup_iters:
@@ -53,6 +65,7 @@ def main(cc):
     ###########################################################################
     # The goal is to predict the SPY close value of tuesday,wednesday and thursday
     # based on the preceding 15 days, including the monday of this week.
+    # 2025.03.11 : Test set does not work
 
     ###########################################################################
     # Load source data
@@ -82,11 +95,11 @@ def main(cc):
     assert 0 == cc.toda__x_seq_length % 5
     y_seq_length         = 3
 
-    batch_size           = 512
+    batch_size           = 1024
     betas                = (0.9, 0.95)
     decay_lr             = True
     device               = "cuda"
-    eval_interval        = 1000
+    eval_interval        = 100
     iter_num             = 0
     learning_rate        = 1e-4
     log_interval         = 10000
@@ -114,14 +127,14 @@ def main(cc):
     test_indices,  test_df  = generate_indices_naked_monday_style(df=df.loc[mes_dates[0]:mes_dates[1]].copy(), seq_length=x_seq_length)
     assert y_seq_length == 3
     model_args.update({'t_length_output_vars': y_seq_length})
-    train_dataset   = TripleIndicesDataset(_df=train_df, _indices=train_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device,
+    train_dataset   = TripleIndicesDataset(_df=train_df, _indices=train_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device, _add_noise=cc.toda__data_augmentation,
                                            _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
     test_dataset = TripleIndicesDataset(_df=test_df, _indices=test_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device,
                                          _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
     train_dataloader        = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader         = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     for a_dataloader in [train_dataloader, test_dataloader]:
-        for batch_idx, (the_X, the_y, x_data_norm, y_data_norm) in enumerate(a_dataloader):
+        for batch_idx, (the_x, the_y, x_data_norm, y_data_norm) in enumerate(a_dataloader):
             assert torch.min(the_y) > model_args['activation_minmax'][0] and torch.max(the_y) < model_args['activation_minmax'][1]
 
     ###########################################################################
@@ -140,6 +153,7 @@ def main(cc):
     train_loss, best_test_loss = torch.tensor(999999999), (999999999, 999999999)
     running_train_losses, running_test_losses, running_train_precision = -1, -1, -1
     iterator = itertools.cycle(train_dataloader)
+    the_x, the_y, x_data_norm, y_data_norm = _get_batch(_batch_size=batch_size, iterator=iterator)
     checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'123.pt')
     os.makedirs(Path(checkpoint_filename).parent, exist_ok=True)
     while iter_num < max_iters:
@@ -150,18 +164,18 @@ def main(cc):
         if iter_num % eval_interval == 0 or 1 == iter_num or iter_num == max_iters - 1:
             model.eval()
             test_losses = []
-            for batch_idx, (the_X, the_y, x_data_norm, y_data_norm) in enumerate(test_dataloader):
-                test_logits, _ = model(x=the_X)  # forward pass
-                assert test_logits.shape == the_y.shape
-                prediction   = test_logits * y_data_norm.unsqueeze(-2)
-                ground_truth = the_y * y_data_norm.unsqueeze(-2)
+            for batch_idx, (x_test, y_test, _, y_data_norm_test) in enumerate(test_dataloader):
+                test_logits, _ = model(x=x_test)  # forward pass
+                assert test_logits.shape == y_test.shape
+                prediction   = test_logits * y_data_norm_test.unsqueeze(-2)
+                ground_truth = y_test * y_data_norm_test.unsqueeze(-2)
                 _loss = loss_function(prediction, ground_truth)
                 test_losses.append(0 if torch.isnan(_loss) else _loss.item())
                 numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
                 denominator = np.prod(test_logits.shape)
                 test_precision = numerator / denominator
             assert 1 == len(test_losses)
-            running_test_losses        = np.mean(test_losses) if running_test_losses == -1.0 else 0.95 * running_test_losses + 0.05 * np.mean(test_losses)
+            running_test_losses        = np.mean(test_losses) if running_test_losses == -1.0 else 0.9 * running_test_losses + 0.1 * np.mean(test_losses)
             is_best_test_loss_achieved = np.mean(test_losses) < best_test_loss[0]
             if is_best_test_loss_achieved or 0 == iter_num:
                 best_test_loss = (np.mean(test_losses), iter_num)
@@ -185,11 +199,10 @@ def main(cc):
                             f">> best test loss: {best_test_loss[0]:.4f} @ iter {best_test_loss[1]}")
             model.train()
 
-        the_X, the_y, x_data_norm, y_data_norm = next(iterator)
-        train_logits, train_loss = model(x=the_X, y=the_y)  # forward pass
+        train_logits, train_loss = model(x=the_x, y=the_y)  # forward pass
         train_loss = train_loss * 100.0  # scale loss to avoid gradient vanishing
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        the_X, the_y, x_data_norm, y_data_norm = next(iterator)
+        the_x, the_y, x_data_norm, y_data_norm = _get_batch(_batch_size=batch_size, iterator=iterator)
 
         train_loss.backward()  # calculates the loss of the loss function
         optimizer.step()  # improve from loss, i.e backprop
@@ -202,9 +215,9 @@ def main(cc):
         numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
         denominator = np.prod(train_logits.shape)
         training_precision = numerator / denominator
-        running_train_precision = training_precision if running_train_precision == -1.0 else 0.99 * running_train_precision + 0.01 * training_precision
+        running_train_precision = training_precision if running_train_precision == -1.0 else 0.9 * running_train_precision + 0.1 * training_precision
 
-        running_train_losses = train_loss.item() if running_train_losses == -1.0 else 0.99 * running_train_losses + 0.01 * train_loss.item()
+        running_train_losses = train_loss.item() if running_train_losses == -1.0 else 0.9 * running_train_losses + 0.1 * train_loss.item()
         if 0 == iter_num % log_interval:
             logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E} [TRAIN]  loss: ({running_train_losses:.4f})   precision: ({running_train_precision:.4f})")
 

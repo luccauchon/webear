@@ -83,16 +83,16 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
         i1, i2, i3 = idx - seq_length, idx, idx+target_length
         if i1 <0:
             continue
-        the_X, the_y = df.iloc[i1:i2], df.iloc[i2:i3]
-        if len(the_X) != seq_length or len(the_y) != target_length:
+        the_x, the_y = df.iloc[i1:i2], df.iloc[i2:i3]
+        if len(the_x) != seq_length or len(the_y) != target_length:
             continue
         if ignore_data_before_this_date is not None:
             if the_y.index[-1] < pd.to_datetime(ignore_data_before_this_date):
                 continue
         assert target_length == len(the_y)
-        assert the_X.iloc[-1].day_of_week.values[0] == 1
+        assert the_x.iloc[-1].day_of_week.values[0] == 1
         assert 1 == len(list(set([the_y.iloc[uu].week_of_year.values[0] for uu in range(0, target_length)])))
-        assert len(list(set([the_X.iloc[uu].week_of_year.values[0] for uu in range(0, len(the_X))]))) in [seq_length/5,seq_length/5+1,seq_length/5+2]
+        assert len(list(set([the_x.iloc[uu].week_of_year.values[0] for uu in range(0, len(the_x))]))) in [seq_length/5,seq_length/5+1,seq_length/5+2]
         dismiss = False
         if flush_target_week_with_wrong_sequence:
             for uu in range(0, target_length):
