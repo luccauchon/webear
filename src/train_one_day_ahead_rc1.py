@@ -126,7 +126,7 @@ def main(cc):
     # Train
     ###########################################################################
     logger.info(f"{batch_size=}   {len(train_indices)=}   {len(test_indices)=}   {len(train_df.columns)=}   {cc.toda__precision_spread=}")
-    loss_function = torch.nn.MSELoss(reduction='mean').to(device)  # mean-squared error for regression
+    loss_function = torch.nn.MSELoss(reduction='mean').to(device)
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=device)
     train_loss, best_test_loss = torch.tensor(999999999), (999999999, 999999999)
     running_train_losses, running_test_losses, running_train_precision = -1, -1, -1

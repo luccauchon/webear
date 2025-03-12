@@ -1,7 +1,7 @@
 toda__debug_level          = "DEBUG"
 toda__device               = 'cuda'
 toda__feature_cols         = ['Close', 'High', 'Low', 'Open', 'Volume', 'Close_direction'] + ['day_of_week']  # For SPY and VIX
-toda__mes_dates            = ["2024-12-01", "2099-12-31"]
+toda__mes_dates            = ["2024-11-01", "2099-12-31"]
 toda__run_id               = 123
 toda__seed_offset          = 123
 toda__precision_spread     = 1.

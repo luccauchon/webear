@@ -74,7 +74,7 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
     # For each monday, predict next tuesday, wednesday and thursday based on the last K data
     target_length                         = 3
     cutoff_day                            = 1  # Monday
-    flush_target_week_with_wrong_sequence = True
+    flush_target_week_with_wrong_sequence = False  # Means that y shall be tuesday, wednesday and thursday
     indices                               = []
     monday_indexes = [index for index, row in df[df.day_of_week == cutoff_day].iterrows()]
     for idx in monday_indexes:
@@ -88,11 +88,12 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
         if ignore_data_before_this_date is not None:
             if the_y.index[-1] < pd.to_datetime(ignore_data_before_this_date):
                 continue
-        assert 3 == len(the_y)
+        assert target_length == len(the_y)
         assert the_X.iloc[-1].day_of_week.values[0] == 1
+        assert 1 == len(list(set([ the_y.iloc[uu].week_of_year.values[0] for uu in range(0,target_length)])))
         dismiss = False
         if flush_target_week_with_wrong_sequence:
-            for uu in range(0, 3):
+            for uu in range(0, target_length):
                 if uu +2 != the_y.iloc[uu].day_of_week.values[0]:
                     dismiss = True
                 #if 2 != the_y.iloc[0].day_of_week or 3 != the_y.iloc[1].day_of_week or 4 != the_y.iloc[2].day_of_week:
