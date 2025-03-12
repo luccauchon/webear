@@ -82,10 +82,11 @@ def main(cc):
     eval_interval        = 1000
     iter_num             = 0
     learning_rate        = 1e-3
-    log_interval         = 10000
+    log_interval         = 500
     lr_decay_iters       = 999999
     max_iters            = 999999
     min_lr               = 1e-5
+    precision_spread     = 0.75
     warmup_iters         = 0
     weight_decay         = 0.1
     model_args = {'bidirectional': False,
@@ -124,20 +125,43 @@ def main(cc):
     ###########################################################################
     # Train
     ###########################################################################
-    logger.info(f"{len(train_indices)=}   {len(test_indices)=}   {len(train_df.columns)=}")
+    logger.info(f"{batch_size=}   {len(train_indices)=}   {len(test_indices)=}   {len(train_df.columns)=}   {precision_spread=}")
     loss_function = torch.nn.MSELoss(reduction='mean').to(device)  # mean-squared error for regression
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=device)
-    train_loss, best_test_loss = torch.tensor(999999999), (999999999, 999999999, '0/0/0/0', None)
+    train_loss, best_test_loss = torch.tensor(999999999), (999999999, 999999999)
     running_train_losses, running_test_losses, running_train_precision = -1, -1, -1
     iterator = itertools.cycle(train_dataloader)
-    the_X, the_y, x_data_norm, y_data_norm = next(iterator)
-    checkpoint_filename = os.path.join(output_dir, 'models', f'best_test_loss_{best_test_loss[0]:.8f}_at_{iter_num}.pt')
+    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best_test_loss_{best_test_loss[0]:.8f}_at_{iter_num}.pt')
     os.makedirs(Path(checkpoint_filename).parent, exist_ok=True)
     while iter_num < max_iters:
         lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=learning_rate, _min_lr=min_lr, _lr_decay_iters=lr_decay_iters) if decay_lr else learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
+        if iter_num % eval_interval == 0 or 1 == iter_num or iter_num == max_iters - 1:
+            model.eval()
+            test_losses = []
+            for batch_idx, (the_X, the_y, x_data_norm, y_data_norm) in enumerate(test_dataloader):
+                test_logits, _ = model(x=the_X)  # forward pass
+                assert test_logits.shape == the_y.shape
+                prediction   = test_logits * y_data_norm.unsqueeze(-2)
+                ground_truth = the_y * y_data_norm.unsqueeze(-2)
+                _loss = loss_function(prediction, ground_truth)
+                test_losses.append(0 if torch.isnan(_loss) else _loss.item())
+                numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < precision_spread)
+                denominator = np.prod(test_logits.shape)
+                test_precision = numerator / denominator
+            assert 1 == len(test_losses)
+            best_test_loss_achieved = np.mean(test_losses) < best_test_loss[0]
+            running_test_losses     = np.mean(test_losses) if running_test_losses == -1.0 else 0.95 * running_test_losses + 0.05 * np.mean(test_losses)
+            if best_test_loss_achieved or 0 == iter_num:
+                best_test_loss = (np.mean(test_losses), iter_num)
+            if 0 == iter_num % log_interval or 1 == iter_num:
+                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   test loss: ({running_test_losses:.4f})   test precision: ({test_precision:.4f}) "
+                            f">> best test loss: {best_test_loss[0]:.4f} @ iter {best_test_loss[1]}")
+            model.train()
+
+        the_X, the_y, x_data_norm, y_data_norm = next(iterator)
         train_logits, train_loss = model(x=the_X, y=the_y)  # forward pass
         train_loss = train_loss * 100.0  # scale loss to avoid gradient vanishing
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
@@ -147,11 +171,11 @@ def main(cc):
         optimizer.step()  # improve from loss, i.e backprop
         optimizer.zero_grad()
 
-        # Compute the precision @0.5
+        # Compute the precision
         assert train_logits.shape == the_y.shape
         prediction   = train_logits * y_data_norm.unsqueeze(-2)
         ground_truth = the_y        * y_data_norm.unsqueeze(-2)
-        numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < 0.5)
+        numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < precision_spread)
         denominator = np.prod(train_logits.shape)
         training_precision = numerator / denominator
         running_train_precision = training_precision if running_train_precision == -1.0 else 0.99 * running_train_precision + 0.01 * training_precision
