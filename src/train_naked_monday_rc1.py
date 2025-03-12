@@ -16,7 +16,7 @@ import sys
 
 ###############################################################################
 # Load default configuration
-from config.default.train_one_day_ahead_rc1 import *
+from config.default.train_naked_monday_rc1 import *
 ###############################################################################
 
 
@@ -53,7 +53,7 @@ def main(cc):
     torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
 
-    output_dir = os.path.join(get_stub_dir(), f"trainer_one_day_ahead__{cc.toda__version}__run_{cc.toda__run_id}")
+    output_dir = os.path.join(get_stub_dir(), f"trainer_naked_moday__{cc.toda__version}__run_{cc.toda__run_id}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.remove()

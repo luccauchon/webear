@@ -1,12 +1,12 @@
 """
 Poor Man's Configurator. Probably a terrible idea. Example usage:
-$ python train.py config/override_file.py --batch_size=32
+$ python train_basic_rc1.py config/override_file.py --batch_size=32
 this will first run config/override_file.py, then override batch_size to 32
 
-The code in this file will be run as follows from e.g. train.py:
+The code in this file will be run as follows from e.g. train_basic_rc1.py:
 >>> exec(open('configurator.py').read())
 
-So it's not a Python module, it's just shuttling this code away from train.py
+So it's not a Python module, it's just shuttling this code away from train_basic_rc1.py
 The code in this script then overrides the globals()
 
 I know people are not going to love this, I just really dislike configuration

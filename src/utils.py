@@ -70,6 +70,20 @@ def get_stub_dir():
     return os.path.join(_get_root_dir(), "stubs")
 
 
+def generate_indices_basic_style(df, x_seq_length, y_seq_length):
+    # Simply takes N days to predict the next P days
+    indices = []
+    for idx in reversed(range(0, len(df)+1)):
+        idx1, idx2, idx3 = idx-y_seq_length-x_seq_length, idx-y_seq_length, idx
+        assert df.iloc[idx2:idx3].index.intersection(df.iloc[idx1:idx2].index).empty
+        if len(df.iloc[idx1:idx2]) != x_seq_length:
+            continue
+        if len(df.iloc[idx2:idx3]) != y_seq_length:
+            continue
+        indices.append((idx1, idx2, idx3))
+    return indices, df
+
+
 def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_date=None):
     # For each monday, predict next tuesday, wednesday and thursday based on the last K data
     target_length                         = 3
