@@ -5,9 +5,9 @@ from torch.autograd import Variable
 import inspect
 
 
-class LSTM6v2(nn.Module):
+class LSTMRegression(nn.Module):
     def __init__(self, num_output_vars, t_length_output_vars, seq_length, num_input_features, hidden_size, num_layers, bidirectional, device, activation_minmax, dropout):
-        super(LSTM6v2, self).__init__()
+        super(LSTMRegression, self).__init__()
         self.num_output_vars      = num_output_vars  # number of classes
         self.t_length_output_vars = t_length_output_vars  # sequence length @output
         self.num_layers = num_layers  # number of layers
@@ -31,11 +31,13 @@ class LSTM6v2(nn.Module):
         self.lin3_3 = nn.Linear(in_features=hidden_size // 4, out_features=hidden_size // 8, device=device)
         self.lstm4 = nn.LSTM(input_size=hidden_size // 8, hidden_size=hidden_size // 8, num_layers=num_layers, batch_first=True, proj_size=0, bidirectional=bidirectional, device=device)
         self.dropout = torch.nn.Dropout(p=dropout)
-        self.conv1d = torch.nn.Conv1d(self.seq_length, self.t_length_output_vars + 1,kernel_size=3, padding=1, stride=1, device=device)  # add a output that we will drop
+        # self.conv1d = torch.nn.Conv1d(self.seq_length, self.t_length_output_vars + 1,kernel_size=3, padding=1, stride=1, device=device)  # add a output that we will drop
+        self.conv1d = torch.nn.Conv1d(self.seq_length, self.t_length_output_vars, kernel_size=3, padding=1, stride=1, device=device)  # add a output that we will drop
         self.fc = nn.Linear(hidden_size//8, self.num_output_vars, device=device)  # fully connected last layer
         self.activation = torch.nn.Hardtanh(min_val=activation_minmax[0], max_val=activation_minmax[1])
+        # self.loss_function = torch.nn.SmoothL1Loss()
         self.loss_function = torch.nn.MSELoss(reduction='sum')  # mean-squared error for regression
-        self.relu = torch.nn.ReLU()
+        self.relu = torch.nn.LeakyReLU()
 
     def forward(self, x, y=None):
         batch_size = x.shape[0]
@@ -47,9 +49,9 @@ class LSTM6v2(nn.Module):
         logits, (hn, cn) = self.lstm3(self.relu(self.dropout(self.lin2_1(logits))), (self.relu(self.dropout(self.lin2_2(hn))), self.relu(self.dropout(self.lin2_3(cn)))))
         logits, (hn, cn) = self.lstm4(self.relu(self.dropout(self.lin3_1(logits))), (self.relu(self.dropout(self.lin3_2(hn))), self.relu(self.dropout(self.lin3_3(cn)))))
         assert hn.shape[0] == self.d * self.num_layers
-        logits = self.conv1d(self.relu(logits))
+        logits = self.conv1d(logits)
         output = self.fc(logits)
-        output = output[:, 0:-1, :]  # Drop last, it is unstable
+        #output = output[:, 0:-1, :]  # Drop last, it is unstable
         output = self.activation(output)
 
         loss = None

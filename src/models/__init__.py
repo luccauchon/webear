@@ -1,1 +1,1 @@
-from .lstm import LSTM6v2
+from .lstm import LSTMRegression

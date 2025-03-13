@@ -80,6 +80,7 @@ def generate_indices_basic_style(df, x_seq_length, y_seq_length):
             continue
         if len(df.iloc[idx2:idx3]) != y_seq_length:
             continue
+        assert idx3 > idx2 > idx1
         indices.append((idx1, idx2, idx3))
     return indices, df
 

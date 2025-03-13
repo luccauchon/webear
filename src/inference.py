@@ -1,7 +1,7 @@
 import os
 import pprint
 import models
-from models import LSTM6v2
+from models import LSTMRegression
 from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch

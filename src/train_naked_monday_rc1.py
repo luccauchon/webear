@@ -5,9 +5,9 @@ from torch.utils.data import Dataset, DataLoader
 import itertools
 import pprint
 import math
-from models import LSTM6v2
+from models import LSTMRegression
 from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_df_SPY_and_VIX, get_stub_dir, generate_indices_naked_monday_style
-from datasets import TripleIndicesDataset
+from datasets import TripleIndicesRegressionDataset
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
 import numpy as np
@@ -127,10 +127,10 @@ def main(cc):
     test_indices,  test_df  = generate_indices_naked_monday_style(df=df.loc[mes_dates[0]:mes_dates[1]].copy(), seq_length=x_seq_length)
     assert y_seq_length == 3
     model_args.update({'t_length_output_vars': y_seq_length})
-    train_dataset   = TripleIndicesDataset(_df=train_df, _indices=train_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device, _add_noise=cc.toda__data_augmentation,
-                                           _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
-    test_dataset = TripleIndicesDataset(_df=test_df, _indices=test_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device,
-                                         _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
+    train_dataset   = TripleIndicesRegressionDataset(_df=train_df, _indices=train_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device, _add_noise=cc.toda__data_augmentation,
+                                                     _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
+    test_dataset = TripleIndicesRegressionDataset(_df=test_df, _indices=test_indices, _feature_cols=feature_cols, _target_col=target_col, _device=device,
+                                                  _x_seq_length=x_seq_length, _y_seq_length=y_seq_length, _x_cols_to_norm=x_cols_to_norm, _y_cols_to_norm=y_cols_to_norm)
     train_dataloader        = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader         = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     for a_dataloader in [train_dataloader, test_dataloader]:
@@ -140,9 +140,9 @@ def main(cc):
     ###########################################################################
     # Model preparation
     ###########################################################################
-    model = LSTM6v2(num_output_vars=model_args['num_output_vars'], num_input_features=model_args['num_input_features'], t_length_output_vars=model_args['t_length_output_vars'],
-                    hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
-                    bidirectional=model_args['bidirectional'], device=model_args['device'], activation_minmax=model_args['activation_minmax'], dropout=model_args['dropout'])
+    model = LSTMRegression(num_output_vars=model_args['num_output_vars'], num_input_features=model_args['num_input_features'], t_length_output_vars=model_args['t_length_output_vars'],
+                           hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
+                           bidirectional=model_args['bidirectional'], device=model_args['device'], activation_minmax=model_args['activation_minmax'], dropout=model_args['dropout'])
 
     ###########################################################################
     # Train

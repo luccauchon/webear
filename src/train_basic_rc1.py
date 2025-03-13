@@ -4,8 +4,8 @@ from tqdm import tqdm
 import itertools
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
-from datasets import TripleIndicesDataset
-from models import LSTM6v2
+from datasets import TripleIndicesRegressionDataset
+from models import LSTMRegression
 from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_basic_style
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
@@ -78,36 +78,34 @@ def main(cc):
         logger.debug(f"Reading {df_filename}...")
         df = pd.read_pickle(df_filename)
     assert df is not None
-
+    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
 
     ###########################################################################
     # Configuration
     ###########################################################################
-    num_input_features = 2 * len(cc.toda__feature_cols) + -1 + -1  # For SPY and VIX + -1 for day_of_week and -1 No volume for VIX
-    num_output_vars = len(cc.toda__target_col)
-
     batch_size = 1024
     betas = (0.9, 0.95)
     decay_lr = True
-    eval_interval = 100
+    eval_interval = 10
     iter_num = 0
-    learning_rate = 1e-4
-    log_interval = 1000
-    lr_decay_iters = 9999
-    max_iters = 9999
-    min_lr = 1e-6
+    learning_rate = 1e-3
+    log_interval = 10000
+    assert log_interval >= eval_interval
+    lr_decay_iters = 999
+    max_iters      = 99999
+    min_lr = 1e-5
     sanity_check = False
     warmup_iters = 0
-    weight_decay = 0.1
+    weight_decay = 0.33
     model_args = {'bidirectional': False,
                   'dropout': 0.5,
                   'hidden_size': 256,
                   'num_layers': 1,
-                  'num_output_vars': num_output_vars,
-                  'num_input_features': num_input_features,
+                  'num_output_vars': len(cc.toda__target_col),
+                  'num_input_features': cc.toda__num_input_features,
                   't_length_output_vars': cc.toda__y_seq_length,
                   'device': cc.toda__device,
-                  'activation_minmax': (-4, 4),
+                  'activation_minmax': (-2, 2),
                   'seq_length': cc.toda__x_seq_length,
                   }
 
@@ -117,10 +115,10 @@ def main(cc):
     ###########################################################################
     train_indices, train_df = generate_indices_basic_style(df=df.loc[cc.toda__tav_dates[0]:cc.toda__tav_dates[1]].copy(), x_seq_length=cc.toda__x_seq_length, y_seq_length=cc.toda__y_seq_length)
     test_indices, test_df   = generate_indices_basic_style(df=df.loc[cc.toda__mes_dates[0]:cc.toda__mes_dates[1]].copy(), x_seq_length=cc.toda__x_seq_length, y_seq_length=cc.toda__y_seq_length)
-    train_dataset = TripleIndicesDataset(_df=train_df, _indices=train_indices, _feature_cols=cc.toda__feature_cols, _target_col=cc.toda__target_col, _device=cc.toda__device, _add_noise=cc.toda__data_augmentation,
-                                         _x_seq_length=cc.toda__x_seq_length, _y_seq_length=cc.toda__y_seq_length, _x_cols_to_norm=cc.toda__x_cols_to_norm, _y_cols_to_norm=cc.toda__y_cols_to_norm)
-    test_dataset = TripleIndicesDataset(_df=test_df, _indices=test_indices, _feature_cols=cc.toda__feature_cols, _target_col=cc.toda__target_col, _device=cc.toda__device,
-                                        _x_seq_length=cc.toda__x_seq_length, _y_seq_length=cc.toda__y_seq_length, _x_cols_to_norm=cc.toda__x_cols_to_norm, _y_cols_to_norm=cc.toda__y_cols_to_norm)
+    train_dataset = TripleIndicesRegressionDataset(_df=train_df, _indices=train_indices, _feature_cols=cc.toda__feature_cols, _target_col=cc.toda__target_col, _device=cc.toda__device, _add_noise=cc.toda__data_augmentation,
+                                                   _x_seq_length=cc.toda__x_seq_length, _y_seq_length=cc.toda__y_seq_length, _x_cols_to_norm=cc.toda__x_cols_to_norm, _y_cols_to_norm=cc.toda__y_cols_to_norm)
+    test_dataset = TripleIndicesRegressionDataset(_df=test_df, _indices=test_indices, _feature_cols=cc.toda__feature_cols, _target_col=cc.toda__target_col, _device=cc.toda__device,
+                                                  _x_seq_length=cc.toda__x_seq_length, _y_seq_length=cc.toda__y_seq_length, _x_cols_to_norm=cc.toda__x_cols_to_norm, _y_cols_to_norm=cc.toda__y_cols_to_norm)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     if sanity_check:
@@ -132,9 +130,9 @@ def main(cc):
     ###########################################################################
     # Model preparation
     ###########################################################################
-    model = LSTM6v2(num_output_vars=model_args['num_output_vars'], num_input_features=model_args['num_input_features'], t_length_output_vars=model_args['t_length_output_vars'],
-                    hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
-                    bidirectional=model_args['bidirectional'], device=model_args['device'], activation_minmax=model_args['activation_minmax'], dropout=model_args['dropout'])
+    model = LSTMRegression(num_output_vars=model_args['num_output_vars'], num_input_features=model_args['num_input_features'], t_length_output_vars=model_args['t_length_output_vars'],
+                           hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
+                           bidirectional=model_args['bidirectional'], device=model_args['device'], activation_minmax=model_args['activation_minmax'], dropout=model_args['dropout'])
 
 
     ###########################################################################
@@ -143,10 +141,10 @@ def main(cc):
     logger.info(f"{batch_size=}   {len(train_indices)=}   {len(test_indices)=}   {len(train_df.columns)=}   {cc.toda__precision_spread=}")
     loss_function = torch.nn.MSELoss(reduction='mean').to(cc.toda__device)
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=cc.toda__device)
-    train_loss, best_test_loss = torch.tensor(999999999), (999999999, 999999999)
+    train_loss, best_test_loss, best_test_precision = torch.tensor(999999999), (999999999, 999999999), (0., 0)
     running_train_losses, running_test_losses, running_train_precision = -1, -1, -1
-    iterator = itertools.cycle(train_dataloader)
-    the_x, the_y, x_data_norm, y_data_norm = _get_batch(_batch_size=batch_size, iterator=iterator)
+    train_iterator = itertools.cycle(train_dataloader)
+    the_x, the_y, x_data_norm, y_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
     checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'123.pt')
     os.makedirs(Path(checkpoint_filename).parent, exist_ok=True)
     while iter_num < max_iters:
@@ -156,22 +154,24 @@ def main(cc):
 
         if iter_num % eval_interval == 0 or 1 == iter_num or iter_num == max_iters - 1:
             model.eval()
-            test_losses = []
+            test_losses, test_precision = [], 0.
             for batch_idx, (x_test, y_test, _, y_data_norm_test) in enumerate(test_dataloader):
                 test_logits, _ = model(x=x_test)  # forward pass
                 assert test_logits.shape == y_test.shape
-                prediction = test_logits * y_data_norm_test.unsqueeze(-2)
-                ground_truth = y_test * y_data_norm_test.unsqueeze(-2)
+                prediction   = (test_logits + 1) * y_data_norm_test.unsqueeze(-2)
+                ground_truth = (y_test + 1)      * y_data_norm_test.unsqueeze(-2)
                 _loss = loss_function(prediction, ground_truth)
                 test_losses.append(0 if torch.isnan(_loss) else _loss.item())
-                numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
-                denominator = np.prod(test_logits.shape)
+                numerator   = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
+                denominator = torch.count_nonzero(torch.abs(prediction - ground_truth))
                 test_precision = numerator / denominator
             assert 1 == len(test_losses)
             running_test_losses = np.mean(test_losses) if running_test_losses == -1.0 else 0.9 * running_test_losses + 0.1 * np.mean(test_losses)
             is_best_test_loss_achieved = np.mean(test_losses) < best_test_loss[0]
             if is_best_test_loss_achieved or 0 == iter_num:
                 best_test_loss = (np.mean(test_losses), iter_num)
+            if test_precision > best_test_precision[0]:
+                best_test_precision = (test_precision, iter_num)
             if is_best_test_loss_achieved and 0 != iter_num:
                 checkpoint = {
                     'model': model.state_dict(),
@@ -188,30 +188,31 @@ def main(cc):
                 checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best_test__loss_{best_test_loss[0]:.8f}__precision_{test_precision:.8f}_at_{iter_num}.pt')
                 torch.save(checkpoint, checkpoint_filename)
             if 0 == iter_num % log_interval or 1 == iter_num:
-                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E} [TEST]   loss: ({running_test_losses:.4f})   precision: ({test_precision:.4f}) "
-                            f">> best test loss: {best_test_loss[0]:.4f} @ iter {best_test_loss[1]}")
+                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running_train_losses:.4f})/({running_train_precision:.4f})   test:({running_test_losses:.4f})/({test_precision:.4f}) "
+                            f">> best: {best_test_loss[0]:.4f}/{best_test_precision[0]:.4f}")
             model.train()
 
         train_logits, train_loss = model(x=the_x, y=the_y)  # forward pass
         train_loss = train_loss * 100.0  # scale loss to avoid gradient vanishing
+        copy_of__the_y, copy_of__train_logits, copy_of__y_data_norm = train_logits.clone().detach().cpu(), the_y.clone().detach().cpu(), y_data_norm.clone().cpu()
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        the_x, the_y, x_data_norm, y_data_norm = _get_batch(_batch_size=batch_size, iterator=iterator)
+        the_x, the_y, x_data_norm, y_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
 
         train_loss.backward()  # calculates the loss of the loss function
         optimizer.step()  # improve from loss, i.e backprop
         optimizer.zero_grad()
 
         # Compute the precision
-        assert train_logits.shape == the_y.shape
-        prediction = train_logits * y_data_norm.unsqueeze(-2)
-        ground_truth = the_y * y_data_norm.unsqueeze(-2)
-        numerator = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
-        denominator = np.prod(train_logits.shape)
+        assert copy_of__train_logits.shape == copy_of__the_y.shape
+        prediction   = (copy_of__train_logits + 1) * copy_of__y_data_norm.unsqueeze(-2)
+        ground_truth = (copy_of__the_y + 1)        * copy_of__y_data_norm.unsqueeze(-2)
+        numerator    = torch.count_nonzero(torch.abs(prediction - ground_truth) < cc.toda__precision_spread)
+        denominator  = torch.count_nonzero(torch.abs(prediction - ground_truth))
         training_precision = numerator / denominator
         running_train_precision = training_precision if running_train_precision == -1.0 else 0.9 * running_train_precision + 0.1 * training_precision
 
         running_train_losses = train_loss.item() if running_train_losses == -1.0 else 0.9 * running_train_losses + 0.1 * train_loss.item()
-        if 0 == iter_num % log_interval:
+        if 0 == iter_num % log_interval and False:
             logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E} [TRAIN]  loss: ({running_train_losses:.4f})   precision: ({running_train_precision:.4f})")
 
         iter_num += 1
