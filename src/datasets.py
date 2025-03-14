@@ -6,7 +6,7 @@ import numpy as np
 
 
 class TripleIndicesRegressionDataset(Dataset):
-    def __init__(self, _df, _indices, _feature_cols, _target_col, _device, _x_seq_length, _y_seq_length, _x_cols_to_norm=None, _y_cols_to_norm=None, mode='train', _normalize_by_first_row=True, _add_noise=False):
+    def __init__(self, _df, _indices, _feature_cols, _target_col, _device, _x_seq_length, _y_seq_length, _x_cols_to_norm=None, _y_cols_to_norm=None, mode='train', _normalize_by_first_row_and_center_at_0=True, _add_noise=False):
         """
 
         """
@@ -16,7 +16,7 @@ class TripleIndicesRegressionDataset(Dataset):
         self.feature_cols   = _feature_cols.copy()
         self.indices        = _indices
         self.mode           = mode
-        self.normalize_by_first_row = _normalize_by_first_row
+        self.normalize_by_first_row_and_center_at_0 = _normalize_by_first_row_and_center_at_0
         self.target_col     = _target_col.copy()
         self.x_cols_to_norm = _x_cols_to_norm
         self.y_cols_to_norm = _y_cols_to_norm
@@ -36,7 +36,7 @@ class TripleIndicesRegressionDataset(Dataset):
         #     the_x = the_x[self.feature_cols].apply(lambda x: x.np.random.normal(0,1) if x.name in x_data_norm else x)
 
         x_data_norm, y_data_norm = None, None
-        if self.normalize_by_first_row: # normalize all rows by the first row
+        if self.normalize_by_first_row_and_center_at_0: # normalize all rows by the first row
             assert self.x_cols_to_norm is not None
             x_data_norm = the_x[self.x_cols_to_norm].iloc[0]
             y_data_norm = the_x[self.y_cols_to_norm].iloc[0]
@@ -54,8 +54,54 @@ class TripleIndicesRegressionDataset(Dataset):
             the_x = torch.tensor(the_x, dtype=torch.float, device=self.device)
         the_y = torch.tensor(the_y.values, dtype=torch.float, device=self.device)
 
-        if self.normalize_by_first_row:
+        if self.normalize_by_first_row_and_center_at_0:
             x_data_norm = torch.tensor(x_data_norm.values, dtype=torch.float, device=self.device)
             y_data_norm = torch.tensor(y_data_norm.values, dtype=torch.float, device=self.device)
 
         return the_x, the_y, x_data_norm, y_data_norm
+
+
+class TripleIndicesLookAheadClassificationDataset(Dataset):
+    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _data_augmentation=False):
+        """
+        Args:
+            df (pd.DataFrame): The input DataFrame.
+            feature_cols (list): A list of column names for the features.
+            target_col (str): The column name for the target variable.
+        """
+        self.df             = _df.copy()
+        self.feature_cols   = _feature_cols.copy()
+        self.target_col     = _target_col.copy()
+        self.x_cols_to_norm = _x_cols_to_norm.copy()
+        self.device         = _device
+        self.indices        = _indices
+        self.mode           = _mode
+        self.data_augmentation = _data_augmentation
+        self.margin         = 2.5
+
+    def __len__(self):
+        return len(self.indices)
+
+    @lru_cache(maxsize=None)
+    def __getitem__(self, idx):
+        i1, i2, i3 = self.indices[idx]
+        the_x, the_y = self.df.iloc[i1:i2], self.df.iloc[i2:i3]
+        assert 1 == len(the_y)
+
+        vx, vy = the_x.iloc[-1][self.target_col].values[0], the_y.iloc[-1][self.target_col].values[0]
+        #
+        the_target = 1 if vy > vx + self.margin else 0  # 1 if direction is up
+
+        # normalize all rows by the first row
+        x_data_norm = the_x[self.x_cols_to_norm].iloc[0]
+        if self.mode == 'train' and (self.data_augmentation and np.random.normal(0, 1)>0.75):
+            the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, 0.001, size=len(x)) if x.name in x_data_norm else x)
+        else:
+            the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) if x.name in x_data_norm else x)
+
+        x = torch.tensor(the_x.values, dtype=torch.float, device=self.device)
+        y = torch.tensor(the_target,   dtype=torch.float, device=self.device)
+
+        x_data_norm = torch.tensor(x_data_norm.values, dtype=torch.float, device=self.device)
+
+        return x, y, x_data_norm

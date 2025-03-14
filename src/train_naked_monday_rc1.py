@@ -63,9 +63,9 @@ def main(cc):
     ###########################################################################
     # Description
     ###########################################################################
-    # The goal is to predict the SPY close value of tuesday,wednesday and thursday
-    # based on the preceding 15 days, including the monday of this week.
-    # 2025.03.11 : Test set does not work
+    logger.info("The goal is to predict the SPY close value of tuesday,wednesday and thursday"
+                "based on the preceding 15 days, including the monday of this week."
+                "2025.03.11 : Test set does not work")
 
     ###########################################################################
     # Load source data
@@ -82,13 +82,13 @@ def main(cc):
     ###########################################################################
     # Configuration
     ###########################################################################
-    feature_cols         = cc.toda__feature_cols
-    target_col           = cc.toda__target_col
+    feature_cols         = cc.toda__x_cols
+    target_col           = cc.toda__y_cols
     x_cols_to_norm       = cc.toda__x_cols_to_norm
     y_cols_to_norm       = cc.toda__y_cols_to_norm
 
-    num_input_features   = 2 * len(cc.toda__feature_cols) + -1 + -1  # For SPY and VIX + -1 for day_of_week and -1 No volume for VIX
-    num_output_vars      = len(cc.toda__target_col)
+    num_input_features   = 2 * len(cc.toda__x_cols) + -1 + -1  # For SPY and VIX + -1 for day_of_week and -1 No volume for VIX
+    num_output_vars      = len(cc.toda__y_cols)
     tav_dates            = cc.toda__tav_dates
     mes_dates            = cc.toda__mes_dates
     x_seq_length         = cc.toda__x_seq_length
