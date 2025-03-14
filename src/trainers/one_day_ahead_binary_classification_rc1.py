@@ -59,6 +59,7 @@ def main(configuration):
     y_cols = [('Close', 'SPY')]
     x_seq_length = 30
     y_seq_length = 1
+    margin = 2.5
     assert y_seq_length == 1
     # cutoff_days = [1,2,3]
 
@@ -112,7 +113,7 @@ def main(configuration):
     lr_decay_iters = 50000
     max_iters      = 50000
     min_lr         = 1e-6
-    sanity_check   = False
+    stats_check    = True
     warmup_iters   = 0
     weight_decay   = 0.1
 
@@ -139,15 +140,18 @@ def main(configuration):
     #test_indices,  test_df  = generate_indices_with_multiple_cutoff_day(cutoff_days=cutoff_days, _df=df.copy(), _dates=mes_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
     assert 0 != len(train_indices) and 0 != len(test_indices)
     train_dataset    = TripleIndicesLookAheadClassificationDataset(_df=train_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                   _indices=train_indices, _mode='train', _data_augmentation=data_augmentation)
+                                                                   _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=margin)
     test_dataset     = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                   _indices=test_indices, _mode='test', _data_augmentation=data_augmentation)
+                                                                   _indices=test_indices, _mode='test', _data_augmentation=data_augmentation, _margin=margin)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
-    if sanity_check:
-        for a_dataloader in [train_dataloader, test_dataloader]:
-            for train_x, train_y, train_x_data_norm in tqdm(a_dataloader):
-                pass
+    if stats_check:
+        for desc, a_dataloader in zip(["train", "test"], [train_dataloader, test_dataloader]):
+            zeros, ones = 0, 0
+            for train_x, train_y, train_x_data_norm in a_dataloader:
+                zeros += torch.count_nonzero(train_y == 0)
+                ones  += torch.count_nonzero(train_y == 1)
+            logger.info(f"In {desc} dataset --> {(zeros/(zeros+ones))*100:.2f}% 0s  ,  {(ones/(zeros+ones))*100:.2f}% 1s")
 
     ###########################################################################
     # Model preparation
@@ -198,7 +202,7 @@ def main(configuration):
                 'train_loss': train_loss.item(),
             }
             if is_best_test_loss_achieved or is_best_test_accuracy_achieved and 0 != iter_num:
-                os.makedirs(os.path.join(output_dir, 'checkpoints'))
+                os.makedirs(os.path.join(output_dir, 'checkpoints'), exist_ok=True)
                 if is_best_test_loss_achieved:
                     checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__test_loss_{best_test_loss[0]:.8f}__with_accuracy_{test_accuracy:.8f}__at_{iter_num}.pt')
                     torch.save(checkpoint, checkpoint_filename)

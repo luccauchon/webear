@@ -1,5 +1,6 @@
 from torch.utils.data import Dataset
 from functools import lru_cache
+from loguru import logger
 import tsaug
 import torch
 import numpy as np
@@ -62,7 +63,7 @@ class TripleIndicesRegressionDataset(Dataset):
 
 
 class TripleIndicesLookAheadClassificationDataset(Dataset):
-    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _data_augmentation=False):
+    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _data_augmentation=False):
         """
         Args:
             df (pd.DataFrame): The input DataFrame.
@@ -77,7 +78,8 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
         self.indices        = _indices
         self.mode           = _mode
         self.data_augmentation = _data_augmentation
-        self.margin         = 2.5
+        self.margin         = _margin
+        logger.info(f"[{self.mode}] Using a margin of {self.margin}")
 
     def __len__(self):
         return len(self.indices)
@@ -86,10 +88,10 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
     def __getitem__(self, idx):
         i1, i2, i3 = self.indices[idx]
         the_x, the_y = self.df.iloc[i1:i2], self.df.iloc[i2:i3]
-        assert 1 == len(the_y)
 
+        assert 1 == len(the_y)
         vx, vy = the_x.iloc[-1][self.target_col].values[0], the_y.iloc[-1][self.target_col].values[0]
-        #
+
         the_target = 1 if vy > vx + self.margin else 0  # 1 if direction is up
 
         # normalize all rows by the first row
