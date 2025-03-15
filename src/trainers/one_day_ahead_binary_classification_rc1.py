@@ -42,24 +42,24 @@ def _get_batch(_batch_size, iterator):
 
 
 def main(configuration):
-    seed_offset = 123
+    seed_offset = configuration.get("seed_offset", 123)
     debug_level = "DEBUG"
     device = 'cuda'
 
-    data_augmentation   = False
+    data_augmentation   = True
     force_download_data = False
 
-    tav_dates = ["2018-01-01", "2025-03-08"]
-    mes_dates = ["2025-03-09", "2025-03-15"]
+    tav_dates = configuration.get("tav_dates", ["2018-01-01", "2025-03-08"])
+    mes_dates = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
 
-    run_id = 123
-    version = "rc1"
+    run_id = configuration.get("run_id", 123)
+    version = configuration.get("version", "rc1")
     x_cols = ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week']  # For SPY and VIX
     x_cols_to_norm = ['Close', 'Volume']
     y_cols = [('Close', 'SPY')]
-    x_seq_length = 30
+    x_seq_length = configuration.get("x_seq_length", 10)
     y_seq_length = 1
-    margin = 2.5
+    margin = configuration.get("margin", 2.5)
     assert y_seq_length == 1
     # cutoff_days = [1,2,3]
 
@@ -109,9 +109,9 @@ def main(configuration):
     eval_interval  = 10
     iter_num       = 0
     learning_rate  = 1e-3
-    log_interval   = 100
-    lr_decay_iters = 50000
-    max_iters      = 50000
+    log_interval   = configuration.get("log_interval", 5000)
+    lr_decay_iters = configuration.get("lr_decay_iters", 50000)
+    max_iters      = configuration.get("max_iters", 50000)
     min_lr         = 1e-6
     stats_check    = True
     warmup_iters   = 0
@@ -250,4 +250,4 @@ if __name__ == '__main__':
     # -----------------------------------------------------------------------------
     pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
-    main(configuration)
+    main(namespace_to_dict(configuration))
