@@ -1,4 +1,5 @@
 import numpy as np
+import re
 from types import SimpleNamespace
 import platform
 from torcheval.metrics import BinaryAccuracy
@@ -87,7 +88,7 @@ def get_df_SPY_and_VIX(interval="1d"):
             merged_df[col_title] = merged_df[col].rolling(window=window_size, center=True).mean()
             merged_df[col_title] = merged_df[col_title].shift(window_size // 2)
             new_cols.append(col_title)
-        print(new_cols)
+        #print(new_cols)
     merged_df = merged_df.dropna()
 
     merged_df = merged_df.sort_index(ascending=True)
@@ -237,3 +238,26 @@ def calculate_classification_metrics(y_true, y_pred):
     accuracy = metric.compute()
 
     return {'accuracy': accuracy}
+
+
+def extract_info_from_filename(filename):
+    """
+    Extracts information from a filename.
+
+    Args:
+        filename (str): The filename to extract information from.
+
+    Returns:
+        dict: A dictionary containing the extracted information.
+    """
+    pattern     = r"best__(?P<metric1_name>accuracy|test_loss)_(?P<metric1_value>\d+\.\d+)__with_(?P<metric2_name>accuracy|test_loss)_(?P<metric2_value>\d+\.\d+)__at_(?P<epoch>\d+)\.pt"
+    pattern_alt = r"best__(?P<metric1_name>accuracy)_(?P<metric1_value>\d+\.\d+)__with_(?P<metric2_name>loss|test_loss)_(?P<metric2_value>\d+\.\d+)_at_(?P<epoch>\d+)\.pt"
+    match = re.match(pattern, filename)
+    if match:
+        return match.groupdict()
+    else:
+        match = re.match(pattern_alt, filename)
+        if match:
+            return match.groupdict()
+        else:
+            return None

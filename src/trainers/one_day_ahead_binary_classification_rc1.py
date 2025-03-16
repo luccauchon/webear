@@ -43,33 +43,34 @@ def _get_batch(_batch_size, iterator):
 
 def main(configuration):
     seed_offset = configuration.get("seed_offset", 123)
-    debug_level = "DEBUG"
-    device = 'cuda'
-
-    data_augmentation   = True
-    force_download_data = False
-
-    tav_dates = configuration.get("tav_dates", ["2018-01-01", "2025-03-08"])
-    mes_dates = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
-
-    run_id = configuration.get("run_id", 123)
-    version = configuration.get("version", "rc1")
-    x_cols = ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week']  # For SPY and VIX
-    x_cols_to_norm = ['Close', 'Volume']
-    y_cols = [('Close', 'SPY')]
-    x_seq_length = configuration.get("x_seq_length", 10)
-    y_seq_length = 1
-    margin = configuration.get("margin", 2.5)
-    assert y_seq_length == 1
-    # cutoff_days = [1,2,3]
-
     np.random.seed(seed_offset)
     torch.manual_seed(seed_offset)
     torch.cuda.manual_seed_all(seed_offset)
     torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
 
-    output_dir = os.path.join(get_stub_dir(), f"trainer__one_day_ahead_binary_classification__{version}__run_{run_id}")
+    debug_level = "DEBUG"
+    device = 'cuda'
+
+    data_augmentation   = configuration.get("data_augmentation", True)
+    force_download_data = False
+
+    tav_dates = configuration.get("tav_dates", ["2018-01-01", "2025-03-08"])
+    mes_dates = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
+
+    x_cols = ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week']  # For SPY and VIX
+    x_cols_to_norm = ['Close', 'Volume']
+    y_cols = [('Close', 'SPY')]
+    x_seq_length = configuration.get("x_seq_length", 10)
+    y_seq_length = 1
+    train_margin = configuration.get("train_margin", 2.)
+    test_margin  = configuration.get("test_margin", 2.)
+    assert y_seq_length == 1
+    # cutoff_days = [1,2,3]
+
+    run_id = configuration.get("run_id", 123)
+    version = configuration.get("version", "rc1")
+    output_dir = os.path.join(get_stub_dir(), f"{run_id}", f"trainer__one_day_ahead_binary_classification__{version}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.remove()
@@ -140,18 +141,24 @@ def main(configuration):
     #test_indices,  test_df  = generate_indices_with_multiple_cutoff_day(cutoff_days=cutoff_days, _df=df.copy(), _dates=mes_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
     assert 0 != len(train_indices) and 0 != len(test_indices)
     train_dataset    = TripleIndicesLookAheadClassificationDataset(_df=train_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                   _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=margin)
+                                                                   _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=train_margin)
     test_dataset     = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                   _indices=test_indices, _mode='test', _data_augmentation=data_augmentation, _margin=margin)
+                                                                   _indices=test_indices, _mode='test', _data_augmentation=data_augmentation, _margin=test_margin)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
+    ground_truth_sequence = []
     if stats_check:
         for desc, a_dataloader in zip(["train", "test"], [train_dataloader, test_dataloader]):
             zeros, ones = 0, 0
-            for train_x, train_y, train_x_data_norm in a_dataloader:
-                zeros += torch.count_nonzero(train_y == 0)
-                ones  += torch.count_nonzero(train_y == 1)
+            for _x, _y, _x_data_norm in a_dataloader:
+                zeros += torch.count_nonzero(_y == 0)
+                ones  += torch.count_nonzero(_y == 1)
+                if desc == 'test':
+                    ground_truth_sequence.extend(_y.cpu())
+            ground_truth_sequence = [uu.item() for uu in ground_truth_sequence]
             logger.info(f"In {desc} dataset --> {(zeros/(zeros+ones))*100:.2f}% 0s  ,  {(ones/(zeros+ones))*100:.2f}% 1s")
+            if desc == 'test':
+                logger.info(f"Test sequence: {ground_truth_sequence}")
 
     ###########################################################################
     # Model preparation
@@ -167,9 +174,9 @@ def main(configuration):
     loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device)  # mean-squared error for regression
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=device)
     train_loss, best_test_loss, best_test_accuracy = torch.tensor(999999999), (999999999, 999999999), (0., 0)
-    running_train_losses, running__test_losses, running_train_accuracy = -1, -1, -1
+    running__train_losses, running__test_losses, running__train_accuracy = -1, -1, -1
     train_iterator = itertools.cycle(train_dataloader)
-    train_x, train_y, train_x_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
+    _x, _y, _x_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
     while iter_num < max_iters:
         lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=learning_rate, _min_lr=min_lr, _lr_decay_iters=lr_decay_iters) if decay_lr else learning_rate
         for param_group in optimizer.param_groups:
@@ -207,33 +214,39 @@ def main(configuration):
                     checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__test_loss_{best_test_loss[0]:.8f}__with_accuracy_{test_accuracy:.8f}__at_{iter_num}.pt')
                     torch.save(checkpoint, checkpoint_filename)
                 if is_best_test_accuracy_achieved:
-                    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__accuracy_{best_test_accuracy[0]:.4f}__with_loss_{test_loss:.8f}_at_{iter_num}.pt')
+                    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__accuracy_{best_test_accuracy[0]:.4f}__with_test_loss_{test_loss:.8f}_at_{iter_num}.pt')
                     torch.save(checkpoint, checkpoint_filename)
 
 
             if 0 == iter_num % log_interval or 1 == iter_num:
-                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running_train_losses:.4f})/({running_train_accuracy:.4f})   "
+                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
                             f"test:({running__test_losses:.4f})/{test_accuracy:.4f} "
                             f">> {best_test_loss[0]:.4f}@{best_test_loss[1]} , {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}")
             model.train()
 
-        train_logits, train_loss = model(x=train_x, y=train_y)  # forward pass
+        train_logits, train_loss = model(x=_x, y=_y)  # forward pass
         train_loss = train_loss * 100.0  # scale loss to avoid gradient vanishing
 
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        train_x, train_y, train_x_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
+        _x, _y, _x_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
 
         train_loss.backward()  # calculates the loss of the loss function
         optimizer.step()  # improve from loss, i.e backprop
         optimizer.zero_grad()
 
         # Compute accuracy
-        training_accuracy = calculate_classification_metrics(y_true=train_y, y_pred=train_logits>0.5)['accuracy']
+        training_accuracy = calculate_classification_metrics(y_true=_y, y_pred=train_logits>0.5)['accuracy']
 
-        running_train_accuracy = training_accuracy if running_train_accuracy == -1.0 else 0.9 * running_train_accuracy + 0.1 * training_accuracy
-        running_train_losses = train_loss.item() if running_train_losses == -1.0 else 0.9 * running_train_losses + 0.1 * train_loss.item()
+        running__train_accuracy = training_accuracy if running__train_accuracy == -1.0 else 0.9 * running__train_accuracy + 0.1 * training_accuracy
+        running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()
 
         iter_num += 1
+    return {'running__train_losses': running__train_losses,
+            'running__train_accuracy': running__train_accuracy,
+            'running__test_losses': running__test_losses,
+            'ground_truth_sequence': ground_truth_sequence,
+            'output_dir': output_dir,
+            'configuration': configuration,}
 
 
 if __name__ == '__main__':
@@ -250,4 +263,6 @@ if __name__ == '__main__':
     # -----------------------------------------------------------------------------
     pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
-    main(namespace_to_dict(configuration))
+    configuration = namespace_to_dict(configuration)
+    configuration.update({'max_iters': 500, 'log_interval': 10})
+    main(configuration)

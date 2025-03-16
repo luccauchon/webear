@@ -63,7 +63,7 @@ class TripleIndicesRegressionDataset(Dataset):
 
 
 class TripleIndicesLookAheadClassificationDataset(Dataset):
-    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _data_augmentation=False):
+    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _direction_of_ones="up", _data_augmentation=False):
         """
         Args:
             df (pd.DataFrame): The input DataFrame.
@@ -79,6 +79,7 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
         self.mode           = _mode
         self.data_augmentation = _data_augmentation
         self.margin         = _margin
+        self.direction_of_ones = _direction_of_ones
         logger.info(f"[{self.mode}] Using a margin of {self.margin}")
 
     def __len__(self):
@@ -92,7 +93,10 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
         assert 1 == len(the_y)
         vx, vy = the_x.iloc[-1][self.target_col].values[0], the_y.iloc[-1][self.target_col].values[0]
 
-        the_target = 1 if vy > vx + self.margin else 0  # 1 if direction is up
+        if self.direction_of_ones == 'up':
+            the_target = 1 if vy > vx + self.margin else 0  # "1" if direction is up
+        else:
+            the_target = 1 if vy < vx + self.margin else 0  # "1" if direction is down
 
         # normalize all rows by the first row
         x_data_norm = the_x[self.x_cols_to_norm].iloc[0]
