@@ -5,7 +5,7 @@ import itertools
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 from datasets import TripleIndicesLookAheadClassificationDataset
-from models import LSTMClassification
+from models import LSTMClassification, LSTMMetaClassification
 from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
@@ -13,6 +13,7 @@ import numpy as np
 from loguru import logger
 import sys
 import pandas as pd
+import json
 import math
 
 
@@ -41,7 +42,75 @@ def _get_batch(_batch_size, iterator):
     return the_x, the_y, x_data_norm
 
 
-def main(configuration):
+def load_model(ckpt_path, device, df, **kwargs):
+    logger.info(f"Resuming training from {ckpt_path}")
+    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
+    model_args = checkpoint['model_args']
+    model = LSTMClassification(num_input_features=model_args['num_input_features'],
+                               hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
+                               bidirectional=model_args['bidirectional'], device=model_args['device'], dropout=model_args['dropout'])
+    model = model.cuda() if device != 'cpu' else model
+    state_dict = checkpoint['model']
+
+    model.load_state_dict(state_dict)
+    iter_num = checkpoint['iter_num']
+    best_val_loss = checkpoint['best_test_loss']
+    logger.info(f" --> {iter_num=}   {best_val_loss[0]=}")
+    model.eval()
+
+    return model
+
+
+def create_meta_model(candidats, device, fetch_new_dataframe=False):
+    list_of_models, df_list, params_list = [], [], []
+    for one_candidat in candidats:
+        train_df = pd.read_pickle(one_candidat["df"])
+        df_list.append(train_df)
+        with open(one_candidat["meta_information"], 'r') as f:
+            results = json.load(f)
+        params_list.append(results)
+        model = load_model(ckpt_path=one_candidat['model_path'], device=device, df=train_df, **results)
+        list_of_models.append(model)
+    meta_model = LSTMMetaClassification(models=list_of_models)
+    meta_model = meta_model.cuda() if device != 'cpu' else meta_model
+    assert all(df.equals(df_list[0]) for df in df_list[1:])
+    assert all(ppp['x_cols']==params_list[0]['x_cols'] for ppp in params_list[1:])
+    assert all(ppp['x_cols_to_norm'] == params_list[0]['x_cols_to_norm'] for ppp in params_list[1:])
+    assert all(ppp['y_cols'] == params_list[0]['y_cols'] for ppp in params_list[1:])
+    assert all(ppp['x_seq_length'] == params_list[0]['x_seq_length'] for ppp in params_list[1:])
+    assert all(ppp['y_seq_length'] == params_list[0]['y_seq_length'] for ppp in params_list[1:])
+    if fetch_new_dataframe:
+        df, df_name = _fetch_dataframe()
+        df_list[0] = df
+    return meta_model, df_list[0], {'x_cols': params_list[0]['x_cols'], 'y_cols': params_list[0]['y_cols'],
+                                    'x_cols_to_norm': params_list[0]['x_cols_to_norm'],
+                                    'x_seq_length': params_list[0]['x_seq_length'], 'y_seq_length': params_list[0]['y_seq_length']}
+
+
+def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, test_margin, mode, **kwargs):
+    x_seq_length = kwargs['x_seq_length']
+    y_seq_length = kwargs['y_seq_length']
+    assert 1 == y_seq_length
+    x_cols = kwargs['x_cols']
+    y_cols = kwargs['y_cols']
+    x_cols_to_norm = kwargs['x_cols_to_norm']
+
+    _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=x_seq_length, y_seq_length=y_seq_length)
+    assert len(_indices) in [0, 1]
+    if 0 == len(_indices):
+        return None
+    _dataset = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
+                                                           _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=test_margin)
+    _dataloader = DataLoader(_dataset, batch_size=1, shuffle=False)
+    return _dataloader
+
+
+def _fetch_dataframe():
+    df, df_name = get_df_SPY_and_VIX()
+    return df, df_name
+
+
+def train(configuration):
     seed_offset = configuration.get("seed_offset", 123)
     np.random.seed(seed_offset)
     torch.manual_seed(seed_offset)
@@ -88,7 +157,7 @@ def main(configuration):
     ###########################################################################
     df_filename = os.path.join(output_dir, "df.pkl")
     if not os.path.exists(df_filename) or force_download_data:
-        df, df_name = get_df_SPY_and_VIX()
+        df, df_name = _fetch_dataframe()
         logger.info(f"Writing {df_filename}...")
         df.to_pickle(df_filename)
     else:
@@ -211,10 +280,10 @@ def main(configuration):
             if is_best_test_loss_achieved or is_best_test_accuracy_achieved and 0 != iter_num:
                 os.makedirs(os.path.join(output_dir, 'checkpoints'), exist_ok=True)
                 if is_best_test_loss_achieved:
-                    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__test_loss_{best_test_loss[0]:.8f}__with_accuracy_{test_accuracy:.8f}__at_{iter_num}.pt')
+                    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__test_loss_{best_test_loss[0]:.8f}__with__test_accuracy_{test_accuracy:.8f}__at_{iter_num}.pt')
                     torch.save(checkpoint, checkpoint_filename)
                 if is_best_test_accuracy_achieved:
-                    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__accuracy_{best_test_accuracy[0]:.4f}__with_test_loss_{test_loss:.8f}_at_{iter_num}.pt')
+                    checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__test_accuracy_{best_test_accuracy[0]:.4f}__with__test_loss_{test_loss:.8f}_at_{iter_num}.pt')
                     torch.save(checkpoint, checkpoint_filename)
 
 
@@ -241,12 +310,14 @@ def main(configuration):
         running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()
 
         iter_num += 1
-    return {'running__train_losses': running__train_losses,
-            'running__train_accuracy': running__train_accuracy,
-            'running__test_losses': running__test_losses,
-            'ground_truth_sequence': ground_truth_sequence,
-            'output_dir': output_dir,
-            'configuration': configuration,}
+    results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
+               'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
+               'output_dir': output_dir,'data_augmentation': data_augmentation, 'test_margin': test_margin,
+               'configuration': configuration, 'x_cols': x_cols, 'y_cols': y_cols, 'x_cols_to_norm': x_cols_to_norm,
+               'tav_dates': tav_dates, 'mes_dates': mes_dates, 'x_seq_length': x_seq_length, 'y_seq_length': y_seq_length}
+    with open(os.path.join(output_dir, "results.json"), 'w') as f:
+        json.dump(results, f, indent=4)
+    return results
 
 
 if __name__ == '__main__':
@@ -265,4 +336,4 @@ if __name__ == '__main__':
 
     configuration = namespace_to_dict(configuration)
     configuration.update({'max_iters': 500, 'log_interval': 10})
-    main(configuration)
+    train(configuration)

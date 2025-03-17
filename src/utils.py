@@ -114,14 +114,14 @@ def get_stub_dir():
 def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length):
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
-    assert pd.to_datetime(dates[0]) < pd.to_datetime(dates[1])
+    assert pd.to_datetime(dates[0]) <= pd.to_datetime(dates[1])
     # t1 = pd.to_datetime(dates[0]) - timedelta(days=x_seq_length + y_seq_length+1)
     # t2 = pd.to_datetime(dates[1]) + timedelta(days=x_seq_length+y_seq_length+1)
     # df = df[t1:t2].copy()
     for idx in reversed(range(0, len(df)+1)):
         idx1, idx2, idx3 = idx-y_seq_length-x_seq_length, idx-y_seq_length, idx
         assert df.iloc[idx2:idx3].index.intersection(df.iloc[idx1:idx2].index).empty
-        if idx1 <0 or idx2<0 or idx<0:
+        if idx1 <0 or idx2<0 or idx3<0:
             continue
         # Make sure that y is in the range
         t1 = df.iloc[idx2:idx3].index[0]
@@ -250,8 +250,8 @@ def extract_info_from_filename(filename):
     Returns:
         dict: A dictionary containing the extracted information.
     """
-    pattern     = r"best__(?P<metric1_name>accuracy|test_loss)_(?P<metric1_value>\d+\.\d+)__with_(?P<metric2_name>accuracy|test_loss)_(?P<metric2_value>\d+\.\d+)__at_(?P<epoch>\d+)\.pt"
-    pattern_alt = r"best__(?P<metric1_name>accuracy)_(?P<metric1_value>\d+\.\d+)__with_(?P<metric2_name>loss|test_loss)_(?P<metric2_value>\d+\.\d+)_at_(?P<epoch>\d+)\.pt"
+    pattern     = r"best__(?P<metric1_name>test_accuracy|test_loss)_(?P<metric1_value>\d+\.\d+)__with__(?P<metric2_name>test_accuracy|test_loss)_(?P<metric2_value>\d+\.\d+)__at_(?P<epoch>\d+)\.pt"
+    pattern_alt = r"best__(?P<metric1_name>test_accuracy)_(?P<metric1_value>\d+\.\d+)__with__(?P<metric2_name>loss|test_loss)_(?P<metric2_value>\d+\.\d+)_at_(?P<epoch>\d+)\.pt"
     match = re.match(pattern, filename)
     if match:
         return match.groupdict()

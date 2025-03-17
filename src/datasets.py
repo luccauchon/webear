@@ -63,7 +63,7 @@ class TripleIndicesRegressionDataset(Dataset):
 
 
 class TripleIndicesLookAheadClassificationDataset(Dataset):
-    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _direction_of_ones="up", _data_augmentation=False):
+    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _direction_of_ones="up", _data_augmentation=False, power_of_noise=0.001):
         """
         Args:
             df (pd.DataFrame): The input DataFrame.
@@ -79,7 +79,9 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
         self.mode           = _mode
         self.data_augmentation = _data_augmentation
         self.margin         = _margin
-        self.direction_of_ones = _direction_of_ones
+        self.direction_of_ones  = _direction_of_ones
+        self.power_of_noise     = power_of_noise
+        self.frequency_of_noise = 0.25
         logger.info(f"[{self.mode}] Using a margin of {self.margin}")
 
     def __len__(self):
@@ -100,8 +102,13 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
 
         # normalize all rows by the first row
         x_data_norm = the_x[self.x_cols_to_norm].iloc[0]
-        if self.mode == 'train' and (self.data_augmentation and np.random.normal(0, 1)>0.75):
-            the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, 0.001, size=len(x)) if x.name in x_data_norm else x)
+        if self.mode == 'train' and (self.data_augmentation and np.random.normal(0, 1)>1.-self.frequency_of_noise):
+            the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
+        elif self.mode == 'inference':
+            if self.data_augmentation:
+                the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
+            else:
+                the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) if x.name in x_data_norm else x)
         else:
             the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) if x.name in x_data_norm else x)
 

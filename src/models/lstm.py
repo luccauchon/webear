@@ -5,6 +5,22 @@ from torch.autograd import Variable
 import inspect
 
 
+class LSTMMetaClassification(nn.Module):
+    def __init__(self, models):
+        super(LSTMMetaClassification, self).__init__()
+        self.models = models
+
+    def forward(self, x, y=None):
+        list_of_predictions = []
+        for a_model in self.models:
+            prediction = a_model(x)
+            list_of_predictions.append(prediction)
+
+        stacked_tensors = torch.stack([pred[0].squeeze() for pred in list_of_predictions], dim=0)
+        return stacked_tensors, None
+
+
+
 class LSTMClassification(nn.Module):
     def __init__(self, seq_length, num_input_features, hidden_size, num_layers, bidirectional, device, dropout):
         super(LSTMClassification, self).__init__()
