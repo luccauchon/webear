@@ -82,7 +82,8 @@ class TripleIndicesLookAheadClassificationDataset(Dataset):
         self.direction_of_ones  = _direction_of_ones
         self.power_of_noise     = power_of_noise
         self.frequency_of_noise = 0.25
-        logger.info(f"[{self.mode}] Using a margin of {self.margin}")
+        if self.mode in ['train', 'test']:
+            logger.info(f"[{self.mode}] Using a margin of {self.margin}")
 
     def __len__(self):
         return len(self.indices)

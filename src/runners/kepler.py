@@ -125,10 +125,11 @@ if __name__ == '__main__':
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
         date = start_date + pd.Timedelta(n, unit='days')
+        day_of_week_full = date.strftime('%A')
 
         data_loader_without_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date, test_margin=test_margin, **params)
         if data_loader_without_data_augmentation is None:
-            break
+            continue
         the_ground_truth_for_date = [y for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)]
         assert 1 == len(the_ground_truth_for_date)
         the_ground_truth_for_date = the_ground_truth_for_date[0].item()
@@ -149,5 +150,5 @@ if __name__ == '__main__':
                 nb_pred_for_1 += torch.count_nonzero(_logits[_logits >= 0.5]).item()
 
         prediction = 1 if nb_pred_for_1 > nb_pred_for_0 else 0
-        certainty  = nb_pred_for_1/(nb_pred_for_0+nb_pred_for_1) if 1==the_ground_truth_for_date else nb_pred_for_0/(nb_pred_for_0+nb_pred_for_1)
-        logger.info(f"For {date}, the ground truth is {the_ground_truth_for_date} , prediction is {prediction} with {certainty*100:.2f}% certainty")
+        confidence  = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == the_ground_truth_for_date else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
+        logger.info(f"For {date} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction} with {confidence * 100:.2f}% confidence")
