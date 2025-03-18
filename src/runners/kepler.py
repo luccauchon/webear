@@ -17,7 +17,7 @@ if __name__ == '__main__':
     # Parameters for campaign
     ###########################################################################
     skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_17__21_27_50"]
-    fast_execution_for_debugging                = True
+    fast_execution_for_debugging                = False
 
     tav_dates                    = ["2024-01-01", "2025-03-08"]
     mes_dates                    = ["2025-03-09", "2025-03-15"]
