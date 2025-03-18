@@ -73,7 +73,7 @@ def create_meta_model(candidats, device, fetch_new_dataframe=False):
         list_of_models.append(model)
     meta_model = LSTMMetaClassification(models=list_of_models)
     meta_model = meta_model.cuda() if device != 'cpu' else meta_model
-    assert all(df.equals(df_list[0]) for df in df_list[1:])
+    assert all(df.index.equals(df_list[0].index) for df in df_list[1:])
     assert all(ppp['x_cols']==params_list[0]['x_cols'] for ppp in params_list[1:])
     assert all(ppp['x_cols_to_norm'] == params_list[0]['x_cols_to_norm'] for ppp in params_list[1:])
     assert all(ppp['y_cols'] == params_list[0]['y_cols'] for ppp in params_list[1:])
