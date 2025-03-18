@@ -8,7 +8,7 @@ from loguru import logger
 from pathlib import Path
 import os
 import json
-from utils import extract_info_from_filename
+from utils import extract_info_from_filename, previous_weekday
 import torch
 
 
@@ -16,13 +16,13 @@ if __name__ == '__main__':
     ###########################################################################
     # Parameters for campaign
     ###########################################################################
-    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_16__19_56_53"]
-    fast_execution_for_debugging                = False
+    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_17__21_27_50"]
+    fast_execution_for_debugging                = True
 
     tav_dates                    = ["2024-01-01", "2025-03-08"]
     mes_dates                    = ["2025-03-09", "2025-03-15"]
-    inf_dates                    = ["2025-03-09", "2025-03-17"]
-    fetch_new_dataframe          = True
+    inf_dates                    = ["2025-03-09", "2025-03-21"]
+    fetch_new_dataframe          = True  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
     device                       = "cuda"
     test_margin                  = 0
     power_of_noise               = 0.01
@@ -48,8 +48,7 @@ if __name__ == '__main__':
             margin = [-3,0]
         for a_margin in margin:
             version = f"M{a_margin}_"
-            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version,
-                                            "tav_dates": tav_dates, "mes_dates": mes_dates}
+            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version, "tav_dates": tav_dates, "mes_dates": mes_dates}
             if fast_execution_for_debugging:
                 configuration_for_experience.update({'max_iters': 50, 'log_interval': 10})
 
@@ -59,6 +58,8 @@ if __name__ == '__main__':
             output_dir.append(Path(results['output_dir']).parent)
         output_dir = list(set(output_dir))
         assert 1 == len(output_dir)
+    else:
+        logger.info(f"Skipping training , using those results: {output_dir[0]}")
     assert os.path.exists(output_dir[0]),f"Missing {output_dir[0]}"
     output_dir = output_dir[0]
 
@@ -115,7 +116,15 @@ if __name__ == '__main__':
                     best_lost__candidats = []
                 elif float(one_candidat['test_loss']) == best_loss:
                     best_lost__candidats.append(one_candidat)
-
+    # Switching model, if necessary
+    for one_candidat in best_accuracy__candidats:
+        assert float(best_accuracy__candidat['test_accuracy']) == float(one_candidat['test_accuracy'])
+        if float(one_candidat['with_test_loss']) < float(best_accuracy__candidat['with_test_loss']):
+            best_accuracy__candidat = one_candidat
+    for one_candidat in best_lost__candidats:
+        assert float(best_lost__candidat['test_loss']) == float(one_candidat['test_loss'])
+        if float(one_candidat['with_test_accuracy']) > float(best_accuracy__candidat['with_test_accuracy']):
+            best_lost__candidat = one_candidat
 
     ###########################################################################
     # Do inferences
@@ -126,29 +135,45 @@ if __name__ == '__main__':
     for n in range(int((end_date - start_date).days) + 1):
         date = start_date + pd.Timedelta(n, unit='days')
         day_of_week_full = date.strftime('%A')
-
-        data_loader_without_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date, test_margin=test_margin, **params)
+        yesterday = previous_weekday(date)
+        data_loader_without_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date, test_margin=test_margin, **params)
         if data_loader_without_data_augmentation is None:
             continue
-        the_ground_truth_for_date = [y for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)]
-        assert 1 == len(the_ground_truth_for_date)
-        the_ground_truth_for_date = the_ground_truth_for_date[0].item()
-
+        if not just_x_no_y:
+            the_ground_truth_for_date = [y for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)]
+            assert 1 == len(the_ground_truth_for_date)
+            the_ground_truth_for_date = the_ground_truth_for_date[0].item()
+        nb_forward_pass = 0
         nb_pred_for_0, nb_pred_for_1 = 0., 0.
         for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation):
-            assert all(y == the_ground_truth_for_date)
+            if not just_x_no_y:
+                assert just_x_no_y or all(y == the_ground_truth_for_date)
             _logits, _ = meta_model(x=X)
             nb_pred_for_0 += torch.count_nonzero(_logits[_logits < 0.5]).item()
             nb_pred_for_1 += torch.count_nonzero(_logits[_logits >= 0.5]).item()
-
-        data_loader_with_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date, test_margin=test_margin, power_of_noise=power_of_noise, **params)
+            nb_forward_pass += 1
+        data_loader_with_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date, test_margin=test_margin, power_of_noise=power_of_noise, **params)
         for ee in range(0, nb_iter_test):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
-                assert all(y == the_ground_truth_for_date)
+                if not just_x_no_y:
+                    assert all(y == the_ground_truth_for_date)
                 _logits, _ = meta_model(x=X)
                 nb_pred_for_0 += torch.count_nonzero(_logits[_logits < 0.5]).item()
                 nb_pred_for_1 += torch.count_nonzero(_logits[_logits >= 0.5]).item()
-
+                nb_forward_pass += 1
         prediction = 1 if nb_pred_for_1 > nb_pred_for_0 else 0
-        confidence  = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == the_ground_truth_for_date else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
-        logger.info(f"For {date} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction} with {confidence * 100:.2f}% confidence")
+        if not just_x_no_y:
+            confidence  = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == the_ground_truth_for_date else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
+            close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
+            tmp_str = f"higher than {close_value_yesterday:.1f}$" if 1 == prediction else f"lower than {close_value_yesterday:.1f}$"
+            logger.info(f"For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction} with {confidence * 100:.2f}% confidence ({tmp_str})")
+        else:
+            assert 1 == len(params['y_cols'])
+            try:
+                close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
+            except Exception as ee:
+                logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
+                continue
+            confidence = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == prediction else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
+            tmp_str = f"higher than {close_value_yesterday:.1f}$" if 1==prediction else f"lower than {close_value_yesterday:.1f}$"
+            logger.info(f"For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction} with {confidence * 100:.2f}% confidence > ({tmp_str})")

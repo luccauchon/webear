@@ -6,7 +6,7 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 from datasets import TripleIndicesLookAheadClassificationDataset
 from models import LSTMClassification, LSTMMetaClassification
-from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style
+from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
 import numpy as np
@@ -94,15 +94,21 @@ def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predic
     x_cols = kwargs['x_cols']
     y_cols = kwargs['y_cols']
     x_cols_to_norm = kwargs['x_cols_to_norm']
-
-    _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=x_seq_length, y_seq_length=y_seq_length)
+    # Do we try to predict tomorrow?
+    tomorrow  = next_weekday(pd.Timestamp.now().date())
+    just_x_no_y = True if date_to_predict.date() == tomorrow else False
+    if not just_x_no_y:  # Do we try to predict today ? (running code in the morning)
+        yesterday = previous_weekday(pd.Timestamp.now().date())
+        if date_to_predict != df.index[-1] and yesterday == df.index[-1].date():
+            just_x_no_y = True
+    _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=x_seq_length, y_seq_length=y_seq_length, just_x_no_y=just_x_no_y)
     assert len(_indices) in [0, 1]
     if 0 == len(_indices):
-        return None
+        return None, None
     _dataset = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                           _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=test_margin)
+                                                           _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=test_margin, _just_x_no_y=just_x_no_y)
     _dataloader = DataLoader(_dataset, batch_size=1, shuffle=False)
-    return _dataloader
+    return _dataloader, just_x_no_y
 
 
 def _fetch_dataframe():
