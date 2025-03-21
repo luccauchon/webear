@@ -4,9 +4,9 @@ from tqdm import tqdm
 import itertools
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
-from datasets import TripleIndicesLookAheadClassificationDataset
+from datasets import TripleIndicesLookAheadBinaryClassificationDataset
 from models import LSTMClassification, LSTMMetaClassification
-from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
+from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_binary_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
 import numpy as np
@@ -62,15 +62,15 @@ def load_model(ckpt_path, device, df, **kwargs):
 
 
 def create_meta_model(candidats, device, fetch_new_dataframe=False):
-    list_of_models, df_list, params_list = [], [], []
-    for one_candidat in candidats:
+    list_of_models, df_list, params_list = {}, [], []
+    for name, one_candidat in candidats.items():
         train_df = pd.read_pickle(one_candidat["df"])
         df_list.append(train_df)
         with open(one_candidat["meta_information"], 'r') as f:
             results = json.load(f)
         params_list.append(results)
         model = load_model(ckpt_path=one_candidat['model_path'], device=device, df=train_df, **results)
-        list_of_models.append(model)
+        list_of_models.update({name: model})
     meta_model = LSTMMetaClassification(models=list_of_models)
     meta_model = meta_model.cuda() if device != 'cpu' else meta_model
     assert all(df.index.equals(df_list[0].index) for df in df_list[1:])
@@ -105,8 +105,8 @@ def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predic
     assert len(_indices) in [0, 1]
     if 0 == len(_indices):
         return None, None
-    _dataset = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                           _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=test_margin, _just_x_no_y=just_x_no_y)
+    _dataset = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
+                                                                 _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=test_margin, _just_x_no_y=just_x_no_y)
     _dataloader = DataLoader(_dataset, batch_size=1, shuffle=False)
     return _dataloader, just_x_no_y
 
@@ -215,10 +215,10 @@ def train(configuration):
     #train_indices, train_df = generate_indices_with_multiple_cutoff_day(cutoff_days=cutoff_days, _df=df.copy(), _dates=tav_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
     #test_indices,  test_df  = generate_indices_with_multiple_cutoff_day(cutoff_days=cutoff_days, _df=df.copy(), _dates=mes_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
     assert 0 != len(train_indices) and 0 != len(test_indices)
-    train_dataset    = TripleIndicesLookAheadClassificationDataset(_df=train_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                   _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=train_margin)
-    test_dataset     = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                   _indices=test_indices, _mode='test', _data_augmentation=data_augmentation, _margin=test_margin)
+    train_dataset    = TripleIndicesLookAheadBinaryClassificationDataset(_df=train_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
+                                                                         _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=train_margin)
+    test_dataset     = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
+                                                                         _indices=test_indices, _mode='test', _data_augmentation=False, _margin=test_margin)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
     ground_truth_sequence = []
@@ -266,7 +266,7 @@ def train(configuration):
                 assert test_logits.shape == y_test.shape
                 _loss = loss_function(test_logits, y_test.float())
                 test_loss.append(0 if torch.isnan(_loss) else _loss.item())
-                test_accuracy.append(calculate_classification_metrics(y_true=y_test, y_pred=test_logits > 0.5)['accuracy'])
+                test_accuracy.append(calculate_binary_classification_metrics(y_true=y_test, y_pred=test_logits > 0.5)['accuracy'])
             test_accuracy, test_loss = np.mean(test_accuracy), np.mean(test_loss)
             running__test_losses = test_loss if running__test_losses == -1.0 else 0.9 * running__test_losses + 0.1 * test_loss
             is_best_test_loss_achieved     = test_loss < best_test_loss[0]
@@ -310,7 +310,7 @@ def train(configuration):
         optimizer.zero_grad()
 
         # Compute accuracy
-        training_accuracy = calculate_classification_metrics(y_true=_y, y_pred=train_logits>0.5)['accuracy']
+        training_accuracy = calculate_binary_classification_metrics(y_true=_y, y_pred=train_logits > 0.5)['accuracy']
 
         running__train_accuracy = training_accuracy if running__train_accuracy == -1.0 else 0.9 * running__train_accuracy + 0.1 * training_accuracy
         running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()

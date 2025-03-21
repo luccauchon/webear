@@ -3,26 +3,34 @@ import torch.nn as nn
 import torch
 from torch.autograd import Variable
 import inspect
+import torch.nn.functional as F
 
 
 class LSTMMetaClassification(nn.Module):
     def __init__(self, models):
         super(LSTMMetaClassification, self).__init__()
         self.models = models
+        self.list_of_model_names = None
+
+    def get_number_models(self):
+        return len(self.models)
 
     def forward(self, x, y=None):
-        list_of_predictions = []
-        for a_model in self.models:
+        self.list_of_model_names, list_of_predictions = [], []
+        for name_model, a_model in self.models.items():
             prediction = a_model(x)
             list_of_predictions.append(prediction)
+            self.list_of_model_names.append(name_model)
 
         stacked_tensors = torch.stack([pred[0].squeeze() for pred in list_of_predictions], dim=0)
         return stacked_tensors, None
 
+    def get_corresponding_model_names(self):
+        return self.list_of_model_names
 
 
 class LSTMClassification(nn.Module):
-    def __init__(self, seq_length, num_input_features, hidden_size, num_layers, bidirectional, device, dropout):
+    def __init__(self, seq_length, num_input_features, hidden_size, num_layers, bidirectional, device, dropout, binary_classification=True, nb_classes=-1):
         super(LSTMClassification, self).__init__()
         self.num_layers = num_layers  # number of layers
         assert 1 == self.num_layers
@@ -46,8 +54,19 @@ class LSTMClassification(nn.Module):
         self.lin3_3 = nn.Linear(in_features=hidden_size // 4, out_features=hidden_size // 8, device=device)
         self.lstm4 = nn.LSTM(input_size=hidden_size // 8, hidden_size=hidden_size // 8, num_layers=num_layers, batch_first=True, proj_size=0, bidirectional=bidirectional, device=device)
         self.dropout = torch.nn.Dropout(p=dropout)
-        self.fc = nn.Linear(hidden_size//8, 1, device=device)  # fully connected last layer
-        self.loss_function = nn.BCEWithLogitsLoss(reduction='sum').to(device)
+        self.binary_classification = binary_classification
+        self.nb_classes = nb_classes
+        self.activation = torch.nn.Hardtanh(min_val=-4, max_val=4)
+        self.mode = 0
+        if self.binary_classification:
+            self.loss_function = nn.BCEWithLogitsLoss(reduction='sum').to(device)
+            self.fc = nn.Linear(hidden_size // 8, 1, device=device)  # fully connected last layer
+        else:
+            self.loss_function = nn.CrossEntropyLoss(reduction='sum').to(device)
+            self.fc = nn.Linear(hidden_size // 8, self.nb_classes, device=device)  # fully connected last layer
+            self.mode = 1
+            self.conv1d = torch.nn.Conv1d(self.seq_length, self.nb_classes, kernel_size=3, padding=1, stride=1, device=device)
+            self.fc2 = nn.Linear(hidden_size // 8, 1, device=device)  # fully connected last layer
         self.relu = torch.nn.ReLU()
 
     def forward(self, x, y=None):
@@ -60,15 +79,26 @@ class LSTMClassification(nn.Module):
         logits, (hn, cn) = self.lstm3(self.relu(self.dropout(self.lin2_1(logits))), (self.relu(self.dropout(self.lin2_2(hn))), self.relu(self.dropout(self.lin2_3(cn)))))
         logits, (hn, cn) = self.lstm4(self.relu(self.dropout(self.lin3_1(logits))), (self.relu(self.dropout(self.lin3_2(hn))), self.relu(self.dropout(self.lin3_3(cn)))))
         assert hn.shape[0] == self.d * self.num_layers
-        hn = hn[-1]
-        output = self.fc(hn)
+        if self.binary_classification or 1 == self.mode:
+            hn = hn[-1]
+            output = self.fc(hn)
+        else:
+            logits = self.conv1d(logits)
+            # logits = logits[:, 0:-1, :]  # Drop last, it is unstable
+            logits = self.fc2(logits).squeeze()
+            output = self.activation(logits)
 
         loss = None
         if y is not None:
-            if 1 == len(y.shape):
-                y = y.unsqueeze(1)
-            assert output.shape == y.shape, f"{output.shape=}  {y.shape=}"
-            loss = self.loss_function(output, y)
+            if self.binary_classification:
+                if 1 == len(y.shape):
+                    y = y.unsqueeze(1)
+                assert output.shape == y.shape, f"{output.shape=}  {y.shape=}"
+                loss = self.loss_function(output, y)
+            else:
+                y = F.one_hot(y.type(torch.int64), num_classes=self.nb_classes)
+                assert output.shape == y.shape, f"{output.shape=}  {y.shape=}"
+                loss = self.loss_function(output, y.float())
 
         return output, loss
 

@@ -2,7 +2,7 @@ import numpy as np
 import re
 from types import SimpleNamespace
 import platform
-from torcheval.metrics import BinaryAccuracy
+from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
 import os
 import yfinance as yf
 from hurst import compute_Hc
@@ -65,10 +65,22 @@ def get_index_from_date(_df, _specific_date, inc=True, max_missing_days=31):
                 _specific_date = (datetime.strptime(_specific_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
     assert False, f"Cannot find an index for date {_specific_date}"
 
-def get_df_SPY_and_VIX(interval="1d"):
+
+def get_df_SPY_and_VIX_virgin_at_minutes():
+    df_vix       = yf.download("^VIX", period="max", interval='1m', auto_adjust=False)
+    df_vix       = df_vix.drop("Volume", axis=1)
+    df_vix.index = df_vix.index.tz_convert('US/Eastern')
+
+    df_spy       = yf.download("SPY", period="max", interval='1m', auto_adjust=False)
+    df_spy.index = df_spy.index.tz_convert('US/Eastern')
+
+    return  df_spy, df_vix
+
+
+def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
     df_vix    = yf.download("^VIX", period="max", interval=interval, auto_adjust=False)
     df_vix    = df_vix.drop("Volume", axis=1)
-    df_spy    = yf.download("SPY", period="max", interval="1d", auto_adjust=False)
+    df_spy    = yf.download("SPY", period="max", interval=interval, auto_adjust=False)
     merged_df = pd.merge(df_spy, df_vix, on='Date', how='left')
 
     merged_df['day_of_week']  = merged_df.index.dayofweek + 1
@@ -77,19 +89,20 @@ def get_df_SPY_and_VIX(interval="1d"):
     merged_df[('Close_direction', 'SPY')]  = merged_df.apply(lambda row: 1 if row[('Close', 'SPY')] > row[('Open', 'SPY')] else -1, axis=1)
     merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
 
-    for window_size in [5]:  # Define the window size for the moving average
-        do_ma_on_those = [('Close', 'SPY'), ('High', 'SPY'), ('Low', 'SPY'), ('Open', 'SPY'), ('Volume', 'SPY'),
-                          ('Close', '^VIX'), ('High', '^VIX'), ('Low', '^VIX'), ('Open', '^VIX')]
-        new_cols = []
-        for col in merged_df.columns:
-            if not col in do_ma_on_those:
-                continue
-            col_title = (col[0] + f'_MA{window_size}', col[1])
-            merged_df[col_title] = merged_df[col].rolling(window=window_size, center=True).mean()
-            merged_df[col_title] = merged_df[col_title].shift(window_size // 2)
-            new_cols.append(col_title)
-        #print(new_cols)
-    merged_df = merged_df.dropna()
+    if add_moving_averages:
+        for window_size in [5]:  # Define the window size for the moving average
+            do_ma_on_those = [('Close', 'SPY'), ('High', 'SPY'), ('Low', 'SPY'), ('Open', 'SPY'), ('Volume', 'SPY'),
+                              ('Close', '^VIX'), ('High', '^VIX'), ('Low', '^VIX'), ('Open', '^VIX')]
+            new_cols = []
+            for col in merged_df.columns:
+                if not col in do_ma_on_those:
+                    continue
+                col_title = (col[0] + f'_MA{window_size}', col[1])
+                merged_df[col_title] = merged_df[col].rolling(window=window_size, center=True).mean()
+                merged_df[col_title] = merged_df[col_title].shift(window_size // 2)
+                new_cols.append(col_title)
+            #print(new_cols)
+        merged_df = merged_df.dropna()
 
     merged_df = merged_df.sort_index(ascending=True)
 
@@ -97,7 +110,7 @@ def get_df_SPY_and_VIX(interval="1d"):
     # float_cols = merged_df.select_dtypes(include=['float64']).columns
     # merged_df[float_cols] = merged_df[float_cols].astype(int)
 
-    return merged_df, 'spy_vix_multicol_reverse_rc1__direction'
+    return merged_df, f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
 
 
 def _get_root_dir():
@@ -115,6 +128,9 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, just_x_n
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
     assert pd.to_datetime(dates[0]) <= pd.to_datetime(dates[1])
+    ts1 = pd.to_datetime(dates[0]) - pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
+    ts2 = pd.to_datetime(dates[1]) + pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
+    df = df.loc[ts1:ts2]
     if just_x_no_y:
         for idx in reversed(range(0, len(df) + 1)):
             idx1, idx2 = idx - x_seq_length, idx
@@ -228,7 +244,7 @@ def generate_indices_with_cutoff_day(_df, _dates, x_seq_length, y_seq_length, cu
         return _indices, _df
 
 
-def calculate_classification_metrics(y_true, y_pred):
+def calculate_binary_classification_metrics(y_true, y_pred):
     """
     Calculate metrics for binary classification.
 
@@ -243,6 +259,26 @@ def calculate_classification_metrics(y_true, y_pred):
     metric = BinaryAccuracy(threshold=0.5)
     assert y_pred.squeeze().shape == y_true.squeeze().shape
     metric.update(y_pred.squeeze(), y_true.squeeze())
+    accuracy = metric.compute()
+
+    return {'accuracy': accuracy}
+
+
+def calculate_multiclass_classification_metrics(y_true, y_pred, num_classes):
+    """
+
+
+    Args:
+    y_true (torch.Tensor): Ground truth labels.
+    y_pred (torch.Tensor): Predicted probabilities.
+
+    Returns:
+    dict: Dictionary containing accuracy, precision, recall, F1 score, and AUC-ROC.
+    """
+
+    metric = MulticlassAccuracy()
+    assert y_pred.shape[1] == num_classes and y_true.shape[0] == y_pred.shape[0]
+    metric.update(y_pred, y_true)
     accuracy = metric.compute()
 
     return {'accuracy': accuracy}

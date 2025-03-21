@@ -4,9 +4,9 @@ from tqdm import tqdm
 import itertools
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
-from datasets import TripleIndicesLookAheadClassificationDataset
+from datasets import TripleIndicesLookAheadBinaryClassificationDataset
 from models import LSTMClassification
-from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_classification_metrics, generate_indices_with_multiple_cutoff_day
+from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_binary_classification_metrics, generate_indices_with_multiple_cutoff_day
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
 import numpy as np
@@ -120,8 +120,8 @@ def main(cc):
     train_indices, train_df = generate_indices_with_multiple_cutoff_day(cutoff_days=cc.toda__cutoff_days, _df=df.copy(), _dates=cc.toda__tav_dates, x_seq_length=cc.toda__x_seq_length, y_seq_length=cc.toda__y_seq_length)
     test_indices,  test_df  = generate_indices_with_multiple_cutoff_day(cutoff_days=cc.toda__cutoff_days, _df=df.copy(), _dates=cc.toda__mes_dates, x_seq_length=cc.toda__x_seq_length, y_seq_length=cc.toda__y_seq_length)
 
-    train_dataset    = TripleIndicesLookAheadClassificationDataset(_df=train_df, _feature_cols=cc.toda__x_cols, _target_col=cc.toda__y_cols, _device=cc.toda__device, _x_cols_to_norm=cc.toda__x_cols_to_norm, _indices=train_indices, _mode='train')
-    test_dataset     = TripleIndicesLookAheadClassificationDataset(_df=test_df, _feature_cols=cc.toda__x_cols, _target_col=cc.toda__y_cols, _device=cc.toda__device, _x_cols_to_norm=cc.toda__x_cols_to_norm, _indices=test_indices, _mode='test')
+    train_dataset    = TripleIndicesLookAheadBinaryClassificationDataset(_df=train_df, _feature_cols=cc.toda__x_cols, _target_col=cc.toda__y_cols, _device=cc.toda__device, _x_cols_to_norm=cc.toda__x_cols_to_norm, _indices=train_indices, _mode='train')
+    test_dataset     = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=cc.toda__x_cols, _target_col=cc.toda__y_cols, _device=cc.toda__device, _x_cols_to_norm=cc.toda__x_cols_to_norm, _indices=test_indices, _mode='test')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
     if sanity_check:
@@ -162,7 +162,7 @@ def main(cc):
                 assert test_logits.shape == y_test.shape
                 _loss = loss_function(test_logits, y_test.float())
                 test_losses.append(0 if torch.isnan(_loss) else _loss.item())
-                test_accuracy.append(calculate_classification_metrics(y_true=y_test, y_pred=test_logits > 0.5)['accuracy'])
+                test_accuracy.append(calculate_binary_classification_metrics(y_true=y_test, y_pred=test_logits > 0.5)['accuracy'])
             test_accuracy = np.mean(test_accuracy)
             running_test_losses = np.mean(test_losses) if running_test_losses == -1.0 else 0.9 * running_test_losses + 0.1 * np.mean(test_losses)
             is_best_test_loss_achieved = np.mean(test_losses) < best_test_loss[0]
@@ -202,7 +202,7 @@ def main(cc):
         optimizer.zero_grad()
 
         # Compute accuracy
-        training_accuracy = calculate_classification_metrics(y_true=train_y, y_pred=train_logits>0.5)['accuracy']
+        training_accuracy = calculate_binary_classification_metrics(y_true=train_y, y_pred=train_logits > 0.5)['accuracy']
 
         running_train_accuracy = training_accuracy if running_train_accuracy == -1.0 else 0.9 * running_train_accuracy + 0.1 * training_accuracy
         running_train_losses = train_loss.item() if running_train_losses == -1.0 else 0.9 * running_train_losses + 0.1 * train_loss.item()
