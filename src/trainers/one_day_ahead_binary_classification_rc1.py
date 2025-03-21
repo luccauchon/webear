@@ -171,8 +171,9 @@ def train(configuration):
             logger.debug(f"Reading {df_filename}...")
             df = pd.read_pickle(df_filename)
         df_source = df.copy()  # Keep a fresh copy of the data to be returned later.
-    else: # Use the data provided
+    else: # Use the data provided and dump it to disk
         df = df_source.copy()
+        df.to_pickle(df_filename)
     assert df is not None
     num_input_features = len(df[x_cols].columns)
     num_output_features = len(df[y_cols].columns)
@@ -321,12 +322,13 @@ def train(configuration):
 
         iter_num += 1
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
-               'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence, 'df_source': df_source,
+               'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
                'output_dir': output_dir,'data_augmentation': data_augmentation, 'test_margin': test_margin,
                'configuration': configuration, 'x_cols': x_cols, 'y_cols': y_cols, 'x_cols_to_norm': x_cols_to_norm,
                'tav_dates': tav_dates, 'mes_dates': mes_dates, 'x_seq_length': x_seq_length, 'y_seq_length': y_seq_length}
     with open(os.path.join(output_dir, "results.json"), 'w') as f:
         json.dump(results, f, indent=4)
+    results.update({'df_source': df_source})  # Dataframe is not serializable
     return results
 
 

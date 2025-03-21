@@ -57,10 +57,10 @@ if __name__ == '__main__':
                 configuration_for_experience.update({'max_iters': 50, 'log_interval': 10})
             # Launch training
             results = train_model(configuration_for_experience)
-            logger.debug(results)
-            output_dir.append(str(Path(results['output_dir']).parent))
             if df_source is None:
                 df_source = results['df_source']
+            logger.debug(results)
+            output_dir.append(str(Path(results['output_dir']).parent))
         output_dir = list(set(output_dir))
         assert 1 == len(output_dir)
     else:
