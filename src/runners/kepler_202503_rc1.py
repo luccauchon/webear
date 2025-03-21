@@ -11,12 +11,46 @@ from utils import extract_info_from_filename, previous_weekday
 import torch
 
 
+def scan_results(_selected_margin, _experience__2__results):
+    _best_accuracy, _best_loss = 0., 999999.
+    _best_accuracy__candidat, _best_accuracy__candidats = None, []
+    _best_lost__candidat, _best_lost__candidats = None, []
+    for _one_experience, _v in _experience__2__results.items():
+        for _one_candidat in _v:
+            if _selected_margin != _one_candidat['test_margin']:
+                continue
+            if 'test_accuracy' in _one_candidat:
+                if float(_one_candidat['test_accuracy']) > _best_accuracy:
+                    _best_accuracy = float(_one_candidat['test_accuracy'])
+                    _best_accuracy__candidat = _one_candidat
+                    _best_accuracy__candidats = []
+                elif float(_one_candidat['test_accuracy']) == _best_accuracy:
+                    _best_accuracy__candidats.append(_one_candidat)
+            if 'test_loss' in _one_candidat:
+                if float(_one_candidat['test_loss']) < _best_loss:
+                    _best_loss = float(_one_candidat['test_loss'])
+                    _best_lost__candidat = _one_candidat
+                    _best_lost__candidats = []
+                elif float(_one_candidat['test_loss']) == _best_loss:
+                    _best_lost__candidats.append(_one_candidat)
+    # Switching model, if necessary
+    for _one_candidat in _best_accuracy__candidats:
+        assert float(_best_accuracy__candidat['test_accuracy']) == float(_one_candidat['test_accuracy'])
+        if float(_one_candidat['with_test_loss']) < float(_best_accuracy__candidat['with_test_loss']):
+            _best_accuracy__candidat = _one_candidat
+    for _one_candidat in _best_lost__candidats:
+        assert float(_best_lost__candidat['test_loss']) == float(_one_candidat['test_loss'])
+        if float(_one_candidat['with_test_accuracy']) > float(_best_accuracy__candidat['with_test_accuracy']):
+            _best_lost__candidat = _one_candidat
+    return _best_lost__candidat, _best_accuracy__candidat
+
+
 if __name__ == '__main__':
     logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1\n{'*' * 80}")
     ###########################################################################
     # Parameters for campaign
     ###########################################################################
-    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__10_20_10"]
+    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__14_06_39"]
     fast_execution_for_debugging                = False
 
     tav_dates                    = ["2024-01-01", "2025-03-08"]
@@ -25,7 +59,6 @@ if __name__ == '__main__':
 
     fetch_new_dataframe          = True  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
     device                       = "cuda"
-    test_margin                  = 0
     power_of_noise               = 0.1
     nb_iter_test                 = 500
     _today                       = pd.Timestamp.now().date()
@@ -42,13 +75,13 @@ if __name__ == '__main__':
     ###########################################################################
     # Perform multiple training
     ###########################################################################
+    available_margin = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2.5, -2.5]  # In order of preference
     assert isinstance(output_dir, list)
     if 0 == len(output_dir):
         df_source = None
-        margin = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5]
         if fast_execution_for_debugging:
-            margin = [-3,0]
-        for a_margin in margin:
+            available_margin = [-3, 0]
+        for a_margin in available_margin:
             version = f"M{a_margin}_"
             configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version, "tav_dates": tav_dates, "mes_dates": mes_dates}
             if df_source is not None:  # Use the the same data for all the experiences
@@ -98,43 +131,25 @@ if __name__ == '__main__':
                     tmp_results.update({'with_test_accuracy': with_test_test_accuracy})
                 tmp_results.update({"directory": os.path.join(output_dir, one_experience_directory)})
                 tmp_results.update({"meta_information": os.path.join(output_dir, one_experience_directory, "results.json")})
+
+                # Add information in tmp_results in order to select the best model
+                with open(tmp_results["meta_information"], 'r') as f:
+                    _tmp_toto = json.load(f)
+                tmp_results.update({'test_margin': _tmp_toto['test_margin']})
+
                 tmp_results.update({"df": os.path.join(output_dir, one_experience_directory, "df.pkl")})
                 experience__2__results.get(one_experience_directory).append(tmp_results)
-    # Scan the results for bests models
-    best_accuracy, best_loss = 0., 999999.
-    best_accuracy__candidat, best_accuracy__candidats = None, []
-    best_lost__candidat, best_lost__candidats = None, []
-    for one_experience, v in experience__2__results.items():
-        for one_candidat in v:
-            if 'test_accuracy' in one_candidat:
-                if float(one_candidat['test_accuracy']) > best_accuracy:
-                    best_accuracy = float(one_candidat['test_accuracy'])
-                    best_accuracy__candidat = one_candidat
-                    best_accuracy__candidats = []
-                elif float(one_candidat['test_accuracy']) == best_accuracy:
-                    best_accuracy__candidats.append(one_candidat)
 
-            if 'test_loss' in one_candidat:
-                if float(one_candidat['test_loss']) < best_loss:
-                    best_loss = float(one_candidat['test_loss'])
-                    best_lost__candidat = one_candidat
-                    best_lost__candidats = []
-                elif float(one_candidat['test_loss']) == best_loss:
-                    best_lost__candidats.append(one_candidat)
-    # Switching model, if necessary
-    for one_candidat in best_accuracy__candidats:
-        assert float(best_accuracy__candidat['test_accuracy']) == float(one_candidat['test_accuracy'])
-        if float(one_candidat['with_test_loss']) < float(best_accuracy__candidat['with_test_loss']):
-            best_accuracy__candidat = one_candidat
-    for one_candidat in best_lost__candidats:
-        assert float(best_lost__candidat['test_loss']) == float(one_candidat['test_loss'])
-        if float(one_candidat['with_test_accuracy']) > float(best_accuracy__candidat['with_test_accuracy']):
-            best_lost__candidat = one_candidat
-# FIXME REMOVE select based on sideways?????
+    # Scan the results for bests models
+    best_lost__at_0_margin, best_accuracy__at_0_margin = scan_results(_selected_margin=0., _experience__2__results=experience__2__results)
+    best_lost__at_p1_margin, best_accuracy__at_p1_margin = scan_results(_selected_margin=1., _experience__2__results=experience__2__results)
+    candidats = {'best_loss_at_m0': best_lost__at_0_margin,  'best_accuracy_at_m0': best_accuracy__at_0_margin,
+                 'best_loss_at_m1': best_lost__at_p1_margin, 'best_accuracy_at_m1': best_accuracy__at_p1_margin}
+
     ###########################################################################
     # Do inferences
     ###########################################################################
-    meta_model, df, params = create_meta_model(candidats={'best_loss': best_lost__candidat, 'best_accuracy': best_accuracy__candidat}, fetch_new_dataframe=fetch_new_dataframe, device=device)
+    meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device)
     start_date, end_date = pd.to_datetime(inf_dates[0]), pd.to_datetime(inf_dates[1])
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
@@ -143,7 +158,7 @@ if __name__ == '__main__':
         yesterday = previous_weekday(date)
 
         # Do one pass on dataset Test with no data augmentation
-        data_loader_without_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date, test_margin=test_margin, **params)
+        data_loader_without_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date, **params)
         if data_loader_without_data_augmentation is None:
             continue
         if not just_x_no_y:
@@ -166,12 +181,12 @@ if __name__ == '__main__':
                 for yy in range(0, _logits.shape[0]):
                     ppr = 0 if _logits[yy]<0.5 else 1
                     _tmp_str += f" [model <<{meta_model.get_corresponding_model_names()[yy]}>> predicted {ppr}] "
-                    assert 2 == len(meta_model.get_corresponding_model_names())
+                    # assert 2 == len(meta_model.get_corresponding_model_names())
                     unstable_prediction__2__models.update({ppr: meta_model.get_corresponding_model_names()[yy]})
                 logger.info(f"  [?] :| {_tmp_str}")
 
         # Do multiple passes on dataset Test with data augmentation
-        data_loader_with_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date, test_margin=test_margin, power_of_noise=power_of_noise, **params)
+        data_loader_with_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date, power_of_noise=power_of_noise, **params)
         for ee in range(0, nb_iter_test):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
                 if not just_x_no_y:

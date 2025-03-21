@@ -87,7 +87,7 @@ def create_meta_model(candidats, device, fetch_new_dataframe=False):
                                     'x_seq_length': params_list[0]['x_seq_length'], 'y_seq_length': params_list[0]['y_seq_length']}
 
 
-def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, test_margin, mode, **kwargs):
+def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, mode, **kwargs):
     x_seq_length = kwargs['x_seq_length']
     y_seq_length = kwargs['y_seq_length']
     assert 1 == y_seq_length
@@ -105,8 +105,9 @@ def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predic
     assert len(_indices) in [0, 1]
     if 0 == len(_indices):
         return None, None
+    # For prediction, we want a margin of 0.
     _dataset = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                 _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=test_margin, _just_x_no_y=just_x_no_y)
+                                                                 _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=0., _just_x_no_y=just_x_no_y)
     _dataloader = DataLoader(_dataset, batch_size=1, shuffle=False)
     return _dataloader, just_x_no_y
 
@@ -324,7 +325,7 @@ def train(configuration):
     configuration['df_source'] = None    # Dataframe is not serializable
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
-               'output_dir': output_dir,'data_augmentation': data_augmentation, 'test_margin': test_margin,
+               'output_dir': output_dir,'data_augmentation': data_augmentation, 'test_margin': test_margin, 'train_margin': train_margin,
                'configuration': configuration, 'x_cols': x_cols, 'y_cols': y_cols, 'x_cols_to_norm': x_cols_to_norm,
                'tav_dates': tav_dates, 'mes_dates': mes_dates, 'x_seq_length': x_seq_length, 'y_seq_length': y_seq_length}
     with open(os.path.join(output_dir, "results.json"), 'w') as f:
