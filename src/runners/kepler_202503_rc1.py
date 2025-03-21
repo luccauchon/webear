@@ -16,7 +16,7 @@ if __name__ == '__main__':
     ###########################################################################
     # Parameters for campaign
     ###########################################################################
-    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_17__21_27_50"]
+    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__10_20_10"]
     fast_execution_for_debugging                = False
 
     tav_dates                    = ["2024-01-01", "2025-03-08"]
@@ -44,19 +44,23 @@ if __name__ == '__main__':
     ###########################################################################
     assert isinstance(output_dir, list)
     if 0 == len(output_dir):
+        df_source = None
         margin = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5]
         if fast_execution_for_debugging:
             margin = [-3,0]
         for a_margin in margin:
             version = f"M{a_margin}_"
             configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version, "tav_dates": tav_dates, "mes_dates": mes_dates}
+            if df_source is not None:  # Use the the same data for all the experiences
+                configuration_for_experience.update({'df_source': df_source})
             if fast_execution_for_debugging:
                 configuration_for_experience.update({'max_iters': 50, 'log_interval': 10})
-
             # Launch training
             results = train_model(configuration_for_experience)
             logger.debug(results)
-            output_dir.append(Path(results['output_dir']).parent)
+            output_dir.append(str(Path(results['output_dir']).parent))
+            if df_source is None:
+                df_source = results['df_source']
         output_dir = list(set(output_dir))
         assert 1 == len(output_dir)
     else:
@@ -126,7 +130,7 @@ if __name__ == '__main__':
         assert float(best_lost__candidat['test_loss']) == float(one_candidat['test_loss'])
         if float(one_candidat['with_test_accuracy']) > float(best_accuracy__candidat['with_test_accuracy']):
             best_lost__candidat = one_candidat
-
+# FIXME REMOVE select based on sideways?????
     ###########################################################################
     # Do inferences
     ###########################################################################
