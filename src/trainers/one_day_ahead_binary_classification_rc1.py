@@ -321,6 +321,7 @@ def train(configuration):
         running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()
 
         iter_num += 1
+    configuration['df_source'] = None    # Dataframe is not serializable
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
                'output_dir': output_dir,'data_augmentation': data_augmentation, 'test_margin': test_margin,
