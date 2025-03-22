@@ -156,7 +156,10 @@ def start_runner(configuration):
             if 1 == float(best_lost['with_test_accuracy']) and 1 == float(best_accuracy['test_accuracy']):
                 candidats.update({f'best_loss_at_margin_{_sm}': best_lost,  f'best_accuracy_at_margin_{_sm}': best_accuracy})
         else:
-            candidats.update({f'best_loss_at_margin_{_sm}': best_lost, f'best_accuracy_at_margin_{_sm}': best_accuracy})
+            if best_lost is not None:
+                candidats.update({f'best_loss_at_margin_{_sm}': best_lost})
+            if best_accuracy is not None:
+                candidats.update({f'best_accuracy_at_margin_{_sm}': best_accuracy})
 
     ###########################################################################
     # Do inferences
