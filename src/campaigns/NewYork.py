@@ -1,5 +1,6 @@
 import os
 import pprint
+from ast import literal_eval
 from tqdm import tqdm
 import itertools
 from pathlib import Path
@@ -50,9 +51,10 @@ def generate_campaign_dates(configuration):
 
 def start_campaign(configuration):
     start_date = datetime.strptime(configuration.get("start_date", "2022-01-01"), "%Y-%m-%d")
-    num_weeks = configuration.get("num_weeks", 52*3)  # Number of weeks to iterate
+    num_weeks  = configuration.get("num_weeks", 52)  # Number of weeks to iterate
     configuration.update({"length_of_training_data": 365 * 2, "length_of_mes": 7, "length_of_inf": 7})
-    configuration.update({"fast_execution_for_debugging": False})
+    logger.info(f"Starting campaign @{start_date.date()} for {num_weeks} weeks.")
+    os.system('pause')
     master_df_source = get_latest_spy_and_vix_dataframe()  # Use always the same dataframe through all the campaign
 
     results_produced = {}
@@ -82,20 +84,46 @@ def start_campaign(configuration):
 
 if __name__ == '__main__':
     freeze_support()
-
-    logger.info(f"\n{'*' * 80}\nPerform backtesting TODO\n{'*' * 80}")
+    from base_configuration import *
+    logger.info(f"\n{'*' * 80}\nPerform a campaign with |{my_runner.__name__}|\n{'*' * 80}")
 
     # -----------------------------------------------------------------------------
     config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
     namespace = {}
-    exec(open('configurator.py').read(), namespace)  # overrides from command line or config file
+    for arg in sys.argv[1:]:
+        if '=' not in arg:
+            # assume it's the name of a config file
+            assert not arg.startswith('--')
+            config_file = arg
+            print(f"Overriding config with {config_file}:")
+            with open(config_file) as f:
+                print(f.read())
+            exec(open(config_file).read())
+        else:
+            # assume it's a --key=value argument
+            assert arg.startswith('--')
+            key, val = arg.split('=')
+            key = key[2:]
+            if key in globals():
+                try:
+                    # attempt to eval it it (e.g. if bool, number, or etc)
+                    attempt = literal_eval(val)
+                except (SyntaxError, ValueError):
+                    # if that goes wrong, just use the string
+                    attempt = val
+                # ensure the types match ok
+                assert type(attempt) == type(globals()[key]), f"{type(attempt)} != {type(globals()[key])}"
+                # cross fingers
+                print(f"Overriding: {key} = {attempt}")
+                globals()[key] = attempt
+            else:
+                raise ValueError(f"Unknown config key: {key}")
     config = {k: globals()[k] for k in config_keys}
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
     configuration = dict_to_namespace(config)
     # -----------------------------------------------------------------------------
-    pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
-
+    # pprint.PrettyPrinter(indent=4).pprint(configuration)
     configuration = namespace_to_dict(configuration)
-    configuration.update()
+    #configuration.update({"fast_execution_for_debugging": True})
     start_campaign(configuration)
