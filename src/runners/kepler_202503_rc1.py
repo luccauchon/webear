@@ -141,15 +141,17 @@ if __name__ == '__main__':
                 experience__2__results.get(one_experience_directory).append(tmp_results)
 
     # Scan the results for bests models
-    best_lost__at_0_margin, best_accuracy__at_0_margin = scan_results(_selected_margin=0., _experience__2__results=experience__2__results)
-    best_lost__at_p1_margin, best_accuracy__at_p1_margin = scan_results(_selected_margin=1., _experience__2__results=experience__2__results)
-    candidats = {'best_loss_at_m0': best_lost__at_0_margin,  'best_accuracy_at_m0': best_accuracy__at_0_margin,
-                 'best_loss_at_m1': best_lost__at_p1_margin, 'best_accuracy_at_m1': best_accuracy__at_p1_margin}
+    candidats = {}
+    for _sm in available_margin:
+        best_lost, best_accuracy = scan_results(_selected_margin=_sm, _experience__2__results=experience__2__results)
+        if 1 == float(best_lost['with_test_accuracy']) and 1 == float(best_accuracy['test_accuracy']):
+            candidats.update({f'best_loss_at_margin_{_sm}': best_lost,  f'best_accuracy_at_margin_{_sm}': best_accuracy})
 
     ###########################################################################
     # Do inferences
     ###########################################################################
     meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device)
+    logger.info(f"Created meta model with {len(candidats)} models")
     start_date, end_date = pd.to_datetime(inf_dates[0]), pd.to_datetime(inf_dates[1])
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
@@ -181,7 +183,6 @@ if __name__ == '__main__':
                 for yy in range(0, _logits.shape[0]):
                     ppr = 0 if _logits[yy]<0.5 else 1
                     _tmp_str += f" [model <<{meta_model.get_corresponding_model_names()[yy]}>> predicted {ppr}] "
-                    # assert 2 == len(meta_model.get_corresponding_model_names())
                     unstable_prediction__2__models.update({ppr: meta_model.get_corresponding_model_names()[yy]})
                 logger.info(f"  [?] :| {_tmp_str}")
 
