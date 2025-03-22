@@ -92,27 +92,24 @@ def create_meta_model(candidats, device, fetch_new_dataframe=False, df_source=No
                                     'x_seq_length': params_list[0]['x_seq_length'], 'y_seq_length': params_list[0]['y_seq_length']}
 
 
-def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, mode, tomorrow, yesterday, **kwargs):
+def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, mode, real_time_execution, **kwargs):
     x_seq_length = kwargs['x_seq_length']
     y_seq_length = kwargs['y_seq_length']
     assert 1 == y_seq_length
     x_cols = kwargs['x_cols']
     y_cols = kwargs['y_cols']
     x_cols_to_norm = kwargs['x_cols_to_norm']
-    # Do we try to predict tomorrow?
-    just_x_no_y = True if date_to_predict.date() == tomorrow else False
-    if not just_x_no_y:  # Do we try to predict today ? (running code in the morning)
-        if date_to_predict != df.index[-1] and yesterday == df.index[-1].date():
-            just_x_no_y = True
-    _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=x_seq_length, y_seq_length=y_seq_length, just_x_no_y=just_x_no_y)
+
+    _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=x_seq_length,
+                                                     y_seq_length=y_seq_length, just_x_no_y=real_time_execution)
     assert len(_indices) in [0, 1]
     if 0 == len(_indices):
         return None, None
     # For prediction, we want a margin of 0.
     _dataset = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
-                                                                 _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=0., _just_x_no_y=just_x_no_y)
+                                                                 _indices=_indices, _mode=mode, _data_augmentation=data_augmentation, _margin=0., _just_x_no_y=real_time_execution)
     _dataloader = DataLoader(_dataset, batch_size=1, shuffle=False)
-    return _dataloader, just_x_no_y
+    return _dataloader
 
 
 def _fetch_dataframe():

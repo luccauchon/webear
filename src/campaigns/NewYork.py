@@ -50,9 +50,9 @@ def generate_campaign_dates(configuration):
 
 def start_campaign(configuration):
     start_date = datetime.strptime(configuration.get("start_date", "2022-01-01"), "%Y-%m-%d")
-    num_weeks = configuration.get("num_weeks", 5)  # Number of weeks to iterate
+    num_weeks = configuration.get("num_weeks", 52*3)  # Number of weeks to iterate
     configuration.update({"length_of_training_data": 365 * 2, "length_of_mes": 7, "length_of_inf": 7})
-    configuration.update({"fast_execution_for_debugging": True})
+    configuration.update({"fast_execution_for_debugging": False})
     master_df_source = get_latest_spy_and_vix_dataframe()  # Use always the same dataframe through all the campaign
 
     results_produced = {}

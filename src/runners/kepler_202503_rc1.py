@@ -62,7 +62,7 @@ def start_runner(configuration):
     master_df_source             = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
     device                       = "cuda"
     power_of_noise               = 0.1
-    nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 500)
+    nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 50)
     _today                       = configuration.get("_today", pd.Timestamp.now().date())
     apply_constrain_on_best_model_selection = configuration.get("apply_constrain_on_best_model_selection", True)
     if fast_execution_for_debugging:
@@ -172,14 +172,16 @@ def start_runner(configuration):
             continue
         day_of_week_full = date.strftime('%A')
         yesterday = previous_weekday_with_check(date=date, df=df)
-        tomorrow  = next_weekday_with_check(date=date, df=df)
-
+        #tomorrow  = next_weekday_with_check(date=date, df=df)
+        real_time_execution = False if date in df.index else True  # False for backtesting (we have the ground truth)
+        #if tomorrow is None:  # There is no data in the dataframe for tomorrow , meaning we are running in real-time (not in back testing mode)
+        #    real_time_execution = True
         # Do one pass on dataset Test with no data augmentation
-        data_loader_without_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date,
-                                                                            tomorrow=tomorrow, yesterday=yesterday, **params)
+        data_loader_without_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date,
+                                                               real_time_execution=real_time_execution, **params)
         if data_loader_without_data_augmentation is None:
             continue
-        if not just_x_no_y:
+        if not real_time_execution:
             the_ground_truth_for_date = [y for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)]
             assert 1 == len(the_ground_truth_for_date)
             the_ground_truth_for_date = the_ground_truth_for_date[0].item()
@@ -187,8 +189,8 @@ def start_runner(configuration):
         nb_pred_for_0, nb_pred_for_1 = 0., 0.
         assert 1 == len([batch_idx for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)])
         for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation):
-            if not just_x_no_y:
-                assert just_x_no_y or all(y == the_ground_truth_for_date)
+            if not real_time_execution:
+                assert all(y == the_ground_truth_for_date)
             _logits, _ = meta_model(x=X)
             assert _logits.shape[0] == meta_model.get_number_models(), f"We should have one prediction per model"
             nb_pred_for_0 += torch.count_nonzero(_logits[_logits < 0.5]).item()
@@ -203,11 +205,11 @@ def start_runner(configuration):
                 logger.info(f"  [?] :| {_tmp_str}")
 
         # Do multiple passes on dataset Test with data augmentation
-        data_loader_with_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date,
-                                                                         tomorrow=tomorrow, yesterday=yesterday, power_of_noise=power_of_noise, **params)
+        data_loader_with_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date,
+                                                            real_time_execution=real_time_execution, power_of_noise=power_of_noise, **params)
         for ee in range(0, nb_iter_test_in_inference):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
-                if not just_x_no_y:
+                if not real_time_execution:
                     assert all(y == the_ground_truth_for_date)
                 _logits, _ = meta_model(x=X)
                 nb_pred_for_0 += torch.count_nonzero(_logits[_logits < 0.5]).item()
@@ -216,7 +218,7 @@ def start_runner(configuration):
         prediction = 1 if nb_pred_for_1 > nb_pred_for_0 else 0
         prediction = prediction if nb_pred_for_1 != nb_pred_for_0 else -1
         pre_str = "[*] " if _today == date.date() else ""
-        if not just_x_no_y:
+        if not real_time_execution:
             confidence  = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == the_ground_truth_for_date else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
             close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
             tmp_str = f"higher than {close_value_yesterday:.2f}$" if 1 == prediction else f"lower than {close_value_yesterday:.2f}$"
@@ -248,7 +250,7 @@ def start_runner(configuration):
 if __name__ == '__main__':
     freeze_support()
 
-    logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1\n{'*' * 80}")
+    logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1 , train multiple models and evaluate them on inf dates\n{'*' * 80}")
 
     # -----------------------------------------------------------------------------
     config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
@@ -262,5 +264,7 @@ if __name__ == '__main__':
     pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
     configuration = namespace_to_dict(configuration)
-    configuration.update({"fetch_new_dataframe": True, "skip_training_with_already_computed_results": [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__14_06_39"]})
+    configuration.update({"fetch_new_dataframe": True,
+                          "skip_training_with_already_computed_results": [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__14_06_39"],
+                          "nb_iter_test_in_inference":1})
     start_runner(configuration)

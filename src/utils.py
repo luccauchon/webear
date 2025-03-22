@@ -352,10 +352,14 @@ def previous_weekday(date):
     return previous_day
 
 
-def next_weekday_with_check(date, df):
+def next_weekday_with_check(date, df, max_look_ahead=999):
     next_day = next_weekday(date)
+    count = 0
     while next_day not in df.index:
         next_day = next_weekday(next_day)
+        count += 1
+        if count == max_look_ahead:
+            return None
     return next_day
 
 
