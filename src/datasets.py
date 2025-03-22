@@ -166,6 +166,8 @@ class TripleIndicesLookAheadTernaryClassificationDataset(Dataset):
         self.just_x_no_y        = _just_x_no_y
         if self.mode in ['train', 'test']:
             logger.info(f"[{self.mode}] Using sideways of {self.pct_sideways}%")
+        if self.mode in ['test']:
+            assert not self.data_augmentation
 
     def __len__(self):
         return len(self.indices)

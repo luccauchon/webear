@@ -61,7 +61,7 @@ def load_model(ckpt_path, device, df, **kwargs):
     return model
 
 
-def create_meta_model(candidats, device, fetch_new_dataframe=False):
+def create_meta_model(candidats, device, fetch_new_dataframe=False, df_source=None):
     list_of_models, df_list, params_list = {}, [], []
     for name, one_candidat in candidats.items():
         train_df = pd.read_pickle(one_candidat["df"])
@@ -80,14 +80,19 @@ def create_meta_model(candidats, device, fetch_new_dataframe=False):
     assert all(ppp['x_seq_length'] == params_list[0]['x_seq_length'] for ppp in params_list[1:])
     assert all(ppp['y_seq_length'] == params_list[0]['y_seq_length'] for ppp in params_list[1:])
     if fetch_new_dataframe:
+        assert df_source is None
         df, df_name = _fetch_dataframe()
+        df_list[0] = df
+    elif df_source is not None:
+        assert not fetch_new_dataframe
+        df = df_source.copy()
         df_list[0] = df
     return meta_model, df_list[0], {'x_cols': params_list[0]['x_cols'], 'y_cols': params_list[0]['y_cols'],
                                     'x_cols_to_norm': params_list[0]['x_cols_to_norm'],
                                     'x_seq_length': params_list[0]['x_seq_length'], 'y_seq_length': params_list[0]['y_seq_length']}
 
 
-def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, mode, **kwargs):
+def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predict, mode, tomorrow, yesterday, **kwargs):
     x_seq_length = kwargs['x_seq_length']
     y_seq_length = kwargs['y_seq_length']
     assert 1 == y_seq_length
@@ -95,10 +100,8 @@ def generate_dataloader_to_predict(df, device, data_augmentation, date_to_predic
     y_cols = kwargs['y_cols']
     x_cols_to_norm = kwargs['x_cols_to_norm']
     # Do we try to predict tomorrow?
-    tomorrow  = next_weekday(pd.Timestamp.now().date())
     just_x_no_y = True if date_to_predict.date() == tomorrow else False
     if not just_x_no_y:  # Do we try to predict today ? (running code in the morning)
-        yesterday = previous_weekday(pd.Timestamp.now().date())
         if date_to_predict != df.index[-1] and yesterday == df.index[-1].date():
             just_x_no_y = True
     _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=x_seq_length, y_seq_length=y_seq_length, just_x_no_y=just_x_no_y)
@@ -142,11 +145,11 @@ def train(configuration):
     train_margin = configuration.get("train_margin", 2.)
     test_margin  = configuration.get("test_margin", 2.)
     assert y_seq_length == 1
-    # cutoff_days = [1,2,3]
+
 
     run_id = configuration.get("run_id", 123)
     version = configuration.get("version", "rc1")
-    output_dir = os.path.join(get_stub_dir(), f"{run_id}", f"trainer__one_day_ahead_binary_classification__{version}")
+    output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"trainer__one_day_ahead_binary_classification__{version}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.remove()
@@ -215,11 +218,8 @@ def train(configuration):
     # Data preparation
     ###########################################################################
     assert 1 == y_seq_length
-    logger.debug(f"Generating indices...")
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=tav_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=mes_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
-    #train_indices, train_df = generate_indices_with_multiple_cutoff_day(cutoff_days=cutoff_days, _df=df.copy(), _dates=tav_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
-    #test_indices,  test_df  = generate_indices_with_multiple_cutoff_day(cutoff_days=cutoff_days, _df=df.copy(), _dates=mes_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
     assert 0 != len(train_indices) and 0 != len(test_indices)
     train_dataset    = TripleIndicesLookAheadBinaryClassificationDataset(_df=train_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
                                                                          _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=train_margin)
@@ -327,7 +327,9 @@ def train(configuration):
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
                'output_dir': output_dir,'data_augmentation': data_augmentation, 'test_margin': test_margin, 'train_margin': train_margin,
                'configuration': configuration, 'x_cols': x_cols, 'y_cols': y_cols, 'x_cols_to_norm': x_cols_to_norm,
-               'tav_dates': tav_dates, 'mes_dates': mes_dates, 'x_seq_length': x_seq_length, 'y_seq_length': y_seq_length}
+               'tav_dates': tav_dates if isinstance(tav_dates, str) else [f"{str(fxx)}" for fxx in tav_dates],
+               'mes_dates': mes_dates if isinstance(mes_dates, str) else [f"{str(fxx)}" for fxx in mes_dates],
+               'x_seq_length': x_seq_length, 'y_seq_length': y_seq_length}
     with open(os.path.join(output_dir, "results.json"), 'w') as f:
         json.dump(results, f, indent=4)
     results.update({'df_source': df_source})  # Dataframe is not serializable

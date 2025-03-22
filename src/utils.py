@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 import warnings
+import glob
 import numpy as np
 from datetime import datetime, timedelta
 import random
@@ -124,13 +125,42 @@ def get_stub_dir():
     return a_dir
 
 
+def _get_data_dir():
+    a_dir = os.path.join(_get_root_dir(), 'data')
+    return a_dir
+
+
+
+def get_spy_and_vix_data_dir():
+    a_dir = os.path.join(_get_data_dir(), "spy_and_vix")
+    return a_dir
+
+
+def get_latest_spy_and_vix_dataframe():
+    data_dir = get_spy_and_vix_data_dir()
+    files = glob.glob(os.path.join(data_dir, "spy_and_vix__*.pkl"))
+
+    if not files:
+        raise FileNotFoundError("No files found in the directory.")
+
+    latest_file = max(files, key=lambda x: datetime.strptime(os.path.basename(x).split("__")[1].split(".")[0], "%Y-%m-%d"))
+    return pd.read_pickle(latest_file)
+
+
+def get_spy_and_vix_df_from_data_dir(date):
+    a_file = os.path.join(get_spy_and_vix_data_dir(), f"spy_and_vix__{datetime.strptime(date, '%Y-%m-%d')}.pkl")
+    if os.path.exists(a_file):
+        return pd.read_pickle(a_file)
+    return None
+
+
 def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, just_x_no_y=False):
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
     assert pd.to_datetime(dates[0]) <= pd.to_datetime(dates[1])
     ts1 = pd.to_datetime(dates[0]) - pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
     ts2 = pd.to_datetime(dates[1]) + pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
-    df = df.loc[ts1:ts2]
+    df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
     if just_x_no_y:
         for idx in reversed(range(0, len(df) + 1)):
             idx1, idx2 = idx - x_seq_length, idx
@@ -148,13 +178,14 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, just_x_n
             if idx1 <0 or idx2<0 or idx3<0:
                 continue
             # Make sure that y is in the range
-            t1 = df.iloc[idx2:idx3].index[0]
-            if t1 < pd.to_datetime(dates[0]) or t1 > pd.to_datetime(dates[1]):
+            t1_y = df.iloc[idx2:idx3].index[0]
+            if t1_y < pd.to_datetime(dates[0]) or t1_y > pd.to_datetime(dates[1]):
                 continue
-            t1 = df.iloc[idx2:idx3].index[-1]
-            if t1 < pd.to_datetime(dates[0]) or t1 > pd.to_datetime(dates[1]):
+            t2_y = df.iloc[idx2:idx3].index[-1]
+            if t2_y < pd.to_datetime(dates[0]) or t2_y > pd.to_datetime(dates[1]):
                 continue
-            assert pd.to_datetime(dates[0]) <= t1 <= pd.to_datetime(dates[1])
+            for tk_y in list(df.iloc[idx2:idx3].index):
+                assert pd.to_datetime(dates[0]) <= tk_y <= pd.to_datetime(dates[1])
             if len(df.iloc[idx1:idx2]) != x_seq_length:
                 continue
             if len(df.iloc[idx2:idx3]) != y_seq_length:
@@ -307,6 +338,13 @@ def extract_info_from_filename(filename):
             return None
 
 
+def previous_weekday_with_check(date, df):
+    yesterday = previous_weekday(date)
+    while yesterday not in df.index:
+        yesterday = previous_weekday(yesterday)
+    return yesterday
+
+
 def previous_weekday(date):
     previous_day = date - pd.Timedelta(1, unit='days')
     while previous_day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
@@ -314,8 +352,94 @@ def previous_weekday(date):
     return previous_day
 
 
+def next_weekday_with_check(date, df):
+    next_day = next_weekday(date)
+    while next_day not in df.index:
+        next_day = next_weekday(next_day)
+    return next_day
+
+
 def next_weekday(date):
     next_day = date + pd.Timedelta(1, unit='days')
     while next_day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
         next_day += pd.Timedelta(1, unit='days')
     return next_day
+
+
+def is_weekday(date):
+    """
+    Returns True if date is a weekday, False otherwise.
+    """
+    return date.weekday() < 5  # 5 represents Saturday, 6 represents Sunday
+
+
+def find_next_sunday(date: datetime) -> datetime:
+    """
+    Finds the next Sunday given a datetime object.
+
+    Args:
+    date (datetime): The date from which to find the next Sunday.
+
+    Returns:
+    datetime: The next Sunday.
+    """
+    # Calculate the difference between the given date's weekday and Sunday (6)
+    days_to_sunday = 6 - date.weekday()
+
+    # If the given date is already Sunday, move to the next week
+    if days_to_sunday == 0:
+        days_to_sunday = 7
+
+    # Add the calculated days to the given date
+    next_sunday = date + timedelta(days=days_to_sunday)
+    assert 6 == next_sunday.weekday()
+    return next_sunday
+
+
+def find_next_saturday(date: datetime, move_to_next_week=True) -> datetime:
+    """
+    Finds the next Saturday given a datetime object.
+
+    Args:
+    date (datetime): The date from which to find the next Saturday.
+
+    Returns:
+    datetime: The next Saturday.
+    """
+    # Calculate the difference between the given date's weekday and Saturday (5)
+    days_to_saturday = 5 - date.weekday()
+    if 0 == days_to_saturday and not move_to_next_week:
+        return date
+    # If the given date is already Saturday, move to the next week
+    if days_to_saturday == 0:
+        days_to_saturday = 7
+
+    # Add the calculated days to the given date
+    next_saturday = date + timedelta(days=days_to_saturday)
+    assert 5 == next_saturday.weekday()
+    return next_saturday
+
+
+def find_previous_saturday(date: datetime) -> datetime:
+    """
+    Finds the previous Saturday given a datetime object.
+
+    Args:
+    date (datetime): The date from which to find the previous Saturday.
+
+    Returns:
+    datetime: The previous Saturday.
+    """
+    # Calculate the difference between the given date's weekday and Saturday (5)
+    days_to_saturday = date.weekday() - 5
+
+    # If the given date is already Saturday, move to the previous week
+    if days_to_saturday <= 0:
+        days_to_saturday = -1 * (7 + days_to_saturday)
+    else:
+        days_to_saturday = -1 * days_to_saturday
+
+    # Subtract the calculated days from the given date
+    previous_saturday = date + timedelta(days=days_to_saturday)
+    assert 5 == previous_saturday.weekday()
+    return previous_saturday

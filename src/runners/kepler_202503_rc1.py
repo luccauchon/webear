@@ -1,3 +1,5 @@
+from multiprocessing import Lock, Process, Queue, Value, freeze_support
+import pprint
 import pandas as pd
 from trainers.one_day_ahead_binary_classification_rc1 import train as train_model
 from trainers.one_day_ahead_binary_classification_rc1 import create_meta_model as create_meta_model
@@ -7,7 +9,7 @@ from loguru import logger
 from pathlib import Path
 import os
 import json
-from utils import extract_info_from_filename, previous_weekday
+from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, next_weekday_with_check, is_weekday, get_stub_dir
 import torch
 
 
@@ -45,23 +47,27 @@ def scan_results(_selected_margin, _experience__2__results):
     return _best_lost__candidat, _best_accuracy__candidat
 
 
-if __name__ == '__main__':
-    logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1\n{'*' * 80}")
+def start_runner(configuration):
     ###########################################################################
     # Parameters for campaign
     ###########################################################################
-    skip_training_with_already_computed_results = [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__14_06_39"]
-    fast_execution_for_debugging                = False
+    skip_training_with_already_computed_results = configuration.get("skip_training_with_already_computed_results", [])
+    fast_execution_for_debugging                = configuration.get("fast_execution_for_debugging", False)
 
-    tav_dates                    = ["2024-01-01", "2025-03-08"]
-    mes_dates                    = ["2025-03-09", "2025-03-15"]
-    inf_dates                    = ["2025-03-16", "2025-03-29"]
+    tav_dates                    = configuration.get("tav_dates", ["2024-01-01", "2025-03-08"])
+    mes_dates                    = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
+    inf_dates                    = configuration.get("inf_dates", ["2025-03-16", "2025-03-29"])
 
-    fetch_new_dataframe          = True  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
+    fetch_new_dataframe          = configuration.get("fetch_new_dataframe", False)  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
+    master_df_source             = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
     device                       = "cuda"
     power_of_noise               = 0.1
-    nb_iter_test                 = 500
-    _today                       = pd.Timestamp.now().date()
+    nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 500)
+    _today                       = configuration.get("_today", pd.Timestamp.now().date())
+    apply_constrain_on_best_model_selection = configuration.get("apply_constrain_on_best_model_selection", True)
+    if fast_execution_for_debugging:
+        apply_constrain_on_best_model_selection = False
+        nb_iter_test_in_inference               = 5
 
     ###########################################################################
     # Select a base directory with "run_id"
@@ -78,12 +84,13 @@ if __name__ == '__main__':
     available_margin = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2.5, -2.5]  # In order of preference
     assert isinstance(output_dir, list)
     if 0 == len(output_dir):
-        df_source = None
+        df_source = master_df_source.copy() if master_df_source is not None else None
         if fast_execution_for_debugging:
             available_margin = [-3, 0]
         for a_margin in available_margin:
             version = f"M{a_margin}_"
-            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version, "tav_dates": tav_dates, "mes_dates": mes_dates}
+            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version, "tav_dates": tav_dates, "mes_dates": mes_dates,
+                                            "stub_dir": configuration.get("stub_dir", get_stub_dir())}
             if df_source is not None:  # Use the the same data for all the experiences
                 configuration_for_experience.update({'df_source': df_source})
             if fast_execution_for_debugging:
@@ -98,6 +105,7 @@ if __name__ == '__main__':
         assert 1 == len(output_dir)
     else:
         logger.info(f"Skipping training , using those results: {output_dir[0]}")
+        assert master_df_source is None
     assert os.path.exists(output_dir[0]),f"Missing {output_dir[0]}"
     output_dir = output_dir[0]
 
@@ -144,23 +152,31 @@ if __name__ == '__main__':
     candidats = {}
     for _sm in available_margin:
         best_lost, best_accuracy = scan_results(_selected_margin=_sm, _experience__2__results=experience__2__results)
-        if 1 == float(best_lost['with_test_accuracy']) and 1 == float(best_accuracy['test_accuracy']):
-            candidats.update({f'best_loss_at_margin_{_sm}': best_lost,  f'best_accuracy_at_margin_{_sm}': best_accuracy})
+        if apply_constrain_on_best_model_selection:
+            if 1 == float(best_lost['with_test_accuracy']) and 1 == float(best_accuracy['test_accuracy']):
+                candidats.update({f'best_loss_at_margin_{_sm}': best_lost,  f'best_accuracy_at_margin_{_sm}': best_accuracy})
+        else:
+            candidats.update({f'best_loss_at_margin_{_sm}': best_lost, f'best_accuracy_at_margin_{_sm}': best_accuracy})
 
     ###########################################################################
     # Do inferences
     ###########################################################################
-    meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device)
+    meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device, df_source=master_df_source)
     logger.info(f"Created meta model with {len(candidats)} models")
     start_date, end_date = pd.to_datetime(inf_dates[0]), pd.to_datetime(inf_dates[1])
+    results_produced = {}
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
         date = start_date + pd.Timedelta(n, unit='days')
+        if not is_weekday(date):
+            continue
         day_of_week_full = date.strftime('%A')
-        yesterday = previous_weekday(date)
+        yesterday = previous_weekday_with_check(date=date, df=df)
+        tomorrow  = next_weekday_with_check(date=date, df=df)
 
         # Do one pass on dataset Test with no data augmentation
-        data_loader_without_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date, **params)
+        data_loader_without_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date,
+                                                                            tomorrow=tomorrow, yesterday=yesterday, **params)
         if data_loader_without_data_augmentation is None:
             continue
         if not just_x_no_y:
@@ -174,7 +190,7 @@ if __name__ == '__main__':
             if not just_x_no_y:
                 assert just_x_no_y or all(y == the_ground_truth_for_date)
             _logits, _ = meta_model(x=X)
-            assert _logits.shape[0] == meta_model.get_number_models()
+            assert _logits.shape[0] == meta_model.get_number_models(), f"We should have one prediction per model"
             nb_pred_for_0 += torch.count_nonzero(_logits[_logits < 0.5]).item()
             nb_pred_for_1 += torch.count_nonzero(_logits[_logits >= 0.5]).item()
             nb_forward_pass += 1
@@ -187,8 +203,9 @@ if __name__ == '__main__':
                 logger.info(f"  [?] :| {_tmp_str}")
 
         # Do multiple passes on dataset Test with data augmentation
-        data_loader_with_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date, power_of_noise=power_of_noise, **params)
-        for ee in range(0, nb_iter_test):
+        data_loader_with_data_augmentation, just_x_no_y = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date,
+                                                                         tomorrow=tomorrow, yesterday=yesterday, power_of_noise=power_of_noise, **params)
+        for ee in range(0, nb_iter_test_in_inference):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
                 if not just_x_no_y:
                     assert all(y == the_ground_truth_for_date)
@@ -210,6 +227,7 @@ if __name__ == '__main__':
                 tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
                 logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable because of {confidence * 100:.2f}% confidence > ({tmp_str})")
                 logger.info(f"  {''.join([' ' for jj in range(len(pre_str))])} The model <<{unstable_prediction__2__models[the_ground_truth_for_date]}>> made the good prediction")
+            results_produced.update({f"{date.strftime('%Y-%m-%d')}": {"prediction": prediction, "confidence": confidence, "ground_truth": the_ground_truth_for_date}})
         else:
             assert 1 == len(params['y_cols'])
             try:
@@ -224,3 +242,25 @@ if __name__ == '__main__':
             else:
                 tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
                 logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable because of {confidence * 100:.2f}% confidence > ({tmp_str})")
+    return results_produced
+
+
+if __name__ == '__main__':
+    freeze_support()
+
+    logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1\n{'*' * 80}")
+
+    # -----------------------------------------------------------------------------
+    config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
+    namespace = {}
+    exec(open('configurator.py').read(), namespace)  # overrides from command line or config file
+    config = {k: globals()[k] for k in config_keys}
+    tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
+    config.update({k: tmp[k] for k, v in config.items() if k in tmp})
+    configuration = dict_to_namespace(config)
+    # -----------------------------------------------------------------------------
+    pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
+
+    configuration = namespace_to_dict(configuration)
+    configuration.update({"fetch_new_dataframe": True, "skip_training_with_already_computed_results": [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__14_06_39"]})
+    start_runner(configuration)
