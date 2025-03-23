@@ -61,7 +61,6 @@ def start_campaign(configuration):
         configuration.update({"tav_dates": [f"{str(fxx)}" for fxx in tav_dates],
                               "mes_dates": [f"{str(fxx)}" for fxx in mes_dates],
                               "inf_dates": [f"{str(fxx)}" for fxx in inf_dates], "_today": mes_dates[1]})
-
         configuration.update({"stub_dir": os.path.join(output_dir, f"week_{i}")})
         configuration.update({"master_df_source": master_df_source.copy()})
         _tmp_results = my_runner.start_runner(configuration)

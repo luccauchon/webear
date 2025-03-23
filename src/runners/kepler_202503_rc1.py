@@ -85,17 +85,19 @@ def start_runner(configuration):
     ###########################################################################
     # Perform multiple training
     ###########################################################################
-    available_margin = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2.5, -2.5]  # In order of preference
+    _available_margin = configuration.get("available_margin", [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2.5, -2.5])  # In order of preference
     assert isinstance(output_dir, list)
     if 0 == len(output_dir):
         df_source = master_df_source.copy() if master_df_source is not None else None
         if fast_execution_for_debugging:
             available_margin = [-3, 0]
-        for a_margin in available_margin:
+        for a_margin in _available_margin:
             version = f"M{a_margin}_"
-            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "run_id": run_id, "version": version, "tav_dates": tav_dates, "mes_dates": mes_dates,
+            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin,
+                                            "run_id": run_id, "version": version,
+                                            "tav_dates": tav_dates, "mes_dates": mes_dates,
                                             "stub_dir": configuration.get("stub_dir", get_stub_dir())}
-            if df_source is not None:  # Use the the same data for all the experiences
+            if df_source is not None:  # Use the same data for all the experiences
                 configuration_for_experience.update({'df_source': df_source})
             if fast_execution_for_debugging:
                 configuration_for_experience.update({'max_iters': 50, 'log_interval': 10})
@@ -154,7 +156,7 @@ def start_runner(configuration):
 
     # Scan the results for bests models
     candidats = {}
-    for _sm in available_margin:
+    for _sm in _available_margin:
         best_lost, best_accuracy = scan_results(_selected_margin=_sm, _experience__2__results=experience__2__results)
         if apply_constrain_on_best_model_selection:
             if 1 == float(best_lost['with_test_accuracy']) and 1 == float(best_accuracy['test_accuracy']):
