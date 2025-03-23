@@ -155,7 +155,7 @@ def start_runner(configuration):
                 experience__2__results.get(one_experience_directory).append(tmp_results)
 
     # Scan the results for bests models
-    candidats = {}
+    results_produced, candidats = {}, {}
     for _sm in _available_margin:
         best_lost, best_accuracy = scan_results(_selected_margin=_sm, _experience__2__results=experience__2__results)
         if apply_constrain_on_best_model_selection:
@@ -166,14 +166,15 @@ def start_runner(configuration):
                 candidats.update({f'best_loss_at_margin_{_sm}': best_lost})
             if best_accuracy is not None:
                 candidats.update({f'best_accuracy_at_margin_{_sm}': best_accuracy})
-
+    if 0 == len(candidats):
+        logger.warning(f"No candidates found! cannot evaluate from {inf_dates[0]} to {inf_dates[1]}")
+        return results_produced
     ###########################################################################
     # Do inferences
     ###########################################################################
     meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device, df_source=master_df_source)
     logger.debug(f"Created meta model with {len(candidats)} models")
     start_date, end_date = pd.to_datetime(inf_dates[0]), pd.to_datetime(inf_dates[1])
-    results_produced = {}
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
         date = start_date + pd.Timedelta(n, unit='days')
