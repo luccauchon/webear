@@ -73,7 +73,7 @@ def start_campaign(configuration):
         if results['confidence'] > 0.5:
             success = 1 if results['ground_truth'] == results['prediction'] else 0
             compilation_for_positive_confidence.append(success)
-    logger.info(f"When confidence was >0.5, succes rate is {np.count_nonzero(compilation_for_positive_confidence)/len(compilation_for_positive_confidence)*100}%")
+    logger.info(f"When confidence was >0.5, succes rate is {np.count_nonzero(compilation_for_positive_confidence)/len(results_produced.items())*100}%")
 
 
 if __name__ == '__main__':
