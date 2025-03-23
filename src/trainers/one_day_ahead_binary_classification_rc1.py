@@ -144,7 +144,7 @@ def train(configuration):
 
     run_id = configuration.get("run_id", 123)
     version = configuration.get("version", "rc1")
-    output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"trainer__one_day_ahead_binary_classification__{version}")
+    output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"ODABC__{version}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')

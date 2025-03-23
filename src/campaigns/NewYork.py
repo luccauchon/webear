@@ -49,7 +49,7 @@ def start_campaign(configuration):
     if not configuration['fast_execution_for_debugging']:
         time.sleep(10)
     master_df_source = get_latest_spy_and_vix_dataframe()  # Use always the same dataframe through all the campaign
-    output_dir = os.path.join(get_stub_dir(), f"NewYork_backtesting__{_start_date.date()}__{pd.Timestamp.now().strftime('%Y.%m.%d_%Hh%Mm%Ss')}")
+    output_dir = os.path.join(get_stub_dir(), f"NewYork__{_start_date.date()}__{pd.Timestamp.now().strftime('%d_%Hh%Mm')}")
     os.makedirs(output_dir)
     results_produced = {}
     # Iterate for each week
