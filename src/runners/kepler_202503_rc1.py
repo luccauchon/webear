@@ -68,9 +68,9 @@ def start_runner(configuration):
     power_of_noise               = 0.1
     nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 50)
     _today                       = configuration.get("_today", pd.Timestamp.now().date())
-    apply_constrain_on_best_model_selection = configuration.get("apply_constrain_on_best_model_selection", True)
+    _apply_constrain_on_best_model_selection = configuration.get("apply_constrain_on_best_model_selection", True)
     if fast_execution_for_debugging:
-        apply_constrain_on_best_model_selection = False
+        _apply_constrain_on_best_model_selection = False
         nb_iter_test_in_inference               = 5
 
     ###########################################################################
@@ -93,10 +93,10 @@ def start_runner(configuration):
             available_margin = [-3, 0]
         for a_margin in _available_margin:
             version = f"M{a_margin}_"
-            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin,
-                                            "run_id": run_id, "version": version,
-                                            "tav_dates": tav_dates, "mes_dates": mes_dates,
-                                            "stub_dir": configuration.get("stub_dir", get_stub_dir())}
+            configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "lr_decay_iters": configuration.get("lr_decay_iters", 50000),
+                                            "run_id": run_id, "version": version, "max_iters": configuration.get("max_iters", 50000),
+                                            "tav_dates": tav_dates, "mes_dates": mes_dates, "min_lr": configuration.get("min_lr", 1e-6),
+                                            "stub_dir": configuration.get("stub_dir", get_stub_dir()), "batch_size": configuration.get("batch_size", 1024)}
             if df_source is not None:  # Use the same data for all the experiences
                 configuration_for_experience.update({'df_source': df_source})
             if fast_execution_for_debugging:
@@ -158,7 +158,7 @@ def start_runner(configuration):
     results_produced, candidats = {}, {}
     for _sm in _available_margin:
         best_lost, best_accuracy = scan_results(_selected_margin=_sm, _experience__2__results=experience__2__results)
-        if apply_constrain_on_best_model_selection:
+        if _apply_constrain_on_best_model_selection:
             if 1 == float(best_lost['with_test_accuracy']) and 1 == float(best_accuracy['test_accuracy']):
                 candidats.update({f'best_loss_at_margin_{_sm}': best_lost,  f'best_accuracy_at_margin_{_sm}': best_accuracy})
         else:
@@ -169,6 +169,7 @@ def start_runner(configuration):
     if 0 == len(candidats):
         logger.warning(f"No candidates found! cannot evaluate from {inf_dates[0]} to {inf_dates[1]}")
         return results_produced
+
     ###########################################################################
     # Do inferences
     ###########################################################################

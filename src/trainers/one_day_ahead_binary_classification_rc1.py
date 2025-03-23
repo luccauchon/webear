@@ -175,16 +175,16 @@ def train(configuration):
     ###########################################################################
     # Configuration
     ###########################################################################
-    batch_size     = 1024
+    __batch_size   = configuration.get("batch_size", 1024)
     betas          = (0.9, 0.95)
     decay_lr       = True
     eval_interval  = 10
     iter_num       = 0
     learning_rate  = 1e-3
-    log_interval   = configuration.get("log_interval", 5000)
-    lr_decay_iters = configuration.get("lr_decay_iters", 50000)
-    max_iters      = configuration.get("max_iters", 50000)
-    min_lr         = 1e-6
+    log_interval     = configuration.get("log_interval", 5000)
+    __lr_decay_iters = configuration.get("lr_decay_iters", 50000)
+    _max_iters       = configuration.get("max_iters", 50000)
+    __min_lr         = configuration.get("min_lr", 1e-6)
     stats_check    = True
     warmup_iters   = 0
     weight_decay   = 0.1
@@ -212,8 +212,8 @@ def train(configuration):
                                                                          _indices=train_indices, _mode='train', _data_augmentation=data_augmentation, _margin=train_margin)
     test_dataset     = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=x_cols, _target_col=y_cols, _device=device, _x_cols_to_norm=x_cols_to_norm,
                                                                          _indices=test_indices, _mode='test', _data_augmentation=False, _margin=test_margin)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_dataloader  = DataLoader(test_dataset,  batch_size=batch_size, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=__batch_size, shuffle=True)
+    test_dataloader  = DataLoader(test_dataset,  batch_size=__batch_size, shuffle=False)
     ground_truth_sequence = []
     if stats_check:
         for desc, a_dataloader in zip(["train", "test"], [train_dataloader, test_dataloader]):
@@ -238,19 +238,19 @@ def train(configuration):
     ###########################################################################
     # Train
     ###########################################################################
-    logger.debug(f"{batch_size=}   TRAIN SIZE:{len(train_indices)}    TEST SIZE:{len(test_indices)}")
+    logger.debug(f"{__batch_size=}   TRAIN SIZE:{len(train_indices)}    TEST SIZE:{len(test_indices)}")
     loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device)  # mean-squared error for regression
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=device)
     train_loss, best_test_loss, best_test_accuracy = torch.tensor(999999999), (999999999, 999999999), (0., 0)
     running__train_losses, running__test_losses, running__train_accuracy = -1, -1, -1
     train_iterator = itertools.cycle(train_dataloader)
-    _x, _y, _x_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
-    while iter_num < max_iters:
-        lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=learning_rate, _min_lr=min_lr, _lr_decay_iters=lr_decay_iters) if decay_lr else learning_rate
+    _x, _y, _x_data_norm = _get_batch(_batch_size=__batch_size, iterator=train_iterator)
+    while iter_num < _max_iters:
+        lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=learning_rate, _min_lr=__min_lr, _lr_decay_iters=__lr_decay_iters) if decay_lr else learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
-        if iter_num % eval_interval == 0 or 1 == iter_num or iter_num == max_iters - 1:
+        if iter_num % eval_interval == 0 or 1 == iter_num or iter_num == _max_iters - 1:
             model.eval()
             test_loss, test_accuracy = [], []
             for batch_idx, (x_test, y_test, _) in enumerate(test_dataloader):
@@ -296,7 +296,7 @@ def train(configuration):
         train_loss = train_loss * 100.0  # scale loss to avoid gradient vanishing
 
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        _x, _y, _x_data_norm = _get_batch(_batch_size=batch_size, iterator=train_iterator)
+        _x, _y, _x_data_norm = _get_batch(_batch_size=__batch_size, iterator=train_iterator)
 
         train_loss.backward()  # calculates the loss of the loss function
         optimizer.step()  # improve from loss, i.e backprop
