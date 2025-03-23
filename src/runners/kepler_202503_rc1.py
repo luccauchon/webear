@@ -42,8 +42,12 @@ def scan_results(_selected_margin, _experience__2__results):
             _best_accuracy__candidat = _one_candidat
     for _one_candidat in _best_lost__candidats:
         assert float(_best_lost__candidat['test_loss']) == float(_one_candidat['test_loss'])
-        if float(_one_candidat['with_test_accuracy']) > float(_best_accuracy__candidat['with_test_accuracy']):
-            _best_lost__candidat = _one_candidat
+        try:
+            if float(_one_candidat['with_test_accuracy']) > float(_best_accuracy__candidat['with_test_accuracy']):
+                _best_lost__candidat = _one_candidat
+        except Exception as eee:
+            logger.warning(eee)
+            logger.warning(f"\n{_one_candidat=}\n{_best_accuracy__candidat=}")
     return _best_lost__candidat, _best_accuracy__candidat
 
 
@@ -165,7 +169,7 @@ def start_runner(configuration):
     # Do inferences
     ###########################################################################
     meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device, df_source=master_df_source)
-    logger.info(f"Created meta model with {len(candidats)} models")
+    logger.debug(f"Created meta model with {len(candidats)} models")
     start_date, end_date = pd.to_datetime(inf_dates[0]), pd.to_datetime(inf_dates[1])
     results_produced = {}
     # Iterate over days
@@ -173,12 +177,12 @@ def start_runner(configuration):
         date = start_date + pd.Timedelta(n, unit='days')
         if not is_weekday(date):
             continue
+        if date not in df.index and date < df.index[-1]:
+            continue  # Market close
         day_of_week_full = date.strftime('%A')
         yesterday = previous_weekday_with_check(date=date, df=df)
-        #tomorrow  = next_weekday_with_check(date=date, df=df)
         real_time_execution = False if date in df.index else True  # False for backtesting (we have the ground truth)
-        #if tomorrow is None:  # There is no data in the dataframe for tomorrow , meaning we are running in real-time (not in back testing mode)
-        #    real_time_execution = True
+
         # Do one pass on dataset Test with no data augmentation
         data_loader_without_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=False, mode='inference', date_to_predict=date,
                                                                real_time_execution=real_time_execution, **params)
@@ -205,7 +209,7 @@ def start_runner(configuration):
                     ppr = 0 if _logits[yy]<0.5 else 1
                     _tmp_str += f" [model <<{meta_model.get_corresponding_model_names()[yy]}>> predicted {ppr}] "
                     unstable_prediction__2__models.update({ppr: meta_model.get_corresponding_model_names()[yy]})
-                logger.info(f"  [?] :| {_tmp_str}")
+                logger.debug(f"  [?] :| {_tmp_str}")
 
         # Do multiple passes on dataset Test with data augmentation
         data_loader_with_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date,
@@ -231,7 +235,7 @@ def start_runner(configuration):
             else:
                 tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
                 logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable because of {confidence * 100:.2f}% confidence > ({tmp_str})")
-                logger.info(f"  {''.join([' ' for jj in range(len(pre_str))])} The model <<{unstable_prediction__2__models[the_ground_truth_for_date]}>> made the good prediction")
+                logger.debug(f"  {''.join([' ' for jj in range(len(pre_str))])} The model <<{unstable_prediction__2__models[the_ground_truth_for_date]}>> made the good prediction")
             results_produced.update({f"{date.strftime('%Y-%m-%d')}": {"prediction": prediction, "confidence": confidence, "ground_truth": the_ground_truth_for_date}})
         else:
             assert 1 == len(params['y_cols'])

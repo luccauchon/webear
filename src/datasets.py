@@ -83,7 +83,7 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
         self.frequency_of_noise = _frequency_of_noise
         self.just_x_no_y        = _just_x_no_y
         if self.mode in ['train', 'test']:
-            logger.info(f"[{self.mode}] Using a margin of {self.margin}")
+            logger.debug(f"[{self.mode}] Using a margin of {self.margin}")
         if self.mode in ['test']:
             assert not self.data_augmentation
 

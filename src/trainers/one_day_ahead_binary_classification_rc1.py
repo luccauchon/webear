@@ -43,7 +43,7 @@ def _get_batch(_batch_size, iterator):
 
 
 def load_model(ckpt_path, device, df, **kwargs):
-    logger.info(f"Resuming training from {ckpt_path}")
+    logger.debug(f"Resuming training from {ckpt_path}")
     checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
     model_args = checkpoint['model_args']
     model = LSTMClassification(num_input_features=model_args['num_input_features'],
@@ -55,7 +55,7 @@ def load_model(ckpt_path, device, df, **kwargs):
     model.load_state_dict(state_dict)
     iter_num = checkpoint['iter_num']
     best_val_loss = checkpoint['best_test_loss']
-    logger.info(f" --> {iter_num=}   {best_val_loss[0]=}")
+    logger.debug(f" --> {iter_num=}   {best_val_loss[0]=}")
     model.eval()
 
     return model
@@ -125,7 +125,6 @@ def train(configuration):
     torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
 
-    debug_level = "DEBUG"
     device = 'cuda'
 
     data_augmentation   = configuration.get("data_augmentation", True)
@@ -143,21 +142,12 @@ def train(configuration):
     test_margin  = configuration.get("test_margin", 2.)
     assert y_seq_length == 1
 
-
     run_id = configuration.get("run_id", 123)
     version = configuration.get("version", "rc1")
     output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"trainer__one_day_ahead_binary_classification__{version}")
     os.makedirs(output_dir, exist_ok=True)
 
-    logger.remove()
-    logger.add(sys.stdout, level=debug_level)
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')
-
-    ###########################################################################
-    # Description
-    ###########################################################################
-    logger.info("The goal is to predict the close value of next day (higher or lower) based on the preceding P days")
-
 
     ###########################################################################
     # Load source data
@@ -178,9 +168,9 @@ def train(configuration):
     assert df is not None
     num_input_features = len(df[x_cols].columns)
     num_output_features = len(df[y_cols].columns)
-    logger.info(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
-    logger.info(f"Training is ranging from {tav_dates[0]} to {tav_dates[1]}  ,  {num_input_features} input features ({x_seq_length} steps) and {num_output_features} output features ({y_seq_length} steps)")
-    logger.info(f"MES is ranging from {mes_dates[0]} to {mes_dates[1]}")
+    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
+    logger.debug(f"Training is ranging from {tav_dates[0]} to {tav_dates[1]}  ,  {num_input_features} input features ({x_seq_length} steps) and {num_output_features} output features ({y_seq_length} steps)")
+    logger.debug(f"MES is ranging from {mes_dates[0]} to {mes_dates[1]}")
 
     ###########################################################################
     # Configuration
@@ -234,9 +224,9 @@ def train(configuration):
                 if desc == 'test':
                     ground_truth_sequence.extend(_y.cpu())
             ground_truth_sequence = [uu.item() for uu in ground_truth_sequence]
-            logger.info(f"In {desc} dataset --> {(zeros/(zeros+ones))*100:.2f}% 0s  ,  {(ones/(zeros+ones))*100:.2f}% 1s")
+            logger.debug(f"In {desc} dataset --> {(zeros/(zeros+ones))*100:.2f}% 0s  ,  {(ones/(zeros+ones))*100:.2f}% 1s")
             if desc == 'test':
-                logger.info(f"Test sequence: {ground_truth_sequence}")
+                logger.debug(f"Test sequence: {ground_truth_sequence}")
 
     ###########################################################################
     # Model preparation
@@ -248,7 +238,7 @@ def train(configuration):
     ###########################################################################
     # Train
     ###########################################################################
-    logger.info(f"{batch_size=}   TRAIN SIZE:{len(train_indices)}    TEST SIZE:{len(test_indices)}")
+    logger.debug(f"{batch_size=}   TRAIN SIZE:{len(train_indices)}    TEST SIZE:{len(test_indices)}")
     loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device)  # mean-squared error for regression
     optimizer = model.configure_optimizers(weight_decay=weight_decay, learning_rate=learning_rate, betas=betas, device_type=device)
     train_loss, best_test_loss, best_test_accuracy = torch.tensor(999999999), (999999999, 999999999), (0., 0)
@@ -297,9 +287,9 @@ def train(configuration):
 
 
             if 0 == iter_num % log_interval or 1 == iter_num:
-                logger.info(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
-                            f"test:({running__test_losses:.4f})/{test_accuracy:.4f} "
-                            f">> {best_test_loss[0]:.4f}@{best_test_loss[1]} , {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}")
+                logger.debug(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
+                             f"test:({running__test_losses:.4f})/{test_accuracy:.4f} "
+                             f">> {best_test_loss[0]:.4f}@{best_test_loss[1]} , {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}")
             model.train()
 
         train_logits, train_loss = model(x=_x, y=_y)  # forward pass
@@ -346,6 +336,15 @@ if __name__ == '__main__':
     configuration = dict_to_namespace(config)
     # -----------------------------------------------------------------------------
     pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
+
+    debug_level = "DEBUG"
+    logger.remove()
+    logger.add(sys.stdout, level=debug_level)
+
+    ###########################################################################
+    # Description
+    ###########################################################################
+    logger.info("The goal is to predict the close value of next day (higher or lower) based on the preceding P days")
 
     configuration = namespace_to_dict(configuration)
     configuration.update({'max_iters': 500, 'log_interval': 10})

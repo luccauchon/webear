@@ -1,21 +1,13 @@
 import os
 import pprint
+import time
 from ast import literal_eval
-from tqdm import tqdm
-import itertools
-from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
-from datasets import TripleIndicesLookAheadBinaryClassificationDataset
-from models import LSTMClassification, LSTMMetaClassification
-from utils import get_latest_spy_and_vix_dataframe, find_next_sunday, find_next_saturday, find_previous_saturday, all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_binary_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
+from utils import get_latest_spy_and_vix_dataframe, find_next_saturday, find_previous_saturday, namespace_to_dict, dict_to_namespace, get_stub_dir
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
-import torch
 import numpy as np
 from loguru import logger
 import sys
 import pandas as pd
-import json
-import math
 from datetime import datetime, timedelta
 from runners import kepler_202503_rc1 as my_runner
 
@@ -50,30 +42,32 @@ def generate_campaign_dates(configuration):
 
 
 def start_campaign(configuration):
-    start_date = datetime.strptime(configuration.get("start_date", "2022-01-01"), "%Y-%m-%d")
-    num_weeks  = configuration.get("num_weeks", 52)  # Number of weeks to iterate
+    _start_date = datetime.strptime(configuration.get("start_date", "2022-01-01"), "%Y-%m-%d")
+    _num_weeks  = configuration.get("num_weeks", 52)  # Number of weeks to iterate
     configuration.update({"length_of_training_data": 365 * 2, "length_of_mes": 7, "length_of_inf": 7})
-    logger.info(f"Starting campaign @{start_date.date()} for {num_weeks} weeks.")
-    os.system('pause')
+    logger.info(f"Starting campaign @{_start_date.date()} for {_num_weeks} weeks.")
+    if not configuration['fast_execution_for_debugging']:
+        time.sleep(10)
     master_df_source = get_latest_spy_and_vix_dataframe()  # Use always the same dataframe through all the campaign
-
+    output_dir = os.path.join(get_stub_dir(), f"NewYork_backtesting__{pd.Timestamp.now().strftime('%Y.%m.%d_%Hh%Mm%Ss')}")
+    os.makedirs(output_dir)
     results_produced = {}
     # Iterate for each week
-    for i in range(num_weeks):
-        current_date = start_date + timedelta(weeks=i)
+    for i in range(_num_weeks):
+        current_date = _start_date + timedelta(weeks=i)
         configuration.update({"train__tav_t2": f"{current_date.date()}"})
         tav_dates, mes_dates, inf_dates = generate_campaign_dates(configuration)
-        logger.info(f"\n tav dates are : {tav_dates[0]} -> {tav_dates[1]}\n mes dates are : {mes_dates[0]} -> {mes_dates[1]}\n inf dates are : {inf_dates[0]} -> {inf_dates[1]}")
+        logger.debug(f"\n tav dates are : {tav_dates[0]} -> {tav_dates[1]}\n mes dates are : {mes_dates[0]} -> {mes_dates[1]}\n inf dates are : {inf_dates[0]} -> {inf_dates[1]}")
         configuration.update({"tav_dates": [f"{str(fxx)}" for fxx in tav_dates],
                               "mes_dates": [f"{str(fxx)}" for fxx in mes_dates],
                               "inf_dates": [f"{str(fxx)}" for fxx in inf_dates], "_today": mes_dates[1]})
 
-        configuration.update({"stub_dir": os.path.join(get_stub_dir(), "NewYork_backtesting", f"week_{i}")})
+        configuration.update({"stub_dir": os.path.join(output_dir, f"week_{i}")})
         configuration.update({"master_df_source": master_df_source.copy()})
         _tmp_results = my_runner.start_runner(configuration)
         assert len(_tmp_results) == len([a_date for a_date, _ in _tmp_results.items() if a_date not in results_produced])
         results_produced.update(_tmp_results)
-    pprint.PrettyPrinter(indent=4).pprint(results_produced)
+    #pprint.PrettyPrinter(indent=4).pprint(results_produced)
     compilation_for_positive_confidence = []
     for a_date, results in results_produced.items():
         if results['confidence'] > 0.5:
@@ -124,6 +118,8 @@ if __name__ == '__main__':
     configuration = dict_to_namespace(config)
     # -----------------------------------------------------------------------------
     # pprint.PrettyPrinter(indent=4).pprint(configuration)
+    logger.remove()
+    logger.add(sys.stdout, level=configuration.debug_level)
+
     configuration = namespace_to_dict(configuration)
-    #configuration.update({"fast_execution_for_debugging": True})
     start_campaign(configuration)
