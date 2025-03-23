@@ -156,7 +156,7 @@ def train(configuration):
     if df_source is None:
         if not os.path.exists(df_filename) or force_download_data:
             df, df_name = _fetch_dataframe()
-            logger.info(f"Writing {df_filename}...")
+            logger.debug(f"Writing {df_filename}...")
             df.to_pickle(df_filename)
         else:
             logger.debug(f"Reading {df_filename}...")

@@ -7,6 +7,8 @@ from trainers.one_day_ahead_binary_classification_rc1 import generate_dataloader
 from datetime import datetime
 from loguru import logger
 from pathlib import Path
+import sys
+from ast import literal_eval
 import os
 import json
 from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, next_weekday_with_check, is_weekday, get_stub_dir
@@ -56,11 +58,11 @@ def start_runner(configuration):
     # Parameters for campaign
     ###########################################################################
     skip_training_with_already_computed_results = configuration.get("skip_training_with_already_computed_results", [])
-    fast_execution_for_debugging                = configuration.get("fast_execution_for_debugging", False)
+    _fast_execution_for_debugging               = configuration.get("fast_execution_for_debugging", False)
 
-    tav_dates                    = configuration.get("tav_dates", ["2024-01-01", "2025-03-08"])
-    mes_dates                    = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
-    inf_dates                    = configuration.get("inf_dates", ["2025-03-16", "2025-03-29"])
+    _tav_dates                    = configuration.get("tav_dates", ["2024-01-01", "2025-03-08"])
+    _mes_dates                    = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
+    _inf_dates                    = configuration.get("inf_dates", ["2025-03-16", "2025-03-29"])
 
     fetch_new_dataframe          = configuration.get("fetch_new_dataframe", False)  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
     master_df_source             = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
@@ -69,7 +71,7 @@ def start_runner(configuration):
     nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 50)
     _today                       = configuration.get("_today", pd.Timestamp.now().date())
     _apply_constrain_on_best_model_selection = configuration.get("apply_constrain_on_best_model_selection", True)
-    if fast_execution_for_debugging:
+    if _fast_execution_for_debugging:
         _apply_constrain_on_best_model_selection = False
         nb_iter_test_in_inference               = 5
 
@@ -89,17 +91,17 @@ def start_runner(configuration):
     assert isinstance(output_dir, list)
     if 0 == len(output_dir):
         df_source = master_df_source.copy() if master_df_source is not None else None
-        if fast_execution_for_debugging:
+        if _fast_execution_for_debugging:
             available_margin = [-3, 0]
         for a_margin in _available_margin:
             version = f"M{a_margin}_"
             configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "lr_decay_iters": configuration.get("lr_decay_iters", 50000),
                                             "run_id": run_id, "version": version, "max_iters": configuration.get("max_iters", 50000),
-                                            "tav_dates": tav_dates, "mes_dates": mes_dates, "min_lr": configuration.get("min_lr", 1e-6),
+                                            "tav_dates": _tav_dates, "mes_dates": _mes_dates, "min_lr": configuration.get("min_lr", 1e-6),
                                             "stub_dir": configuration.get("stub_dir", get_stub_dir()), "batch_size": configuration.get("batch_size", 1024)}
             if df_source is not None:  # Use the same data for all the experiences
                 configuration_for_experience.update({'df_source': df_source})
-            if fast_execution_for_debugging:
+            if _fast_execution_for_debugging:
                 configuration_for_experience.update({'max_iters': 50, 'log_interval': 10})
             # Launch training
             results = train_model(configuration_for_experience)
@@ -167,7 +169,7 @@ def start_runner(configuration):
             if best_accuracy is not None:
                 candidats.update({f'best_accuracy_at_margin_{_sm}': best_accuracy})
     if 0 == len(candidats):
-        logger.warning(f"No candidates found! cannot evaluate from {inf_dates[0]} to {inf_dates[1]}")
+        logger.warning(f"No candidates found! cannot evaluate from {_inf_dates[0]} to {_inf_dates[1]}")
         return results_produced
 
     ###########################################################################
@@ -175,7 +177,7 @@ def start_runner(configuration):
     ###########################################################################
     meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device, df_source=master_df_source)
     logger.debug(f"Created meta model with {len(candidats)} models")
-    start_date, end_date = pd.to_datetime(inf_dates[0]), pd.to_datetime(inf_dates[1])
+    start_date, end_date = pd.to_datetime(_inf_dates[0]), pd.to_datetime(_inf_dates[1])
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
         date = start_date + pd.Timedelta(n, unit='days')
@@ -260,22 +262,48 @@ def start_runner(configuration):
 
 if __name__ == '__main__':
     freeze_support()
-
+    from base_configuration import *
     logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1 , train multiple models and evaluate them on inf dates\n{'*' * 80}")
 
     # -----------------------------------------------------------------------------
     config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
     namespace = {}
-    exec(open('configurator.py').read(), namespace)  # overrides from command line or config file
+    for arg in sys.argv[1:]:
+        if '=' not in arg:
+            # assume it's the name of a config file
+            assert not arg.startswith('--')
+            config_file = arg
+            print(f"Overriding config with {config_file}:")
+            with open(config_file) as f:
+                print(f.read())
+            exec(open(config_file).read())
+        else:
+            # assume it's a --key=value argument
+            assert arg.startswith('--')
+            key, val = arg.split('=')
+            key = key[2:]
+            if key in globals():
+                try:
+                    # attempt to eval it it (e.g. if bool, number, or etc)
+                    attempt = literal_eval(val)
+                except (SyntaxError, ValueError):
+                    # if that goes wrong, just use the string
+                    attempt = val
+                # ensure the types match ok
+                assert type(attempt) == type(globals()[key]), f"{type(attempt)} != {type(globals()[key])}"
+                # cross fingers
+                print(f"Overriding: {key} = {attempt}")
+                globals()[key] = attempt
+            else:
+                raise ValueError(f"Unknown config key: {key}")
     config = {k: globals()[k] for k in config_keys}
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
     configuration = dict_to_namespace(config)
     # -----------------------------------------------------------------------------
-    pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
+    # pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
+    logger.remove()
+    logger.add(sys.stdout, level=configuration.debug_level)
     configuration = namespace_to_dict(configuration)
-    configuration.update({"fetch_new_dataframe": True,
-                          "skip_training_with_already_computed_results": [rf"D:\PyCharmProjects\webear\stubs\2025_03_21__14_06_39"],
-                          "nb_iter_test_in_inference":1})
     start_runner(configuration)
