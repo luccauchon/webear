@@ -76,7 +76,7 @@ def start_runner(configuration):
     ###########################################################################
     # Select a base directory with "run_id"
     ###########################################################################
-    run_id = f'{__name__}__{datetime.now().strftime("%d__%H_%M")}'
+    run_id = f'RKRC1_{datetime.now().strftime("%d__%H_%M")}'
     output_dir = []
     if isinstance(skip_training_with_already_computed_results, list) and 1==len(skip_training_with_already_computed_results) and os.path.exists(skip_training_with_already_computed_results[0]):
         output_dir = skip_training_with_already_computed_results
