@@ -93,7 +93,7 @@ def start_runner(configuration):
     if 0 == len(output_dir):
         df_source = master_df_source.copy() if master_df_source is not None else None
         if _fast_execution_for_debugging:
-            available_margin = [-3, 0]
+            _available_margin = [-3, 0]
         for a_margin in _available_margin:
             version = f"M{a_margin}_"
             configuration_for_experience = {"train_margin": a_margin, "test_margin": a_margin, "lr_decay_iters": configuration.get("lr_decay_iters", 50000),
