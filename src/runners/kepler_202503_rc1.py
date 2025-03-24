@@ -230,9 +230,9 @@ def start_runner(configuration):
                 nb_forward_pass += 1
         prediction = 1 if nb_pred_for_1 > nb_pred_for_0 else 0
         prediction = prediction if nb_pred_for_1 != nb_pred_for_0 else -1
+        confidence = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == prediction else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
         pre_str = "[*] " if _today == date.date() else ""
         if not real_time_execution:
-            confidence  = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == the_ground_truth_for_date else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
             close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
             tmp_str = f"higher than {close_value_yesterday:.2f}$" if 1 == prediction else f"lower than {close_value_yesterday:.2f}$"
             pre_str += f":) " if the_ground_truth_for_date == prediction else ":( "
@@ -250,7 +250,6 @@ def start_runner(configuration):
             except Exception as ee:
                 logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
                 continue
-            confidence = nb_pred_for_1 / (nb_pred_for_0 + nb_pred_for_1) if 1 == prediction else nb_pred_for_0 / (nb_pred_for_0 + nb_pred_for_1)
             if -1 != prediction:
                 tmp_str = f"higher than {close_value_yesterday:.2f}$" if 1 == prediction else f"lower than {close_value_yesterday:.2f}$"
                 logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction} with {confidence * 100:.2f}% confidence > ({tmp_str})")
