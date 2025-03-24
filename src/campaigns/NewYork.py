@@ -68,14 +68,15 @@ def start_campaign(configuration):
         assert len(_tmp_results) == len([a_date for a_date, _ in _tmp_results.items() if a_date not in results_produced])
         results_produced.update(_tmp_results)
     #pprint.PrettyPrinter(indent=4).pprint(results_produced)
-    compilation_for_positive_confidence = []
-    for a_date, results in results_produced.items():
-        if results['confidence'] > 0.5:
-            success = 1 if results['ground_truth'] == results['prediction'] else 0
-            compilation_for_positive_confidence.append(success)
-    rate_of_positive_confidence = len(compilation_for_positive_confidence) / len(results_produced) if 0 != len(results_produced) else 0.
-    rate_of_success_of_pos_conf = np.count_nonzero(compilation_for_positive_confidence)/len(compilation_for_positive_confidence) if 0 != len(compilation_for_positive_confidence) else 0
-    logger.info(f"When confidence was gt 50% (this happens {rate_of_positive_confidence*100}%), success rate is {rate_of_success_of_pos_conf*100}%")
+    for confidence_threshold in [0.5, 0.9, 0.99]:
+        compilation_for_positive_confidence = []
+        for a_date, results in results_produced.items():
+            if results['confidence'] > confidence_threshold:
+                success = 1 if results['ground_truth'] == results['prediction'] else 0
+                compilation_for_positive_confidence.append(success)
+        rate_of_positive_confidence = len(compilation_for_positive_confidence) / len(results_produced) if 0 != len(results_produced) else 0.
+        rate_of_success_of_pos_conf = np.count_nonzero(compilation_for_positive_confidence)/len(compilation_for_positive_confidence) if 0 != len(compilation_for_positive_confidence) else 0
+        logger.info(f"When confidence was gt {confidence_threshold*100}% (this happens {rate_of_positive_confidence*100}%), success rate is {rate_of_success_of_pos_conf*100}%")
 
 
 if __name__ == '__main__':
