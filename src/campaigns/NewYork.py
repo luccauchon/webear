@@ -44,8 +44,9 @@ def generate_campaign_dates(configuration):
 def start_campaign(configuration):
     _start_date = datetime.strptime(configuration.get("start_date", "2022-01-01"), "%Y-%m-%d")
     _num_weeks  = configuration.get("num_weeks", 52)  # Number of weeks to iterate
+    assert int(_num_weeks) > 0
     configuration.update({"length_of_training_data": 365 * 2, "length_of_mes": 7, "length_of_inf": 7})
-    logger.info(f"Starting campaign @{_start_date.date()} for {_num_weeks} weeks.")
+    logger.info(f"Starting campaign @{_start_date.date()} for {_num_weeks} week{'' if 1==_num_weeks else 's'}.")
     if not configuration['fast_execution_for_debugging']:
         time.sleep(10)
     master_df_source = get_latest_spy_and_vix_dataframe()  # Use always the same dataframe through all the campaign
@@ -72,7 +73,7 @@ def start_campaign(configuration):
         if results['confidence'] > 0.5:
             success = 1 if results['ground_truth'] == results['prediction'] else 0
             compilation_for_positive_confidence.append(success)
-    rate_of_positive_confidence = len(compilation_for_positive_confidence) / len(results_produced)
+    rate_of_positive_confidence = len(compilation_for_positive_confidence) / len(results_produced) if 0 != len(results_produced) else 0.
     rate_of_success_of_pos_conf = np.count_nonzero(compilation_for_positive_confidence)/len(compilation_for_positive_confidence) if 0 != len(compilation_for_positive_confidence) else 0
     logger.info(f"When confidence was >0.5 (this happens {rate_of_positive_confidence*100}%), success rate is {rate_of_success_of_pos_conf}%")
 
