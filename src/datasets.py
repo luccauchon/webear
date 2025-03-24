@@ -62,7 +62,8 @@ class TripleIndicesRegressionDataset(Dataset):
 
 
 class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
-    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _direction_of_ones="up", _data_augmentation=False, _power_of_noise=0.001, _frequency_of_noise=0.25, _just_x_no_y=False):
+    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _direction_of_ones="up", _data_augmentation=False,
+                 _power_of_noise=0.001, _frequency_of_noise=0.25, _just_x_no_y=False):
         """
         Args:
             df (pd.DataFrame): The input DataFrame.

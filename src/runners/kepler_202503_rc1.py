@@ -68,6 +68,7 @@ def start_runner(configuration):
     master_df_source             = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
     device                       = "cuda"
     power_of_noise               = 0.1
+    frequency_of_noise           = 0.25
     nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 50)
     _today                       = configuration.get("_today", pd.Timestamp.now().date())
     _apply_constrain_on_best_model_selection = configuration.get("apply_constrain_on_best_model_selection", True)
@@ -176,8 +177,8 @@ def start_runner(configuration):
     # Do inferences
     ###########################################################################
     meta_model, df, params = create_meta_model(candidats=candidats, fetch_new_dataframe=fetch_new_dataframe, device=device, df_source=master_df_source)
-    logger.debug(f"Created meta model with {len(candidats)} models")
     start_date, end_date = pd.to_datetime(_inf_dates[0]), pd.to_datetime(_inf_dates[1])
+    logger.info(f"Created meta model with {len(candidats)} models , inferencing [{start_date}] to [{end_date}]")
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
         date = start_date + pd.Timedelta(n, unit='days')
@@ -219,7 +220,7 @@ def start_runner(configuration):
 
         # Do multiple passes on dataset Test with data augmentation
         data_loader_with_data_augmentation = get_dataloader(df=df, device=device, data_augmentation=True, mode='inference', date_to_predict=date,
-                                                            real_time_execution=real_time_execution, power_of_noise=power_of_noise, **params)
+                                                            real_time_execution=real_time_execution, power_of_noise=power_of_noise, frequency_of_noise=frequency_of_noise, **params)
         for ee in range(0, nb_iter_test_in_inference):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
                 if not real_time_execution:
