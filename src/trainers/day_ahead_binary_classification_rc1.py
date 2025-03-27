@@ -182,8 +182,8 @@ def train(configuration):
     ###########################################################################
     # Load source data
     ###########################################################################
-    df_filename, df_source = os.path.join(output_dir, "df.pkl"), configuration.get("df_source", None)
-    if df_source is None:
+    df_filename, _df_source = os.path.join(output_dir, "df.pkl"), configuration.get("df_source", None)
+    if _df_source is None:
         if not os.path.exists(df_filename) or _force_download_data:
             df, df_name = _fetch_dataframe()
             logger.debug(f"Writing {df_filename}...")
@@ -191,9 +191,9 @@ def train(configuration):
         else:
             logger.debug(f"Reading {df_filename}...")
             df = pd.read_pickle(df_filename)
-        df_source = df.copy()  # Keep a fresh copy of the data to be returned later.
+        _df_source = df.copy()  # Keep a fresh copy of the data to be returned later.
     else: # Use the data provided and dump it to disk
-        df = df_source.copy()
+        df = _df_source.copy()
         df.to_pickle(df_filename)
     assert df is not None
     num_input_features = len(df[_x_cols].columns)
@@ -384,7 +384,7 @@ def train(configuration):
                'x_seq_length': _x_seq_length, 'y_seq_length': _y_seq_length}
     with open(os.path.join(output_dir, "results.json"), 'w') as f:
         json.dump(results, f, indent=4)
-    results.update({'df_source': df_source})  # Dataframe is not serializable
+    results.update({'df_source': _df_source})  # Dataframe is not serializable
     return results
 
 

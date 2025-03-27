@@ -37,3 +37,5 @@ x_seq_length=10
 y_seq_length = 1
 
 batch_size = 1024
+
+df_source = None
