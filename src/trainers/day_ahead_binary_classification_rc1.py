@@ -243,6 +243,11 @@ def train(configuration):
     logger.debug(f"Using a day ahead of {_jump_ahead}")
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=_tav_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=_mes_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
+    if 1 == len(test_indices):
+        dd1 = test_df.iloc[test_indices[0][0]:test_indices[0][1]].index[0].date()
+        dd2 = test_df.iloc[test_indices[0][0]:test_indices[0][1]].index[-1].date()
+        dd3 = test_df.iloc[test_indices[0][2]:test_indices[0][3]].index[0].date()
+        logger.debug(f"In test set, using [{dd1} ({dd1.strftime('%A')}) > {dd2} ({dd2.strftime('%A')})] to predict {dd3} ({dd3.strftime('%A')})")
     random.shuffle(train_indices)
     split_80_idx = int(len(train_indices) * 0.8)
     train_indices, val_indices, val_df = train_indices[:split_80_idx], train_indices[split_80_idx:], train_df.copy()
