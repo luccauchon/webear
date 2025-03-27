@@ -92,7 +92,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
     merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
 
     if add_moving_averages:
-        for window_size in [2, 3, 4, 5, 6, 10, 12, 14, 15, 20, 25, 30]:  # Define the window size for the moving average
+        for window_size in [2, 3, 4, 5, 6, 10, 12, 14, 15, 20, 25, 30, 60, 90, 120, 180]:  # Define the window size for the moving average
             do_ma_on_those = [('Close', 'SPY'), ('High', 'SPY'), ('Low', 'SPY'), ('Open', 'SPY'), ('Volume', 'SPY'),
                               ('Close', '^VIX'), ('High', '^VIX'), ('Low', '^VIX'), ('Open', '^VIX')]
             new_cols = []
@@ -164,8 +164,8 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
     assert pd.to_datetime(dates[0]) <= pd.to_datetime(dates[1])
-    ts1 = pd.to_datetime(dates[0]) - pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
-    ts2 = pd.to_datetime(dates[1]) + pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
+    ts1 = pd.to_datetime(dates[0]) - pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
+    ts2 = pd.to_datetime(dates[1]) + pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
     df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
     if just_x_no_y:
         assert False

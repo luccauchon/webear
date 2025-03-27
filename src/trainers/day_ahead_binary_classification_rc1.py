@@ -358,8 +358,9 @@ def train(configuration):
 
             if 0 == iter_num % _log_interval or 1 == iter_num:
                 logger.debug(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
-                             f"val:({running__val_losses:.4f})/({running__val_accuracy:.4f})   test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"                             
-                             f" >> {best_val_loss[0]:.4f}@{best_val_loss[1]} , {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}")
+                             f"val:({running__val_losses:.4f})/({running__val_accuracy:.4f})  >> {best_val_loss[0]:.4f}@{best_val_loss[1]} , {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}   "
+                             f"test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"                             
+                             f"")
             model.train()
         train_logits, train_loss = model(x=_x, y=_y)  # forward pass
         train_loss = train_loss * 1000.0  # scale loss to avoid gradient vanishing
