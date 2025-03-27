@@ -194,8 +194,8 @@ def train(configuration):
         _df_source = df.copy()  # Keep a fresh copy of the data to be returned later.
     else: # Use the data provided and dump it to disk
         if isinstance(_df_source, str):
-            logger.debug(f"Reading {df_filename}...")
-            df = pd.read_pickle(df_filename)
+            logger.debug(f"Reading {_df_source}...")
+            df = pd.read_pickle(_df_source)
         else:
             df = _df_source.copy()
             df.to_pickle(df_filename)
