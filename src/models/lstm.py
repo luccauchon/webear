@@ -6,31 +6,43 @@ import inspect
 import torch.nn.functional as F
 
 
-class LSTMMetaClassification(nn.Module):
-    def __init__(self, models):
-        super(LSTMMetaClassification, self).__init__()
-        self.models = models
+class LSTMMetaUpDownClassification(nn.Module):
+    def __init__(self, up_models, down_models):
+        super(LSTMMetaUpDownClassification, self).__init__()
+        self.up_models = up_models
+        self.down_models = down_models
         self.list_of_model_names = None
 
     def get_number_models(self):
         return len(self.models)
 
     def forward(self, x, y=None):
-        self.list_of_model_names, list_of_predictions = [], []
-        for name_model, a_model in self.models.items():
+        up_predictions, down_predictions = [], []
+        for name_model, a_model in self.up_models.items():
             prediction = a_model(x)
-            list_of_predictions.append(prediction)
-            self.list_of_model_names.append(name_model)
+            up_predictions.append(torch.nn.Sigmoid()(prediction[0]))
+        for name_model, a_model in self.down_models.items():
+            prediction = a_model(x)
+            down_predictions.append(torch.nn.Sigmoid()(prediction[0]))
 
-        stacked_tensors = torch.stack([pred[0].squeeze() for pred in list_of_predictions], dim=0)
-        return stacked_tensors, None
+        up_ones, up_total = torch.count_nonzero(torch.stack(up_predictions) >= 0.5).item(), torch.stack(up_predictions, dim=0).shape[0]
+        dw_ones, dw_total = torch.count_nonzero(torch.stack(down_predictions) >= 0.5).item(), torch.stack(down_predictions, dim=0).shape[0]
+        up, down = up_ones/up_total, dw_ones/dw_total
+
+        if 1==up and 0==down:
+            return 1
+        if 0==up and 1==down:
+            return -1
+        if 0==up and 0==down:
+            return 0
+        return 99
 
     def get_corresponding_model_names(self):
         return self.list_of_model_names
 
 
 class LSTMClassification(nn.Module):
-    def __init__(self, seq_length, num_input_features, hidden_size, num_layers, bidirectional, device, dropout, binary_classification=True, nb_classes=-1):
+    def __init__(self, seq_length, num_input_features, hidden_size, num_layers, bidirectional, device, dropout, pos_weight=None, binary_classification=True, nb_classes=-1):
         super(LSTMClassification, self).__init__()
         self.num_layers = num_layers  # number of layers
         assert 1 == self.num_layers
@@ -60,6 +72,11 @@ class LSTMClassification(nn.Module):
         self.mode = 0
         if self.binary_classification:
             self.loss_function = nn.BCEWithLogitsLoss(reduction='sum').to(device)
+            if pos_weight is not None:
+                logger.debug(f"Setting pos_weight to {pos_weight}")
+                self.loss_function = nn.BCEWithLogitsLoss(reduction='sum',pos_weight=torch.tensor(pos_weight, device=device)).to(device)
+            else:
+                self.loss_function = nn.BCEWithLogitsLoss(reduction='sum', pos_weight=torch.tensor(1., device=device)).to(device)
             self.fc = nn.Linear(hidden_size // 8, 1, device=device)  # fully connected last layer
         else:
             self.loss_function = nn.CrossEntropyLoss(reduction='sum').to(device)

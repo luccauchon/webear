@@ -92,7 +92,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
     merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
 
     if add_moving_averages:
-        for window_size in [5]:  # Define the window size for the moving average
+        for window_size in [2, 3, 4, 5, 6, 10, 12, 14, 15, 20, 25, 30]:  # Define the window size for the moving average
             do_ma_on_those = [('Close', 'SPY'), ('High', 'SPY'), ('Low', 'SPY'), ('Open', 'SPY'), ('Volume', 'SPY'),
                               ('Close', '^VIX'), ('High', '^VIX'), ('Low', '^VIX'), ('Open', '^VIX')]
             new_cols = []
@@ -103,6 +103,11 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
                 merged_df[col_title] = merged_df[col].rolling(window=window_size, center=True).mean()
                 merged_df[col_title] = merged_df[col_title].shift(window_size // 2)
                 new_cols.append(col_title)
+
+                col_title = (col[0] + f'_EMA{window_size}', col[1])
+                merged_df[col_title] = merged_df[col].ewm(span=window_size, adjust=False).mean()
+                new_cols.append(col_title)
+
             #print(new_cols)
         merged_df = merged_df.dropna()
 
@@ -112,7 +117,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
     # float_cols = merged_df.select_dtypes(include=['float64']).columns
     # merged_df[float_cols] = merged_df[float_cols].astype(int)
 
-    return merged_df, f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
+    return merged_df.copy(), f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
 
 
 def _get_root_dir():
@@ -155,7 +160,7 @@ def get_spy_and_vix_df_from_data_dir(date):
     return None
 
 
-def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, just_x_no_y=False):
+def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahead=0, just_x_no_y=False):
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
     assert pd.to_datetime(dates[0]) <= pd.to_datetime(dates[1])
@@ -163,6 +168,7 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, just_x_n
     ts2 = pd.to_datetime(dates[1]) + pd.Timedelta(2 * (x_seq_length + y_seq_length), unit='days')
     df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
     if just_x_no_y:
+        assert False
         for idx in reversed(range(0, len(df) + 1)):
             idx1, idx2 = idx - x_seq_length, idx
             if idx1 < 0 or idx2 < 0:
@@ -174,25 +180,26 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, just_x_n
             break
     else:
         for idx in reversed(range(0, len(df)+1)):
-            idx1, idx2, idx3 = idx-y_seq_length-x_seq_length, idx-y_seq_length, idx
-            assert df.iloc[idx2:idx3].index.intersection(df.iloc[idx1:idx2].index).empty
-            if idx1 <0 or idx2<0 or idx3<0:
+            idx1, idx2 = idx-x_seq_length, idx
+            idx3, idx4 = idx+jump_ahead, idx+jump_ahead+y_seq_length
+            if idx1 <0 or idx4 >= len(df):
                 continue
+            assert df.iloc[idx1:idx2].index.intersection(df.iloc[idx3:idx4].index).empty
             # Make sure that y is in the range
-            t1_y = df.iloc[idx2:idx3].index[0]
+            t1_y = df.iloc[idx3:idx4].index[0]
             if t1_y < pd.to_datetime(dates[0]) or t1_y > pd.to_datetime(dates[1]):
                 continue
-            t2_y = df.iloc[idx2:idx3].index[-1]
+            t2_y = df.iloc[idx3:idx4].index[-1]
             if t2_y < pd.to_datetime(dates[0]) or t2_y > pd.to_datetime(dates[1]):
                 continue
-            for tk_y in list(df.iloc[idx2:idx3].index):
+            for tk_y in list(df.iloc[idx3:idx4].index):
                 assert pd.to_datetime(dates[0]) <= tk_y <= pd.to_datetime(dates[1])
             if len(df.iloc[idx1:idx2]) != x_seq_length:
                 continue
-            if len(df.iloc[idx2:idx3]) != y_seq_length:
+            if len(df.iloc[idx3:idx4]) != y_seq_length:
                 continue
-            assert idx3 > idx2 > idx1
-            indices.append((idx1, idx2, idx3))
+            assert idx4 > idx3 >= idx2 > idx1
+            indices.append((idx1, idx2, idx3, idx4))
     return indices, df.copy()
 
 

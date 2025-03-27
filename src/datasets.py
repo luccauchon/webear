@@ -62,8 +62,8 @@ class TripleIndicesRegressionDataset(Dataset):
 
 
 class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
-    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _direction_of_ones="up", _data_augmentation=False,
-                 _power_of_noise=0.001, _frequency_of_noise=0.25, _just_x_no_y=False):
+    def __init__(self, _df, _feature_cols, _target_col, _device, _x_cols_to_norm, _indices, _mode, _margin, _type_of_margin, _direction,
+                 _data_augmentation=False, _power_of_noise=0.001, _frequency_of_noise=0.25, _just_x_no_y=False):
         """
         Args:
             df (pd.DataFrame): The input DataFrame.
@@ -79,13 +79,17 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
         self.mode           = _mode
         self.data_augmentation = _data_augmentation
         self.margin         = _margin
-        self.direction_of_ones  = _direction_of_ones
+        self.type_of_margin = _type_of_margin
         self.power_of_noise     = _power_of_noise
         self.frequency_of_noise = _frequency_of_noise
         self.just_x_no_y        = _just_x_no_y
-        if self.mode in ['train', 'test']:
-            logger.debug(f"[{self.mode}] Using a margin of {self.margin}")
-        if self.mode in ['test']:
+        self._direction = _direction
+        if self.mode in ['train', 'test', 'val']:
+            if self.type_of_margin == 'relative':
+                logger.debug(f"[{self.mode}] Using a relative margin of {self.margin}% , direction is {self._direction}")
+            if self.type_of_margin == 'fixed':
+                logger.debug(f"[{self.mode}] Using a fixed margin of {self.margin} , direction is {self._direction}")
+        if self.mode in ['test', 'val']:
             assert not self.data_augmentation
 
     def __len__(self):
@@ -111,21 +115,40 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
             x_data_norm = torch.tensor(x_data_norm.values, dtype=torch.float, device=self.device)
             return x, -1., x_data_norm
 
-        i1, i2, i3 = self.indices[idx]
-        the_x, the_y = self.df.iloc[i1:i2], self.df.iloc[i2:i3]
+        i1, i2, i3, i4 = self.indices[idx]
+        the_x, the_y = self.df.iloc[i1:i2], self.df.iloc[i3:i4]
 
         assert 1 == len(the_y)
         vx, vy = the_x.iloc[-1][self.target_col].values[0], the_y.iloc[-1][self.target_col].values[0]
-
-        if self.direction_of_ones == 'up':
-            the_target = 1 if vy > vx + self.margin else 0  # "1" if direction is up
+        # if idx in [100,101]:
+        #     print(f"{the_y[('Close', 'SPY')].values[0]:.2f}, {the_y[('Close_EMA2', 'SPY')].values[0]:.2f}, {the_y[('Close_MA2', 'SPY')].values[0]:.2f}")
+        if self.type_of_margin == 'fixed':
+            sunny_side = self.margin
+        elif self.type_of_margin == 'relative':
+            sunny_side = vx * (self.margin / 100.)
         else:
-            the_target = 1 if vy < vx + self.margin else 0  # "1" if direction is down
+            assert False, f"{self.type_of_margin=}"
+        if self.mode != 'inference':
+            if 'up' == self._direction:
+                the_target = 1 if vy > vx + sunny_side else 0
+            else:
+                the_target = 1 if vy < vx - sunny_side else 0
+        else:
+            if vy > vx + sunny_side:
+                the_target = 1
+            elif vy < vx - sunny_side:
+                the_target = -1
+            else:
+                the_target = 0
 
         # normalize all rows by the first row
         x_data_norm = the_x[self.x_cols_to_norm].iloc[0]
         if self.mode == 'train' and (self.data_augmentation and np.random.uniform(0, 1)>1.-self.frequency_of_noise):
-            the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
+            if 0 != len(x_data_norm):
+                the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
+            else:
+                _toto = x_data_norm = the_x[['Close', 'High', 'Low', 'Open']].iloc[0]
+                the_x = the_x[self.feature_cols].apply(lambda x: x + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in _toto else x)
         elif self.mode == 'inference':
             if self.data_augmentation:
                 the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
