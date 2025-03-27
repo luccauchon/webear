@@ -297,7 +297,10 @@ def calculate_binary_classification_metrics(y_true, y_pred):
 
     metric = BinaryAccuracy(threshold=0.5)
     assert y_pred.squeeze().shape == y_true.squeeze().shape
-    metric.update(y_pred.squeeze(), y_true.squeeze())
+    if 1 == len(y_pred):
+        metric.update(y_pred[0], y_true[0])
+    else:
+        metric.update(y_pred.squeeze(), y_true.squeeze())
     accuracy = metric.compute()
 
     return {'accuracy': accuracy}
