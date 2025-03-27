@@ -193,8 +193,12 @@ def train(configuration):
             df = pd.read_pickle(df_filename)
         _df_source = df.copy()  # Keep a fresh copy of the data to be returned later.
     else: # Use the data provided and dump it to disk
-        df = _df_source.copy()
-        df.to_pickle(df_filename)
+        if isinstance(_df_source, str):
+            logger.debug(f"Reading {df_filename}...")
+            df = pd.read_pickle(df_filename)
+        else:
+            df = _df_source.copy()
+            df.to_pickle(df_filename)
     assert df is not None
     num_input_features = len(df[_x_cols].columns)
     num_output_features = len(df[_y_cols].columns)
