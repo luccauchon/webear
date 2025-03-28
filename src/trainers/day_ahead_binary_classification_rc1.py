@@ -134,7 +134,7 @@ def evaluation(_model, _dataloader, _loss_function):
         _loss1 = _loss_function(_test_logits1, _y1.float())
         _losses1.append(0 if torch.isnan(_loss1) else _loss1.item())
         _accuracy1.append(calculate_binary_classification_metrics(y_true=_y1, y_pred=torch.nn.Sigmoid()(_test_logits1) >= 0.5)['accuracy'])
-    return _losses1[0], _accuracy1[0].item()
+    return np.mean(_losses1), np.mean([ff.item() for ff in _accuracy1])
 
 
 def update_running_var(_running__value, _value):
