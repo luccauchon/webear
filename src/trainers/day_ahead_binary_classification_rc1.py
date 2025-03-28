@@ -247,7 +247,7 @@ def train(configuration):
     if _shuffle_indices:
         logger.debug("Shuffling indices...")
         random.shuffle(train_indices)
-    if number_of_timestep_for_validation is not None:
+    if _number_of_timestep_for_validation is not None:
         split_20_idx = _number_of_timestep_for_validation
         assert len(train_indices) > split_20_idx
     else:
