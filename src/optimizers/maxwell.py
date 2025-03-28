@@ -18,9 +18,11 @@ def optimize(configuration):
     _available_margin = configuration.get("available_margin", [0, 0.2, 0.4])  # In order of preference
     _type_margin = 'relative'
     _x_cols = [['Close'] + ['day_of_week'],
+               ['Close', 'Open', 'Low', 'High'] + ['day_of_week'],
                ['Close', 'Close_MA3'] + ['day_of_week'],
                ['Close', 'Close_MA3', 'Open'] + ['day_of_week'],
                ['Close', 'Close_MA3', 'Open', 'Open_MA3'] + ['day_of_week'],
+               ['Close', 'Close_MA3', 'Open_MA3', 'Open', 'Low', 'High'] + ['day_of_week'],
                ]
     device="cuda"
     _master_df_source = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
@@ -45,7 +47,7 @@ def optimize(configuration):
                                                 "log_interval": 1000,
                                                 "learning_rate": 1e-3,
                                                 "min_lr": 1e-4,
-                                                "eval_interval": 2,
+                                                "eval_interval": 1,
                                                 "weight_decay": 0.1,
                                                 "run_id": run_id, "version": a_version,
                                                 "tav_dates": _tav_dates, "mes_dates": _mes_dates,
