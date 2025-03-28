@@ -20,15 +20,14 @@ def optimize(configuration):
                   ["2020-01-01", "2025-03-15"]
                   ]
     _mes_dates = configuration.get("mes_dates", ["2025-03-16", "2025-03-22"])
-    _available_x_seq_length = configuration.get("available_x_seq_length", [5, 10, 14])
-    _available_margin = configuration.get("available_margin", [0, 0.2, 0.4])  # In order of preference
+    _available_x_seq_length = configuration.get("available_x_seq_length", [3, 5])
+    _available_margin = configuration.get("available_margin", [0, 0.2, 0.5])  # In order of preference
     _type_margin = 'relative'
     _x_cols = [['Close'] + ['day_of_week'],
                ['Close', 'Open', 'Low', 'High'] + ['day_of_week'],
                ['Close', 'Close_MA3'] + ['day_of_week'],
                ['Close', 'Close_MA3', 'Open'] + ['day_of_week'],
                ['Close', 'Close_MA3', 'Open', 'Open_MA3'] + ['day_of_week'],
-               ['Close', 'Close_MA3', 'Open_MA3', 'Open', 'Low', 'High'] + ['day_of_week'],
                ]
     device="cuda"
     _master_df_source = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
@@ -63,6 +62,7 @@ def optimize(configuration):
                                         "y_cols": [('Close_MA3', 'SPY')],
                                         "x_seq_length": x_seq_length,
                                         "y_seq_length": 1,
+                                        "jump_ahead": 0,
                                         "device": device,
                                         'df_source': df_source.copy()  # Use the same data for all the experiences
                                         }

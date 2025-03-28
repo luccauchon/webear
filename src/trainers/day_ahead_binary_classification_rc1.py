@@ -241,7 +241,7 @@ def train(configuration):
     # Data preparation
     ###########################################################################
     assert 1 == _y_seq_length
-    logger.debug(f"Using a day ahead of {_jump_ahead}")
+    logger.debug(f"Using a day ahead of {_jump_ahead}  (0 mean tomorrow)")
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=_tav_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=_mes_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     if _shuffle_indices:
