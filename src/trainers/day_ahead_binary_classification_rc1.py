@@ -203,9 +203,6 @@ def train(configuration):
     assert df is not None
     num_input_features = len(df[_x_cols].columns)
     num_output_features = len(df[_y_cols].columns)
-    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
-    logger.debug(f"Training is ranging from {_tav_dates[0]} to {_tav_dates[1]}  ,  {num_input_features} input features ({_x_seq_length} steps) and {num_output_features} output features ({_y_seq_length} steps)")
-    logger.debug(f"MES is ranging from {_mes_dates[0]} to {_mes_dates[1]}")
     _tmp3 = ', '.join([f"({', '.join(map(str, col))})" for col in df[_x_cols_to_norm].columns])
     _tmp, _tmp2 = ', '.join([f"({', '.join(map(str, col))})" for col in df[_x_cols].columns]), "no normalization" if 0 == len(_x_cols_to_norm) else f"normalization applied to  {_tmp3} "
     logger.debug(f"Xs: {_tmp} , {_tmp2} ")
@@ -256,9 +253,13 @@ def train(configuration):
     train_indices, val_indices, val_df = train_indices[split_20_idx:], train_indices[:split_20_idx], train_df.copy()
     assert 0 != len(train_indices) and 0 != len(test_indices)
 
+    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
+    logger.debug(f"Training+Validation are ranging from {_tav_dates[0]} to {_tav_dates[1]}  ,  {num_input_features} input features ({_x_seq_length} steps) and {num_output_features} output features ({_y_seq_length} steps)")
     if not _shuffle_indices:
         logger.debug(f"Training is ranging from {train_df.iloc[train_indices[-1][2]:train_indices[-1][3]].index[0].date()} to {train_df.iloc[train_indices[0][2]:train_indices[0][3]].index[0].date()}  ")
         logger.debug(f"Validation is ranging from {val_df.iloc[val_indices[-1][2]:val_indices[-1][3]].index[0].date()} to {val_df.iloc[val_indices[0][2]:val_indices[0][3]].index[0].date()}  ")
+    logger.debug(f"MES is ranging from {_mes_dates[0]} to {_mes_dates[1]}")
+
     # mean = train_df.mean()
     # std_dev = train_df.std()
     # train_df = (train_df - mean) / std_dev
