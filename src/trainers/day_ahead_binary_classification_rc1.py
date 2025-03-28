@@ -269,7 +269,8 @@ def train(configuration):
     # std_dev = train_df.std()
     # train_df = (train_df - mean) / std_dev
     # test_df = (test_df - mean) / std_dev
-
+    if _data_augmentation:
+        logger.debug(f"Using data augmentation @F={_frequency_of_noise} and @A={_power_of_noise}")
     train_dataset    = TripleIndicesLookAheadBinaryClassificationDataset(_df=train_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
                                                                          _indices=train_indices, _mode='train', _data_augmentation=_data_augmentation, _margin=_margin,
                                                                          _power_of_noise=_power_of_noise, _frequency_of_noise=_frequency_of_noise, _direction=_direction,
@@ -341,8 +342,8 @@ def train(configuration):
 
             is_best_val_loss_achieved      = val_loss < best_val_loss[0]
             is_best_val_accuracy_achieved  = val_accuracy > best_val_accuracy[0]
-            best_val_loss      = (val_loss, iter_num)     if is_best_val_loss_achieved or 0 == iter_num else best_val_loss
-            best_val_accuracy  = (val_accuracy, iter_num) if is_best_val_accuracy_achieved or 0 == iter_num else best_val_accuracy
+            best_val_loss      = (val_loss, iter_num, test_accuracy)     if is_best_val_loss_achieved or 0 == iter_num else best_val_loss
+            best_val_accuracy  = (val_accuracy, iter_num, test_accuracy) if is_best_val_accuracy_achieved or 0 == iter_num else best_val_accuracy
 
             is_best_test_loss_achieved     = test_loss < best_test_loss[0]
             is_best_test_accuracy_achieved = test_accuracy > best_test_accuracy[0]
@@ -388,7 +389,7 @@ def train(configuration):
                 #              f"test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"
                 #              f"")
                 logger.debug(f"i: {iter_num:6d}  lr: {lr:0.3E}  train_acc:({running__train_accuracy:.4f})  "
-                             f"val_acc:({running__val_accuracy:.4f}) >> {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}  "
+                             f"val_acc:({running__val_accuracy:.4f}) >> {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]} (wT:{best_val_accuracy[2]:.2f})    "
                              f"test_acc:({running__test_accuracy:.4f}) >> {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}  "
                              f"")
             model.train()
