@@ -201,6 +201,7 @@ def train(configuration):
             df = _df_source.copy()
             df.to_pickle(df_filename)
     assert df is not None
+    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
     num_input_features = len(df[_x_cols].columns)
     num_output_features = len(df[_y_cols].columns)
     _tmp3 = ', '.join([f"({', '.join(map(str, col))})" for col in df[_x_cols_to_norm].columns])
@@ -245,7 +246,7 @@ def train(configuration):
         dd1 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[0].date()
         dd2 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[-1].date()
         dd3 = test_df.iloc[a_bag_of_indices[2]:a_bag_of_indices[3]].index[0].date()
-        logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd1} ({dd1.strftime('%A')})  >  {dd2} ({dd2.strftime('%A')})]")
+        logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd2} ({dd2.strftime('%A')})  >>  {dd1} ({dd1.strftime('%A')})]")
     if _shuffle_indices:
         logger.debug("Shuffling indices...")
         random.shuffle(train_indices)
@@ -253,7 +254,6 @@ def train(configuration):
     train_indices, val_indices, val_df = train_indices[split_20_idx:], train_indices[:split_20_idx], train_df.copy()
     assert 0 != len(train_indices) and 0 != len(test_indices)
 
-    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
     logger.debug(f"Training+Validation are ranging from {_tav_dates[0]} to {_tav_dates[1]}  ,  {num_input_features} input features ({_x_seq_length} steps) and {num_output_features} output features ({_y_seq_length} steps)")
     if not _shuffle_indices:
         logger.debug(f"Training is ranging from {train_df.iloc[train_indices[-1][2]:train_indices[-1][3]].index[0].date()} to {train_df.iloc[train_indices[0][2]:train_indices[0][3]].index[0].date()}  ")
