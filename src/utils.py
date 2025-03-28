@@ -163,9 +163,11 @@ def get_spy_and_vix_df_from_data_dir(date):
 def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahead=0, just_x_no_y=False):
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
-    assert pd.to_datetime(dates[0]) <= pd.to_datetime(dates[1])
-    ts1 = pd.to_datetime(dates[0]) - pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
-    ts2 = pd.to_datetime(dates[1]) + pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
+    tt1 = pd.to_datetime(dates[0]).replace(hour=0, minute=0, second=0)
+    tt2 = pd.to_datetime(dates[1]).replace(hour=23, minute=59, second=59)
+    assert tt1 <= tt2
+    ts1 = tt1 - pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
+    ts2 = tt2 + pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
     df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
     if just_x_no_y:
         assert False
@@ -187,13 +189,13 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
             assert df.iloc[idx1:idx2].index.intersection(df.iloc[idx3:idx4].index).empty
             # Make sure that y is in the range
             t1_y = df.iloc[idx3:idx4].index[0]
-            if t1_y < pd.to_datetime(dates[0]) or t1_y > pd.to_datetime(dates[1]):
+            if t1_y < tt1 or t1_y > tt2:
                 continue
             t2_y = df.iloc[idx3:idx4].index[-1]
-            if t2_y < pd.to_datetime(dates[0]) or t2_y > pd.to_datetime(dates[1]):
+            if t2_y < tt1 or t2_y > tt2:
                 continue
             for tk_y in list(df.iloc[idx3:idx4].index):
-                assert pd.to_datetime(dates[0]) <= tk_y <= pd.to_datetime(dates[1])
+                assert tt1 <= tk_y <= tt2
             if len(df.iloc[idx1:idx2]) != x_seq_length:
                 continue
             if len(df.iloc[idx3:idx4]) != y_seq_length:
