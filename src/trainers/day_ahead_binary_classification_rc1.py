@@ -164,6 +164,7 @@ def train(configuration):
     _x_seq_length = configuration.get("x_seq_length", 10)
     _y_seq_length = configuration.get("y_seq_length", 1)
     _margin = configuration.get("margin", 1.5)
+    _shuffle_indices = configuration.get("shuffle_indices", False)
     type_margin = configuration.get("type_margin", "fixed")
     assert type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
@@ -248,11 +249,16 @@ def train(configuration):
         dd2 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[-1].date()
         dd3 = test_df.iloc[a_bag_of_indices[2]:a_bag_of_indices[3]].index[0].date()
         logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd1} ({dd1.strftime('%A')})  >  {dd2} ({dd2.strftime('%A')})]")
-    random.shuffle(train_indices)
-    split_80_idx = int(len(train_indices) * 0.8)
-    train_indices, val_indices, val_df = train_indices[:split_80_idx], train_indices[split_80_idx:], train_df.copy()
+    if _shuffle_indices:
+        logger.debug("Shuffling indices...")
+        random.shuffle(train_indices)
+    split_20_idx = int(len(train_indices) * 0.2)
+    train_indices, val_indices, val_df = train_indices[split_20_idx:], train_indices[:split_20_idx], train_df.copy()
     assert 0 != len(train_indices) and 0 != len(test_indices)
 
+    if not _shuffle_indices:
+        logger.debug(f"Training is ranging from {train_df.iloc[train_indices[-1][2]:train_indices[-1][3]].index[0].date()} to {train_df.iloc[train_indices[0][2]:train_indices[0][3]].index[0].date()}  ")
+        logger.debug(f"Validation is ranging from {val_df.iloc[val_indices[-1][2]:val_indices[-1][3]].index[0].date()} to {val_df.iloc[val_indices[0][2]:val_indices[0][3]].index[0].date()}  ")
     # mean = train_df.mean()
     # std_dev = train_df.std()
     # train_df = (train_df - mean) / std_dev
