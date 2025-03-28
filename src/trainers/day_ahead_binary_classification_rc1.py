@@ -170,6 +170,7 @@ def train(configuration):
     assert _type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
     _jump_ahead = configuration.get('jump_ahead', 0)
+    _number_of_timestep_for_validation = configuration.get('number_of_timestep_for_validation', 60)
 
     run_id = configuration.get("run_id", 123)
     version = configuration.get("version", "rc1")
@@ -246,7 +247,11 @@ def train(configuration):
     if _shuffle_indices:
         logger.debug("Shuffling indices...")
         random.shuffle(train_indices)
-    split_20_idx = int(len(train_indices) * 0.2)
+    if number_of_timestep_for_validation is not None:
+        split_20_idx = _number_of_timestep_for_validation
+        assert len(train_indices) > split_20_idx
+    else:
+        split_20_idx = int(len(train_indices) * 0.2)
     train_indices, val_indices, val_df = train_indices[split_20_idx:], train_indices[:split_20_idx], train_df.copy()
     assert 0 != len(train_indices) and 0 != len(test_indices)
 
@@ -342,7 +347,7 @@ def train(configuration):
             is_best_test_loss_achieved     = test_loss < best_test_loss[0]
             is_best_test_accuracy_achieved = test_accuracy > best_test_accuracy[0]
             best_test_loss     = (test_loss, iter_num) if is_best_test_loss_achieved or 0 == iter_num else best_test_loss
-            best_test_accuracy = (test_accuracy, iter_num) if is_best_test_loss_achieved or 0 == iter_num else best_test_accuracy
+            best_test_accuracy = (test_accuracy, iter_num) if is_best_test_accuracy_achieved or 0 == iter_num else best_test_accuracy
 
             checkpoint = {
                 'model': model.state_dict(),
@@ -382,9 +387,9 @@ def train(configuration):
                 #              f"val:({running__val_losses:.4f})/({running__val_accuracy:.4f})  >> {best_val_loss[0]:.4f}@{best_val_loss[1]} , {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}   "
                 #              f"test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"
                 #              f"")
-                logger.debug(f"i: {iter_num:6d}  lr: {lr:0.3E}  train:({running__train_accuracy:.4f})  "
-                             f"val:({running__val_accuracy:.4f}) >> {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}  "
-                             f"test:({running__test_accuracy:.4f}) >> {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}  "
+                logger.debug(f"i: {iter_num:6d}  lr: {lr:0.3E}  train_acc:({running__train_accuracy:.4f})  "
+                             f"val_acc:({running__val_accuracy:.4f}) >> {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}  "
+                             f"test_acc:({running__test_accuracy:.4f}) >> {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}  "
                              f"")
             model.train()
         train_logits, train_loss = model(x=_x, y=_y)  # forward pass
@@ -407,6 +412,8 @@ def train(configuration):
     configuration['df_source'] = None    # Dataframe is not serializable
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
+               'best_val_loss': best_val_loss, 'best_val_accuracy': best_val_accuracy,
+               'best_test_loss': best_test_loss, 'best_test_accuracy': best_test_accuracy,
                'output_dir': output_dir,'data_augmentation': _data_augmentation, 'margin': _margin,
                'configuration': configuration, 'x_cols': _x_cols, 'y_cols': _y_cols, 'x_cols_to_norm': _x_cols_to_norm,
                'tav_dates': _tav_dates if isinstance(_tav_dates, str) else [f"{str(fxx)}" for fxx in _tav_dates],

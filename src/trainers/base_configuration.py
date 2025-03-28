@@ -42,3 +42,5 @@ df_source = None
 shuffle_indices = False
 decay_lr = True
 save_checkpoint=False
+
+number_of_timestep_for_validation=60
