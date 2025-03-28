@@ -7,6 +7,8 @@ import os
 from ast import literal_eval
 from loguru import logger
 from trainers.day_ahead_binary_classification_rc1 import train as train_model
+from tqdm import tqdm
+from itertools import product
 
 
 def optimize(configuration):
@@ -38,37 +40,34 @@ def optimize(configuration):
     results_of_experiences = {}
     base_output_dir_for_all_experiences = os.path.join(_maxwell_root_dir, f"__optimizers__")
     logger.debug(f"Number of runs: {len(_available_x_seq_length)*len(_available_margin)*len(_x_cols)*len(_tav_dates)}")
-    for x_seq_length in _available_x_seq_length:
-        for a_margin in _available_margin:
-            for a_x_cols in _x_cols:
-                for a_tav_dates in _tav_dates:
-                    a_version = f"LX{x_seq_length}_M{a_margin}_CX{'_'.join(a_x_cols)}_T{''.join(a_tav_dates)}"
-                    a_stub_dir = os.path.join(base_output_dir_for_all_experiences, f"__{_a_direction}__{a_margin}")
-                    os.makedirs(a_stub_dir, exist_ok=True)
-                    run_id = f'MXW_{datetime.now().strftime("%d__%H_%M")}'  # root directory used by runner
-                    configuration_for_experience = {"margin": a_margin, "type_margin": _type_margin,
-                                                    "direction": _a_direction,
-                                                    "lr_decay_iters": 4001,
-                                                    "max_iters": 4001,
-                                                    "log_interval": 1000,
-                                                    "learning_rate": 1e-3,
-                                                    "min_lr": 1e-4,
-                                                    "eval_interval": 1,
-                                                    "weight_decay": 0.1,
-                                                    "run_id": run_id, "version": a_version,
-                                                    "tav_dates": a_tav_dates, "mes_dates": _mes_dates,
-                                                    "stub_dir": a_stub_dir,
-                                                    "batch_size": 1024,
-                                                    "x_cols": a_x_cols,
-                                                    "x_cols_to_norm": [],
-                                                    "y_cols": [('Close_MA3', 'SPY')],
-                                                    "x_seq_length": x_seq_length,
-                                                    "y_seq_length": 1,
-                                                    "device": device,
-                                                    'df_source': df_source.copy()  # Use the same data for all the experiences
-                                                    }
-                    results = train_model(configuration_for_experience)
-                    results_of_experiences.update({a_version: results})
+    for x_seq_length, a_margin, a_x_cols, a_tav_dates in tqdm(product(_available_x_seq_length, _available_margin, _x_cols, _tav_dates), desc='Progress'):
+        a_version = f"LX{x_seq_length}_M{a_margin}_CX{'_'.join(a_x_cols)}_T{''.join(a_tav_dates)}"
+        a_stub_dir = os.path.join(base_output_dir_for_all_experiences, f"__{_a_direction}__{a_margin}")
+        os.makedirs(a_stub_dir, exist_ok=True)
+        run_id = f'MXW_{datetime.now().strftime("%d__%H_%M")}'  # root directory used by runner
+        configuration_for_experience = {"margin": a_margin, "type_margin": _type_margin,
+                                        "direction": _a_direction,
+                                        "lr_decay_iters": 4001,
+                                        "max_iters": 4001,
+                                        "log_interval": 1000,
+                                        "learning_rate": 1e-3,
+                                        "min_lr": 1e-4,
+                                        "eval_interval": 1,
+                                        "weight_decay": 0.1,
+                                        "run_id": run_id, "version": a_version,
+                                        "tav_dates": a_tav_dates, "mes_dates": _mes_dates,
+                                        "stub_dir": a_stub_dir,
+                                        "batch_size": 1024,
+                                        "x_cols": a_x_cols,
+                                        "x_cols_to_norm": [],
+                                        "y_cols": [('Close_MA3', 'SPY')],
+                                        "x_seq_length": x_seq_length,
+                                        "y_seq_length": 1,
+                                        "device": device,
+                                        'df_source': df_source.copy()  # Use the same data for all the experiences
+                                        }
+        results = train_model(configuration_for_experience)
+        results_of_experiences.update({a_version: results})
     logger.debug(results_of_experiences)
     best_exp_based_on_val_loss, best_exp_based_on_val_acc = (None, 999999), (None, 0.)
     for key, data in results_of_experiences.items():
