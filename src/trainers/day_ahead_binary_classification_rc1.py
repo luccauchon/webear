@@ -166,8 +166,8 @@ def train(configuration):
     _margin = configuration.get("margin", 1.5)
     _shuffle_indices = configuration.get("shuffle_indices", False)
     _save_checkpoint = configuration.get("save_checkpoint", False)
-    type_margin = configuration.get("type_margin", "fixed")
-    assert type_margin in ['fixed', 'relative']
+    _type_margin = configuration.get("type_margin", "fixed")
+    assert _type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
     _jump_ahead = configuration.get('jump_ahead', 0)
 
@@ -268,13 +268,13 @@ def train(configuration):
     train_dataset    = TripleIndicesLookAheadBinaryClassificationDataset(_df=train_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
                                                                          _indices=train_indices, _mode='train', _data_augmentation=_data_augmentation, _margin=_margin,
                                                                          _power_of_noise=_power_of_noise, _frequency_of_noise=_frequency_of_noise, _direction=_direction,
-                                                                         _type_of_margin=type_margin)
+                                                                         _type_of_margin=_type_margin)
     val_dataset = TripleIndicesLookAheadBinaryClassificationDataset(_df=val_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
                                                                     _indices=val_indices, _mode='val', _data_augmentation=False, _margin=_margin, _direction=_direction,
-                                                                    _type_of_margin=type_margin)
+                                                                    _type_of_margin=_type_margin)
     test_dataset     = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
                                                                          _indices=test_indices, _mode='test', _data_augmentation=False, _margin=_margin, _direction=_direction,
-                                                                         _type_of_margin=type_margin)
+                                                                         _type_of_margin=_type_margin)
 
     train_dataloader = DataLoader(train_dataset, batch_size=__batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=__batch_size, shuffle=False)
