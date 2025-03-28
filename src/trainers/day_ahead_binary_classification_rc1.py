@@ -165,6 +165,7 @@ def train(configuration):
     _y_seq_length = configuration.get("y_seq_length", 1)
     _margin = configuration.get("margin", 1.5)
     _shuffle_indices = configuration.get("shuffle_indices", False)
+    _save_checkpoint = configuration.get("save_checkpoint", False)
     type_margin = configuration.get("type_margin", "fixed")
     assert type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
@@ -242,11 +243,6 @@ def train(configuration):
     logger.debug(f"Using a day ahead of {_jump_ahead}")
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=_tav_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=_mes_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
-    for a_bag_of_indices in test_indices:
-        dd1 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[0].date()
-        dd2 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[-1].date()
-        dd3 = test_df.iloc[a_bag_of_indices[2]:a_bag_of_indices[3]].index[0].date()
-        logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd2} ({dd2.strftime('%A')})  >>  {dd1} ({dd1.strftime('%A')})]")
     if _shuffle_indices:
         logger.debug("Shuffling indices...")
         random.shuffle(train_indices)
@@ -259,7 +255,11 @@ def train(configuration):
         logger.debug(f"Training is ranging from {train_df.iloc[train_indices[-1][2]:train_indices[-1][3]].index[0].date()} to {train_df.iloc[train_indices[0][2]:train_indices[0][3]].index[0].date()}  ")
         logger.debug(f"Validation is ranging from {val_df.iloc[val_indices[-1][2]:val_indices[-1][3]].index[0].date()} to {val_df.iloc[val_indices[0][2]:val_indices[0][3]].index[0].date()}  ")
     logger.debug(f"MES is ranging from {_mes_dates[0]} to {_mes_dates[1]}")
-
+    for a_bag_of_indices in test_indices:
+        dd1 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[0].date()
+        dd2 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[-1].date()
+        dd3 = test_df.iloc[a_bag_of_indices[2]:a_bag_of_indices[3]].index[0].date()
+        logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd2} ({dd2.strftime('%A')})  >>  {dd1} ({dd1.strftime('%A')})]")
     # mean = train_df.mean()
     # std_dev = train_df.std()
     # train_df = (train_df - mean) / std_dev
@@ -348,7 +348,7 @@ def train(configuration):
                 'test_accuracy': test_accuracy,
                 'train_loss': train_loss.item(),
             }
-            if is_best_val_loss_achieved or is_best_val_accuracy_achieved and 0 != iter_num:
+            if is_best_val_loss_achieved or is_best_val_accuracy_achieved and 0 != iter_num and _save_checkpoint:
                 os.makedirs(os.path.join(output_dir, 'checkpoints'), exist_ok=True)
                 if is_best_val_loss_achieved:
                     checkpoint_filename = os.path.join(output_dir, 'checkpoints', f'best__val_loss_{best_val_loss[0]:.8f}__with__val_accuracy_{val_accuracy:.8f}__at_{iter_num}.pt')
