@@ -314,6 +314,7 @@ def train(configuration):
     loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device)  # mean-squared error for regression
     optimizer = model.configure_optimizers(weight_decay=_weight_decay, learning_rate=__learning_rate, betas=betas, device_type=device)
     train_loss, best_val_loss, best_val_accuracy = torch.tensor(999999999), (999999999, 999999999), (0., 0)
+    best_test_loss, best_test_accuracy = (999999999, 999999999), (0., 0)
     running__train_losses, running__train_accuracy, running__val_losses, running__val_accuracy, running__test_losses, running__test_accuracy = -1, -1, -1, -1, -1, -1
     train_iterator, old__is_best_val_loss_achieved_file, old__is_best_val_accuracy_achieved_file = itertools.cycle(train_dataloader), None, None
     _x, _y, _x_data_norm = _get_batch(_batch_size=__batch_size, iterator=train_iterator)
@@ -335,8 +336,14 @@ def train(configuration):
 
             is_best_val_loss_achieved      = val_loss < best_val_loss[0]
             is_best_val_accuracy_achieved  = val_accuracy > best_val_accuracy[0]
-            best_val_loss     = (val_loss, iter_num)     if is_best_val_loss_achieved or 0 == iter_num else best_val_loss
-            best_val_accuracy = (val_accuracy, iter_num) if is_best_val_loss_achieved or 0 == iter_num else best_val_accuracy
+            best_val_loss      = (val_loss, iter_num)     if is_best_val_loss_achieved or 0 == iter_num else best_val_loss
+            best_val_accuracy  = (val_accuracy, iter_num) if is_best_val_accuracy_achieved or 0 == iter_num else best_val_accuracy
+
+            is_best_test_loss_achieved     = test_loss < best_test_loss[0]
+            is_best_test_accuracy_achieved = test_accuracy > best_test_accuracy[0]
+            best_test_loss     = (test_loss, iter_num) if is_best_test_loss_achieved or 0 == iter_num else best_test_loss
+            best_test_accuracy = (test_accuracy, iter_num) if is_best_test_loss_achieved or 0 == iter_num else best_test_accuracy
+
             checkpoint = {
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
@@ -344,6 +351,8 @@ def train(configuration):
                 'iter_num': iter_num,
                 'best_val_loss': best_val_loss,
                 'best_val_accuracy': best_val_accuracy,
+                'best_test_loss': best_test_loss,
+                'best_test_accuracy': best_test_accuracy,
                 'test_loss': test_loss,
                 'test_accuracy': test_accuracy,
                 'train_loss': train_loss.item(),
@@ -369,9 +378,13 @@ def train(configuration):
                     old__is_best_val_accuracy_achieved_file = checkpoint_filename
 
             if 0 == iter_num % _log_interval or 1 == iter_num:
-                logger.debug(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
-                             f"val:({running__val_losses:.4f})/({running__val_accuracy:.4f})  >> {best_val_loss[0]:.4f}@{best_val_loss[1]} , {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}   "
-                             f"test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"                             
+                # logger.debug(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
+                #              f"val:({running__val_losses:.4f})/({running__val_accuracy:.4f})  >> {best_val_loss[0]:.4f}@{best_val_loss[1]} , {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}   "
+                #              f"test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"
+                #              f"")
+                logger.debug(f"i: {iter_num:6d}  lr: {lr:0.3E}  train:({running__train_accuracy:.4f})  "
+                             f"val:({running__val_accuracy:.4f}) >> {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}  "
+                             f"test:({running__test_accuracy:.4f}) >> {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}  "
                              f"")
             model.train()
         train_logits, train_loss = model(x=_x, y=_y)  # forward pass
