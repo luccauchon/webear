@@ -214,7 +214,7 @@ def train(configuration):
     ###########################################################################
     __batch_size   = configuration.get("batch_size", 1024)
     betas          = (0.9, 0.95)
-    decay_lr       = True
+    _decay_lr       = configuration.get("decay_lr", True)
     _eval_interval  = configuration.get("eval_interval", 10)
     iter_num       = 0
     __learning_rate  = configuration.get("learning_rate", 1e-3)
@@ -318,7 +318,7 @@ def train(configuration):
     train_iterator, old__is_best_val_loss_achieved_file, old__is_best_val_accuracy_achieved_file = itertools.cycle(train_dataloader), None, None
     _x, _y, _x_data_norm = _get_batch(_batch_size=__batch_size, iterator=train_iterator)
     while iter_num < _max_iters:
-        lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=__learning_rate, _min_lr=__min_lr, _lr_decay_iters=__lr_decay_iters) if decay_lr else __learning_rate
+        lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=__learning_rate, _min_lr=__min_lr, _lr_decay_iters=__lr_decay_iters) if _decay_lr else __learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 

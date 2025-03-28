@@ -40,3 +40,5 @@ batch_size = 1024
 
 df_source = None
 shuffle_indices = False
+decay_lr = True
+save_checkpoint=False
