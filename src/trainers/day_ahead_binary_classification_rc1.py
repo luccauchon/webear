@@ -143,10 +143,10 @@ def update_running_var(_running__value, _value):
 
 
 def train(configuration):
-    seed_offset = configuration.get("seed_offset", 1234)
-    np.random.seed(seed_offset)
-    torch.manual_seed(seed_offset)
-    torch.cuda.manual_seed_all(seed_offset)
+    _seed_offset = configuration.get("seed_offset", 1234)
+    np.random.seed(_seed_offset)
+    torch.manual_seed(_seed_offset)
+    torch.cuda.manual_seed_all(_seed_offset)
     torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
     torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
 
@@ -384,10 +384,6 @@ def train(configuration):
                     old__is_best_val_accuracy_achieved_file = checkpoint_filename
 
             if 0 == iter_num % _log_interval or 1 == iter_num:
-                # logger.debug(f"iter: {iter_num:6d}   lr: {lr:0.3E}   train:({running__train_losses:.4f})/({running__train_accuracy:.4f})   "
-                #              f"val:({running__val_losses:.4f})/({running__val_accuracy:.4f})  >> {best_val_loss[0]:.4f}@{best_val_loss[1]} , {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]}   "
-                #              f"test:({running__test_losses:.4f})/({running__test_accuracy:.4f})"
-                #              f"")
                 logger.debug(f"i: {iter_num:6d}  lr: {lr:0.3E}  train_acc:({running__train_accuracy:.4f})  "
                              f"val_acc:({running__val_accuracy:.4f}) >> {best_val_accuracy[0]:.2f}@{best_val_accuracy[1]} (wT:{best_val_accuracy[2]:.2f})    "
                              f"test_acc:({running__test_accuracy:.4f}) >> {best_test_accuracy[0]:.2f}@{best_test_accuracy[1]}  "

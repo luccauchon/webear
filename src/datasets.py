@@ -106,7 +106,12 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
                 assert False
             elif self.mode == 'inference':
                 if self.data_augmentation:
-                    the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
+                    if 0 != len(x_data_norm):
+                        the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in x_data_norm else x)
+                        assert False, f"to be verified"
+                    else:
+                        _toto = the_x[[a_col for a_col in self.feature_cols if a_col != 'day_of_week']].iloc[0]
+                        the_x = the_x[self.feature_cols].apply(lambda x: x + np.random.normal(0, self.power_of_noise, size=len(x)) if x.name in _toto else x)
                 else:
                     the_x = the_x[self.feature_cols].apply(lambda x: x.div(x_data_norm[x.name]) if x.name in x_data_norm else x)
             else:

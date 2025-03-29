@@ -79,7 +79,7 @@ def get_df_SPY_and_VIX_virgin_at_minutes():
     return  df_spy, df_vix
 
 
-def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
+def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(3,4,5)):
     df_vix    = yf.download("^VIX", period="max", interval=interval, auto_adjust=False)
     df_vix    = df_vix.drop("Volume", axis=1)
     df_spy    = yf.download("SPY", period="max", interval=interval, auto_adjust=False)
@@ -92,7 +92,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True):
     merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
 
     if add_moving_averages:
-        for window_size in [2, 3, 4, 5, 6, 10, 12, 14, 15, 20, 25, 30, 60, 90, 120, 180]:  # Define the window size for the moving average
+        for window_size in _window_sizes:  # Define the window size for the moving average
             do_ma_on_those = [('Close', 'SPY'), ('High', 'SPY'), ('Low', 'SPY'), ('Open', 'SPY'), ('Volume', 'SPY'),
                               ('Close', '^VIX'), ('High', '^VIX'), ('Low', '^VIX'), ('Open', '^VIX')]
             new_cols = []
@@ -170,7 +170,7 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
     ts2 = tt2 + pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
     df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
     if just_x_no_y:
-        assert False
+        assert tt1.date() == tt2.date()
         for idx in reversed(range(0, len(df) + 1)):
             idx1, idx2 = idx - x_seq_length, idx
             if idx1 < 0 or idx2 < 0:
@@ -337,8 +337,8 @@ def extract_info_from_filename(filename):
     Returns:
         dict: A dictionary containing the extracted information.
     """
-    pattern     = r"best__(?P<metric1_name>test_accuracy|test_loss)_(?P<metric1_value>\d+\.\d+)__with__(?P<metric2_name>test_accuracy|test_loss)_(?P<metric2_value>\d+\.\d+)__at_(?P<epoch>\d+)\.pt"
-    pattern_alt = r"best__(?P<metric1_name>test_accuracy)_(?P<metric1_value>\d+\.\d+)__with__(?P<metric2_name>loss|test_loss)_(?P<metric2_value>\d+\.\d+)_at_(?P<epoch>\d+)\.pt"
+    pattern     = r"best__(?P<metric1_name>val_accuracy|val_loss)_(?P<metric1_value>\d+\.\d+)__with__(?P<metric2_name>val_accuracy|val_loss)_(?P<metric2_value>\d+\.\d+)__at_(?P<epoch>\d+)\.pt"
+    pattern_alt = r"best__(?P<metric1_name>val_accuracy)_(?P<metric1_value>\d+\.\d+)__with__(?P<metric2_name>loss|val_loss)_(?P<metric2_value>\d+\.\d+)_at_(?P<epoch>\d+)\.pt"
     match = re.match(pattern, filename)
     if match:
         return match.groupdict()
