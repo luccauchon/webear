@@ -44,3 +44,5 @@ decay_lr = True
 save_checkpoint=False
 
 number_of_timestep_for_validation=60
+
+seed_offset=1234

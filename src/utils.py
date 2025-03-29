@@ -182,16 +182,15 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
             break
     else:
         for idx in reversed(range(0, len(df)+1)):
-            idx1, idx2 = idx-x_seq_length, idx
-            idx3, idx4 = idx+jump_ahead, idx+jump_ahead+y_seq_length
-            if idx1 <0 or idx4 >= len(df):
+            idx1, idx2 = idx-x_seq_length-1, idx-1
+            idx3, idx4 = idx+jump_ahead-1, idx+jump_ahead+y_seq_length-1
+            if idx1 <0 or idx4 > len(df):
                 continue
             assert df.iloc[idx1:idx2].index.intersection(df.iloc[idx3:idx4].index).empty
             # Make sure that y is in the range
-            t1_y = df.iloc[idx3:idx4].index[0]
+            t1_y, t2_y = df.iloc[idx3:idx4].index[0], df.iloc[idx3:idx4].index[-1]
             if t1_y < tt1 or t1_y > tt2:
                 continue
-            t2_y = df.iloc[idx3:idx4].index[-1]
             if t2_y < tt1 or t2_y > tt2:
                 continue
             for tk_y in list(df.iloc[idx3:idx4].index):
