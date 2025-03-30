@@ -1,11 +1,11 @@
 fast_execution_for_debugging     = True
-skip_training_with_already_computed_results = [r"D:\PyCharmProjects\webear\stubs\kepler__0329_10h38m\__trainers__"]
+skip_training_with_already_computed_results = [r"D:\PyCharmProjects\webear\stubs\kepler__0329_19h34m"]
 
 debug_level = "DEBUG"
 
 tav_dates      = ["2024-01-01", "2025-03-22"]
 mes_dates      = ["2025-03-23", "2025-03-29"]
-inf_dates      = ["2025-03-31", "2025-03-31"]
+inf_dates      = ["2025-03-23", "2025-04-04"]
 
 runner__lr_decay_iters= 4001
 runner__max_iters     = 4001

@@ -12,7 +12,7 @@ import sys
 from ast import literal_eval
 import os
 import json
-from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, next_weekday_with_check, is_weekday, get_stub_dir
+from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, get_df_SPY_and_VIX, is_weekday, get_stub_dir
 import torch
 
 
@@ -65,13 +65,14 @@ def start_runner(configuration):
     _fetch_new_dataframe         = configuration.get("fetch_new_dataframe", False)  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
     _master_df_source            = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
     _device                      = configuration.get("device", "cuda")
-    _power_of_noise              = configuration.get("inf_power_of_noise", 0.1)
-    _frequency_of_noise          = configuration.get("inf_frequency_of_noise", 0.25)
-    nb_iter_test_in_inference    = configuration.get("nb_iter_test_in_inference", 50)
+    _power_of_noise_inf          = configuration.get("inf_power_of_noise", 1.)
+    _frequency_of_noise_inf      = configuration.get("inf_frequency_of_noise", 1.)
+    _nb_iter_test_in_inference   = configuration.get("nb_iter_test_in_inference", 100)
     _today                       = configuration.get("today", pd.Timestamp.now().date())
     if _fast_execution_for_debugging:
-        nb_iter_test_in_inference               = 5
+        _nb_iter_test_in_inference               = 5
     _kepler_root_dir             = configuration.get("stub_dir", os.path.join(get_stub_dir(), f"kepler__{pd.Timestamp.now().strftime('%m%d_%Hh%Mm')}"))
+    _download_data_for_inf       = configuration.get("download_data_for_inf", False)
 
     ###########################################################################
     #
@@ -187,11 +188,21 @@ def start_runner(configuration):
                                                down_candidats=candidats['down'],
                                                fetch_new_dataframe=_fetch_new_dataframe, device=_device, df_source=_master_df_source)
 
+    # Download data , if requested
+    if _download_data_for_inf:
+        df, _ = get_df_SPY_and_VIX()
+
     ###########################################################################
     # Do inferences
     ###########################################################################
     start_date, end_date = pd.to_datetime(_inf_dates[0]), pd.to_datetime(_inf_dates[1])
     logger.info(f"Created meta model with {len(candidats['up'])+len(candidats['down'])} models , inferencing [{start_date.date()}] to [{end_date.date()}]")
+    for type_of, all_candidats in zip(["UP", "DOWN"], [candidats['up'], candidats['down']]):
+        for one_candidat in all_candidats:
+            if 'val_accuracy' in one_candidat:
+                logger.info(f"[{type_of}]  val_acc: {float(one_candidat['val_accuracy']):0.4}    val_loss: {float(one_candidat['with_val_loss']):0.4}")
+            if 'val_loss' in one_candidat:
+                logger.info(f"[{type_of}]  val_acc: {float(one_candidat['with_val_accuracy']):.4}    val_loss: {float(one_candidat['val_loss']):.4}")
     results_produced = {}
     # Iterate over days
     for n in range(int((end_date - start_date).days) + 1):
@@ -209,10 +220,12 @@ def start_runner(configuration):
                                                                real_time_execution=real_time_execution, **params)
         if data_loader_without_data_augmentation is None:
             continue
+        the_ground_truth_for_date, the_ground_truth_label_for_date = None, None
         if not real_time_execution:
             the_ground_truth_for_date = [y for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)]
             assert 1 == len(the_ground_truth_for_date)
             the_ground_truth_for_date = the_ground_truth_for_date[0].item()
+            the_ground_truth_label_for_date = 'up' if the_ground_truth_for_date==1 else ('down' if the_ground_truth_for_date==-1 else 'sideways')
         nb_forward_pass = 0
         nb_pred_for_down, nb_pred_for_up, nb_pred_for_sideways, nb_pred_for_unknown = 0., 0., 0., 0.
         assert 1 == len([batch_idx for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)])
@@ -221,9 +234,9 @@ def start_runner(configuration):
                 assert all(y == the_ground_truth_for_date)
             _logits = meta_model(x=X)
             nb_forward_pass += 1
-            if 99 == _logits:
-                _tmp_str = f"For {date.strftime('%Y-%m-%d')} [{day_of_week_full}],"
-                logger.debug(f"  [?] :| {_tmp_str}")
+            # if 99 == _logits:
+            #     _tmp_str = f"For {date.strftime('%Y-%m-%d')} [{day_of_week_full}],"
+            #     logger.debug(f"  [?] :| {_tmp_str}")
             nb_pred_for_up       += 1 if 1 == _logits else 0
             nb_pred_for_sideways += 1 if 0 == _logits else 0
             nb_pred_for_down     += 1 if -1 == _logits else 0
@@ -231,8 +244,8 @@ def start_runner(configuration):
 
         # Do multiple passes on dataset Test with data augmentation
         data_loader_with_data_augmentation = get_dataloader(df=df, device=_device, _data_augmentation=True, date_to_predict=date,
-                                                            real_time_execution=real_time_execution, power_of_noise=_power_of_noise, frequency_of_noise=_frequency_of_noise, **params)
-        for ee in range(0, nb_iter_test_in_inference):
+                                                            real_time_execution=real_time_execution, power_of_noise=_power_of_noise_inf, frequency_of_noise=_frequency_of_noise_inf, **params)
+        for ee in range(0, _nb_iter_test_in_inference):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
                 if not real_time_execution:
                     assert all(y == the_ground_truth_for_date)
@@ -247,34 +260,42 @@ def start_runner(configuration):
         assert 0.99 < prediction_for_down+prediction_for_up+prediction_for_sideways+prediction_for_unknown < 1.01
         predictions = {'down': prediction_for_down,'up': prediction_for_up,'sideways': prediction_for_sideways,'unknown': prediction_for_unknown}
         prediction_label, prediction_confidence = max(predictions.items(), key=lambda x: x[1])
-        #pre_str = "[*] " if _today == date.date() else ""
-        print(f"{date.strftime('%Y-%m-%d')} : {predictions}")
-        #results_produced.update({f"{date.strftime('%Y-%m-%d')}": {"prediction": prediction, "confidence": confidence, "ground_truth": the_ground_truth_for_date}})
-        # if not real_time_execution:
-        #     close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
-        #     tmp_str = f"higher than {close_value_yesterday:.2f}$" if 1 == prediction else f"lower than {close_value_yesterday:.2f}$"
-        #     pre_str += f":) " if the_ground_truth_for_date == prediction else ":( "
-        #     if -1 != prediction:
-        #         logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction} with {confidence * 100:.2f}% confidence ({tmp_str})")
-        #     else:
-        #         tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-        #         logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable because of {confidence * 100:.2f}% confidence > ({tmp_str})")
-        #     results_produced.update({f"{date.strftime('%Y-%m-%d')}": {"prediction": prediction, "confidence": confidence, "ground_truth": the_ground_truth_for_date}})
-        # else:
-        #     assert 1 == len(params['y_cols'])
-        #     try:
-        #         close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
-        #     except Exception as ee:
-        #         logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
-        #         continue
-        #     if -1 != prediction:
-        #         tmp_str = f"higher than {close_value_yesterday:.2f}$" if 1 == prediction else f"lower than {close_value_yesterday:.2f}$"
-        #         logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction} with {confidence * 100:.2f}% confidence > ({tmp_str})")
-        #     else:
-        #         tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-        #         logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable because of {confidence * 100:.2f}% confidence > ({tmp_str})")
-    return results_produced
-
+        prediction_value = 1 if prediction_label=='up' else (-1 if prediction_label=='down' else (99 if prediction_label=='unknown' else 0))
+        pre_str = "[*] " if _today == date.date() else ""
+        results_produced.update({date.strftime('%Y-%m-%d'): {"predictions": predictions, "prediction_label": prediction_label, "prediction_value": prediction_value,
+                                                             "prediction_confidence": prediction_confidence, "ground_truth": the_ground_truth_for_date}})
+        if not real_time_execution:
+            close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
+            tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
+            pre_str += f":) " if the_ground_truth_for_date == prediction_value else (":| " if prediction_value == 99 else ":( ")
+            if 99 != prediction_value:
+                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value} with {prediction_confidence * 100:.2f}% confidence {tmp_str}")
+            else:
+                tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
+                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
+        else:
+            assert 1 == len(params['y_cols'])
+            try:
+                close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
+            except Exception as ee:
+                logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
+                continue
+            if 99 != prediction_value:
+                tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
+                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction_value} with {prediction_confidence * 100:.2f}% confidence > {tmp_str}")
+            else:
+                tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
+                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable ({prediction_value}) > ({tmp_str})")
+    hit, miss = 0, 0
+    for a_date, values in results_produced.items():
+        if values['ground_truth'] is None:
+            continue
+        if values["prediction_value"] == values['ground_truth']:
+            hit += 1
+        else:
+            miss +=1
+    logger.info(f"Accuracy: {hit/(hit+miss)*100:.3}%")
+    return results_produced, hit/(hit+miss)
 
 if __name__ == '__main__':
     freeze_support()

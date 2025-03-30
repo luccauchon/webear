@@ -111,7 +111,7 @@ def generate_dataloader_for_inference(df, device, _data_augmentation, date_to_pr
                                                      y_seq_length=_y_seq_length, just_x_no_y=real_time_execution)
     assert len(_indices) in [0, 1]
     if 0 == len(_indices):
-        return None, None
+        return None
     _margin = kwargs['margin']
     _dataset = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
                                                                  _indices=_indices, _mode='inference', _data_augmentation=_data_augmentation, _margin=_margin, _power_of_noise=_power_of_noise,

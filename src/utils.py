@@ -177,6 +177,9 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
                 continue
             if len(df.iloc[idx1:idx2]) != x_seq_length:
                 continue
+            assert jump_ahead==0
+            if next_weekday(df.iloc[idx1:idx2].index[-1].date()) != tt1.date():
+                continue  # We want to predict tomorrow, so we need data today
             assert idx2 > idx1
             indices.append((idx1, idx2))
             break

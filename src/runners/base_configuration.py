@@ -7,6 +7,7 @@ inf_dates      = ["2025-03-31", "2025-03-31"]
 
 fast_execution_for_debugging                = False
 skip_training_with_already_computed_results = []
+download_data_for_inf = False
 power_of_noise               = 0.1
 frequency_of_noise           = 0.25
 

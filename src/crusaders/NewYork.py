@@ -47,8 +47,6 @@ def start_campaign(configuration):
     assert int(_num_weeks) > 0
     configuration.update({"length_of_training_data": 365 * 2, "length_of_mes": 7, "length_of_inf": 7})
     logger.info(f"Starting campaign @{_start_date.date()} for {_num_weeks} week{'' if 1==_num_weeks else 's'}.")
-    if not configuration['fast_execution_for_debugging']:
-        time.sleep(10)
     master_df_source = get_latest_spy_and_vix_dataframe()  # Use always the same dataframe through all the campaign
     output_dir = os.path.join(get_stub_dir(), f"NewYork_{_start_date.date().strftime('%Y')}_{pd.Timestamp.now().strftime('%d_%Hh%Mm')}")
     os.makedirs(output_dir)
