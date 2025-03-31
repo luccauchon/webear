@@ -171,9 +171,9 @@ def train(configuration):
     _x_cols = configuration.get("trainer__x_cols", ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week'])  # For SPY and VIX
     _x_cols_to_norm = configuration.get("trainer__x_cols_to_norm", [])
     _y_cols = configuration.get("trainer__y_cols", [('Close_MA5', 'SPY')])
-    _x_seq_length = configuration.get("trainer__x_seq_length", 10)
-    _y_seq_length = configuration.get("trainer__y_seq_length", 1)
-    _margin = configuration.get("trainer__margin", 1.5)
+    _x_seq_length = int(configuration.get("trainer__x_seq_length", 10))
+    _y_seq_length = int(configuration.get("trainer__y_seq_length", 1))
+    _margin = float(configuration.get("trainer__margin", 1.5))
     _shuffle_indices = configuration.get("trainer__shuffle_indices", False)
     _save_checkpoint = configuration.get("trainer__save_checkpoint", False)
     _type_margin = configuration.get("trainer__type_margin", "fixed")
