@@ -195,7 +195,7 @@ def train(configuration):
     ###########################################################################
     # Load source data
     ###########################################################################
-    df_filename, _df_source = os.path.join(output_dir, "df.pkl"), configuration.get("df_source", None)
+    df_filename, _df_source = os.path.join(output_dir, "df.pkl"), configuration.get("trainer__df_source", None)
     if _df_source is None:
         if not os.path.exists(df_filename) or _force_download_data:
             df, df_name = _fetch_dataframe()
@@ -413,7 +413,7 @@ def train(configuration):
         running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()
 
         iter_num += 1
-    configuration['df_source'] = None    # Dataframe is not serializable
+    configuration['trainer__df_source'] = None    # Dataframe is not serializable
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
                'best_val_loss': best_val_loss, 'best_val_accuracy': best_val_accuracy,
@@ -466,7 +466,7 @@ if __name__ == '__main__':
     config = {k: globals()[k] for k in config_keys}
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
-    config.update({k: globals()[k] for k in globals() if k.startswith("trainer__") or k in ['device','df_source','seed_offset','stub_dir']})
+    config.update({k: globals()[k] for k in globals() if k.startswith("trainer__") or k in ['device','seed_offset','stub_dir']})
     configuration = dict_to_namespace(config)
     # -----------------------------------------------------------------------------
     #pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
