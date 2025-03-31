@@ -78,13 +78,20 @@ def create_meta_model(up_candidats, down_candidats, device, fetch_new_dataframe=
             one_bag.update({name: model})
     meta_model = LSTMMetaUpDownClassification(up_models=up__list_of_models, down_models=down__list_of_models)
     meta_model = meta_model.cuda() if device != 'cpu' else meta_model
-    assert all(df.index.equals(df_list[0].index) for df in df_list[1:])
+    if not all(dfk.index.equals(df_list[0].index) for dfk in df_list[1:]):
+        logger.warning(f"{df_list[0].index=}")
+        for dfk in df_list[1:]:
+            logger.warning(f"{dfk.index=}")
     assert all(ppp['x_cols']==params_list[0]['x_cols'] for ppp in params_list[1:])
     assert all(ppp['x_cols_to_norm'] == params_list[0]['x_cols_to_norm'] for ppp in params_list[1:])
-    assert all(ppp['y_cols'] == params_list[0]['y_cols'] for ppp in params_list[1:])
+    if not all(ppp['y_cols'] == params_list[0]['y_cols'] for ppp in params_list[1:]):
+        logger.warning(f"{df_list[0]['y_cols']=}")
+        for dfk in df_list[1:]:
+            logger.warning(f"{dfk['y_cols']=}")
     assert all(ppp['x_seq_length'] == params_list[0]['x_seq_length'] for ppp in params_list[1:])
     assert all(ppp['y_seq_length'] == params_list[0]['y_seq_length'] for ppp in params_list[1:])
     assert all(ppp['margin'] == params_list[0]['margin'] for ppp in params_list[1:])
+    assert all(ppp['type_margin'] == params_list[0]['type_margin'] for ppp in params_list[1:])
     if fetch_new_dataframe:
         assert df_source is None
         df, df_name = _fetch_dataframe()
@@ -93,7 +100,7 @@ def create_meta_model(up_candidats, down_candidats, device, fetch_new_dataframe=
         assert not fetch_new_dataframe
         df = df_source.copy()
         df_list[0] = df
-    return meta_model, df_list[0], {'x_cols': params_list[0]['x_cols'], 'y_cols': params_list[0]['y_cols'],
+    return meta_model, df_list[0], {'x_cols': params_list[0]['x_cols'], 'y_cols': params_list[0]['y_cols'], 'type_margin': params_list[0]['type_margin'],
                                     'x_cols_to_norm': params_list[0]['x_cols_to_norm'], 'margin': params_list[0]['margin'],
                                     'x_seq_length': params_list[0]['x_seq_length'], 'y_seq_length': params_list[0]['y_seq_length']}
 
@@ -113,9 +120,11 @@ def generate_dataloader_for_inference(df, device, _data_augmentation, date_to_pr
     if 0 == len(_indices):
         return None
     _margin = kwargs['margin']
+    _type_of_margin = kwargs['type_margin']
     _dataset = TripleIndicesLookAheadBinaryClassificationDataset(_df=test_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
-                                                                 _indices=_indices, _mode='inference', _data_augmentation=_data_augmentation, _margin=_margin, _power_of_noise=_power_of_noise,
-                                                                 _just_x_no_y=real_time_execution, _frequency_of_noise=_frequency_of_noise, _type_of_margin='fixed', _direction=None)
+                                                                 _indices=_indices, _mode='inference', _data_augmentation=_data_augmentation, _margin=_margin,
+                                                                 _power_of_noise=_power_of_noise, _type_of_margin=_type_of_margin,
+                                                                 _just_x_no_y=real_time_execution, _frequency_of_noise=_frequency_of_noise, _direction=None)
     _dataloader = DataLoader(_dataset, batch_size=1, shuffle=False)
     return _dataloader
 
@@ -144,6 +153,7 @@ def update_running_var(_running__value, _value):
 
 def train(configuration):
     _seed_offset = configuration.get("seed_offset", 1234)
+    logger.debug(f"Seed is {_seed_offset}")
     np.random.seed(_seed_offset)
     torch.manual_seed(_seed_offset)
     torch.cuda.manual_seed_all(_seed_offset)
@@ -152,35 +162,35 @@ def train(configuration):
 
     device = configuration.get("device", 'cuda')
 
-    _data_augmentation   = configuration.get("data_augmentation", False)
-    _force_download_data = configuration.get("force_download_data", False)
-    _direction = configuration.get("direction", "up")
-    _tav_dates = configuration.get("tav_dates", ["2018-01-01", "2025-03-08"])
-    _mes_dates = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
+    _data_augmentation   = configuration.get("trainer__data_augmentation", False)
+    _force_download_data = configuration.get("trainer__force_download_data", False)
+    _direction = configuration.get("trainer__direction", "up")
+    _tav_dates = configuration.get("trainer__tav_dates", ["2018-01-01", "2025-03-08"])
+    _mes_dates = configuration.get("trainer__mes_dates", ["2025-03-09", "2025-03-15"])
 
-    _x_cols = configuration.get("x_cols", ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week'])  # For SPY and VIX
-    _x_cols_to_norm = configuration.get("x_cols_to_norm", ['Close', 'High', 'Low', 'Open', 'Volume'])  # ['Close_MA5', 'Volume']
-    _y_cols = configuration.get("y_cols", [('Close_MA5', 'SPY')])
-    _x_seq_length = configuration.get("x_seq_length", 10)
-    _y_seq_length = configuration.get("y_seq_length", 1)
-    _margin = configuration.get("margin", 1.5)
-    _shuffle_indices = configuration.get("shuffle_indices", False)
-    _save_checkpoint = configuration.get("save_checkpoint", False)
-    _type_margin = configuration.get("type_margin", "fixed")
+    _x_cols = configuration.get("trainer__x_cols", ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week'])  # For SPY and VIX
+    _x_cols_to_norm = configuration.get("trainer__x_cols_to_norm", [])
+    _y_cols = configuration.get("trainer__y_cols", [('Close_MA5', 'SPY')])
+    _x_seq_length = configuration.get("trainer__x_seq_length", 10)
+    _y_seq_length = configuration.get("trainer__y_seq_length", 1)
+    _margin = configuration.get("trainer__margin", 1.5)
+    _shuffle_indices = configuration.get("trainer__shuffle_indices", False)
+    _save_checkpoint = configuration.get("trainer__save_checkpoint", False)
+    _type_margin = configuration.get("trainer__type_margin", "fixed")
     assert _type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
-    _jump_ahead = configuration.get('jump_ahead', 0)
-    _number_of_timestep_for_validation = configuration.get('number_of_timestep_for_validation', 60)
-
-    run_id = configuration.get("run_id", 123)
-    version = configuration.get("version", "rc1")
+    _jump_ahead = configuration.get('trainer__jump_ahead', 0)
+    _number_of_timestep_for_validation = configuration.get('trainer__number_of_timestep_for_validation', 60)
+    logger.debug(f"Using {_number_of_timestep_for_validation} time steps for validation")
+    run_id = configuration.get("trainer__run_id", 123)
+    version = configuration.get("trainer__version", "rc1")
     output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"ODABC__{version}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')
 
-    _frequency_of_noise  = configuration.get("frequency_of_noise", 0.25)
-    _power_of_noise      = configuration.get("power_of_noise", 0.001)
+    _frequency_of_noise  = configuration.get("trainer__frequency_of_noise", 0.25)
+    _power_of_noise      = configuration.get("trainer__power_of_noise", 0.001)
 
     ###########################################################################
     # Load source data
@@ -213,18 +223,18 @@ def train(configuration):
     ###########################################################################
     # Configuration
     ###########################################################################
-    __batch_size   = configuration.get("batch_size", 1024)
+    __batch_size   = configuration.get("trainer__batch_size", 1024)
     betas          = (0.9, 0.95)
-    _decay_lr       = configuration.get("decay_lr", True)
-    _eval_interval  = configuration.get("eval_interval", 10)
+    _decay_lr       = configuration.get("trainer__decay_lr", True)
+    _eval_interval  = configuration.get("trainer__eval_interval", 10)
     iter_num       = 0
-    __learning_rate  = configuration.get("learning_rate", 1e-3)
-    _log_interval    = configuration.get("log_interval", 5000)
-    __lr_decay_iters = configuration.get("lr_decay_iters", 15000)
-    _max_iters       = configuration.get("max_iters", 15000)
-    __min_lr         = configuration.get("min_lr", 1e-5)
+    __learning_rate  = configuration.get("trainer__learning_rate", 1e-3)
+    _log_interval    = configuration.get("trainer__log_interval", 5000)
+    __lr_decay_iters = configuration.get("trainer__lr_decay_iters", 15000)
+    _max_iters       = configuration.get("trainer__max_iters", 15000)
+    __min_lr         = configuration.get("trainer__min_lr", 1e-5)
     warmup_iters     = 0
-    _weight_decay    = configuration.get("weight_decay", 0.1)
+    _weight_decay    = configuration.get("trainer__weight_decay", 0.1)
 
     model_args = {'bidirectional': False,
                   'dropout': 0.5,
@@ -265,10 +275,7 @@ def train(configuration):
         dd2 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[-1].date()
         dd3 = test_df.iloc[a_bag_of_indices[2]:a_bag_of_indices[3]].index[0].date()
         logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd2} ({dd2.strftime('%A')})  >>  {dd1} ({dd1.strftime('%A')})]")
-    # mean = train_df.mean()
-    # std_dev = train_df.std()
-    # train_df = (train_df - mean) / std_dev
-    # test_df = (test_df - mean) / std_dev
+
     if _data_augmentation:
         logger.debug(f"Using data augmentation @F={_frequency_of_noise} and @A={_power_of_noise}")
     train_dataset    = TripleIndicesLookAheadBinaryClassificationDataset(_df=train_df, _feature_cols=_x_cols, _target_col=_y_cols, _device=device, _x_cols_to_norm=_x_cols_to_norm,
@@ -308,7 +315,7 @@ def train(configuration):
     ###########################################################################
     pos_weight = None
     if train__ones_and_zeros['ones'] < 0.45:
-        pos_weight=configuration.get("wanted_pos_weight", 2)
+        pos_weight=configuration.get("trainer__wanted_pos_weight", 2)
     model = LSTMClassification(num_input_features=model_args['num_input_features'], pos_weight=pos_weight,
                                hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
                                bidirectional=model_args['bidirectional'], device=model_args['device'], dropout=model_args['dropout'])
@@ -410,7 +417,7 @@ def train(configuration):
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
                'best_val_loss': best_val_loss, 'best_val_accuracy': best_val_accuracy,
-               'best_test_loss': best_test_loss, 'best_test_accuracy': best_test_accuracy,
+               'best_test_loss': best_test_loss, 'best_test_accuracy': best_test_accuracy, 'type_margin': _type_margin,
                'output_dir': output_dir,'data_augmentation': _data_augmentation, 'margin': _margin,
                'configuration': configuration, 'x_cols': _x_cols, 'y_cols': _y_cols, 'x_cols_to_norm': _x_cols_to_norm,
                'tav_dates': _tav_dates if isinstance(_tav_dates, str) else [f"{str(fxx)}" for fxx in _tav_dates],
@@ -424,7 +431,7 @@ def train(configuration):
 
 if __name__ == '__main__':
     freeze_support()
-    from base_configuration import *
+
     # -----------------------------------------------------------------------------
     config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
     namespace = {}
@@ -459,12 +466,13 @@ if __name__ == '__main__':
     config = {k: globals()[k] for k in config_keys}
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
+    config.update({k: globals()[k] for k in globals() if k.startswith("trainer__") or k in ['device','df_source','seed_offset','stub_dir']})
     configuration = dict_to_namespace(config)
     # -----------------------------------------------------------------------------
     #pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
     logger.remove()
-    logger.add(sys.stdout, level=configuration.debug_level)
+    logger.add(sys.stdout, level=configuration.trainer__debug_level)
 
     ###########################################################################
     # Description
