@@ -7,7 +7,7 @@ from ast import literal_eval
 from torch.utils.data import Dataset, DataLoader
 from datasets import TripleIndicesLookAheadBinaryClassificationDataset
 from models import LSTMClassification, LSTMMetaUpDownClassification
-from utils import all_dicts_equal, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_binary_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
+from utils import string_to_bool, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_binary_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
 import numpy as np
@@ -162,8 +162,8 @@ def train(configuration):
 
     device = configuration.get("device", 'cuda')
 
-    _data_augmentation   = configuration.get("trainer__data_augmentation", False)
-    _force_download_data = configuration.get("trainer__force_download_data", False)
+    _data_augmentation   = string_to_bool(configuration.get("trainer__data_augmentation", False))
+    _force_download_data = string_to_bool(configuration.get("trainer__force_download_data", False))
     _direction = configuration.get("trainer__direction", "up")
     _tav_dates = configuration.get("trainer__tav_dates", ["2018-01-01", "2025-03-08"])
     _mes_dates = configuration.get("trainer__mes_dates", ["2025-03-09", "2025-03-15"])
@@ -174,13 +174,13 @@ def train(configuration):
     _x_seq_length = int(configuration.get("trainer__x_seq_length", 10))
     _y_seq_length = int(configuration.get("trainer__y_seq_length", 1))
     _margin = float(configuration.get("trainer__margin", 1.5))
-    _shuffle_indices = configuration.get("trainer__shuffle_indices", False)
-    _save_checkpoint = configuration.get("trainer__save_checkpoint", False)
+    _shuffle_indices = string_to_bool(configuration.get("trainer__shuffle_indices", False))
+    _save_checkpoint = string_to_bool(configuration.get("trainer__save_checkpoint", False))
     _type_margin = configuration.get("trainer__type_margin", "fixed")
     assert _type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
-    _jump_ahead = configuration.get('trainer__jump_ahead', 0)
-    _number_of_timestep_for_validation = configuration.get('trainer__number_of_timestep_for_validation', 60)
+    _jump_ahead = int(configuration.get('trainer__jump_ahead', 0))
+    _number_of_timestep_for_validation = int(configuration.get('trainer__number_of_timestep_for_validation', 60))
     logger.debug(f"Using {_number_of_timestep_for_validation} time steps for validation")
     run_id = configuration.get("trainer__run_id", 123)
     version = configuration.get("trainer__version", "rc1")
@@ -189,8 +189,8 @@ def train(configuration):
 
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')
 
-    _frequency_of_noise  = configuration.get("trainer__frequency_of_noise", 0.25)
-    _power_of_noise      = configuration.get("trainer__power_of_noise", 0.001)
+    _frequency_of_noise  = float(configuration.get("trainer__frequency_of_noise", 0.25))
+    _power_of_noise      = float(configuration.get("trainer__power_of_noise", 0.001))
 
     ###########################################################################
     # Load source data
@@ -223,18 +223,18 @@ def train(configuration):
     ###########################################################################
     # Configuration
     ###########################################################################
-    __batch_size   = configuration.get("trainer__batch_size", 1024)
+    __batch_size   = int(configuration.get("trainer__batch_size", 1024))
     betas          = (0.9, 0.95)
-    _decay_lr       = configuration.get("trainer__decay_lr", True)
-    _eval_interval  = configuration.get("trainer__eval_interval", 10)
+    _decay_lr       = string_to_bool(configuration.get("trainer__decay_lr", True))
+    _eval_interval  = int(configuration.get("trainer__eval_interval", 10))
     iter_num       = 0
-    __learning_rate  = configuration.get("trainer__learning_rate", 1e-3)
-    _log_interval    = configuration.get("trainer__log_interval", 5000)
-    __lr_decay_iters = configuration.get("trainer__lr_decay_iters", 15000)
-    _max_iters       = configuration.get("trainer__max_iters", 15000)
-    __min_lr         = configuration.get("trainer__min_lr", 1e-5)
+    __learning_rate  = float(configuration.get("trainer__learning_rate", 1e-3))
+    _log_interval    = int(configuration.get("trainer__log_interval", 5000))
+    __lr_decay_iters = float(configuration.get("trainer__lr_decay_iters", 15000))
+    _max_iters       = int(configuration.get("trainer__max_iters", 15000))
+    __min_lr         = float(configuration.get("trainer__min_lr", 1e-5))
     warmup_iters     = 0
-    _weight_decay    = configuration.get("trainer__weight_decay", 0.1)
+    _weight_decay    = float(configuration.get("trainer__weight_decay", 0.1))
 
     model_args = {'bidirectional': False,
                   'dropout': 0.5,

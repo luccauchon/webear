@@ -462,3 +462,27 @@ def find_previous_saturday(date: datetime) -> datetime:
     previous_saturday = date + timedelta(days=days_to_saturday)
     assert 5 == previous_saturday.weekday()
     return previous_saturday
+
+
+def string_to_bool(s):
+    """
+    Converts a string representation of a boolean to a boolean type.
+
+    Args:
+        s (str): The string representation of a boolean.
+
+    Returns:
+        bool: The boolean equivalent of the input string.
+
+    Raises:
+        ValueError: If the input string is not a valid boolean representation.
+    """
+    if isinstance(s, bool):
+        return s
+    s = s.lower()
+    if s == "true":
+        return True
+    elif s == "false":
+        return False
+    else:
+        raise ValueError("Invalid boolean representation")
