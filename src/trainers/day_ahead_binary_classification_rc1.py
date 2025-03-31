@@ -449,20 +449,7 @@ if __name__ == '__main__':
             assert arg.startswith('--')
             key, val = arg.split('=')
             key = key[2:]
-            if key in globals():
-                try:
-                    # attempt to eval it it (e.g. if bool, number, or etc)
-                    attempt = literal_eval(val)
-                except (SyntaxError, ValueError):
-                    # if that goes wrong, just use the string
-                    attempt = val
-                # ensure the types match ok
-                assert type(attempt) == type(globals()[key]), f"{type(attempt)} != {type(globals()[key])}"
-                # cross fingers
-                print(f"Overriding: {key} = {attempt}")
-                globals()[key] = attempt
-            else:
-                raise ValueError(f"Unknown config key: {key}")
+            globals()[key] = val
     config = {k: globals()[k] for k in config_keys}
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
