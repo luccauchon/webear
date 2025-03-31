@@ -125,8 +125,6 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
 
         assert 1 == len(the_y)
         vx, vy = the_x.iloc[-1][self.target_col].values[0], the_y.iloc[-1][self.target_col].values[0]
-        # if idx in [100,101]:
-        #     print(f"{the_y[('Close', 'SPY')].values[0]:.2f}, {the_y[('Close_EMA2', 'SPY')].values[0]:.2f}, {the_y[('Close_MA2', 'SPY')].values[0]:.2f}")
         if self.type_of_margin == 'fixed':
             sunny_side = self.margin
         elif self.type_of_margin == 'relative':
