@@ -472,7 +472,7 @@ if __name__ == '__main__':
     #pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
     logger.remove()
-    logger.add(sys.stdout, level=configuration.trainer__debug_level)
+    logger.add(sys.stdout, level=configuration.get("trainer__debug_level", "INFO"))
 
     ###########################################################################
     # Description
