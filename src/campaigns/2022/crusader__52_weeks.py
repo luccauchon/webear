@@ -4,7 +4,7 @@ crusader__num_weeks=52
 ###############################################################################
 # Runner
 ###############################################################################
-runner__fast_execution_for_debugging                = True
+runner__fast_execution_for_debugging                = False
 runner__skip_training_with_already_computed_results = []
 runner__fetch_new_dataframe = False
 runner__inf_power_of_noise  = 0.1
