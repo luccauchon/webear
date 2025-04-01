@@ -152,7 +152,12 @@ def update_running_var(_running__value, _value):
 
 
 def train(configuration):
-    _seed_offset = configuration.get("seed_offset", 1234)
+    ###########################################################################
+    # Description
+    ###########################################################################
+    logger.info("The goal is to make a prediction about the value (higher or lower) based on the preceding P days")
+
+    _seed_offset = configuration.get("seed_offset", 123)
     logger.debug(f"Seed is {_seed_offset}")
     np.random.seed(_seed_offset)
     torch.manual_seed(_seed_offset)
@@ -162,40 +167,41 @@ def train(configuration):
 
     device = configuration.get("device", 'cuda')
 
-    _data_augmentation   = string_to_bool(configuration.get("trainer__data_augmentation", False))
-    _force_download_data = string_to_bool(configuration.get("trainer__force_download_data", False))
-    _direction = configuration.get("trainer__direction", "up")
-    _tav_dates = configuration.get("trainer__tav_dates", ["2018-01-01", "2025-03-08"])
-    _mes_dates = configuration.get("trainer__mes_dates", ["2025-03-09", "2025-03-15"])
+    _data_augmentation   = string_to_bool(configuration["trainer__data_augmentation"])
+    _force_download_data = string_to_bool(configuration["trainer__force_download_data"])
+    _direction = configuration["trainer__direction"]
+    _tav_dates = configuration["trainer__tav_dates"]
+    _mes_dates = configuration["trainer__mes_dates"]
 
-    _x_cols = configuration.get("trainer__x_cols", ['Close', 'High', 'Low', 'Open'] + ['Volume'] + ['day_of_week'])  # For SPY and VIX
-    _x_cols_to_norm = configuration.get("trainer__x_cols_to_norm", [])
-    _y_cols = configuration.get("trainer__y_cols", [('Close_MA5', 'SPY')])
-    _x_seq_length = int(configuration.get("trainer__x_seq_length", 10))
-    _y_seq_length = int(configuration.get("trainer__y_seq_length", 1))
-    _margin = float(configuration.get("trainer__margin", 1.5))
-    _shuffle_indices = string_to_bool(configuration.get("trainer__shuffle_indices", False))
-    _save_checkpoint = string_to_bool(configuration.get("trainer__save_checkpoint", False))
-    _type_margin = configuration.get("trainer__type_margin", "fixed")
+    _x_cols = configuration["trainer__x_cols"]
+    _x_cols_to_norm = []
+    assert configuration.get("trainer__x_cols_to_norm", None) is None
+    _y_cols = configuration["trainer__y_cols"]
+    _x_seq_length = int(configuration["trainer__x_seq_length"])
+    _y_seq_length = int(configuration["trainer__y_seq_length"])
+    _margin = float(configuration["trainer__margin"])
+    _shuffle_indices = string_to_bool(configuration["trainer__shuffle_indices"])
+    _save_checkpoint = string_to_bool(configuration["trainer__save_checkpoint"])
+    _type_margin = configuration["trainer__type_margin"]
     assert _type_margin in ['fixed', 'relative']
     assert _y_seq_length == 1
-    _jump_ahead = int(configuration.get('trainer__jump_ahead', 0))
-    _number_of_timestep_for_validation = int(configuration.get('trainer__number_of_timestep_for_validation', 60))
+    _jump_ahead = int(configuration['trainer__jump_ahead'])
+    _number_of_timestep_for_validation = int(configuration['trainer__number_of_timestep_for_validation'])
     logger.debug(f"Using {_number_of_timestep_for_validation} time steps for validation")
-    run_id = configuration.get("trainer__run_id", 123)
-    version = configuration.get("trainer__version", "rc1")
+    run_id = configuration["trainer__run_id"]
+    version = configuration["trainer__version"]
     output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"ODABC__{version}")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')
 
-    _frequency_of_noise  = float(configuration.get("trainer__frequency_of_noise", 0.25))
-    _power_of_noise      = float(configuration.get("trainer__power_of_noise", 0.001))
+    _frequency_of_noise  = float(configuration["trainer__frequency_of_noise"])
+    _power_of_noise      = float(configuration["trainer__power_of_noise"])
 
     ###########################################################################
     # Load source data
     ###########################################################################
-    df_filename, _df_source = os.path.join(output_dir, "df.pkl"), configuration.get("trainer__df_source", None)
+    df_filename, _df_source = os.path.join(output_dir, "df.pkl"), configuration["trainer__df_source"]
     if _df_source is None:
         if not os.path.exists(df_filename) or _force_download_data:
             df, df_name = _fetch_dataframe()
@@ -223,18 +229,18 @@ def train(configuration):
     ###########################################################################
     # Configuration
     ###########################################################################
-    __batch_size   = int(configuration.get("trainer__batch_size", 1024))
+    __batch_size   = int(configuration["trainer__batch_size"])
     betas          = (0.9, 0.95)
-    _decay_lr       = string_to_bool(configuration.get("trainer__decay_lr", True))
-    _eval_interval  = int(configuration.get("trainer__eval_interval", 10))
+    _decay_lr       = string_to_bool(configuration["trainer__decay_lr"])
+    _eval_interval  = int(configuration["trainer__eval_interval"])
     iter_num       = 0
-    __learning_rate  = float(configuration.get("trainer__learning_rate", 1e-3))
-    _log_interval    = int(configuration.get("trainer__log_interval", 5000))
-    __lr_decay_iters = float(configuration.get("trainer__lr_decay_iters", 15000))
-    _max_iters       = int(configuration.get("trainer__max_iters", 15000))
-    __min_lr         = float(configuration.get("trainer__min_lr", 1e-5))
+    __learning_rate  = float(configuration["trainer__learning_rate"])
+    _log_interval    = int(configuration["trainer__log_interval"])
+    __lr_decay_iters = float(configuration["trainer__lr_decay_iters"])
+    _max_iters       = int(configuration["trainer__max_iters"])
+    __min_lr         = float(configuration["trainer__min_lr"])
     warmup_iters     = 0
-    _weight_decay    = float(configuration.get("trainer__weight_decay", 0.1))
+    _weight_decay    = float(configuration["trainer__weight_decay"])
 
     model_args = {'bidirectional': False,
                   'dropout': 0.5,
@@ -255,9 +261,11 @@ def train(configuration):
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=_tav_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=_mes_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     if _shuffle_indices:
+        assert _number_of_timestep_for_validation is None
         logger.debug("Shuffling indices...")
         random.shuffle(train_indices)
     if _number_of_timestep_for_validation is not None:
+        assert not _shuffle_indices
         split_20_idx = _number_of_timestep_for_validation
         assert len(train_indices) > split_20_idx
     else:
@@ -315,7 +323,7 @@ def train(configuration):
     ###########################################################################
     pos_weight = None
     if train__ones_and_zeros['ones'] < 0.45:
-        pos_weight=configuration.get("trainer__wanted_pos_weight", 2)
+        pos_weight=configuration["trainer__wanted_pos_weight"]
     model = LSTMClassification(num_input_features=model_args['num_input_features'], pos_weight=pos_weight,
                                hidden_size=model_args['hidden_size'], num_layers=model_args['num_layers'], seq_length=model_args['seq_length'],
                                bidirectional=model_args['bidirectional'], device=model_args['device'], dropout=model_args['dropout'])
@@ -460,10 +468,4 @@ if __name__ == '__main__':
 
     logger.remove()
     logger.add(sys.stdout, level=namespace_to_dict(configuration).get("trainer__debug_level", "INFO"))
-
-    ###########################################################################
-    # Description
-    ###########################################################################
-    logger.info("The goal is to make a prediction about the value (higher or lower) based on the preceding P days")
-
     train(configuration = namespace_to_dict(configuration))
