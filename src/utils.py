@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 import sys
 import re
 from types import SimpleNamespace
@@ -328,6 +329,10 @@ def calculate_multiclass_classification_metrics(y_true, y_pred, num_classes):
     accuracy = metric.compute()
 
     return {'accuracy': accuracy}
+
+
+def get_all_checkpoints(_a_directory):
+    return [file for file in Path(_a_directory).rglob('*.pt') if 'checkpoints' in str(file)]
 
 
 def extract_info_from_filename(filename):

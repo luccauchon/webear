@@ -13,7 +13,7 @@ import sys
 from ast import literal_eval
 import os
 import json
-from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, get_df_SPY_and_VIX, is_weekday, get_stub_dir
+from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, get_df_SPY_and_VIX, is_weekday, get_stub_dir, get_all_checkpoints
 import torch
 
 
@@ -156,7 +156,7 @@ def start_runner(configuration):
     for a_direction in ['up', 'down']:
         experience__2__results.update({a_direction: []})
         for all_experiences_in_one_direction in output_dir_of_experiences:
-            all_checkpoints_for_direction = [file for file in Path(all_experiences_in_one_direction).rglob('*.pt') if 'checkpoints' in str(file)]
+            all_checkpoints_for_direction = get_all_checkpoints(all_experiences_in_one_direction)
             for filename in all_checkpoints_for_direction:
                 is_up = True if "__up__" in str(filename) else False
                 is_down = True if "__down__" in str(filename) else False
@@ -207,6 +207,7 @@ def start_runner(configuration):
     # Download data , if requested
     if _download_data_for_inf:
         df, _ = get_df_SPY_and_VIX()
+        logger.info(df.tail())
 
     ###########################################################################
     # Do inferences
@@ -239,14 +240,14 @@ def start_runner(configuration):
             continue
         the_ground_truth_for_date, the_ground_truth_label_for_date = None, None
         if not real_time_execution:
-            the_ground_truth_for_date = [y for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)]
+            the_ground_truth_for_date = [y for batch_idx, (X, y, abcdef) in enumerate(data_loader_without_data_augmentation)]
             assert 1 == len(the_ground_truth_for_date)
             the_ground_truth_for_date = the_ground_truth_for_date[0].item()
             the_ground_truth_label_for_date = 'up' if the_ground_truth_for_date==1 else ('down' if the_ground_truth_for_date==-1 else 'sideways')
         nb_forward_pass = 0
         nb_pred_for_down, nb_pred_for_up, nb_pred_for_sideways, nb_pred_for_unknown = 0., 0., 0., 0.
-        assert 1 == len([batch_idx for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation)])
-        for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_without_data_augmentation):
+        assert 1 == len([batch_idx for batch_idx, (X, y, abcdef) in enumerate(data_loader_without_data_augmentation)])
+        for batch_idx, (X, y, abcdef) in enumerate(data_loader_without_data_augmentation):
             if not real_time_execution:
                 assert all(y == the_ground_truth_for_date)
             _logits = meta_model(x=X)
@@ -264,7 +265,7 @@ def start_runner(configuration):
                                                             real_time_execution=real_time_execution, power_of_noise=_power_of_noise_inf,
                                                             frequency_of_noise=_frequency_of_noise_inf, **params)
         for ee in range(0, _nb_iter_test_in_inference):
-            for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
+            for batch_idx, (X, y, abcdef) in enumerate(data_loader_with_data_augmentation):
                 if not real_time_execution:
                     assert all(y == the_ground_truth_for_date)
                 _logits = meta_model(x=X)
@@ -283,7 +284,7 @@ def start_runner(configuration):
         results_produced.update({date.strftime('%Y-%m-%d'): {"predictions": predictions, "prediction_label": prediction_label, "prediction_value": prediction_value,
                                                              "prediction_confidence": prediction_confidence, "ground_truth": the_ground_truth_for_date}})
         if not real_time_execution:
-            close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
+            close_value_yesterday = df.loc[yesterday][('Close',  'SPY')]
             tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
             pre_str += f":) " if the_ground_truth_for_date == prediction_value else (":| " if prediction_value == 99 else ":( ")
             if 99 != prediction_value:
@@ -294,7 +295,7 @@ def start_runner(configuration):
         else:
             assert 1 == len(params['y_cols'])
             try:
-                close_value_yesterday = df.loc[yesterday][params['y_cols']].values[0]
+                close_value_yesterday = df.loc[yesterday][('Close',  'SPY')]
             except Exception as ee:
                 logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
                 continue

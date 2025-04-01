@@ -7,7 +7,7 @@ from ast import literal_eval
 from torch.utils.data import Dataset, DataLoader
 from datasets import TripleIndicesLookAheadBinaryClassificationDataset
 from models import LSTMClassification, LSTMMetaUpDownClassification
-from utils import string_to_bool, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, generate_indices_with_cutoff_day, calculate_binary_classification_metrics, generate_indices_with_multiple_cutoff_day, generate_indices_basic_style, previous_weekday, next_weekday
+from utils import string_to_bool, namespace_to_dict, dict_to_namespace, get_stub_dir, get_df_SPY_and_VIX, get_all_checkpoints, calculate_binary_classification_metrics, extract_info_from_filename, generate_indices_basic_style, previous_weekday, next_weekday
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import torch
 import numpy as np
@@ -16,7 +16,7 @@ import sys
 import pandas as pd
 import json
 import math
-import torch.nn.functional as F
+import datetime
 
 
 def _get_lr(_it, _warmup_iters, _learning_rate, _min_lr, _lr_decay_iters):
@@ -34,9 +34,9 @@ def _get_lr(_it, _warmup_iters, _learning_rate, _min_lr, _lr_decay_iters):
 
 
 def _get_batch(_batch_size, iterator):
-    the_x, the_y, x_data_norm = next(iterator)
+    the_x, the_y, (x_data_norm, _) = next(iterator)
     while len(the_x) < _batch_size:
-        x, y, xn = next(iterator)
+        x, y, (xn, _) = next(iterator)
         the_x = torch.concatenate([the_x, x])
         the_y = torch.concatenate([the_y, y])
         x_data_norm = torch.concatenate([x_data_norm, xn])
@@ -44,7 +44,7 @@ def _get_batch(_batch_size, iterator):
     return the_x, the_y, x_data_norm
 
 
-def load_model(ckpt_path, device, df, **kwargs):
+def load_model(ckpt_path, device):
     logger.debug(f"Resuming training from {ckpt_path}")
     checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
     model_args = checkpoint['model_args']
@@ -73,7 +73,7 @@ def create_meta_model(up_candidats, down_candidats, device, fetch_new_dataframe=
             with open(one_candidat["meta_information"], 'r') as f:
                 results = json.load(f)
             params_list.append(results)
-            model = load_model(ckpt_path=one_candidat['model_path'], device=device, df=train_df, **results)
+            model = load_model(ckpt_path=one_candidat['model_path'], device=device)
             name = one_candidat['name']
             one_bag.update({name: model})
     meta_model = LSTMMetaUpDownClassification(up_models=up__list_of_models, down_models=down__list_of_models)
@@ -136,7 +136,7 @@ def _fetch_dataframe():
 
 def evaluation(_model, _dataloader, _loss_function):
     _losses1, _accuracy1 = [], []
-    for _batch_idx, (_x1, _y1, _) in enumerate(_dataloader):
+    for _batch_idx, (_x1, _y1, (_, prediction_date)) in enumerate(_dataloader):
         _y1 = _y1.unsqueeze(1)
         _test_logits1, _ = _model(x=_x1)  # forward pass
         assert _test_logits1.shape == _y1.shape
@@ -172,7 +172,7 @@ def train(configuration):
     _direction = configuration["trainer__direction"]
     _tav_dates = configuration["trainer__tav_dates"]
     _mes_dates = configuration["trainer__mes_dates"]
-
+    _skip_training = string_to_bool(configuration.get("trainer__skip_training", False))
     _x_cols = configuration["trainer__x_cols"]
     _x_cols_to_norm = []
     assert configuration.get("trainer__x_cols_to_norm", None) is None
@@ -304,8 +304,9 @@ def train(configuration):
     ground_truth_sequence, train__ones_and_zeros, val__ones_and_zeros = [], {}, {}
     for desc, a_dataloader in zip(["train", "val", "test"], [train_dataloader, val_dataloader, test_dataloader]):
         zeros, ones = 0, 0
-        for _x, _y, _x_data_norm in a_dataloader:
-            zeros += torch.count_nonzero(_y == 0)
+        for _x, _y, abcdef in a_dataloader:
+            assert torch.count_nonzero(torch.where(_y == 0, 1, 0)) == torch.count_nonzero(_y == 0)
+            zeros += torch.count_nonzero(torch.where(_y == 0, 1, 0))
             ones  += torch.count_nonzero(_y == 1)
             if desc == 'test':
                 ground_truth_sequence.extend(_y.cpu())
@@ -339,7 +340,7 @@ def train(configuration):
     running__train_losses, running__train_accuracy, running__val_losses, running__val_accuracy, running__test_losses, running__test_accuracy = -1, -1, -1, -1, -1, -1
     train_iterator, old__is_best_val_loss_achieved_file, old__is_best_val_accuracy_achieved_file = itertools.cycle(train_dataloader), None, None
     _x, _y, _x_data_norm = _get_batch(_batch_size=__batch_size, iterator=train_iterator)
-    while iter_num < _max_iters:
+    while iter_num < _max_iters and not _skip_training:
         lr = _get_lr(_it=iter_num, _warmup_iters=warmup_iters, _learning_rate=__learning_rate, _min_lr=__min_lr, _lr_decay_iters=__lr_decay_iters) if _decay_lr else __learning_rate
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
@@ -421,24 +422,43 @@ def train(configuration):
         running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()
 
         iter_num += 1
-    if 'trainer__df_source' in configuration:
-        configuration['trainer__df_source'] = None
-    if 'runner__master_df_source' in configuration:
-        configuration['runner__master_df_source'] = None
-    if '_today' in configuration:
-        configuration['_today'] = None
-    results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
-               'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
-               'best_val_loss': best_val_loss, 'best_val_accuracy': best_val_accuracy,
-               'best_test_loss': best_test_loss, 'best_test_accuracy': best_test_accuracy, 'type_margin': _type_margin,
-               'output_dir': output_dir,'data_augmentation': _data_augmentation, 'margin': _margin,
-               'configuration': configuration, 'x_cols': _x_cols, 'y_cols': _y_cols, 'x_cols_to_norm': _x_cols_to_norm,
-               'tav_dates': _tav_dates if isinstance(_tav_dates, str) else [f"{str(fxx)}" for fxx in _tav_dates],
-               'mes_dates': _mes_dates if isinstance(_mes_dates, str) else [f"{str(fxx)}" for fxx in _mes_dates],
-               'x_seq_length': _x_seq_length, 'y_seq_length': _y_seq_length}
-    with open(os.path.join(output_dir, "results.json"), 'w') as f:
-        json.dump(results, f, indent=4)
-    results.update({'df_source': _df_source})  # Dataframe is not serializable
+    results = {}
+    if not _skip_training:
+        if 'trainer__df_source' in configuration:
+            configuration['trainer__df_source'] = None
+        if 'runner__master_df_source' in configuration:
+            configuration['runner__master_df_source'] = None
+        if '_today' in configuration:
+            configuration['_today'] = None
+        results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
+                   'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
+                   'best_val_loss': best_val_loss, 'best_val_accuracy': best_val_accuracy,
+                   'best_test_loss': best_test_loss, 'best_test_accuracy': best_test_accuracy, 'type_margin': _type_margin,
+                   'output_dir': output_dir,'data_augmentation': _data_augmentation, 'margin': _margin,
+                   'configuration': configuration, 'x_cols': _x_cols, 'y_cols': _y_cols, 'x_cols_to_norm': _x_cols_to_norm,
+                   'tav_dates': _tav_dates if isinstance(_tav_dates, str) else [f"{str(fxx)}" for fxx in _tav_dates],
+                   'mes_dates': _mes_dates if isinstance(_mes_dates, str) else [f"{str(fxx)}" for fxx in _mes_dates],
+                   'x_seq_length': _x_seq_length, 'y_seq_length': _y_seq_length}
+        with open(os.path.join(output_dir, "results.json"), 'w') as f:
+            json.dump(results, f, indent=4)
+        results.update({'df_source': _df_source})  # Dataframe is not serializable
+
+    # Just dump some results at the screen
+    for ckpt_path_filename in get_all_checkpoints(output_dir):
+        info = extract_info_from_filename(Path(ckpt_path_filename).name)
+        model_for_eval = load_model(ckpt_path_filename, device)
+        for _batch_idx, (_x1, _y1, (_, _prediction_date_milliseconds)) in enumerate(test_dataloader):
+            _y1 = _y1.unsqueeze(1)
+            _test_logits1, _ = model_for_eval(x=_x1)  # forward pass
+            assert _test_logits1.shape == _y1.shape
+            y_prediction = torch.where(torch.nn.Sigmoid()(_test_logits1) >= 0.5, 1, 0)
+            date_objs = [datetime.datetime.fromtimestamp(ppm / 1000).date() for ppm in _prediction_date_milliseconds.squeeze().cpu().numpy()]
+            df = pd.DataFrame({'Prediction': y_prediction.squeeze().cpu().numpy(), 'Actual': _y1.squeeze().cpu().numpy(), 'Date': date_objs})
+            pd.set_option('display.max_rows', None)
+            pd.set_option('display.max_columns', None)
+            pd.set_option('display.width', 1000)
+            logger.debug(f"{ckpt_path_filename}\n{df}")
+
     return results
 
 

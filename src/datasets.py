@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset
-from functools import lru_cache
+import datetime
 from loguru import logger
 import tsaug
 import torch
@@ -123,6 +123,8 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
         i1, i2, i3, i4 = self.indices[idx]
         the_x, the_y = self.df.iloc[i1:i2], self.df.iloc[i3:i4]
 
+        prediction_date_milliseconds = int(datetime.datetime.combine(the_y.index[0].date(), datetime.time()).timestamp() * 1000)
+
         assert 1 == len(the_y)
         vx, vy = the_x.iloc[-1][self.target_col].values[0], the_y.iloc[-1][self.target_col].values[0]
         if self.type_of_margin == 'fixed':
@@ -164,8 +166,7 @@ class TripleIndicesLookAheadBinaryClassificationDataset(Dataset):
         y = torch.tensor(the_target,   dtype=torch.float, device=self.device)
 
         x_data_norm = torch.tensor(x_data_norm.values, dtype=torch.float, device=self.device)
-
-        return x, y, x_data_norm
+        return x, y, (x_data_norm, prediction_date_milliseconds)
 
 
 class TripleIndicesLookAheadTernaryClassificationDataset(Dataset):
