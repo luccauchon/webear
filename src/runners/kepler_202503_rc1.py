@@ -1,5 +1,6 @@
 from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import pprint
+import numpy as np
 import pandas as pd
 from trainers.day_ahead_binary_classification_rc1 import train as train_model
 from trainers.day_ahead_binary_classification_rc1 import create_meta_model as create_meta_model
@@ -52,36 +53,47 @@ def scan_results(_all_candidats):
 
 
 def start_runner(configuration):
+    logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1 , train multiple models (up & down) and evaluate a Meta-Model on inference dates\n{'*' * 80}")
+    _seed_offset = configuration.get("runner__seed_offset", 1234)
+    logger.debug(f"Seed is {_seed_offset}")
+    np.random.seed(_seed_offset)
+    torch.manual_seed(_seed_offset)
+    torch.cuda.manual_seed_all(_seed_offset)
+    torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
+    torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
+
     ###########################################################################
     # Parameters for Kepler
     ###########################################################################
-    _skip_training_with_already_computed_results = configuration.get("skip_training_with_already_computed_results", [])
-    _fast_execution_for_debugging                = configuration.get("fast_execution_for_debugging", False)
+    _skip_training_with_already_computed_results = configuration["runner__skip_training_with_already_computed_results"]
+    _fast_execution_for_debugging                = configuration["runner__fast_execution_for_debugging"]
 
-    _tav_dates                    = configuration.get("tav_dates", ["2024-01-01", "2025-03-08"])
-    _mes_dates                    = configuration.get("mes_dates", ["2025-03-09", "2025-03-15"])
-    _inf_dates                    = configuration.get("inf_dates", ["2025-03-16", "2025-03-29"])
+    _tav_dates                    = configuration["runner__tav_dates"]
+    _mes_dates                    = configuration["runner__mes_dates"]
+    _inf_dates                    = configuration["runner__inf_dates"]
 
-    _fetch_new_dataframe         = configuration.get("fetch_new_dataframe", False)  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
-    _master_df_source            = configuration.get("master_df_source", None)  # Use the specified dataframe instead of using a dataframe from an experience
+    _fetch_new_dataframe         = configuration["runner__fetch_new_dataframe"]  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
+    _master_df_source            = configuration["runner__master_df_source"]  # Use the specified dataframe instead of using a dataframe from an experience
     _device                      = configuration.get("device", "cuda")
-    _power_of_noise_inf          = configuration.get("inf_power_of_noise", 1.)
-    _frequency_of_noise_inf      = configuration.get("inf_frequency_of_noise", 1.)
-    _nb_iter_test_in_inference   = configuration.get("nb_iter_test_in_inference", 100)
-    _today                       = configuration.get("today", pd.Timestamp.now().date())
+    _power_of_noise_inf          = configuration["runner__inf_power_of_noise"]
+    _frequency_of_noise_inf      = configuration["runner__inf_frequency_of_noise"]
+    _nb_iter_test_in_inference   = configuration["runner__nb_iter_test_in_inference"]
+    _today                       = configuration.get("runner__today", pd.Timestamp.now().date())
+    _skip_monday                 = configuration["runner__skip_monday"]
     if _fast_execution_for_debugging:
         _nb_iter_test_in_inference               = 5
     _kepler_root_dir             = configuration.get("stub_dir", os.path.join(get_stub_dir(), f"kepler__{pd.Timestamp.now().strftime('%m%d_%Hh%Mm')}"))
-    _download_data_for_inf       = configuration.get("download_data_for_inf", False)
+    _download_data_for_inf       = configuration["runner__download_data_for_inf"]
 
     ###########################################################################
     #
     ###########################################################################
     output_dir_of_experiences = []
     if isinstance(_skip_training_with_already_computed_results, list) and 1==len(_skip_training_with_already_computed_results):
-        root_dir = _skip_training_with_already_computed_results[0]
-        directories = [os.path.join(root_dir, name) for name in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, name))]
-        output_dir_of_experiences = directories
+        if os.path.exists(_skip_training_with_already_computed_results[0]):
+            root_dir = _skip_training_with_already_computed_results[0]
+            directories = [os.path.join(root_dir, name) for name in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, name))]
+            output_dir_of_experiences = directories
 
     ###########################################################################
     # Perform multiple training
@@ -94,33 +106,37 @@ def start_runner(configuration):
             a_version = f"LX{_a_direction}_"
             a_stub_dir = os.path.join(base_output_dir_for_all_experiences, f"__{_a_direction}__")
             os.makedirs(a_stub_dir, exist_ok=True)
+            logger.debug(f"Models for {_a_direction} are located in {a_stub_dir}")
             run_id = f'RKRC1_{datetime.now().strftime("%d__%H_%M")}'  # root directory used by runner
-            configuration_for_experience = {"margin": configuration.get("runner__margin", 1),
-                                            "type_margin": configuration.get("runner__type_margin", 'fixed'),
-                                            "direction": _a_direction,
-                                            "lr_decay_iters": configuration.get("runner__lr_decay_iters", 5000),
-                                            "run_id": run_id, "version": a_version,
-                                            "max_iters": configuration.get("runner__max_iters", 5000),
-                                            "tav_dates": _tav_dates, "mes_dates": _mes_dates,
-                                            "stub_dir": a_stub_dir,
-                                            "batch_size": configuration.get("runner__batch_size", 4096),
-                                            "eval_interval": configuration.get("runner__eval_interval", 10),
-                                            "log_interval": configuration.get("runner__log_interval", 5000),
-                                            "learning_rate": configuration.get("runner__learning_rate", 1e-3),
-                                            "min_lr": configuration.get("runner__min_lr", 1e-5),
-                                            "weight_decay": configuration.get("runner__weight_decay", 0.1),
-                                            "x_cols": configuration.get("runner__x_cols", ['Close', 'High', 'Low', 'Open'] + ['day_of_week']),
-                                            "x_cols_to_norm": configuration.get("runner__x_cols_to_norm", []),
-                                            "y_cols": configuration.get("runner__y_cols", [('Close_MA5', 'SPY')]),
-                                            "x_seq_length": configuration.get("x_seq_length", 4),
-                                            "y_seq_length": configuration.get("y_seq_length", 1),
-                                            "device": _device,
-                                            "save_checkpoint": True,
-                                            }
-            if df_source is not None:  # Use the same data for all the experiences
-                configuration_for_experience.update({'df_source': df_source})
+            configuration_for_experience = {}
+            configuration_for_experience.update(configuration)
+            assert "trainer__force_download_data" not in configuration
+            assert "trainer__save_checkpoint" not in configuration
+            assert "trainer__shuffle_indices" not in configuration
+            assert "trainer__number_of_timestep_for_validation" not in configuration
+            assert "trainer__data_augmentation" not in configuration
+            assert "trainer__frequency_of_noise" not in configuration
+            assert "trainer__power_of_noise" not in configuration
+            assert "trainer__decay_lr" not in configuration
+            configuration_for_experience.update({"trainer__direction": _a_direction,
+                                                 "trainer__run_id": run_id,
+                                                 "trainer__version": a_version,
+                                                 "trainer__tav_dates": _tav_dates,
+                                                 "trainer__mes_dates": _mes_dates,
+                                                 "trainer__force_download_data": False,
+                                                 "trainer__save_checkpoint": True,
+                                                 "trainer__shuffle_indices": False,
+                                                 "trainer__number_of_timestep_for_validation": 60,
+                                                 "trainer__data_augmentation": False,
+                                                 "trainer__frequency_of_noise": 0.,
+                                                 "trainer__power_of_noise": 0.,
+                                                 "trainer__decay_lr": True,
+                                                 "trainer__df_source": df_source,
+                                                 "stub_dir": a_stub_dir,
+                                                 "device": _device,
+                                                })
             if _fast_execution_for_debugging:
-                configuration_for_experience.update({'max_iters': 20, 'log_interval': 5})
+                configuration_for_experience.update({'trainer__max_iters': 20, 'trainer__log_interval': 5})
             # Launch training
             results = train_model(configuration_for_experience)
             if df_source is None:
@@ -175,8 +191,8 @@ def start_runner(configuration):
         best_lost, best_accuracy = scan_results(_all_candidats=experience__2__results.get(a_direction))
         if best_lost is not None:
             candidats[a_direction].append(best_lost)
-        if best_accuracy is not None:
-            candidats[a_direction].append(best_accuracy)
+        #if best_accuracy is not None:
+        #    candidats[a_direction].append(best_accuracy)
         if 0 == len(candidats):
             logger.warning(f"No candidates found for direction {a_direction}! cannot evaluate from {_inf_dates[0]} to {_inf_dates[1]}")
             return {}
@@ -196,6 +212,7 @@ def start_runner(configuration):
     # Do inferences
     ###########################################################################
     start_date, end_date = pd.to_datetime(_inf_dates[0]), pd.to_datetime(_inf_dates[1])
+    logger.info(f"Root directory: {_kepler_root_dir}")
     logger.info(f"Created meta model with {len(candidats['up'])+len(candidats['down'])} models , inferencing [{start_date.date()}] to [{end_date.date()}]")
     for type_of, all_candidats in zip(["UP", "DOWN"], [candidats['up'], candidats['down']]):
         for one_candidat in all_candidats:
@@ -244,7 +261,8 @@ def start_runner(configuration):
 
         # Do multiple passes on dataset Test with data augmentation
         data_loader_with_data_augmentation = get_dataloader(df=df, device=_device, _data_augmentation=True, date_to_predict=date,
-                                                            real_time_execution=real_time_execution, power_of_noise=_power_of_noise_inf, frequency_of_noise=_frequency_of_noise_inf, **params)
+                                                            real_time_execution=real_time_execution, power_of_noise=_power_of_noise_inf,
+                                                            frequency_of_noise=_frequency_of_noise_inf, **params)
         for ee in range(0, _nb_iter_test_in_inference):
             for batch_idx, (X, y, x_data_norm) in enumerate(data_loader_with_data_augmentation):
                 if not real_time_execution:
@@ -269,7 +287,7 @@ def start_runner(configuration):
             tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
             pre_str += f":) " if the_ground_truth_for_date == prediction_value else (":| " if prediction_value == 99 else ":( ")
             if 99 != prediction_value:
-                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value} with {prediction_confidence * 100:.2f}% confidence {tmp_str}")
+                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
             else:
                 tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
                 logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
@@ -282,25 +300,28 @@ def start_runner(configuration):
                 continue
             if 99 != prediction_value:
                 tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
-                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction_value} with {prediction_confidence * 100:.2f}% confidence > {tmp_str}")
+                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction_value}  > {tmp_str}")
             else:
                 tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
                 logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable ({prediction_value}) > ({tmp_str})")
     hit, miss = 0, 0
     for a_date, values in results_produced.items():
+        if 0==pd.to_datetime(a_date).day_of_week and _skip_monday:
+            continue
         if values['ground_truth'] is None:
             continue
         if values["prediction_value"] == values['ground_truth']:
             hit += 1
         else:
             miss +=1
-    logger.info(f"Accuracy: {hit/(hit+miss)*100:.3}%")
+    if hit+miss>0:
+        logger.info(f"Accuracy: {hit/(hit+miss)*100:.4}% {'(skipping mondays)' if _skip_monday else ''} (N={int((end_date - start_date).days)+1}, from {start_date.date()} to {end_date.date()})")
+    else:
+        logger.info(f"Accuracy: not available {'(skipping mondays)' if _skip_monday else ''}")
     return results_produced, hit/(hit+miss)
 
 if __name__ == '__main__':
     freeze_support()
-    from base_configuration import *
-    logger.info(f"\n{'*' * 80}\nUsing One Day Ahead Binary Classifier RC1 , train multiple models (up & down) and evaluate a Meta-Model on inference dates\n{'*' * 80}")
 
     # -----------------------------------------------------------------------------
     config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
@@ -319,22 +340,9 @@ if __name__ == '__main__':
             assert arg.startswith('--')
             key, val = arg.split('=')
             key = key[2:]
-            if key in globals():
-                try:
-                    # attempt to eval it it (e.g. if bool, number, or etc)
-                    attempt = literal_eval(val)
-                except (SyntaxError, ValueError):
-                    # if that goes wrong, just use the string
-                    attempt = val
-                # ensure the types match ok
-                assert type(attempt) == type(globals()[key]), f"{type(attempt)} != {type(globals()[key])}"
-                # cross fingers
-                print(f"Overriding: {key} = {attempt}")
-                globals()[key] = attempt
-            else:
-                raise ValueError(f"Unknown config key: {key}")
+            globals()[key] = val
     config = {k: globals()[k] for k in config_keys}
-    config.update({k: globals()[k] for k in globals() if k.startswith("runner__")})
+    config.update({k: globals()[k] for k in globals() if k.startswith("runner__") or k.startswith("trainer__") or k in ['device','seed_offset','stub_dir']})
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
     configuration = dict_to_namespace(config)
@@ -342,6 +350,7 @@ if __name__ == '__main__':
     # pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
     logger.remove()
-    logger.add(sys.stdout, level=configuration.debug_level)
     configuration = namespace_to_dict(configuration)
+    logger.add(sys.stdout, level=configuration.get("runner__debug_level","INFO"))
+
     start_runner(configuration)
