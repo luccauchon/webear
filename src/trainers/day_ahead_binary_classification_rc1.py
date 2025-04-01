@@ -421,7 +421,12 @@ def train(configuration):
         running__train_losses = train_loss.item() if running__train_losses == -1.0 else 0.9 * running__train_losses + 0.1 * train_loss.item()
 
         iter_num += 1
-    configuration['trainer__df_source'] = None    # Dataframe is not serializable
+    if 'trainer__df_source' in configuration:
+        configuration['trainer__df_source'] = None
+    if 'runner__master_df_source' in configuration:
+        configuration['runner__master_df_source'] = None
+    if '_today' in configuration:
+        configuration['_today'] = None
     results = {'running__train_losses': running__train_losses, 'running__train_accuracy': running__train_accuracy.item(),
                'running__test_losses': running__test_losses, 'ground_truth_sequence': ground_truth_sequence,
                'best_val_loss': best_val_loss, 'best_val_accuracy': best_val_accuracy,
