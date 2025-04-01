@@ -158,7 +158,7 @@ def train(configuration):
     logger.info("The goal is to make a prediction about the value (higher or lower) based on the preceding P days")
 
     _seed_offset = configuration.get("seed_offset", 123)
-    logger.debug(f"Seed is {_seed_offset}")
+    logger.debug(f"Seed: {_seed_offset}")
     np.random.seed(_seed_offset)
     torch.manual_seed(_seed_offset)
     torch.cuda.manual_seed_all(_seed_offset)
