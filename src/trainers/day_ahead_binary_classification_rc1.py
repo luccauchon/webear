@@ -442,7 +442,8 @@ def train(configuration):
         with open(os.path.join(output_dir, "results.json"), 'w') as f:
             json.dump(results, f, indent=4)
         results.update({'df_source': _df_source})  # Dataframe is not serializable
-
+    if 0 == len(get_all_checkpoints(output_dir)):
+        logger.warning(f"No checkpoints found under {output_dir}")
     # Just dump some results at the screen
     for ckpt_path_filename in get_all_checkpoints(output_dir):
         info = extract_info_from_filename(Path(ckpt_path_filename).name)

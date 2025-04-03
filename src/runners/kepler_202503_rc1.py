@@ -316,7 +316,7 @@ def start_runner(configuration):
         else:
             miss +=1
     if hit+miss>0:
-        logger.info(f"Accuracy: {hit/(hit+miss)*100:.4}% {'(skipping mondays)' if _skip_monday else ''} (N={int((end_date - start_date).days)+1}, from {start_date.date()} to {end_date.date()})")
+        logger.info(f"Accuracy: {hit/(hit+miss)*100:.4}% {'(skipping mondays)' if _skip_monday else ''} (N={hit+miss}, from {start_date.date()} to {end_date.date()})")
     else:
         logger.info(f"Accuracy: not available {'(skipping mondays)' if _skip_monday else ''}")
     return results_produced, hit/(hit+miss)
