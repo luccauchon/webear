@@ -33,3 +33,7 @@ trainer__jump_ahead    =0
 trainer__type_margin   ='relative'
 trainer__margin        =0.2
 trainer__wanted_pos_weight = 1.
+
+
+# 2025.04.03
+#  When confidence was gt 50.0% (this happens 100.0%), success rate is 64.4%
