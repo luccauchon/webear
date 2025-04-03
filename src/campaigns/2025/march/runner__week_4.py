@@ -2,7 +2,7 @@ runner__debug_level         = "INFO"
 
 runner__fast_execution_for_debugging                = False
 runner__skip_training_with_already_computed_results = [f"D:\PyCharmProjects\webear\stubs\kepler__0401_06h50m"]
-runner__fetch_new_dataframe = False    # Use Yahoo! Finance to download data instead of using a dataframe from an experience
+runner__fetch_new_dataframe = False    # Use Yahoo! Finance to download data instead of using a dataframe from an experience. Useless if "runner__download_data_for_inf" is set to True.
 runner__master_df_source    = None     # Use the specified dataframe instead of using a dataframe from an experience
 runner__inf_power_of_noise  = 1.
 runner__inf_frequency_of_noise = 0.
@@ -12,7 +12,7 @@ runner__tav_dates      = ["2024-01-01", "2025-03-22"]
 runner__mes_dates      = ["2025-03-23", "2025-03-29"]
 runner__inf_dates      = ["2025-03-31", "2025-04-04"]
 runner__skip_monday    = False
-runner__download_data_for_inf = False  # If you move forward the inf_dates, must activate this flag
+runner__download_data_for_inf = True  # If you move forward the inf_dates, must activate this flag
 
 ###############################################################################
 # Trainer
