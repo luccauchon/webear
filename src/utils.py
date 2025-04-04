@@ -80,17 +80,45 @@ def get_df_SPY_and_VIX_virgin_at_minutes():
     return  df_spy, df_vix
 
 
-def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(3,4,5)):
-    df_vix    = yf.download("^VIX", period="max", interval=interval, auto_adjust=False)
+def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2,3,4,5)):
+    df_vix    = yf.download("^VIX", period="max", interval="1d", auto_adjust=False)
     df_vix    = df_vix.drop("Volume", axis=1)
-    df_spy    = yf.download("SPY", period="max", interval=interval, auto_adjust=False)
+    df_spy    = yf.download("SPY", period="max", interval="1d", auto_adjust=False)
     merged_df = pd.merge(df_spy, df_vix, on='Date', how='left')
-
+    assert 0 == np.sum(merged_df.isna().sum().values)
+    if interval in ['1mo', '1wk']:
+        # Define the list of symbols
+        symbols = ['SPY', '^VIX']
+        # Define the aggregation functions for each column type
+        agg_funcs = {
+            'Open': 'first',
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last',}
+        agg_dict = {(col, symbol): agg_funcs[col] for symbol in symbols for col in agg_funcs}
+        if interval == '1wk':
+            df_1jil = merged_df.resample('W-FRI').agg(agg_dict).copy()
+            # Resample the volume data into 5-minute mean volumes
+            volume_candles = merged_df['Volume'].resample('W-FRI').mean()
+            # Add the volume column to the candles DataFrame
+            df_1jil['Volume'] = volume_candles
+            if merged_df.index[-1].weekday() < 5:  # 5 represents Saturday
+                df_1jil = df_1jil.drop(df_1jil.index[-1])
+        if interval == '1mo':
+            df_1jil = merged_df.resample('M').agg(agg_dict).copy()
+            # Resample the volume data into monthly mean volumes
+            volume_candles = merged_df['Volume'].resample('M').mean()
+            # Add the volume column to the candles DataFrame
+            df_1jil['Volume'] = volume_candles
+            if merged_df.index[-1].day < 28:
+                df_1jil = df_1jil.drop(df_1jil.index[-1])
+        assert 0 == np.sum(df_1jil.isna().sum().values)
+        merged_df = df_1jil.copy()
     merged_df['day_of_week']  = merged_df.index.dayofweek + 1
     merged_df['week_of_year'] = merged_df.index.isocalendar().week + 1
     merged_df['unique_week']  = merged_df.index.year * 1000 + merged_df['week_of_year']
-    merged_df[('Close_direction', 'SPY')]  = merged_df.apply(lambda row: 1 if row[('Close', 'SPY')] > row[('Open', 'SPY')] else -1, axis=1)
-    merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
+    #merged_df[('Close_direction', 'SPY')]  = merged_df.apply(lambda row: 1 if row[('Close', 'SPY')] > row[('Open', 'SPY')] else -1, axis=1)
+    #merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
 
     if add_moving_averages:
         for window_size in _window_sizes:  # Define the window size for the moving average
@@ -161,15 +189,15 @@ def get_spy_and_vix_df_from_data_dir(date):
     return None
 
 
-def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahead=0, just_x_no_y=False):
+def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahead=0, just_x_no_y=False, data_interval='1d'):
     # Simply takes N days to predict the next P days. Only the "P days" shall be in the date range specified
     indices = []
     tt1 = pd.to_datetime(dates[0]).replace(hour=0, minute=0, second=0)
     tt2 = pd.to_datetime(dates[1]).replace(hour=23, minute=59, second=59)
     assert tt1 <= tt2
-    ts1 = tt1 - pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
-    ts2 = tt2 + pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
-    df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
+    #ts1 = tt1 - pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
+    #ts2 = tt2 + pd.Timedelta(2 * (x_seq_length + y_seq_length) + jump_ahead, unit='days')
+    #df = df.loc[ts1:ts2]  # Reduce length of dataframe to make the processing faster
     if just_x_no_y:
         assert tt1.date() == tt2.date()
         for idx in reversed(range(0, len(df) + 1)):
@@ -179,8 +207,15 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
             if len(df.iloc[idx1:idx2]) != x_seq_length:
                 continue
             assert jump_ahead==0
-            if next_weekday(df.iloc[idx1:idx2].index[-1].date()) != tt1.date():
-                continue  # We want to predict tomorrow, so we need data today
+            if data_interval=='1d':
+                # We want to predict tomorrow, so we need data today
+                if next_weekday(df.iloc[idx1:idx2].index[-1].date()) != tt1.date():
+                    continue
+            if data_interval == '1wk':
+                # We want to predict this week, so we need data from last weeks
+                # So, if the predicting date is not in the week followwing idx1:idx2, pass.
+                if not is_it_next_week_after_last_week_of_df(df=df.iloc[idx1:idx2], date=tt1):
+                    continue
             assert idx2 > idx1
             indices.append((idx1, idx2))
             break
@@ -491,3 +526,11 @@ def string_to_bool(s):
         return False
     else:
         raise ValueError("Invalid boolean representation")
+
+
+def is_it_next_week_after_last_week_of_df(df, date):
+    last_date = df.index[-1]
+    assert 4 == last_date.weekday()  # always a friday
+    day_next_week = last_date + pd.Timedelta(days=7)
+    assert 4 == day_next_week.weekday()  # always a friday
+    return (last_date <= date <= day_next_week) and date.weekday() < 5

@@ -105,7 +105,7 @@ def create_meta_model(up_candidats, down_candidats, device, fetch_new_dataframe=
                                     'x_seq_length': params_list[0]['x_seq_length'], 'y_seq_length': params_list[0]['y_seq_length']}
 
 
-def generate_dataloader_for_inference(df, device, _data_augmentation, date_to_predict, real_time_execution, **kwargs):
+def generate_dataloader_for_inference(df, device, _data_augmentation, date_to_predict, real_time_execution, data_interval='1d', **kwargs):
     _x_seq_length = kwargs['x_seq_length']
     _y_seq_length = kwargs['y_seq_length']
     assert 1 == _y_seq_length
@@ -115,7 +115,7 @@ def generate_dataloader_for_inference(df, device, _data_augmentation, date_to_pr
     _power_of_noise = kwargs.get("power_of_noise", 0.01)
     _frequency_of_noise = kwargs.get("frequency_of_noise", 0.25)
     _indices, test_df = generate_indices_basic_style(df=df.copy(), dates=[date_to_predict, date_to_predict], x_seq_length=_x_seq_length,
-                                                     y_seq_length=_y_seq_length, just_x_no_y=real_time_execution)
+                                                     y_seq_length=_y_seq_length, just_x_no_y=real_time_execution, data_interval=data_interval)
     assert len(_indices) in [0, 1]
     if 0 == len(_indices):
         return None
@@ -129,8 +129,8 @@ def generate_dataloader_for_inference(df, device, _data_augmentation, date_to_pr
     return _dataloader
 
 
-def _fetch_dataframe():
-    df, df_name = get_df_SPY_and_VIX()
+def _fetch_dataframe(interval):
+    df, df_name = get_df_SPY_and_VIX(interval=interval)
     return df, df_name
 
 
@@ -155,7 +155,7 @@ def train(configuration):
     ###########################################################################
     # Description
     ###########################################################################
-    logger.info("The goal is to make a prediction about the value (higher or lower) based on the preceding P days")
+    logger.info("The goal is to make a prediction about the value (higher or lower) based on the preceding P time-unit")
 
     _seed_offset = configuration.get("seed_offset", 123)
     logger.debug(f"Seed: {_seed_offset}")
@@ -173,6 +173,7 @@ def train(configuration):
     _tav_dates = configuration["trainer__tav_dates"]
     _mes_dates = configuration["trainer__mes_dates"]
     _skip_training = string_to_bool(configuration.get("trainer__skip_training", False))
+    _skip_eval_on_test_set_at_the_end = string_to_bool(configuration.get("trainer__skip_eval_on_test_set_at_the_end", False))
     _x_cols = configuration["trainer__x_cols"]
     _x_cols_to_norm = []
     assert configuration.get("trainer__x_cols_to_norm", None) is None
@@ -192,7 +193,8 @@ def train(configuration):
     version = configuration["trainer__version"]
     output_dir = os.path.join(configuration.get("stub_dir", get_stub_dir()), f"{run_id}", f"ODABC__{version}")
     os.makedirs(output_dir, exist_ok=True)
-
+    _data_interval = configuration["trainer__data_interval"]
+    assert _data_interval in ['1d', '1wk', '1mo']
     logger.add(os.path.join(output_dir, "train.txt"), level='DEBUG')
 
     _frequency_of_noise  = float(configuration["trainer__frequency_of_noise"])
@@ -201,10 +203,10 @@ def train(configuration):
     ###########################################################################
     # Load source data
     ###########################################################################
-    df_filename, _df_source = os.path.join(output_dir, "df.pkl"), configuration["trainer__df_source"]
+    df_filename, _df_source = os.path.join(output_dir, f"df.pkl"), configuration["trainer__df_source"]
     if _df_source is None:
         if not os.path.exists(df_filename) or _force_download_data:
-            df, df_name = _fetch_dataframe()
+            df, df_name = _fetch_dataframe(interval=_data_interval)
             logger.debug(f"Writing {df_filename}...")
             df.to_pickle(df_filename)
         else:
@@ -219,7 +221,7 @@ def train(configuration):
             df = _df_source.copy()
             df.to_pickle(df_filename)
     assert df is not None
-    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]}")
+    logger.debug(f"Data is ranging from {df.index[0]} to {df.index[-1]} , with interval of {_data_interval}")
     num_input_features = len(df[_x_cols].columns)
     num_output_features = len(df[_y_cols].columns)
     _tmp3 = ', '.join([f"({', '.join(map(str, col))})" for col in df[_x_cols_to_norm].columns])
@@ -257,7 +259,7 @@ def train(configuration):
     # Data preparation
     ###########################################################################
     assert 1 == _y_seq_length
-    logger.debug(f"Using a day ahead of {_jump_ahead}  (0 mean tomorrow)")
+    logger.debug(f"Using a step ahead of {_jump_ahead}  (0 mean tomorrow, next week, next month, depending on the interval used)")
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=_tav_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=_mes_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     if _shuffle_indices:
@@ -266,12 +268,12 @@ def train(configuration):
         random.shuffle(train_indices)
     if _number_of_timestep_for_validation is not None:
         assert not _shuffle_indices
-        split_20_idx = _number_of_timestep_for_validation
-        assert len(train_indices) > split_20_idx
+        split_nm_idx = _number_of_timestep_for_validation
+        assert len(train_indices) > split_nm_idx
     else:
-        split_20_idx = int(len(train_indices) * 0.2)
-    train_indices, val_indices, val_df = train_indices[split_20_idx:], train_indices[:split_20_idx], train_df.copy()
-    assert 0 != len(train_indices) and 0 != len(test_indices)
+        assert False
+    train_indices, val_indices, val_df = train_indices[split_nm_idx:], train_indices[:split_nm_idx], train_df.copy()
+    assert 0 != len(train_indices) and 0 != len(test_indices), f"{len(train_indices)} and {len(test_indices)}  > take care of trainer__x_seq_length ?"
 
     logger.debug(f"Training+Validation are ranging from {_tav_dates[0]} to {_tav_dates[1]}  ,  {num_input_features} input features ({_x_seq_length} steps) and {num_output_features} output features ({_y_seq_length} steps)")
     if not _shuffle_indices:
@@ -282,7 +284,10 @@ def train(configuration):
         dd1 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[0].date()
         dd2 = test_df.iloc[a_bag_of_indices[0]:a_bag_of_indices[1]].index[-1].date()
         dd3 = test_df.iloc[a_bag_of_indices[2]:a_bag_of_indices[3]].index[0].date()
-        logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd2} ({dd2.strftime('%A')})  >>  {dd1} ({dd1.strftime('%A')})]")
+        if _data_interval == '1d':
+            logger.debug(f"Predicting  {dd3} ({dd3.strftime('%A')})  using [{dd2} ({dd2.strftime('%A')})  >>  {dd1} ({dd1.strftime('%A')})]")
+        elif _data_interval == '1w':
+            logger.debug(f"Predicting the week of {dd3} using weeks [{dd1}  >>  {dd2}]")
 
     if _data_augmentation:
         logger.debug(f"Using data augmentation @F={_frequency_of_noise} and @A={_power_of_noise}")
@@ -361,8 +366,8 @@ def train(configuration):
             best_val_loss      = (val_loss, iter_num, test_accuracy)     if is_best_val_loss_achieved or 0 == iter_num else best_val_loss
             best_val_accuracy  = (val_accuracy, iter_num, test_accuracy) if is_best_val_accuracy_achieved or 0 == iter_num else best_val_accuracy
 
-            is_best_test_loss_achieved     = test_loss < best_test_loss[0]
-            is_best_test_accuracy_achieved = test_accuracy > best_test_accuracy[0]
+            is_best_test_loss_achieved     = test_loss <= best_test_loss[0]
+            is_best_test_accuracy_achieved = test_accuracy >= best_test_accuracy[0]
             best_test_loss     = (test_loss, iter_num) if is_best_test_loss_achieved or 0 == iter_num else best_test_loss
             best_test_accuracy = (test_accuracy, iter_num) if is_best_test_accuracy_achieved or 0 == iter_num else best_test_accuracy
 
@@ -444,21 +449,22 @@ def train(configuration):
         results.update({'df_source': _df_source})  # Dataframe is not serializable
     if 0 == len(get_all_checkpoints(output_dir)):
         logger.warning(f"No checkpoints found under {output_dir}")
-    # Just dump some results at the screen
-    for ckpt_path_filename in get_all_checkpoints(output_dir):
-        info = extract_info_from_filename(Path(ckpt_path_filename).name)
-        model_for_eval = load_model(ckpt_path_filename, device)
-        for _batch_idx, (_x1, _y1, (_, _prediction_date_milliseconds)) in enumerate(test_dataloader):
-            _y1 = _y1.unsqueeze(1)
-            _test_logits1, _ = model_for_eval(x=_x1)  # forward pass
-            assert _test_logits1.shape == _y1.shape
-            y_prediction = torch.where(torch.nn.Sigmoid()(_test_logits1) >= 0.5, 1, 0)
-            date_objs = [datetime.datetime.fromtimestamp(ppm / 1000).date() for ppm in _prediction_date_milliseconds.squeeze().cpu().numpy()]
-            df = pd.DataFrame({'Prediction': y_prediction.squeeze().cpu().numpy(), 'Actual': _y1.squeeze().cpu().numpy(), 'Date': date_objs})
-            pd.set_option('display.max_rows', None)
-            pd.set_option('display.max_columns', None)
-            pd.set_option('display.width', 1000)
-            logger.debug(f"{ckpt_path_filename}\n{df}")
+    if not _skip_eval_on_test_set_at_the_end:
+        # Just dump some results at the screen
+        for ckpt_path_filename in get_all_checkpoints(output_dir):
+            info = extract_info_from_filename(Path(ckpt_path_filename).name)
+            model_for_eval = load_model(ckpt_path_filename, device)
+            for _batch_idx, (_x1, _y1, (_, _prediction_date_milliseconds)) in enumerate(test_dataloader):
+                _y1 = _y1.unsqueeze(1)
+                _test_logits1, _ = model_for_eval(x=_x1)  # forward pass
+                assert _test_logits1.shape == _y1.shape
+                y_prediction = torch.where(torch.nn.Sigmoid()(_test_logits1) >= 0.5, 1, 0)
+                date_objs = [datetime.datetime.fromtimestamp(ppm / 1000).date() for ppm in _prediction_date_milliseconds.squeeze().cpu().numpy()]
+                df = pd.DataFrame({'Prediction': y_prediction.squeeze().cpu().numpy(), 'Actual': _y1.squeeze().cpu().numpy(), 'Date': date_objs})
+                pd.set_option('display.max_rows', None)
+                pd.set_option('display.max_columns', None)
+                pd.set_option('display.width', 1000)
+                logger.debug(f"{ckpt_path_filename}\n{df}")
 
     return results
 

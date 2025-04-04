@@ -2,9 +2,9 @@ from multiprocessing import Lock, Process, Queue, Value, freeze_support
 import pprint
 import numpy as np
 import pandas as pd
-from trainers.day_ahead_binary_classification_rc1 import train as train_model
-from trainers.day_ahead_binary_classification_rc1 import create_meta_model as create_meta_model
-from trainers.day_ahead_binary_classification_rc1 import generate_dataloader_for_inference as get_dataloader
+from trainers.ahead_binary_classification_rc1 import train as train_model
+from trainers.ahead_binary_classification_rc1 import create_meta_model as create_meta_model
+from trainers.ahead_binary_classification_rc1 import generate_dataloader_for_inference as get_dataloader
 from datetime import datetime
 from loguru import logger
 from pathlib import Path
@@ -13,7 +13,7 @@ import sys
 from ast import literal_eval
 import os
 import json
-from utils import extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, get_df_SPY_and_VIX, is_weekday, get_stub_dir, get_all_checkpoints
+from utils import is_it_next_week_after_last_week_of_df, extract_info_from_filename, previous_weekday_with_check, namespace_to_dict, dict_to_namespace, get_df_SPY_and_VIX, is_weekday, get_stub_dir, get_all_checkpoints, string_to_bool
 import torch
 
 
@@ -66,25 +66,25 @@ def start_runner(configuration):
     # Parameters for Kepler
     ###########################################################################
     _skip_training_with_already_computed_results = configuration["runner__skip_training_with_already_computed_results"]
-    _fast_execution_for_debugging                = configuration["runner__fast_execution_for_debugging"]
+    _fast_execution_for_debugging                = string_to_bool(configuration["runner__fast_execution_for_debugging"])
 
     _tav_dates                    = configuration["runner__tav_dates"]
     _mes_dates                    = configuration["runner__mes_dates"]
     _inf_dates                    = configuration["runner__inf_dates"]
 
-    _fetch_new_dataframe         = configuration["runner__fetch_new_dataframe"]  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
+    _fetch_new_dataframe         = string_to_bool(configuration["runner__fetch_new_dataframe"])  # Use Yahoo! Finance to download data instead of using a dataframe from an experience
     _master_df_source            = configuration["runner__master_df_source"]  # Use the specified dataframe instead of using a dataframe from an experience
     _device                      = configuration.get("device", "cuda")
-    _power_of_noise_inf          = configuration["runner__inf_power_of_noise"]
-    _frequency_of_noise_inf      = configuration["runner__inf_frequency_of_noise"]
-    _nb_iter_test_in_inference   = configuration["runner__nb_iter_test_in_inference"]
+    _power_of_noise_inf          = float(configuration["runner__inf_power_of_noise"])
+    _frequency_of_noise_inf      = float(configuration["runner__inf_frequency_of_noise"])
+    _nb_iter_test_in_inference   = int(configuration["runner__nb_iter_test_in_inference"])
     _today                       = configuration.get("runner__today", pd.Timestamp.now().date())
-    _skip_monday                 = configuration["runner__skip_monday"]
+    _skip_monday                 = string_to_bool(configuration["runner__skip_monday"])
     if _fast_execution_for_debugging:
         _nb_iter_test_in_inference               = 5
     _kepler_root_dir             = configuration.get("stub_dir", os.path.join(get_stub_dir(), f"kepler__{pd.Timestamp.now().strftime('%m%d_%Hh%Mm')}"))
-    _download_data_for_inf       = configuration["runner__download_data_for_inf"]
-
+    _download_data_for_inf       = string_to_bool(configuration["runner__download_data_for_inf"])
+    _data_interval               = None
     ###########################################################################
     #
     ###########################################################################
@@ -113,10 +113,6 @@ def start_runner(configuration):
             assert "trainer__force_download_data" not in configuration
             assert "trainer__save_checkpoint" not in configuration
             assert "trainer__shuffle_indices" not in configuration
-            assert "trainer__number_of_timestep_for_validation" not in configuration
-            assert "trainer__data_augmentation" not in configuration
-            assert "trainer__frequency_of_noise" not in configuration
-            assert "trainer__power_of_noise" not in configuration
             assert "trainer__decay_lr" not in configuration
             configuration_for_experience.update({"trainer__direction": _a_direction,
                                                  "trainer__run_id": run_id,
@@ -126,7 +122,6 @@ def start_runner(configuration):
                                                  "trainer__force_download_data": False,
                                                  "trainer__save_checkpoint": True,
                                                  "trainer__shuffle_indices": False,
-                                                 "trainer__number_of_timestep_for_validation": 60,
                                                  "trainer__data_augmentation": False,
                                                  "trainer__frequency_of_noise": 0.,
                                                  "trainer__power_of_noise": 0.,
@@ -141,7 +136,6 @@ def start_runner(configuration):
             results = train_model(configuration_for_experience)
             if df_source is None:
                 df_source = results['df_source']
-            logger.debug(results)
             output_dir_of_experiences.append(str(Path(results['output_dir']).parent))
         output_dir_of_experiences = list(set(output_dir_of_experiences))
         assert 2 == len(output_dir_of_experiences)
@@ -163,6 +157,8 @@ def start_runner(configuration):
                 assert (is_up and not is_down) or (not is_up and is_down)
                 if (a_direction == 'up' and is_down) or (a_direction == 'down' and is_up):
                     continue
+                with open(os.path.join(str(Path(filename.parent.parent)), 'results.json'), 'r') as f:
+                    _data_interval = json.load(f)['configuration']['trainer__data_interval']
                 experience_name = str(filename.parent.parent.name)
                 info = extract_info_from_filename(Path(filename).name)
                 assert info is not None
@@ -206,8 +202,8 @@ def start_runner(configuration):
 
     # Download data , if requested
     if _download_data_for_inf:
-        df, _ = get_df_SPY_and_VIX()
-        logger.info(df.tail())
+        logger.info(f"Fetching data from Yahoo! before inferences...   using data interval of {_data_interval}")
+        df, _ = get_df_SPY_and_VIX(interval=_data_interval)
 
     ###########################################################################
     # Do inferences
@@ -229,13 +225,22 @@ def start_runner(configuration):
             continue
         if date not in df.index and date < df.index[-1]:
             continue  # Market close
+
+        is_it_next_week_after_last_week_of_df(df=df, date=date)
         day_of_week_full = date.strftime('%A')
         yesterday = previous_weekday_with_check(date=date, df=df)
         real_time_execution = False if date in df.index else True  # False for backtesting (we have the ground truth)
-
+        if _data_interval == '1wk':
+            if real_time_execution:
+                # Make sure we are 'in' the next week
+                if not is_it_next_week_after_last_week_of_df(df=df, date=date):
+                    continue
+                # Since we are 'in' the next week, just use the last date to make a prediction, whenever day it might be.
+                if date.date() != end_date.date():
+                    continue
         # Do one pass on dataset Test with no data augmentation
         data_loader_without_data_augmentation = get_dataloader(df=df, device=_device, _data_augmentation=False, date_to_predict=date,
-                                                               real_time_execution=real_time_execution, **params)
+                                                               real_time_execution=real_time_execution, data_interval=_data_interval, **params)
         if data_loader_without_data_augmentation is None:
             continue
         the_ground_truth_for_date, the_ground_truth_label_for_date = None, None
@@ -261,7 +266,7 @@ def start_runner(configuration):
             nb_pred_for_unknown  += 1 if 99 == _logits else 0
 
         # Do multiple passes on dataset Test with data augmentation
-        data_loader_with_data_augmentation = get_dataloader(df=df, device=_device, _data_augmentation=True, date_to_predict=date,
+        data_loader_with_data_augmentation = get_dataloader(df=df, device=_device, _data_augmentation=True, date_to_predict=date, data_interval=_data_interval,
                                                             real_time_execution=real_time_execution, power_of_noise=_power_of_noise_inf,
                                                             frequency_of_noise=_frequency_of_noise_inf, **params)
         for ee in range(0, _nb_iter_test_in_inference):
@@ -286,25 +291,39 @@ def start_runner(configuration):
         if not real_time_execution:
             close_value_yesterday = df.loc[yesterday][('Close',  'SPY')]
             tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
-            pre_str += f":) " if the_ground_truth_for_date == prediction_value else (":| " if prediction_value == 99 else ":( ")
-            if 99 != prediction_value:
-                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
-            else:
-                tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
+            pre_str += f":)  " if the_ground_truth_for_date == prediction_value else (":|  " if prediction_value == 99 else ":(  ")
+            if _data_interval == '1d':
+                if 99 != prediction_value:
+                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
+                else:
+                    tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
+                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
+            if _data_interval == '1wk':
+                assert 0 == (date+pd.Timedelta(days=-4)).day_of_week and 4 == date.day_of_week
+                desc_week = f"{(date+pd.Timedelta(days=-4)).strftime('%Y-%m-%d')}/{date.strftime('%Y-%m-%d')}"
+                if 99 != prediction_value:
+                    logger.debug(f"{pre_str}For {desc_week} , the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
+                else:
+                    tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
+                    logger.debug(f"{pre_str}For {desc_week} , the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
         else:
+            pre_str = "[R] "
             assert 1 == len(params['y_cols'])
             try:
                 close_value_yesterday = df.loc[yesterday][('Close',  'SPY')]
             except Exception as ee:
                 logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
                 continue
-            if 99 != prediction_value:
-                tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
-                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction_value}  > {tmp_str}")
-            else:
-                tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-                logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable ({prediction_value}) > ({tmp_str})")
+            if _data_interval == '1d':
+                if 99 != prediction_value:
+                    tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
+                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction_value}  > {tmp_str}")
+                else:
+                    tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
+                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable ({prediction_value}) > ({tmp_str})")
+            if _data_interval == '1wk':
+                desc_week = f"{(date + pd.Timedelta(days=-4)).strftime('%Y-%m-%d')}/{date.strftime('%Y-%m-%d')}"
+                logger.debug(f"{pre_str}For {desc_week} , prediction is {prediction_value}")
     hit, miss = 0, 0
     for a_date, values in results_produced.items():
         if 0==pd.to_datetime(a_date).day_of_week and _skip_monday:
@@ -319,7 +338,7 @@ def start_runner(configuration):
         logger.info(f"Accuracy: {hit/(hit+miss)*100:.4}% {'(skipping mondays)' if _skip_monday else ''} (N={hit+miss}, from {start_date.date()} to {end_date.date()})")
     else:
         logger.info(f"Accuracy: not available {'(skipping mondays)' if _skip_monday else ''}")
-    return results_produced, hit/(hit+miss)
+    return results_produced, hit/(hit+miss) if hit+miss>0 else -1
 
 if __name__ == '__main__':
     freeze_support()
@@ -342,6 +361,7 @@ if __name__ == '__main__':
             key, val = arg.split('=')
             key = key[2:]
             globals()[key] = val
+            print(f"Overriding config with {key} = {val}")
     config = {k: globals()[k] for k in config_keys}
     config.update({k: globals()[k] for k in globals() if k.startswith("runner__") or k.startswith("trainer__") or k in ['device','seed_offset','stub_dir']})
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
