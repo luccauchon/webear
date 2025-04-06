@@ -7,12 +7,13 @@ runner__master_df_source    = None     # Use the specified dataframe instead of 
 runner__inf_power_of_noise  = 1.
 runner__inf_frequency_of_noise = 0.
 runner__nb_iter_test_in_inference = 5
+runner__download_data_for_inf = True  # If you move forward the inf_dates, must activate this flag
 
 runner__tav_dates      = ["2024-01-01", "2025-03-29"]
 runner__mes_dates      = ["2025-03-30", "2025-04-05"]
 runner__inf_dates      = ["2025-04-07", "2025-04-11"]
 runner__skip_monday    = False
-runner__download_data_for_inf = True  # If you move forward the inf_dates, must activate this flag
+
 
 ###############################################################################
 # Trainer
@@ -34,4 +35,4 @@ trainer__type_margin   ='relative'
 trainer__margin        =0.1
 trainer__wanted_pos_weight = 1.
 trainer__data_interval = "1d"
-
+trainer__number_of_timestep_for_validation = 60

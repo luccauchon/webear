@@ -36,6 +36,8 @@ trainer__margin        =0.1
 trainer__wanted_pos_weight = 1.
 trainer__data_interval = "1wk"
 trainer__number_of_timestep_for_validation = 24
+
+
 trainer__data_augmentation=True
 trainer__frequency_of_noise=0.5
 trainer__power_of_noise=2.5
