@@ -315,15 +315,10 @@ def start_runner(configuration):
                 logger.warning(f"There is no data for yesterday=({yesterday.strftime('%Y-%m-%d')}) , so can't predict {date.strftime('%Y-%m-%d')}")
                 continue
             if _data_interval == '1d':
-                if 99 != prediction_value:
-                    tmp_str = ""#f"higher than {close_value_yesterday:.2f}$" if 1 == prediction_value else f"lower than {close_value_yesterday:.2f}$"
-                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is {prediction_value}  > {tmp_str}")
-                else:
-                    tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction is unstable ({prediction_value}) > ({tmp_str})")
+                logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], prediction {prediction_value} ({prediction_label})")
             if _data_interval == '1wk':
                 desc_week = f"{(date + pd.Timedelta(days=-4)).strftime('%Y-%m-%d')}/{date.strftime('%Y-%m-%d')}"
-                logger.debug(f"{pre_str}For {desc_week} , prediction is {prediction_value}")
+                logger.info(f"{pre_str}For {desc_week} , prediction is {prediction_value} ({prediction_label})")
     hit, miss = 0, 0
     for a_date, values in results_produced.items():
         if 0==pd.to_datetime(a_date).day_of_week and _skip_monday:
