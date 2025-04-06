@@ -1,6 +1,7 @@
-runner__fast_execution_for_debugging                = True
+runner__debug_level         = "INFO"
+
+runner__fast_execution_for_debugging                = False
 runner__skip_training_with_already_computed_results = []
-runner__debug_level         = "DEBUG"
 runner__fetch_new_dataframe = False
 runner__master_df_source    = None
 runner__inf_power_of_noise  = 1.
