@@ -259,7 +259,7 @@ def train(configuration):
     # Data preparation
     ###########################################################################
     assert 1 == _y_seq_length
-    logger.debug(f"Using a step ahead of {_jump_ahead}  (0 mean tomorrow, next week, next month, depending on the interval used)")
+    logger.debug(f"Using a step ahead of {_jump_ahead}  (0 mean tomorrow, next week, next month, depending on the data interval used)")
     train_indices, train_df = generate_indices_basic_style(df=df.copy(), dates=_tav_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     test_indices, test_df   = generate_indices_basic_style(df=df.copy(), dates=_mes_dates, x_seq_length=_x_seq_length, y_seq_length=_y_seq_length, jump_ahead=_jump_ahead)
     if _shuffle_indices:
@@ -361,13 +361,13 @@ def train(configuration):
             running__test_losses   = update_running_var(_running__value=running__test_losses, _value=test_loss)
             running__test_accuracy = update_running_var(_running__value=running__test_accuracy, _value=test_accuracy)
 
-            is_best_val_loss_achieved      = val_loss < best_val_loss[0]
-            is_best_val_accuracy_achieved  = val_accuracy > best_val_accuracy[0]
+            is_best_val_loss_achieved      = val_loss     <= best_val_loss[0]
+            is_best_val_accuracy_achieved  = val_accuracy >= best_val_accuracy[0]
             best_val_loss      = (val_loss, iter_num, test_accuracy)     if is_best_val_loss_achieved or 0 == iter_num else best_val_loss
             best_val_accuracy  = (val_accuracy, iter_num, test_accuracy) if is_best_val_accuracy_achieved or 0 == iter_num else best_val_accuracy
 
-            is_best_test_loss_achieved     = test_loss <= best_test_loss[0]
-            is_best_test_accuracy_achieved = test_accuracy >= best_test_accuracy[0]
+            is_best_test_loss_achieved     = test_loss     <= best_test_loss[0] and iter_num > 0
+            is_best_test_accuracy_achieved = test_accuracy >= best_test_accuracy[0] and iter_num > 0
             best_test_loss     = (test_loss, iter_num) if is_best_test_loss_achieved or 0 == iter_num else best_test_loss
             best_test_accuracy = (test_accuracy, iter_num) if is_best_test_accuracy_achieved or 0 == iter_num else best_test_accuracy
 

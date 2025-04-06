@@ -117,6 +117,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
     merged_df['day_of_week']  = merged_df.index.dayofweek + 1
     merged_df['week_of_year'] = merged_df.index.isocalendar().week + 1
     merged_df['unique_week']  = merged_df.index.year * 1000 + merged_df['week_of_year']
+    merged_df['month_of_year'] = merged_df.index.month
     #merged_df[('Close_direction', 'SPY')]  = merged_df.apply(lambda row: 1 if row[('Close', 'SPY')] > row[('Open', 'SPY')] else -1, axis=1)
     #merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
 
