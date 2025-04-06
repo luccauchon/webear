@@ -5,6 +5,95 @@ from torch.autograd import Variable
 import inspect
 import torch.nn.functional as F
 
+import torch
+import torch.nn as nn
+import math
+from torch.autograd import Variable
+
+
+class Encoder(nn.Module):
+    def __init__(self, intrants=8, hidden_size=128, num_layers=2, num_levels=2, bidirectional=False, dropout=0.5, embedding_factor=2.0, device='cuda'):
+        super(Encoder, self).__init__()
+        self.moduleDict = nn.ModuleDict()
+        self.linear_logit = nn.ModuleDict()
+        self.linear_hn = nn.ModuleDict()
+        self.linear_cn = nn.ModuleDict()
+        self.moduleDict['rnn_1'] = nn.LSTM(input_size=intrants, hidden_size=hidden_size, num_layers=num_layers, dropout=dropout if num_layers > 1 else 0, batch_first=True, bidirectional=bidirectional)
+        hidden_size_s = hidden_size
+        for num_level in range(2, num_levels + 1):
+            ddp = (2 if bidirectional else 1)
+            new_hidden_size = math.ceil(hidden_size_s / embedding_factor)
+            self.moduleDict['rnn_' + str(num_level)] = nn.LSTM(input_size=hidden_size_s * ddp, hidden_size=new_hidden_size,
+                                                               num_layers=num_layers, dropout=dropout if num_layers > 1 else 0, batch_first=True, bidirectional=bidirectional)
+            self.linear_logit['rnn_' + str(num_level)] = nn.Linear(in_features=hidden_size_s * ddp, out_features=hidden_size_s * ddp, device=device)
+            self.linear_hn['rnn_' + str(num_level)] = nn.Linear(in_features=hidden_size_s, out_features=new_hidden_size, device=device)
+            self.linear_cn['rnn_' + str(num_level)] = nn.Linear(in_features=hidden_size_s, out_features=new_hidden_size, device=device)
+            hidden_size_s = new_hidden_size
+        self.relu = torch.nn.LeakyReLU()
+        self.dropout = torch.nn.Dropout(p=dropout)
+        self.d = 2 if bidirectional else 1
+        self.num_layers = num_layers  # number of layers
+        self.hidden_size = hidden_size  # hidden state
+        self.device = device
+
+    def forward(self, x):
+        batch_size = x.shape[0]
+
+        h_0 = Variable(torch.zeros(self.d * self.num_layers, batch_size, self.hidden_size)).to(self.device)  # hidden state
+        c_0 = Variable(torch.zeros(self.d * self.num_layers, batch_size, self.hidden_size)).to(self.device)  # internal state
+        for key, module in self.moduleDict.items():
+            if key == 'rnn_1':
+                output, (hn, cn) = module(x, (h_0, c_0))
+            else:
+                output = self.relu(self.dropout(self.linear_logit[key](output)))
+                hn = self.relu(self.dropout(self.linear_hn[key](hn)))
+                cn = self.relu(self.dropout(self.linear_cn[key](cn)))
+                output, (hn, cn) = module(output, (hn, cn))
+        return output, (hn, cn)
+
+
+class ExtractTensor(nn.Module):
+    def __init__(self, hidden_size=128, bidirectional=True):
+        super(ExtractTensor, self).__init__()
+        self.bidirectional = bidirectional
+        self.hidden_size = hidden_size
+
+    def forward(self, x):
+        # Ouput shape (batch, features, hidden)
+        tensor = x
+        # Reshape shape (batch, hidden)
+        return tensor[:, -1, :] if not self.bidirectional else torch.cat((tensor[:, 0, self.hidden_size:], tensor[:, -1, :self.hidden_size]), dim=1)
+
+
+class RNN(nn.Module):
+    """LSTM-based Auto Encoder"""
+
+    def __init__(self, intrants, extrants, output_steps, hidden_size, num_layers, num_levels, bidirectional, dropout, embedding_factor, device='cuda'):
+        """
+        input_size: int, batch_size x sequence_length x input_dim
+        hidden_size: int, output size of LSTM AE
+        latent_size: int, latent z-layer size
+        num_lstm_layer: int, number of layers in LSTM
+        """
+        super(RNN, self).__init__()
+        embedding_size = hidden_size
+        for num_level in range(1, num_levels):
+            embedding_size = math.ceil(embedding_size / embedding_factor)
+        self.bidirectional, self.extrants, self.output_steps = bidirectional, extrants, output_steps
+
+        self.encoder = Encoder(intrants=intrants, hidden_size=hidden_size, num_layers=num_layers, num_levels=num_levels, bidirectional=bidirectional, dropout=dropout, embedding_factor=embedding_factor, device=device)
+        self.extract_tensor = ExtractTensor(hidden_size=embedding_size, bidirectional=bidirectional)
+        self.linear = nn.Linear(in_features=embedding_size * (2 if bidirectional else 1), out_features=extrants * output_steps)
+
+    def forward(self, x):  # z: [bs x nvars x seq_len]
+        # encode input space to hidden space
+        output, (hn, cn) = self.encoder(x)
+        output = self.extract_tensor(output)
+        output = self.linear(output)
+        prediction = output.view(-1, self.output_steps, self.extrants)
+
+        return prediction
+
 
 class LSTMMetaUpDownClassification(nn.Module):
     def __init__(self, up_models, down_models):

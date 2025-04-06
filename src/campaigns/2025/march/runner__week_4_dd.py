@@ -8,7 +8,7 @@ runner__inf_power_of_noise  = 1.
 runner__inf_frequency_of_noise = 0.
 runner__nb_iter_test_in_inference = 5
 
-runner__tav_dates      = ["2024-01-01", "2025-03-22"]
+runner__tav_dates      = ["2024-01-01", "2025-04-02"]
 runner__mes_dates      = ["2025-03-23", "2025-03-29"]
 runner__inf_dates      = ["2025-03-31", "2025-04-04"]
 runner__skip_monday    = False

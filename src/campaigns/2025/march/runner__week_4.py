@@ -34,10 +34,3 @@ trainer__type_margin   ='relative'
 trainer__margin        =0.2
 trainer__wanted_pos_weight = 1.
 
-#2025-03-31 12:09:43.354 | INFO     | __main__:start_runner:201 - Root directory: D:\PyCharmProjects\webear\stubs\kepler__0331_10h37m
-#2025-03-31 12:09:43.355 | INFO     | __main__:start_runner:202 - Created meta model with 4 models , inferencing [2025-03-31] to [2025-04-04]
-#2025-03-31 12:09:43.356 | INFO     | __main__:start_runner:208 - [UP]  val_acc: 0.8333    val_loss: 22.92
-#2025-03-31 12:09:43.357 | INFO     | __main__:start_runner:206 - [UP]  val_acc: 0.8667    val_loss: 23.65
-#2025-03-31 12:09:43.358 | INFO     | __main__:start_runner:208 - [DOWN]  val_acc: 0.8167    val_loss: 24.64
-#2025-03-31 12:09:43.359 | INFO     | __main__:start_runner:206 - [DOWN]  val_acc: 0.8667    val_loss: 28.73
-#2025-03-31 12:09:49.554 | INFO     | __main__:start_runner:304 - Accuracy: 100.0%

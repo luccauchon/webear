@@ -105,9 +105,9 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
             if merged_df.index[-1].weekday() < 5:  # 5 represents Saturday
                 df_1jil = df_1jil.drop(df_1jil.index[-1])
         if interval == '1mo':
-            df_1jil = merged_df.resample('M').agg(agg_dict).copy()
+            df_1jil = merged_df.resample('ME').agg(agg_dict).copy()
             # Resample the volume data into monthly mean volumes
-            volume_candles = merged_df['Volume'].resample('M').mean()
+            volume_candles = merged_df['Volume'].resample('ME').mean()
             # Add the volume column to the candles DataFrame
             df_1jil['Volume'] = volume_candles
             if merged_df.index[-1].day < 28:
