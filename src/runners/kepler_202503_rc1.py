@@ -300,15 +300,15 @@ def start_runner(configuration):
                     logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
                 else:
                     tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
+                    logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
             if _data_interval == '1wk':
                 assert 0 == (date+pd.Timedelta(days=-4)).day_of_week and 4 == date.day_of_week
                 desc_week = f"{(date+pd.Timedelta(days=-4)).strftime('%Y-%m-%d')}/{date.strftime('%Y-%m-%d')}"
                 if 99 != prediction_value:
-                    logger.debug(f"{pre_str}For {desc_week} , the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
+                    logger.info(f"{pre_str}For {desc_week} , the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
                 else:
                     tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
-                    logger.debug(f"{pre_str}For {desc_week} , the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
+                    logger.info(f"{pre_str}For {desc_week} , the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
         else:
             pre_str = "[R] "
             assert 1 == len(params['y_cols'])
