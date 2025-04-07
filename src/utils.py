@@ -96,6 +96,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
             'Low': 'min',
             'Close': 'last',}
         agg_dict = {(col, symbol): agg_funcs[col] for symbol in symbols for col in agg_funcs}
+        df_1jil = None
         if interval == '1wk':
             df_1jil = merged_df.resample('W-FRI').agg(agg_dict).copy()
             # Resample the volume data into 5-minute mean volumes

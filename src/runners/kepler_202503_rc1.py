@@ -297,7 +297,7 @@ def start_runner(configuration):
             pre_str += f":)  " if the_ground_truth_for_date == prediction_value else (":|  " if prediction_value == 99 else ":(  ")
             if _data_interval == '1d':
                 if 99 != prediction_value:
-                    logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
+                    logger.info(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is {prediction_value}  {tmp_str}")
                 else:
                     tmp_str = f"\u2191 or \u2193 than {close_value_yesterday:.2f}$"
                     logger.debug(f"{pre_str}For {date.strftime('%Y-%m-%d')} [{day_of_week_full}], the ground truth is {the_ground_truth_for_date} , prediction is unstable ({prediction_value}) > {tmp_str}")
