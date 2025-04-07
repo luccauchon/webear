@@ -226,7 +226,6 @@ def start_runner(configuration):
         if date not in df.index and date < df.index[-1]:
             continue  # Market close
 
-        is_it_next_week_after_last_week_of_df(df=df, date=date)
         day_of_week_full = date.strftime('%A')
         yesterday = previous_weekday_with_check(date=date, df=df)
         real_time_execution = False if date in df.index else True  # False for backtesting (we have the ground truth)
