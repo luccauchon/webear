@@ -82,7 +82,11 @@ def start_runner(configuration):
     _skip_monday                 = string_to_bool(configuration["runner__skip_monday"])
     if _fast_execution_for_debugging:
         _nb_iter_test_in_inference               = 5
-    _kepler_root_dir             = configuration.get("stub_dir", os.path.join(get_stub_dir(), f"kepler__{pd.Timestamp.now().strftime('%m%d_%Hh%Mm')}"))
+    _run_id                      = configuration.get("runner__run_id", "123")
+    if string_to_bool(configuration.get("runner__new_root_dir", "True")):
+        _kepler_root_dir = configuration.get("stub_dir", os.path.join(get_stub_dir(), f"kepler__{_run_id}__{pd.Timestamp.now().strftime('%m%d_%Hh%Mm')}"))
+    else:
+        _kepler_root_dir = configuration.get("stub_dir", os.path.join(get_stub_dir(), f"kepler__{_run_id}"))
     _download_data_for_inf       = string_to_bool(configuration["runner__download_data_for_inf"])
     _data_interval               = None
     ###########################################################################
