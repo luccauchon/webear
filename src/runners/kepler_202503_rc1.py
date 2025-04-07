@@ -93,9 +93,9 @@ def start_runner(configuration):
     #
     ###########################################################################
     output_dir_of_experiences = []
-    if isinstance(_skip_training_with_already_computed_results, list) and 1==len(_skip_training_with_already_computed_results):
-        if os.path.exists(_skip_training_with_already_computed_results[0]):
-            root_dir = _skip_training_with_already_computed_results[0]
+    if isinstance(_skip_training_with_already_computed_results, str):
+        if os.path.exists(_skip_training_with_already_computed_results):
+            root_dir = _skip_training_with_already_computed_results
             directories = [os.path.join(root_dir, name) for name in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, name))]
             output_dir_of_experiences = directories
 

@@ -1,7 +1,7 @@
 runner__debug_level         = "INFO"
 
 runner__fast_execution_for_debugging                = False
-runner__skip_training_with_already_computed_results = []
+runner__skip_training_with_already_computed_results = ''
 runner__fetch_new_dataframe = False    # Use Yahoo! Finance to download data instead of using a dataframe from an experience. Useless if "runner__download_data_for_inf" is set to True.
 runner__master_df_source    = None     # Use the specified dataframe instead of using a dataframe from an experience
 runner__inf_power_of_noise  = 1.
