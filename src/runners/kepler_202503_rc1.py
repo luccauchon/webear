@@ -208,6 +208,9 @@ def start_runner(configuration):
     if _download_data_for_inf:
         logger.info(f"Fetching data from Yahoo! before inferences...   using data interval of {_data_interval}")
         df, _ = get_df_SPY_and_VIX(interval=_data_interval)
+        _tmp_output_filename = os.path.join(_kepler_root_dir, "df_for_inference.pkl")
+        logger.debug(f"Writing {_tmp_output_filename}...")
+        df.to_pickle(_tmp_output_filename)
 
     ###########################################################################
     # Do inferences
@@ -215,6 +218,7 @@ def start_runner(configuration):
     start_date, end_date = pd.to_datetime(_inf_dates[0]), pd.to_datetime(_inf_dates[1])
     logger.info(f"Root directory: {_kepler_root_dir}")
     logger.info(f"Created meta model with {len(candidats['up'])+len(candidats['down'])} models , inferencing [{start_date.date()}] to [{end_date.date()}]")
+    logger.info(f"Features predicted: {params['y_cols']}")
     for type_of, all_candidats in zip(["UP", "DOWN"], [candidats['up'], candidats['down']]):
         for one_candidat in all_candidats:
             if 'val_accuracy' in one_candidat:
@@ -336,6 +340,7 @@ def start_runner(configuration):
         logger.info(f"Accuracy: {hit/(hit+miss)*100:.4}% {'(skipping mondays)' if _skip_monday else ''} (N={hit+miss}, from {start_date.date()} to {end_date.date()})")
     else:
         logger.info(f"Accuracy: not available {'(skipping mondays)' if _skip_monday else ''}")
+    logger.info(f"Add this to the command to reuse trained models : --runner__skip_training_with_already_computed_results={_kepler_root_dir}")
     return results_produced, hit/(hit+miss) if hit+miss>0 else -1
 
 if __name__ == '__main__':

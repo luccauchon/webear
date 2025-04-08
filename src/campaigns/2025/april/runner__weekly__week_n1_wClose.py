@@ -1,7 +1,7 @@
 runner__debug_level         = "INFO"
 
 runner__fast_execution_for_debugging                = False
-runner__skip_training_with_already_computed_results = []
+runner__skip_training_with_already_computed_results = ''
 runner__fetch_new_dataframe = False    # Use Yahoo! Finance to download data instead of using a dataframe from an experience
 runner__master_df_source    = None     # Use the specified dataframe instead of using a dataframe from an experience
 runner__inf_power_of_noise  = 1.
@@ -32,7 +32,7 @@ trainer__y_cols        = [('Close', 'SPY')]
 trainer__batch_size    =1024
 trainer__jump_ahead    =0
 trainer__type_margin   ='relative'
-trainer__margin        =0.1
+trainer__margin        =0.5
 trainer__wanted_pos_weight = 1.
 trainer__data_interval = "1wk"
 trainer__number_of_timestep_for_validation = 24
