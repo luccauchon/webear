@@ -35,3 +35,6 @@ trainer__margin        =0.1
 trainer__wanted_pos_weight = 1.
 trainer__data_interval = "1d"
 trainer__number_of_timestep_for_validation = 60
+
+# 2025.04.10
+# When confidence was gt 50.0% (this happens 100.0%), success rate is 62.7%
