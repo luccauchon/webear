@@ -209,8 +209,9 @@ def start_runner(configuration):
         logger.info(f"Fetching data from Yahoo! before inferences...   using data interval of {_data_interval}")
         df, _ = get_df_SPY_and_VIX(interval=_data_interval)
         _tmp_output_filename = os.path.join(_kepler_root_dir, "df_for_inference.pkl")
-        logger.debug(f"Writing {_tmp_output_filename}...")
-        df.to_pickle(_tmp_output_filename)
+        if os.path.exists(_kepler_root_dir):
+            logger.debug(f"Writing {_tmp_output_filename}...")
+            df.to_pickle(_tmp_output_filename)
 
     ###########################################################################
     # Do inferences
