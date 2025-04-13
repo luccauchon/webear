@@ -1,13 +1,13 @@
 runner__debug_level         = "INFO"
 
 runner__fast_execution_for_debugging                = False
-runner__skip_training_with_already_computed_results = []
-runner__fetch_new_dataframe = False
-runner__master_df_source    = None
+runner__skip_training_with_already_computed_results = ''
+runner__fetch_new_dataframe = False    # Use Yahoo! Finance to download data instead of using a dataframe from an experience
+runner__master_df_source    = None     # Use the specified dataframe instead of using a dataframe from an experience
 runner__inf_power_of_noise  = 1.
 runner__inf_frequency_of_noise = 0.
 runner__nb_iter_test_in_inference = 5
-runner__download_data_for_inf = True
+runner__download_data_for_inf = True  # If you move forward the inf_dates, must activate this flag
 
 runner__tav_dates      = ["2018-01-01", "2025-04-05"]
 runner__mes_dates      = ["2025-01-01", "2025-04-05"]
