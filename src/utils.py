@@ -5,6 +5,7 @@ import re
 from types import SimpleNamespace
 import platform
 from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
+from torchmetrics import MeanSquaredError, MeanAbsoluteError, R2Score
 import os
 import yfinance as yf
 from hurst import compute_Hc
@@ -75,6 +76,17 @@ def get_df_SPY_and_VIX_virgin_at_minutes():
     df_vix.index = df_vix.index.tz_convert('US/Eastern')
 
     df_spy       = yf.download("SPY", period="max", interval='1m', auto_adjust=False)
+    df_spy.index = df_spy.index.tz_convert('US/Eastern')
+
+    return  df_spy, df_vix
+
+
+def get_df_SPY_and_VIX_virgin_at_30minutes():
+    df_vix       = yf.download("^VIX", period="max", interval='30m', auto_adjust=False)
+    df_vix       = df_vix.drop("Volume", axis=1)
+    df_vix.index = df_vix.index.tz_convert('US/Eastern')
+
+    df_spy       = yf.download("SPY", period="max", interval='30m', auto_adjust=False)
     df_spy.index = df_spy.index.tz_convert('US/Eastern')
 
     return  df_spy, df_vix
@@ -323,6 +335,40 @@ def generate_indices_with_cutoff_day(_df, _dates, x_seq_length, y_seq_length, cu
         return _indices[:int(len(_indices)*split_ratio)], _indices[int(len(_indices)*split_ratio):], _df
     else:
         return _indices, _df
+
+
+def calculate_regression_metrics(y_true, y_pred):
+    """
+    Calculate metrics for regression.
+
+    Args:
+    y_true (torch.Tensor): Ground truth values.
+    y_pred (torch.Tensor): Predicted values.
+
+    Returns:
+    dict: Dictionary containing Mean Squared Error (MSE), Mean Absolute Error (MAE), and R-squared (R2).
+    """
+
+    assert y_pred.squeeze().shape == y_true.squeeze().shape
+
+    mse_metric = MeanSquaredError()
+    mae_metric = MeanAbsoluteError()
+    r2_metric = R2Score()
+
+    if 1 == len(y_pred):
+        mse_metric.update(y_pred[0], y_true[0])
+        mae_metric.update(y_pred[0], y_true[0])
+        r2_metric.update(y_pred[0], y_true[0])
+    else:
+        mse_metric.update(y_pred.squeeze(), y_true.squeeze())
+        mae_metric.update(y_pred.squeeze(), y_true.squeeze())
+        r2_metric.update(y_pred.squeeze(), y_true.squeeze())
+
+    mse = mse_metric.compute()
+    mae = mae_metric.compute()
+    r2 = r2_metric.compute()
+
+    return {'MSE': mse, 'MAE': mae, 'R2': r2}
 
 
 def calculate_binary_classification_metrics(y_true, y_pred):
