@@ -1,8 +1,8 @@
 trainer__debug_level = "DEBUG"
-trainer__run_id=123
-trainer__version="up"
+trainer__run_id=34
+trainer__version="test_rt"
 
-trainer__direction='up'
+trainer__direction='down'
 
 trainer__type_margin = 'relative'
 ##################################
@@ -18,8 +18,8 @@ trainer__min_lr        = 1e-4
 trainer__weight_decay  = 0.1
 trainer__decay_lr      = True
 
-trainer__tav_dates      = ["2024-01-01", "2025-03-29"]
-trainer__mes_dates      = ["2025-03-01", "2025-04-05"]
+trainer__tav_dates      = ["2024-01-01", "2025-03-31"]
+trainer__mes_dates      = ["2025-04-01", "2025-04-12"]
 trainer__data_interval  = "1d"
 trainer__number_of_timestep_for_validation = 60
 
@@ -30,7 +30,7 @@ trainer__force_download_data = False
 
 
 ##################################
-trainer__x_seq_length = 4
+trainer__x_seq_length = 8
 ##################################
 trainer__y_seq_length = 1
 
