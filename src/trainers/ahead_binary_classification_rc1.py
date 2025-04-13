@@ -338,7 +338,7 @@ def train(configuration):
     # Train
     ###########################################################################
     logger.debug(f"{_max_iters=}   {_log_interval=}   {_direction=}   {__lr_decay_iters=}   {_eval_interval=}")
-    loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device)  # mean-squared error for regression
+    loss_function = torch.nn.BCEWithLogitsLoss(reduction='sum').to(device)
     optimizer = model.configure_optimizers(weight_decay=_weight_decay, learning_rate=__learning_rate, betas=betas, device_type=device)
     train_loss, best_val_loss, best_val_accuracy = torch.tensor(999999999), (999999999, 999999999), (0., 0)
     best_test_loss, best_test_accuracy = (999999999, 999999999), (0., 0)
