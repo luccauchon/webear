@@ -4,6 +4,7 @@ from loguru import logger
 import tsaug
 import torch
 import numpy as np
+from utils import generate_indices_basic_style
 
 
 class TripleIndicesRegressionDataset(Dataset):
@@ -251,3 +252,155 @@ class TripleIndicesLookAheadTernaryClassificationDataset(Dataset):
         x_data_norm = torch.tensor(x_data_norm.values, dtype=torch.float, device=self.device)
 
         return x, y, x_data_norm
+
+
+class GenXandYRegressionData:
+    """
+    A class used to generate X and Y regression data.
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Initializes the GenXandYRegressionData class.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments.
+        """
+        df = kwargs['df']
+        the_dates = kwargs['the_dates']
+        x_seq_length = kwargs['x_seq_length']
+        y_seq_length = kwargs['y_seq_length']
+        jump_ahead   = kwargs['jump_ahead']
+        logger.debug(f"{x_seq_length=}   {y_seq_length=}   {jump_ahead=}")
+        indices, df = generate_indices_basic_style(df=df.copy(), dates=the_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length, jump_ahead=jump_ahead)
+
+        # Convert MultiIndex columns to simple columns by concatenating levels
+        df.columns = ['_'.join(col).strip() for col in df.columns.values]
+        # Add this
+        df['day_of_week'] = df.index.dayofweek + 1
+
+        # Specify which columns are Xs and Ys
+        x_cols_mutable = kwargs['x_cols_mutable']
+        x_cols_fixed = kwargs['x_cols_fixed']
+        y_cols = kwargs['y_cols']
+        assert set(x_cols_mutable).issubset(df.columns)
+        assert set(x_cols_fixed).issubset(df.columns)
+        assert set(y_cols).issubset(df.columns)
+
+        ###############################################################################
+        # Ys
+        ###############################################################################
+        log_y_cols = [col + '_log' for col in y_cols]
+        df[log_y_cols] = np.log(df[y_cols])
+
+        # diff1_log_y_cols = [col + '_diff1' for col in log_y_cols]
+        # df[diff1_log_y_cols] = df[log_y_cols].diff(1)
+        # resulting_y_cols = diff1_log_y_cols
+        resulting_y_cols = log_y_cols
+        # # Reversing the operations
+        # initial_log_values = df[log_y_cols].iloc[0]
+        # reversed_log_values = df[diff1_log_y_cols].cumsum() + initial_log_values.values
+        # reversed_original_values = np.exp(reversed_log_values)
+        # assert np.allclose(reversed_original_values.iloc[-3:].values, df[y_cols].iloc[-3:].values)
+
+        # Normalize
+        norm_resulting_y_cols = [col + '_norm' for col in resulting_y_cols]
+        self.ymean, self.ystd = df[resulting_y_cols].mean(), df[resulting_y_cols].std()
+        df[norm_resulting_y_cols] = (df[resulting_y_cols] - self.ymean) / self.ystd
+        self.norm_resulting_y_cols = norm_resulting_y_cols
+        self.log_y_cols = log_y_cols
+        #self.diff1_log_y_cols = diff1_log_y_cols
+        np.allclose(df[y_cols].iloc[-1].values, self.denormalize_and_to_numpy(df[norm_resulting_y_cols].iloc[-1].values).values)
+        ###############################################################################
+        # Xs
+        ###############################################################################
+        # Log
+        log_x_cols = [col + '_log' for col in x_cols_mutable]
+        df[log_x_cols] = np.log(df[x_cols_mutable])
+
+        # Rolling
+        rolling3_x_cols = [col + f'_rolling3' for col in log_x_cols]
+        df[rolling3_x_cols] = df[log_x_cols].rolling(window=3, center=True).mean()
+
+        # Diff
+        diff1_x_cols = [col + f'_diff1' for col in log_x_cols]
+        df[diff1_x_cols] = df[log_x_cols].diff(1)
+
+        # Concatenate all the Xs
+        resulting_x_cols = log_x_cols + rolling3_x_cols + diff1_x_cols
+
+        # Normalize
+        norm_resulting_x_cols = [col + '_norm' for col in resulting_x_cols]
+        self.xmean, self.xstd = df[resulting_x_cols].mean(), df[resulting_x_cols].std()
+        df[norm_resulting_x_cols] = (df[resulting_x_cols] - self.xmean) / self.xstd
+        self.norm_resulting_x_cols = norm_resulting_x_cols + x_cols_fixed
+
+        self.mode = None
+        split_nm_idx = 60
+        self.train_indices, self.val_indices = indices[split_nm_idx:], indices[:split_nm_idx]
+        self.df = df.copy()
+        logger.debug(f"Take the last {split_nm_idx} time steps to do validation ({self.df.index[self.val_indices[-1][-1]].date()} to {self.df.index[self.val_indices[0][-1]].date()})")
+        logger.debug(f"Training will use data from {self.df.index[self.train_indices[-1][-1]].date()} to {self.df.index[self.train_indices[0][-1]].date()}")
+
+    def get_Xs(self):
+        return self.norm_resulting_x_cols
+
+    def get_Ys(self):
+        return self.norm_resulting_y_cols
+
+    def get_nb_in(self):
+        return len(self.norm_resulting_x_cols)
+
+    def get_nb_out(self):
+        return len(self.norm_resulting_y_cols)
+
+    def set_train(self):
+        self.mode = 'train'
+        return self
+
+    def set_val(self):
+        self.mode = 'val'
+        return self
+
+    def denormalize_and_to_numpy(self, value):
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu().numpy()
+            result = np.exp((value * self.ystd.values) + self.ymean.values)
+        else:
+            result = np.exp((value * self.ystd) + self.ymean)
+        return result
+
+    def __len__(self):
+        if self.mode == 'train':
+            return len(self.train_indices)
+        else:
+            return len(self.val_indices)
+
+    def iterate(self):
+        """
+        Returns an iterator over the training ranges of df[norm_resulting_x_cols].
+
+        Yields:
+            pd.DataFrame: A slice of df[norm_resulting_x_cols] for each training range.
+        """
+        for idx in range(0, len(self)):
+            yield self.get_item(idx)
+
+    def get_item(self, idx):
+        idx = self.train_indices[idx] if self.mode == 'train' else self.val_indices[idx]
+        return self.df[self.norm_resulting_x_cols].iloc[idx[0]:idx[1]], self.df[self.norm_resulting_y_cols].iloc[idx[2]:idx[3]], self.df[self.log_y_cols].iloc[idx[2]:idx[3]]
+
+
+class GenXandYRegressionDataset(Dataset):
+    def __init__(self, grd):
+        """
+
+        """
+        self.grd = grd
+
+    def __len__(self):
+        return len(self.grd)
+
+    def __getitem__(self, idx):
+        x, y, y_log = self.grd.get_item(idx)
+        return x.values.astype(np.float32), y.values.astype(np.float32), y_log.values.astype(np.float32)
