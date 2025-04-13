@@ -68,31 +68,58 @@ class ExtractTensor(nn.Module):
 class RNN(nn.Module):
     """LSTM-based Auto Encoder"""
 
-    def __init__(self, intrants, extrants, output_steps, hidden_size, num_layers, num_levels, bidirectional, dropout, embedding_factor, device='cuda'):
+    def __init__(self, n_intrants, n_extrants, output_steps, hidden_size, num_layers, num_levels, bidirectional, dropout, embedding_factor, device='cuda'):
         """
-        input_size: int, batch_size x sequence_length x input_dim
-        hidden_size: int, output size of LSTM AE
-        latent_size: int, latent z-layer size
-        num_lstm_layer: int, number of layers in LSTM
+
         """
         super(RNN, self).__init__()
         embedding_size = hidden_size
         for num_level in range(1, num_levels):
             embedding_size = math.ceil(embedding_size / embedding_factor)
-        self.bidirectional, self.extrants, self.output_steps = bidirectional, extrants, output_steps
+        self.bidirectional, self.extrants, self.output_steps = bidirectional, n_extrants, output_steps
 
-        self.encoder = Encoder(intrants=intrants, hidden_size=hidden_size, num_layers=num_layers, num_levels=num_levels, bidirectional=bidirectional, dropout=dropout, embedding_factor=embedding_factor, device=device)
+        self.encoder = Encoder(intrants=n_intrants, hidden_size=hidden_size, num_layers=num_layers, num_levels=num_levels, bidirectional=bidirectional, dropout=dropout, embedding_factor=embedding_factor, device=device)
         self.extract_tensor = ExtractTensor(hidden_size=embedding_size, bidirectional=bidirectional)
-        self.linear = nn.Linear(in_features=embedding_size * (2 if bidirectional else 1), out_features=extrants * output_steps)
+        self.linear = nn.Linear(in_features=embedding_size * (2 if bidirectional else 1), out_features=n_extrants * output_steps)
+        self.loss_function = nn.MSELoss(reduction='sum')
+        logger.debug(f"{n_intrants=}, {n_extrants=}, {output_steps=}, {hidden_size=}, {num_layers=}, {num_levels=}, {bidirectional=}, {dropout=}, {embedding_factor=}")
 
-    def forward(self, x):  # z: [bs x nvars x seq_len]
+    def forward(self, x, y):
         # encode input space to hidden space
         output, (hn, cn) = self.encoder(x)
         output = self.extract_tensor(output)
         output = self.linear(output)
-        prediction = output.view(-1, self.output_steps, self.extrants)
+        logits = output.view(-1, self.output_steps, self.extrants)
+        loss = None
+        if y is not None:
+            assert y.shape == logits.shape
+            loss = self.loss_function(logits, y)
+        return logits, loss
 
-        return prediction
+    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
+        # start with all of the candidate parameters
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        # filter out those that do not require grad
+        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        optim_groups = [
+            {'params': decay_params, 'weight_decay': weight_decay, 'lr': learning_rate},
+            {'params': nodecay_params, 'weight_decay': 0.0, 'lr': learning_rate}
+        ]
+        num_decay_params = sum(p.numel() for p in decay_params)
+        num_nodecay_params = sum(p.numel() for p in nodecay_params)
+        logger.debug(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+        logger.debug(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        # Create AdamW optimizer and use the fused version if it is available
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused = fused_available and device_type == 'cuda'
+        extra_args = dict(fused=True) if use_fused else dict()
+        optimizer = torch.optim.AdamW(optim_groups, betas=betas, **extra_args)
+
+        return optimizer
 
 
 class LSTMMetaUpDownClassification(nn.Module):
