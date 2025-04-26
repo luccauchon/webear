@@ -4,7 +4,7 @@ from loguru import logger
 import tsaug
 import torch
 import numpy as np
-from utils import generate_indices_basic_style
+from utils import generate_indices_basic_style, calculate_macd, calculate_rsi, calculate_bollinger_bands
 
 
 class TripleIndicesRegressionDataset(Dataset):
@@ -254,6 +254,126 @@ class TripleIndicesLookAheadTernaryClassificationDataset(Dataset):
         return x, y, x_data_norm
 
 
+class GenXandY_RSI_MACD_BB_IndicatorsData:
+    """
+
+    """
+
+    def __init__(self, **kwargs):
+        df = kwargs['df']
+        the_dates = kwargs['the_dates']
+        x_seq_length = kwargs['x_seq_length']
+        self.y_seq_length = kwargs['y_seq_length']
+        jump_ahead   = 0
+        logger.debug(f"{x_seq_length=}   {self.y_seq_length=}")
+
+        # Convert MultiIndex columns to simple columns by concatenating levels
+        df.columns = ['_'.join(col).strip() for col in df.columns.values]
+        # Add this
+        df['day_of_week'] = df.index.dayofweek + 1
+
+        # Specify which columns are Xs and Ys
+        x_cols_mutable = kwargs['x_cols_mutable']
+        x_cols_fixed = kwargs['x_cols_fixed']
+        assert set(x_cols_mutable).issubset(df.columns)
+        assert set(x_cols_fixed).issubset(df.columns)
+
+        ###############################################################################
+        # Ys
+        ###############################################################################
+        # Will be calculated in __get_item__
+        self.direction = 'down'
+        self.pourcentage = 0.01
+
+        ###############################################################################
+        # Xs
+        ###############################################################################
+        self.col_name = 'Close_SPY'
+        logger.debug(f"Using {self.col_name} to compute the indicators")
+        # Add indicators to df
+        df = calculate_macd(df=df, col_name=self.col_name)
+        df = calculate_rsi(df=df, col_name=self.col_name)
+        df = calculate_bollinger_bands(df=df, col_name=self.col_name)
+        x_cols_mutable += [f'{self.col_name}__Signal', f'{self.col_name}__MACD', f'{self.col_name}__RSI', f'{self.col_name}__Upper_BB', f'{self.col_name}__Lower_BB']
+
+        # Concatenate all the Xs
+        self.resulting_x_cols = x_cols_mutable + x_cols_fixed
+
+        # Compute the indices after creating features, because we drop some NaN rows.
+        indices, df = generate_indices_basic_style(df=df.copy(), dates=the_dates, x_seq_length=x_seq_length, y_seq_length=self.y_seq_length, jump_ahead=jump_ahead)
+
+        self.mode = None
+        split_nm_idx = 60
+        self.train_indices, self.val_indices = indices[split_nm_idx:], indices[:split_nm_idx]
+        self.df = df.copy()
+
+        t_start_val = self.df.iloc[self.val_indices[-1][2]:self.val_indices[-1][3]].index[0]
+        t_end_val = self.df.iloc[self.val_indices[0][2]:self.val_indices[0][3]].index[-1]
+        logger.debug(f"Take the last {split_nm_idx} time steps to do validation ({t_start_val} to {t_end_val})")
+
+        t_start_train = self.df.iloc[self.train_indices[-1][2]:self.train_indices[-1][3]].index[0]
+        t_end_train = self.df.iloc[self.train_indices[0][2]:self.train_indices[0][3]].index[-1]
+        logger.debug(f"Training will use data from {t_start_train} to {t_end_train}")
+
+    def get_Xs(self):
+        return self.resulting_x_cols
+
+    def get_Ys(self):
+        return f"{self.pourcentage*100}% {self.direction} of {self.col_name} for {self.y_seq_length} time steps in the future"
+
+    def get_nb_in(self):
+        return len(self.resulting_x_cols)
+
+    def get_nb_out(self):
+        return 1
+
+    def set_train(self):
+        self.mode = 'train'
+        return self
+
+    def set_val(self):
+        self.mode = 'val'
+        return self
+
+    def iterate(self):
+        """
+        Returns an iterator over the training ranges of df[norm_resulting_x_cols].
+
+        Yields:
+            pd.DataFrame: A slice of df[norm_resulting_x_cols] for each training range.
+        """
+        for idx in range(0, len(self)):
+            yield self.get_item(idx)
+
+    def __len__(self):
+        if self.mode == 'train':
+            return len(self.train_indices)
+        else:
+            return len(self.val_indices)
+
+    def get_item(self, idx):
+        idx = self.train_indices[idx] if self.mode == 'train' else self.val_indices[idx]
+        x = self.df[self.resulting_x_cols].iloc[idx[0]:idx[1]]
+        value_at_last_x = x[self.col_name].iloc[-1]
+        delta = value_at_last_x * self.pourcentage
+        y = self.df[self.col_name].iloc[idx[2]:idx[3]]
+
+        # If there any values that will be lower than "last_x" +/- delta?
+        # Check if any values in y are outside the range
+        outside_range = None
+        if self.direction == 'down':
+            outside_range = (y < (value_at_last_x - delta)) # | (y > (value_at_last_x + delta))
+        if self.direction == 'up':
+            outside_range = (y > (value_at_last_x + delta))
+        any_outside_range = outside_range.any()
+        y = 0
+        if any_outside_range:
+            y = 1
+        x = x.values
+        y = y
+        return x, y, 0.
+
+
 class GenXandYRegressionData:
     """
     A class used to generate X and Y regression data.
@@ -391,7 +511,7 @@ class GenXandYRegressionData:
         return self.df[self.norm_resulting_x_cols].iloc[idx[0]:idx[1]], self.df[self.norm_resulting_y_cols].iloc[idx[2]:idx[3]], self.df[self.log_y_cols].iloc[idx[2]:idx[3]]
 
 
-class GenXandYRegressionDataset(Dataset):
+class GenXandYDataset(Dataset):
     def __init__(self, grd):
         """
 
@@ -402,5 +522,7 @@ class GenXandYRegressionDataset(Dataset):
         return len(self.grd)
 
     def __getitem__(self, idx):
-        x, y, y_log = self.grd.get_item(idx)
-        return x.values.astype(np.float32), y.values.astype(np.float32), y_log.values.astype(np.float32)
+        x, y, misc = self.grd.get_item(idx)
+        if isinstance(x, np.ndarray):
+            return x.astype(np.float32), y, misc
+        return x.values.astype(np.float32), y.values.astype(np.float32), misc.values.astype(np.float32)

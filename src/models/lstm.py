@@ -68,7 +68,7 @@ class ExtractTensor(nn.Module):
 class RNN(nn.Module):
     """LSTM-based Auto Encoder"""
 
-    def __init__(self, n_intrants, n_extrants, output_steps, hidden_size, num_layers, num_levels, bidirectional, dropout, embedding_factor, device='cuda'):
+    def __init__(self, n_intrants, n_extrants, output_steps, hidden_size, num_layers, num_levels, bidirectional, dropout, embedding_factor, device='cuda', loss_function=None, loss_type='reg'):
         """
 
         """
@@ -81,10 +81,15 @@ class RNN(nn.Module):
         self.encoder = Encoder(intrants=n_intrants, hidden_size=hidden_size, num_layers=num_layers, num_levels=num_levels, bidirectional=bidirectional, dropout=dropout, embedding_factor=embedding_factor, device=device)
         self.extract_tensor = ExtractTensor(hidden_size=embedding_size, bidirectional=bidirectional)
         self.linear = nn.Linear(in_features=embedding_size * (2 if bidirectional else 1), out_features=n_extrants * output_steps)
-        self.loss_function = nn.MSELoss(reduction='sum')
+        self.sigmoid = torch.nn.Sigmoid()
+        if loss_function is None:
+            self.loss_function = nn.MSELoss(reduction='sum').to(device)
+        else:
+            self.loss_function = loss_function.to(device)
+        self.loss_type = loss_type
         logger.debug(f"{n_intrants=}, {n_extrants=}, {output_steps=}, {hidden_size=}, {num_layers=}, {num_levels=}, {bidirectional=}, {dropout=}, {embedding_factor=}")
 
-    def forward(self, x, y):
+    def forward(self, x, y=None):
         # encode input space to hidden space
         output, (hn, cn) = self.encoder(x)
         output = self.extract_tensor(output)
@@ -92,8 +97,11 @@ class RNN(nn.Module):
         logits = output.view(-1, self.output_steps, self.extrants)
         loss = None
         if y is not None:
-            assert y.shape == logits.shape
-            loss = self.loss_function(logits, y)
+            if self.loss_type == 'reg':
+                assert y.shape == logits.shape
+                loss = self.loss_function(logits, y.float())
+            if self.loss_type == 'binclass':
+                loss = self.loss_function(self.sigmoid(logits).float(), y.float())
         return logits, loss
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):

@@ -358,15 +358,15 @@ def calculate_regression_metrics(y_true, y_pred):
     if 1 == len(y_pred):
         mse_metric.update(y_pred[0], y_true[0])
         mae_metric.update(y_pred[0], y_true[0])
-        r2_metric.update(y_pred[0], y_true[0])
+        #r2_metric.update(y_pred[0], y_true[0])
     else:
         mse_metric.update(y_pred.squeeze(), y_true.squeeze())
         mae_metric.update(y_pred.squeeze(), y_true.squeeze())
-        r2_metric.update(y_pred.squeeze(), y_true.squeeze())
+        #r2_metric.update(y_pred.squeeze(), y_true.squeeze())
 
     mse = mse_metric.compute()
     mae = mae_metric.compute()
-    r2 = r2_metric.compute()
+    r2 = 0. #r2_metric.compute()
 
     return {'MSE': mse, 'MAE': mae, 'R2': r2}
 
@@ -582,3 +582,33 @@ def is_it_next_week_after_last_week_of_df(df, date):
     day_next_week = last_date + pd.Timedelta(days=7)
     assert 4 == day_next_week.weekday()  # always a friday
     return (last_date <= date <= day_next_week) and date.weekday() < 5
+
+
+def calculate_bollinger_bands(df, window=20, num_std=2, col_name='Close_SPY'):
+    df[f'{col_name}__SMA'] = df[col_name].rolling(window).mean()
+    df[f'{col_name}__std'] = df[col_name].rolling(window).std()
+    df[f'{col_name}__Upper_BB'] = df[f'{col_name}__SMA'] + (df[f'{col_name}__std'] * num_std)
+    df[f'{col_name}__Lower_BB'] = df[f'{col_name}__SMA'] - (df[f'{col_name}__std'] * num_std)
+    df.dropna(inplace=True)
+    return df
+
+def calculate_rsi(df, window=14, col_name='Close_SPY'):
+    delta = df[col_name].diff().dropna()
+    up, down = delta.copy(), delta.copy()
+    up[up < 0] = 0
+    down[down > 0] = 0
+    roll_up = up.rolling(window).mean()
+    roll_down = down.rolling(window).mean().abs()
+    RS = roll_up / roll_down
+    RSI = 100.0 - (100.0 / (1.0 + RS))
+    df[f'{col_name}__RSI'] = RSI
+    df.dropna(inplace=True)
+    return df
+
+def calculate_macd(df, slow=26, fast=12, signal=9, col_name='Close_SPY'):
+    ema_slow = df[col_name].ewm(span=slow, adjust=False).mean()
+    ema_fast = df[col_name].ewm(span=fast, adjust=False).mean()
+    df[f'{col_name}__MACD'] = ema_fast - ema_slow
+    df[f'{col_name}__Signal'] = df[f'{col_name}__MACD'].ewm(span=signal, adjust=False).mean()
+    return df
+

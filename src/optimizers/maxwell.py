@@ -6,12 +6,17 @@ import sys
 import os
 from ast import literal_eval
 from loguru import logger
-from trainers.day_ahead_binary_classification_rc1 import train as train_model
+from trainers.ahead_binary_classification_rc1 import train as train_model
 from tqdm import tqdm
 from itertools import product
 
 
 def optimize(configuration):
+    ###########################################################################
+    # Description
+    ###########################################################################
+    logger.info("")
+
     _a_direction = 'up'
     _tav_dates = [["2024-09-01", "2025-03-15"],
                   ["2024-06-01", "2025-03-15"],
@@ -84,7 +89,7 @@ def optimize(configuration):
 
 if __name__ == '__main__':
     freeze_support()
-    from base_configuration import *
+
     # -----------------------------------------------------------------------------
     config_keys = [k for k, v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]
     namespace = {}
@@ -102,21 +107,9 @@ if __name__ == '__main__':
             assert arg.startswith('--')
             key, val = arg.split('=')
             key = key[2:]
-            if key in globals():
-                try:
-                    # attempt to eval it it (e.g. if bool, number, or etc)
-                    attempt = literal_eval(val)
-                except (SyntaxError, ValueError):
-                    # if that goes wrong, just use the string
-                    attempt = val
-                # ensure the types match ok
-                assert type(attempt) == type(globals()[key]), f"{type(attempt)} != {type(globals()[key])}"
-                # cross fingers
-                print(f"Overriding: {key} = {attempt}")
-                globals()[key] = attempt
-            else:
-                raise ValueError(f"Unknown config key: {key}")
+            globals()[key] = val
     config = {k: globals()[k] for k in config_keys}
+    config.update({k: globals()[k] for k in globals() if k.startswith("optimizer__") or k.startswith("trainer__") or k in ['device', 'seed_offset', 'stub_dir']})
     tmp = {k: namespace[k] for k in [k for k, v in namespace.items() if not k.startswith('_') and isinstance(v, (int, float, bool, str, type(None), dict, tuple, list))]}
     config.update({k: tmp[k] for k, v in config.items() if k in tmp})
     configuration = dict_to_namespace(config)
@@ -124,11 +117,6 @@ if __name__ == '__main__':
     #pprint.PrettyPrinter(indent=4).pprint(namespace_to_dict(configuration))
 
     logger.remove()
-    logger.add(sys.stdout, level=configuration.debug_level)
-
-    ###########################################################################
-    # Description
-    ###########################################################################
-    logger.info("The goal is to make a prediction about the value (higher or lower) based on the preceding P days")
+    logger.add(sys.stdout, level=namespace_to_dict(configuration).get("debug_level",'INFO'))
 
     optimize(configuration = namespace_to_dict(configuration))
