@@ -101,7 +101,7 @@ def run(configuration):
     df.columns = ['_'.join(col).strip() for col in df.columns.values]
 
     resample_params = ('5min', 0, 18)
-    resample_params = ('1min', 30, 100)
+    resample_params = ('1min', 60, 100)
     # Resample data
     df = df.resample(resample_params[0]).agg({
         'Open_SPY': 'first',
