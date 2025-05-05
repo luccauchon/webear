@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import talib
+from fetchers.download_minutes import dump_dataframes_to_disk
 
 
 def plot2(df2, patterns, fct_name):
@@ -52,6 +53,9 @@ def run(configuration):
     dfs = []
     uu, cf = 0, 0
     merged_df = None
+    # Dump today data first
+    dump_dataframes_to_disk(output_dir=directory)
+
     # Iterate over all pickle files in the directory
     for file in glob.glob(os.path.join(directory, '*.pkl')):
         # Read the pickle file into a DataFrame
@@ -74,7 +78,7 @@ def run(configuration):
     logger.debug(f"Read {cf} files... > {merged_df.index[0]} to {merged_df.index[-1]} for a total of {len(merged_df)} rows")
     merged_df.to_pickle(output_file)
 
-    logger.debug(output_file)
+    logger.debug(f"Output file is located @{output_file}")
 
     ###########################################################################
     #
@@ -84,19 +88,22 @@ def run(configuration):
         return today - timedelta(days=max(0, today.weekday() - 4))
 
     today_date = get_weekday_date().isoformat()
-    logger.debug(today_date)
+    logger.debug(f"Today is {today_date}")
 
     ###########################################################################
     #
     ###########################################################################
     df = pd.read_pickle(output_file)
+    logger.debug(f"Data range from {df.index[0]} to {df.index[-1]}")
     df = df.loc[today_date]
     # print(df.index)
     # Convert MultiIndex columns to simple columns by concatenating levels
     df.columns = ['_'.join(col).strip() for col in df.columns.values]
 
-    # Resample data to 5-minute intervals
-    df = df.resample('5min').agg({
+    resample_params = ('5min', 0, 18)
+    resample_params = ('1min', 30, 100)
+    # Resample data
+    df = df.resample(resample_params[0]).agg({
         'Open_SPY': 'first',
         'High_SPY': 'max',
         'Low_SPY': 'min',
@@ -106,8 +113,8 @@ def run(configuration):
     ###########################################################################
     #
     ###########################################################################
-    i_range_pattern, j_range_pattern = int(configuration.get('csp__ir', 0)), int(configuration.get('csp__jr', 18))
-    logger.debug(f"{df.index[i_range_pattern]} -> {df.index[j_range_pattern]}")
+    i_range_pattern, j_range_pattern = int(configuration.get('csp__ir', resample_params[1])), int(configuration.get('csp__jr', resample_params[2]))
+    logger.debug(f"Looking for patterns between {df.index[i_range_pattern]} and {df.index[j_range_pattern]}")
 
     ###########################################################################
     #
