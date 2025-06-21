@@ -82,11 +82,15 @@ def get_df_SPY_and_VIX_virgin_at_minutes():
 
 
 def get_df_SPY_and_VIX_virgin_at_30minutes():
-    df_vix       = yf.download("^VIX", period="max", interval='30m', auto_adjust=False)
+    # Calculate start date (30 days ago)
+    end_date = datetime.today().strftime('%Y-%m-%d')
+    start_date = (datetime.today() - timedelta(days=30)).strftime('%Y-%m-%d')
+
+    df_vix       = yf.download("^VIX", start=start_date, end=end_date, interval='30m', auto_adjust=False)
     df_vix       = df_vix.drop("Volume", axis=1)
     df_vix.index = df_vix.index.tz_convert('US/Eastern')
 
-    df_spy       = yf.download("SPY", period="max", interval='30m', auto_adjust=False)
+    df_spy       = yf.download("SPY", start=start_date, end=end_date, interval='30m', auto_adjust=False)
     df_spy.index = df_spy.index.tz_convert('US/Eastern')
 
     return  df_spy, df_vix

@@ -53,7 +53,7 @@ def run(configuration):
     dfs = []
     uu, cf = 0, 0
     merged_df = None
-    # Dump today data first
+    # Get data for today first
     dump_dataframes_to_disk(output_dir=directory)
 
     # Iterate over all pickle files in the directory
