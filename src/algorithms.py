@@ -140,9 +140,11 @@ def half_trend(df, ticker_name, high_label, low_label, close_label, amplitude=2,
 
 def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_signals=False):
     close_label, high_label, low_label = ('Close', ticker_name), ('High', ticker_name), ('Low', ticker_name)
-    print(f"Computing HalfTrend indicator ({ticker.index[0]} => {ticker.index[-1]})...")
+    if print_signals:
+        print(f"Computing HalfTrend indicator ({ticker.index[0]} => {ticker.index[-1]})...")
     ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=10, channel_deviation=2)
     ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=1, channel_deviation=2)
+    ticker['ticker_name'] = ticker_name
     df = ticker
     assert ('ht1', ticker_name) in ticker.columns
     assert ('ht10', ticker_name) in ticker.columns
@@ -152,7 +154,8 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
     # ----------------------------
     # Scanning for Buy/Sell Setup
     # ----------------------------
-    print("Scanning for Setup...")
+    if print_signals:
+        print("Scanning for Setup...")
     n, i = len(df), 0
     custom_signal = np.full(n, False, dtype=bool)
     setup_triggered = np.full(n, False, dtype=bool)

@@ -93,48 +93,48 @@ def main():
     # Define date range
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
     start_date = (datetime.today() - timedelta(days=62)).strftime('%Y-%m-%d')
-
-    print("Fetching ticker list from NASDAQ and NYSE...")
+    print(f"  → Data from {start_date} to {end_date}")
     all_tickers = ["^GSPC", "SPY", "QQQ"] + ["ADBE", "AMD", "AMZN", "AAPL", "COST", "GOOG", "INTC", "MA", "META", "MSFT", "NFLX", "NVDA",
-                                             "ORCL", "PLTR", "RDDT", "RKT", "TSLA", "V", "WMT"]
+                                             "ORCL", "PINS", "PLTR", "RDDT", "RKT", "TSLA", "V", "WMT"]
     print(f"Total tickers found: {len(all_tickers)}")
+    ticker__2__data, list_of_triggereds_setup = {}, {True:[], False: []}
+    for buy_setup in [True, False]:
+        for ticker_name in tqdm(all_tickers):
+            try:
+                if ticker_name not in ticker__2__data:
+                    ticker = yf.download(ticker_name, start=start_date, end=end_date, interval='1h', auto_adjust=False, ignore_tz=True, progress=False)
+                    ticker__2__data.update({ticker_name: ticker})
+                    # Be kind to Yahoo Finance—add delay
+                    time.sleep(0.5)  # 0.5 sec between requests
 
-    processed = 0
-    for ticker_name in all_tickers:
-        try:
-            print(f"\n[{processed+1}/{len(all_tickers)}] Downloading {ticker_name}...")
-            ticker = yf.download(ticker_name,start=start_date,end=end_date,interval='1h',auto_adjust=False,ignore_tz=True,progress=False)
+                ticker = ticker__2__data[ticker_name].copy()
+                if ticker.empty:
+                    print(f"  → No data for {ticker_name}")
+                    continue
 
-            if ticker.empty:
-                print(f"  → No data for {ticker_name}")
-                continue
+                # Optional: Skip if not enough data points (e.g., < 10 hours)
+                if len(ticker) < 10:
+                    print(f"  → Insufficient data for {ticker_name}")
+                    continue
 
-            # Optional: Skip if not enough data points (e.g., < 10 hours)
-            if len(ticker) < 10:
-                print(f"  → Insufficient data for {ticker_name}")
-                continue
+                df = trade_prime_half_trend_strategy(ticker=ticker, ticker_name=ticker_name, buy_setup=buy_setup)
+                # df = trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(ticker=ticker, ticker_name=ticker_name, buy_setup=buy_setup)
+                last_trigger = df[df[('setup_triggered', ticker_name)]].tail(1)
+                # Check if last_trigger is today
+                if not last_trigger.empty and last_trigger.index[0].date() == pd.to_datetime('today').date():
+                    list_of_triggereds_setup[buy_setup].append(last_trigger)
+            except KeyboardInterrupt:
+                print("\nInterrupted by user.")
+                break
+            except Exception as e:
+                print(f"  → Error processing {ticker_name}: {e}")
+                time.sleep(1)  # extra delay on error
 
-            print(f"  → Data from {ticker.index[0]} to {ticker.index[-1]}")
-            df = trade_prime_half_trend_strategy(ticker=ticker, ticker_name=ticker_name, buy_setup=True)
-            # df = trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(ticker=ticker, ticker_name=ticker_name, buy_setup=True)
-            last_trigger = df[df[('setup_triggered', ticker_name)]].tail(1)
-            # Check if last_trigger is today
-            if not last_trigger.empty and last_trigger.index[0].date() == pd.to_datetime('today').date():
-                print(last_trigger)
-
-            processed += 1
-
-            # Be kind to Yahoo Finance—add delay
-            time.sleep(0.5)  # 0.5 sec between requests
-
-        except KeyboardInterrupt:
-            print("\nInterrupted by user.")
-            break
-        except Exception as e:
-            print(f"  → Error processing {ticker_name}: {e}")
-            time.sleep(1)  # extra delay on error
-
-    print(f"\nCompleted. Processed {processed} tickers.")
-
+    for buy_setup in [True, False]:
+        print(f"\n\n\n[{'BUY SETUP' if buy_setup else 'SELL SETUP'}]*******************************************************************")
+        ztr = ''
+        for setup in list_of_triggereds_setup[buy_setup]:
+            ztr += f'{setup["ticker_name"].values} => {setup.index[0]}' + '\n '
+        print(ztr)
 if __name__ == "__main__":
     main()
