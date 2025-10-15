@@ -138,8 +138,12 @@ def half_trend(df, ticker_name, high_label, low_label, close_label, amplitude=2,
     return df
 
 
-def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_signals=False):
+def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_signals=False, entry_type='Hard'):
     close_label, high_label, low_label = ('Close', ticker_name), ('High', ticker_name), ('Low', ticker_name)
+    buy_setup_trigger_label, sell_setup_trigger_label = 'Close', 'Close'
+    assert entry_type in ['Soft', 'Hard']
+    if entry_type == 'Soft':
+        buy_setup_trigger_label, sell_setup_trigger_label = 'Low', 'High'
     if print_signals:
         print(f"Computing HalfTrend indicator ({ticker.index[0]} => {ticker.index[-1]})...")
     ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=10, channel_deviation=2)
@@ -150,6 +154,17 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
     assert ('ht10', ticker_name) in ticker.columns
     assert ('trend1', ticker_name) in ticker.columns
     assert ('trend10', ticker_name) in ticker.columns
+    # ----------------------------
+    # Compute ATR(14) for stops
+    # ----------------------------
+    high = ticker[high_label].values
+    low = ticker[low_label].values
+    close = ticker[close_label].values
+    tr = np.maximum(high - low,
+                    np.abs(high - np.concatenate([[close[0]], close[:-1]])),
+                    np.abs(low - np.concatenate([[close[0]], close[:-1]])))
+    atr_14 = pd.Series(tr).rolling(window=14, min_periods=1).mean().values
+    ticker[('ATR_14', ticker_name)] = atr_14
 
     # ----------------------------
     # Scanning for Buy/Sell Setup
@@ -160,6 +175,8 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
     custom_signal = np.full(n, False, dtype=bool)
     setup_triggered = np.full(n, False, dtype=bool)
     triggered_distance = np.full(n, 0, dtype=int)
+    stop_loss = np.full(n, np.nan)
+    take_profit = np.full(n, np.nan)
     while i < n:
         if buy_setup:
             # Conditions for setup at candle i:
@@ -168,7 +185,8 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
             # 3. Price (low or close) at i <= ht10[i] (touches or below)
             cond1 = df[('trend10', ticker_name)].iloc[i] == 0
             cond2 = df[('trend1', ticker_name)].iloc[i] == 1
-            cond3 = df[('Low', ticker_name)].iloc[i] <= df[('ht10', ticker_name)].iloc[i]  # touches or below
+            assert buy_setup_trigger_label in ['Close', 'Low']
+            cond3 = df[(buy_setup_trigger_label, ticker_name)].iloc[i] <= df[('ht10', ticker_name)].iloc[i]  # touches or below
             setup = cond1 and cond2 and cond3
             setup_triggered[i] = setup
             if setup:
@@ -181,6 +199,10 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
                     if flip_to_up:
                         custom_signal[j] = True
                         triggered_distance[j] = j - i
+                        entry_price = df[('Close', ticker_name)].iloc[j]
+                        atr_val = df[('ATR_14', ticker_name)].iloc[j]
+                        stop_loss[j] = entry_price - 1.5 * atr_val
+                        take_profit[j] = entry_price + 2.0 * atr_val  # Optional: 1:1.33 RR
                         break
                 i = new_i
             else:
@@ -192,7 +214,8 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
             # 3. Price (high or close) at i >= ht10[i] (touches or below)
             cond1 = df[('trend10', ticker_name)].iloc[i] == 1
             cond2 = df[('trend1', ticker_name)].iloc[i] == 0
-            cond3 = df[('High', ticker_name)].iloc[i] >= df[('ht10', ticker_name)].iloc[i]  # touches or above
+            assert sell_setup_trigger_label in ['Close', 'High']
+            cond3 = df[(sell_setup_trigger_label, ticker_name)].iloc[i] >= df[('ht10', ticker_name)].iloc[i]  # touches or above
             setup = cond1 and cond2 and cond3
             setup_triggered[i] = setup
             if setup:
@@ -203,8 +226,13 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
                         break
                     flip_to_down = (df[('trend1', ticker_name)].iloc[j] == 1) and (df[('trend10', ticker_name)].iloc[j] == 1)
                     if flip_to_down:
+                        # print(f'[{ticker_name}] {df.index[i]} --> {df.index[j]}')
                         custom_signal[j] = True
                         triggered_distance[j] = j - i
+                        entry_price = df[('Close', ticker_name)].iloc[j]
+                        atr_val = df[('ATR_14', ticker_name)].iloc[j]
+                        stop_loss[j] = entry_price + 1.5 * atr_val
+                        take_profit[j] = entry_price - 2.0 * atr_val  # Optional: 1:1.33 RR
                         break
                 i = new_i
             else:
@@ -212,6 +240,8 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
     df[('custom_signal', ticker_name)] = custom_signal
     df[('setup_triggered', ticker_name)] = setup_triggered
     df[('triggered_distance', ticker_name)] = triggered_distance
+    df[('stop_loss', ticker_name)] = stop_loss
+    df[('take_profit', ticker_name)] = take_profit
 
     # ----------------------------
     # Print recent signals
@@ -234,8 +264,7 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, print_s
     return df
 
 
-
-def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(ticker, ticker_name, buy_setup=True, print_signals=False):
+def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(ticker, ticker_name, buy_setup=True, print_signals=False, entry_type='Hard'):
     '''
      Enhancements:
         Volume Confirmation:
@@ -255,9 +284,26 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
     :return:
     '''
     close_label, high_label, low_label = ('Close', ticker_name), ('High', ticker_name), ('Low', ticker_name)
-    print(f"Computing HalfTrend indicator ({ticker.index[0]} => {ticker.index[-1]})...")
+    buy_setup_trigger_label, sell_setup_trigger_label = 'Close', 'Close'
+    assert entry_type in ['Soft', 'Hard']
+    if entry_type == 'Soft':
+        buy_setup_trigger_label, sell_setup_trigger_label = 'Low', 'High'
+    if print_signals:
+        print(f"Computing HalfTrend indicator ({ticker.index[0]} => {ticker.index[-1]})...")
     ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=10, channel_deviation=2)
     ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=1, channel_deviation=2)
+    # ----------------------------
+    # Compute ATR(14) for stops
+    # ----------------------------
+    high = ticker[high_label].values
+    low = ticker[low_label].values
+    close = ticker[close_label].values
+    tr = np.maximum(high - low,
+                    np.abs(high - np.concatenate([[close[0]], close[:-1]])),
+                    np.abs(low - np.concatenate([[close[0]], close[:-1]])))
+    atr_14 = pd.Series(tr).rolling(window=14, min_periods=1).mean().values
+    ticker[('ATR_14', ticker_name)] = atr_14
+
     # ----------------------------
     # Volume SMA for confirmation
     # ----------------------------
@@ -272,11 +318,12 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
     # ----------------------------
     # Scanning for Buy/Sell Setup
     # ----------------------------
-    print("Scanning for Setup...")
     n, i = len(df), 0
     custom_signal = np.full(n, False, dtype=bool)
     setup_triggered = np.full(n, False, dtype=bool)
     triggered_distance = np.full(n, 0, dtype=int)
+    stop_loss = np.full(n, np.nan)
+    take_profit = np.full(n, np.nan)
     while i < n:
         if buy_setup:
             # Conditions for setup at candle i:
@@ -285,7 +332,8 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
             # 3. Price (low or close) at i <= ht10[i] (touches or below)
             cond1 = df[('trend10', ticker_name)].iloc[i] == 0
             cond2 = df[('trend1', ticker_name)].iloc[i] == 1
-            cond3 = df[('Low', ticker_name)].iloc[i] <= df[('ht10', ticker_name)].iloc[i]  # touches or below
+            assert buy_setup_trigger_label in ['Close', 'Low']
+            cond3 = df[(buy_setup_trigger_label, ticker_name)].iloc[i] <= df[('ht10', ticker_name)].iloc[i]  # touches or below
             setup = cond1 and cond2 and cond3
             setup_triggered[i] = setup
             if setup:
@@ -293,13 +341,17 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
                 for j in range(i + 1, n):
                     new_i = j
                     if df[('trend10', ticker_name)].iloc[j] == 1:
-                        break
+                        break  # Backbone trend has reversed; the setup is no more good
                     flip_to_up = (df[('trend1', ticker_name)].iloc[j] == 0) and (df[('trend10', ticker_name)].iloc[j] == 0)
-                    # --- Volume confirmation on trigger candle (i) ---
-                    vol_confirmed = df[('Volume', ticker_name)].iloc[i] > df[('Volume_SMA_20', ticker_name)].iloc[i]
+                    # --- Volume confirmation on trigger candle (j) ---
+                    vol_confirmed = df[('Volume', ticker_name)].iloc[j] > df[('Volume_SMA_20', ticker_name)].iloc[j]
                     if flip_to_up and vol_confirmed:
                         custom_signal[j] = True
                         triggered_distance[j] = j - i
+                        entry_price = df[('Close', ticker_name)].iloc[j]
+                        atr_val = df[('ATR_14', ticker_name)].iloc[j]
+                        stop_loss[j] = entry_price - 1.5 * atr_val
+                        take_profit[j] = entry_price + 2.0 * atr_val  # Optional: 1:1.33 RR
                         break
                 i = new_i
             else:
@@ -311,7 +363,8 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
             # 3. Price (high or close) at i >= ht10[i] (touches or below)
             cond1 = df[('trend10', ticker_name)].iloc[i] == 1
             cond2 = df[('trend1', ticker_name)].iloc[i] == 0
-            cond3 = df[('High', ticker_name)].iloc[i] >= df[('ht10', ticker_name)].iloc[i]  # touches or above
+            assert sell_setup_trigger_label in ['Close', 'High']
+            cond3 = df[(sell_setup_trigger_label, ticker_name)].iloc[i] >= df[('ht10', ticker_name)].iloc[i]  # touches or above
             setup = cond1 and cond2 and cond3
             setup_triggered[i] = setup
             if setup:
@@ -321,11 +374,15 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
                     if df[('trend10', ticker_name)].iloc[j] == 0:
                         break
                     flip_to_down = (df[('trend1', ticker_name)].iloc[j] == 1) and (df[('trend10', ticker_name)].iloc[j] == 1)
-                    # --- Volume confirmation on trigger candle (i) ---
-                    vol_confirmed = df[('Volume', ticker_name)].iloc[i] > df[('Volume_SMA_20', ticker_name)].iloc[i]
+                    # --- Volume confirmation on trigger candle (j) ---
+                    vol_confirmed = df[('Volume', ticker_name)].iloc[j] > df[('Volume_SMA_20', ticker_name)].iloc[j]
                     if flip_to_down and vol_confirmed:
                         custom_signal[j] = True
                         triggered_distance[j] = j - i
+                        entry_price = df[('Close', ticker_name)].iloc[j]
+                        atr_val = df[('ATR_14', ticker_name)].iloc[j]
+                        stop_loss[j] = entry_price + 1.5 * atr_val
+                        take_profit[j] = entry_price - 2.0 * atr_val  # Optional: 1:1.33 RR
                         break
                 i = new_i
             else:
@@ -333,6 +390,8 @@ def trade_prime_half_trend_strategy_plus_volume_confirmation_and_atr_stop_loss(t
     df[('custom_signal', ticker_name)] = custom_signal
     df[('setup_triggered', ticker_name)] = setup_triggered
     df[('triggered_distance', ticker_name)] = triggered_distance
+    df[('stop_loss', ticker_name)] = stop_loss
+    df[('take_profit', ticker_name)] = take_profit
 
     # ----------------------------
     # Print recent signals
