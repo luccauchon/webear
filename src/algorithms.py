@@ -23,7 +23,15 @@ HALF_TREND_DEFAULT_CONFIG = {
     #
     # HT10 line must be rising over last N bars (e.g., ht10[i] > ht10[i-3]).
     # Or: HT10 slope > 0 (use linear regression or simple difference).
-    'use__higher_timeframe_strong_trend': {'enable': False, 'length': 21, 'min_rate': 0.95}
+    'use__higher_timeframe_strong_trend': {'enable': False, 'length': 21, 'min_rate': 0.95},
+
+    # ✅ 3. Relative Strength vs. Benchmark (e.g., SPX vs. VIX or 10Y Yield)
+    #       Why: Breakouts fail in high-fear or rising-rate environments.
+    # For SPX:
+    #
+    # Only take longs when VIX is falling or below its 10-day SMA.
+    # Or: SPX > 200-period SMA (long-term bullish bias).
+    'use__relative_strength_vs_benchmark': {'enable_vix': False, 'enable_spx': False, 'period_vix': 10*7, 'period_spx': 200*7, 'vix_dataframe': None, 'spx_dataframe': None},
 }
 
 def _get_config(keys, **kwargs):
@@ -179,7 +187,7 @@ def half_trend(df, ticker_name, high_label, low_label, close_label, amplitude=2,
     return df
 
 
-def trade_prime_half_trend_strategy_v2(ticker, ticker_name, buy_setup=True, **kwargs):
+def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwargs):
     """
     ...
 
@@ -212,11 +220,29 @@ def trade_prime_half_trend_strategy_v2(ticker, ticker_name, buy_setup=True, **kw
     volume_confirmed__window_size = int(_get_config(('use__volume_confirmed', 'period'), **kwargs))
     volume_confirmed__colname = (f'Volume_SMA_{volume_confirmed__window_size}', ticker_name)
     higher_timeframe_strong_trend__enabled = bool(_get_config(('use__higher_timeframe_strong_trend', 'enable'), **kwargs))
+    use_vix, use_spx = _get_config(('use__relative_strength_vs_benchmark', 'enable_vix'), **kwargs) , _get_config(('use__relative_strength_vs_benchmark', 'enable_spx'), **kwargs)
+    use__relative_strength_vs_benchmark__enabled = use_vix or use_spx
 
     # ----------------------------
     # Volume SMA for confirmation
+    # VIX SMA for high-fear env
     # ----------------------------
     ticker[volume_confirmed__colname] = ticker[volume_colname].rolling(window=volume_confirmed__window_size, min_periods=1).mean()
+    if use__relative_strength_vs_benchmark__enabled:
+        if use_vix:
+            pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_vix'), **kwargs)
+            vix_values = _get_config(('use__relative_strength_vs_benchmark', 'vix_dataframe'), **kwargs)
+            vix_fear_env__colname     = (f'rs__Close', 'VIX')
+            sma_vix_fear_env__colname = (f'rs__Close_SMA{pd_v}', 'VIX')
+            ticker[vix_fear_env__colname]     = vix_values[('Close', '^VIX')]
+            ticker[sma_vix_fear_env__colname] = ticker[vix_fear_env__colname].rolling(pd_v).mean()
+        if use_spx:
+            pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_spx'), **kwargs)
+            spx_values = _get_config(('use__relative_strength_vs_benchmark', 'spx_dataframe'), **kwargs)
+            spx_env__colname = (f'rs__Close', 'SPX')
+            sma_spx_env__colname = (f'rs__Close_SMA{pd_v}', 'SPX')
+            ticker[spx_env__colname] = spx_values[('Close', '^GSPC')]
+            ticker[sma_spx_env__colname] = ticker[spx_env__colname].rolling(pd_v).mean()
 
     # ----------------------------
     # Compute ATR(14) for stops
@@ -294,8 +320,18 @@ def trade_prime_half_trend_strategy_v2(ticker, ticker_name, buy_setup=True, **kw
                 # Does the shortterm trend change direction
                 crt__flip_to__up_or_down = (df[short_trend_colname].iloc[j] == (0 if buy_setup else 1)) and (df[long_trend_colname].iloc[j] == (0 if buy_setup else 1))
 
+                # Relative Strength vs. Benchmark (e.g., SPX vs. VIX or 10Y Yield)
+                crt__vix_fear, crt__bull_market = True, True
+                if buy_setup and use__relative_strength_vs_benchmark__enabled:
+                    if use_vix:
+                        # Only take longs when VIX is falling or below its 10-day SMA.
+                        crt__vix_fear = df[vix_fear_env__colname].iloc[j] < df[sma_vix_fear_env__colname].iloc[j]
+                    if use_spx:
+                        # SPX > 200-period SMA (long-term bullish bias).
+                        crt__bull_market = df[spx_env__colname].iloc[j] > df[sma_spx_env__colname].iloc[j]
+
                 # Combine all criteria
-                if crt__flip_to__up_or_down and crt__vol_confirmed and crt__ht10_strong:
+                if crt__flip_to__up_or_down and crt__vol_confirmed and crt__ht10_strong and crt__vix_fear and crt__bull_market:
                     custom_signal[j] = True
                     triggered_distance[j] = j - i
                     entry_price = df[close_colname].iloc[j]
