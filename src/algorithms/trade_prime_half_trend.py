@@ -32,6 +32,13 @@ HALF_TREND_DEFAULT_CONFIG = {
     # Only take longs when VIX is falling or below its 10-day SMA.
     # Or: SPX > 200-period SMA (long-term bullish bias).
     'use__relative_strength_vs_benchmark': {'enable_vix': False, 'enable_spx': False, 'period_vix': 10*7, 'period_spx': 200*7, 'vix_dataframe': None, 'spx_dataframe': None},
+
+    # ✅ 4. Candlestick Confirmation Pattern
+    #       Why: Adds price-action context to the reversal.
+    #     Use: Require the HT1 reversal candle (the buy candle) to be:
+    #
+    # A bullish engulfing, hammer, or simply close in top 50% of its range.
+    'use__candlestick_confirmation_pattern': {'enable': False}
 }
 
 def _get_config(keys, **kwargs):
@@ -215,6 +222,9 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwarg
     long_ht_colname = ('ht10', ticker_name)
     volume_colname = ('Volume', ticker_name)
     close_colname = ('Close', ticker_name)
+    open_colname = ('Open', ticker_name)
+    high_colname = ('High', ticker_name)
+    low_colname = ('Low', ticker_name)
     # Extraction of parameters
     volume_confirmed__enabled = bool(_get_config(('use__volume_confirmed', 'enable'), **kwargs))
     volume_confirmed__window_size = int(_get_config(('use__volume_confirmed', 'period'), **kwargs))
@@ -222,10 +232,11 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwarg
     higher_timeframe_strong_trend__enabled = bool(_get_config(('use__higher_timeframe_strong_trend', 'enable'), **kwargs))
     use_vix, use_spx = _get_config(('use__relative_strength_vs_benchmark', 'enable_vix'), **kwargs) , _get_config(('use__relative_strength_vs_benchmark', 'enable_spx'), **kwargs)
     use__relative_strength_vs_benchmark__enabled = use_vix or use_spx
+    use__candlestick_formation_pattern = _get_config(('use__candlestick_confirmation_pattern', 'enable'), **kwargs)
 
     # ----------------------------
-    # Volume SMA for confirmation
-    # VIX SMA for high-fear env
+    # 1. Volume SMA for confirmation
+    # 2. VIX SMA for high-fear env
     # ----------------------------
     ticker[volume_confirmed__colname] = ticker[volume_colname].rolling(window=volume_confirmed__window_size, min_periods=1).mean()
     if use__relative_strength_vs_benchmark__enabled:
@@ -320,18 +331,38 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwarg
                 # Does the shortterm trend change direction
                 crt__flip_to__up_or_down = (df[short_trend_colname].iloc[j] == (0 if buy_setup else 1)) and (df[long_trend_colname].iloc[j] == (0 if buy_setup else 1))
 
-                # Relative Strength vs. Benchmark (e.g., SPX vs. VIX or 10Y Yield)
+                # Relative Strength vs. Benchmark
                 crt__vix_fear, crt__bull_market = True, True
                 if buy_setup and use__relative_strength_vs_benchmark__enabled:
                     if use_vix:
-                        # Only take longs when VIX is falling or below its 10-day SMA.
+                        # Only take longs when VIX is falling or below its N-day SMA.
                         crt__vix_fear = df[vix_fear_env__colname].iloc[j] < df[sma_vix_fear_env__colname].iloc[j]
                     if use_spx:
-                        # SPX > 200-period SMA (long-term bullish bias).
+                        # SPX > N-period SMA (long-term bullish bias).
                         crt__bull_market = df[spx_env__colname].iloc[j] > df[sma_spx_env__colname].iloc[j]
 
+                # Candlestick confirmation pattern
+                crt__candlestick_confirmation_pattern = True
+                if use__candlestick_formation_pattern:
+                    if buy_setup:
+                        # Bullish momentum: close in upper half of candle
+                        bullish_candle = (df[close_colname].iloc[i] - df[low_colname].iloc[i]) > (df[high_colname].iloc[i] - df[close_colname].iloc[i])
+
+                        # Or: strong green candle
+                        strong_green = df[close_colname].iloc[i] > df[open_colname].iloc[i] and (df[close_colname].iloc[i] - df[open_colname].iloc[i]) > 0.5 * (df[high_colname].iloc[i] - df[low_colname].iloc[i])
+                        crt__candlestick_confirmation_pattern = bullish_candle or strong_green
+                    else:
+                        # Bearish momentum: close in lower half of candle
+                        # Checks if the distance from the close to the high is greater than from the low to the close, meaning the close is in the bottom 50% of the candle’s range.
+                        bearish_candle = (df[high_colname].iloc[i] - df[close_colname].iloc[i]) > (df[close_colname].iloc[i] - df[low_colname].iloc[i])
+
+                        # Or: strong red candle
+                        # Confirms a bearish (red) candle where the body (open – close) is more than 50% of the total range (high – low), indicating strong selling pressure.
+                        strong_red = df[close_colname].iloc[i] < df[open_colname].iloc[i] and (df[open_colname].iloc[i] - df[close_colname].iloc[i]) > 0.5 * (df[high_colname].iloc[i] - df[low_colname].iloc[i])
+                        crt__candlestick_confirmation_pattern = bearish_candle or strong_red
+
                 # Combine all criteria
-                if crt__flip_to__up_or_down and crt__vol_confirmed and crt__ht10_strong and crt__vix_fear and crt__bull_market:
+                if crt__flip_to__up_or_down and crt__vol_confirmed and crt__ht10_strong and crt__vix_fear and crt__bull_market and crt__candlestick_confirmation_pattern:
                     custom_signal[j] = True
                     triggered_distance[j] = j - i
                     entry_price = df[close_colname].iloc[j]

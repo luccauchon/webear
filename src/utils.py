@@ -8,7 +8,7 @@ from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
 from torchmetrics import MeanSquaredError, MeanAbsoluteError, R2Score
 import os
 import yfinance as yf
-from hurst import compute_Hc
+#from hurst import compute_Hc
 import pandas as pd
 import torch
 import torch.nn.functional as F
@@ -615,4 +615,3 @@ def calculate_macd(df, slow=26, fast=12, signal=9, col_name='Close_SPY'):
     df[f'{col_name}__MACD'] = ema_fast - ema_slow
     df[f'{col_name}__Signal'] = df[f'{col_name}__MACD'].ewm(span=signal, adjust=False).mean()
     return df
-

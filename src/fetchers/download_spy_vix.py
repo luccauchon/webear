@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 from utils import get_df_SPY_and_VIX, get_spy_and_vix_data_dir
 import os
-import schedule
 import time
 
 

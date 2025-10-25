@@ -1,0 +1,1 @@
+FYAHOO__OUTPUTFILENAME = r"D:\Finance\data\yfinance\snapshot.pkl"
