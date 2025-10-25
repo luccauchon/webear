@@ -1,3 +1,18 @@
+try:
+    from version import sys__name, sys__version
+except:
+    import sys
+    import os
+    import pathlib
+
+    # Get the current working directory
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    # print(parent_dir)
+    # Add the current directory to sys.path
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
+
 import pandas as pd
 import pickle
 import yfinance as yf
@@ -28,7 +43,7 @@ def entry():
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME, 'wb') as f:
         pickle.dump(data_cache, f)
-
+    print(f"Data saved to {FYAHOO__OUTPUTFILENAME}")
     # Sanity check
     # Deserialize
     with open(FYAHOO__OUTPUTFILENAME, 'rb') as f:
