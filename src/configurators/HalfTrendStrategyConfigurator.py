@@ -70,7 +70,7 @@ class HalfTrendConfigGUI:
 
         self.vol_enable = tk.BooleanVar(value=self.config['use__volume_confirmed']['enable'])
         ttk.Checkbutton(parent, text="Enable", variable=self.vol_enable).grid(row=row, column=0, sticky="w", padx=20)
-        ttk.Label(parent, text="Period:").grid(row=row, column=1, sticky="e")
+        ttk.Label(parent, text="Period (hours):").grid(row=row, column=1, sticky="e")
         self.vol_period = tk.IntVar(value=self.config['use__volume_confirmed']['period'])
         ttk.Entry(parent, textvariable=self.vol_period, width=8).grid(row=row, column=2, sticky="w")
         row += 1
@@ -83,7 +83,7 @@ class HalfTrendConfigGUI:
 
         self.ht_enable = tk.BooleanVar(value=self.config['use__higher_timeframe_strong_trend']['enable'])
         ttk.Checkbutton(parent, text="Enable", variable=self.ht_enable).grid(row=row, column=0, sticky="w", padx=20)
-        ttk.Label(parent, text="Length:").grid(row=row+1, column=1, sticky="e")
+        ttk.Label(parent, text="Length (hours):").grid(row=row+1, column=1, sticky="e")
         ttk.Label(parent, text="Min Rate:").grid(row=row+2, column=1, sticky="e")
 
         self.ht_length = tk.IntVar(value=self.config['use__higher_timeframe_strong_trend']['length'])
@@ -104,8 +104,8 @@ class HalfTrendConfigGUI:
         ttk.Checkbutton(parent, text="Enable VIX Filter", variable=self.rs_vix).grid(row=row, column=0, sticky="w", padx=20)
         ttk.Checkbutton(parent, text="Enable SPX Filter", variable=self.rs_spx).grid(row=row+1, column=0, sticky="w", padx=20)
 
-        ttk.Label(parent, text="VIX Period (days):").grid(row=row, column=1, sticky="e")
-        ttk.Label(parent, text="SPX Period (days):").grid(row=row+1, column=1, sticky="e")
+        ttk.Label(parent, text="VIX Period (hours):").grid(row=row, column=1, sticky="e")
+        ttk.Label(parent, text="SPX Period (hours):").grid(row=row+1, column=1, sticky="e")
 
         self.vix_period = tk.IntVar(value=self.config['use__relative_strength_vs_benchmark']['period_vix'])
         self.spx_period = tk.IntVar(value=self.config['use__relative_strength_vs_benchmark']['period_spx'])
@@ -182,7 +182,7 @@ class HalfTrendConfigGUI:
             try:
                 with open(filepath, 'w') as f:
                     json.dump(cfg, f, indent=4)
-                messagebox.showinfo("Success", "Config saved successfully!")
+                # messagebox.showinfo("Success", "Config saved successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save:\n{e}")
 
@@ -195,7 +195,7 @@ class HalfTrendConfigGUI:
                 with open(filepath, 'r') as f:
                     cfg = json.load(f)
                 self.apply_config(cfg)
-                messagebox.showinfo("Success", "Config loaded successfully!")
+                # messagebox.showinfo("Success", "Config loaded successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load:\n{e}")
 

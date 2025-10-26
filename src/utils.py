@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import warnings
 import glob
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import random
 
 
@@ -596,6 +596,7 @@ def calculate_bollinger_bands(df, window=20, num_std=2, col_name='Close_SPY'):
     df.dropna(inplace=True)
     return df
 
+
 def calculate_rsi(df, window=14, col_name='Close_SPY'):
     delta = df[col_name].diff().dropna()
     up, down = delta.copy(), delta.copy()
@@ -609,9 +610,31 @@ def calculate_rsi(df, window=14, col_name='Close_SPY'):
     df.dropna(inplace=True)
     return df
 
+
 def calculate_macd(df, slow=26, fast=12, signal=9, col_name='Close_SPY'):
     ema_slow = df[col_name].ewm(span=slow, adjust=False).mean()
     ema_fast = df[col_name].ewm(span=fast, adjust=False).mean()
     df[f'{col_name}__MACD'] = ema_fast - ema_slow
     df[f'{col_name}__Signal'] = df[f'{col_name}__MACD'].ewm(span=signal, adjust=False).mean()
     return df
+
+
+def format_execution_time(execution_time):
+    hours = int(execution_time // 3600)
+    minutes = int((execution_time % 3600) // 60)
+    seconds = int(execution_time % 60)
+    return f"{hours:02d}h{minutes:02d}m{seconds:02d}s"
+
+
+def get_weekdays(today=None):
+    if today is None:
+        today = date.today()
+
+    # Map today to the most recent weekday
+    if today.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        today = today - timedelta(days=today.weekday() - 4)
+
+    yesterday = today - timedelta(days=1)
+    before_yesterday = today - timedelta(days=2)
+
+    return today, yesterday, before_yesterday

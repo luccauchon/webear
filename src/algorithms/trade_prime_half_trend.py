@@ -194,7 +194,7 @@ def half_trend(df, ticker_name, high_label, low_label, close_label, amplitude=2,
     return df
 
 
-def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwargs):
+def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kwargs):
     """
     ...
 
@@ -209,14 +209,14 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwarg
     buy_setup_trigger_colname, sell_setup_trigger_colname = ('Close', ticker_name), ('Close', ticker_name)
     if use__entry_type == 'Soft':
         buy_setup_trigger_colname, sell_setup_trigger_colname = ('Low', ticker_name), ('High', ticker_name)
-    ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=10, channel_deviation=2)
-    ticker = half_trend(ticker, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=1, channel_deviation=2)
-    ticker['ticker_name'] = ticker_name
+    ticker_df = half_trend(ticker_df, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=10, channel_deviation=2)
+    ticker_df = half_trend(ticker_df, ticker_name=ticker_name, close_label=close_label, high_label=high_label, low_label=low_label, amplitude=1, channel_deviation=2)
+    ticker_df['ticker_name'] = ticker_name
 
-    assert ('ht1', ticker_name) in ticker.columns
-    assert ('ht10', ticker_name) in ticker.columns
-    assert ('trend1', ticker_name) in ticker.columns
-    assert ('trend10', ticker_name) in ticker.columns
+    assert ('ht1', ticker_name) in ticker_df.columns
+    assert ('ht10', ticker_name) in ticker_df.columns
+    assert ('trend1', ticker_name) in ticker_df.columns
+    assert ('trend10', ticker_name) in ticker_df.columns
     short_trend_colname = ('trend1', ticker_name)
     long_trend_colname = ('trend10', ticker_name)
     long_ht_colname = ('ht10', ticker_name)
@@ -238,39 +238,41 @@ def trade_prime_half_trend_strategy(ticker, ticker_name, buy_setup=True, **kwarg
     # 1. Volume SMA for confirmation
     # 2. VIX SMA for high-fear env
     # ----------------------------
-    ticker[volume_confirmed__colname] = ticker[volume_colname].rolling(window=volume_confirmed__window_size, min_periods=1).mean()
+    ticker_df[volume_confirmed__colname] = ticker_df[volume_colname].rolling(window=volume_confirmed__window_size, min_periods=1).mean()
     if use__relative_strength_vs_benchmark__enabled:
         if use_vix:
             pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_vix'), **kwargs)
             vix_values = _get_config(('use__relative_strength_vs_benchmark', 'vix_dataframe'), **kwargs)
+            assert vix_values is not None
             vix_fear_env__colname     = (f'rs__Close', 'VIX')
             sma_vix_fear_env__colname = (f'rs__Close_SMA{pd_v}', 'VIX')
-            ticker[vix_fear_env__colname]     = vix_values[('Close', '^VIX')]
-            ticker[sma_vix_fear_env__colname] = ticker[vix_fear_env__colname].rolling(pd_v).mean()
+            ticker_df[vix_fear_env__colname]     = vix_values[('Close', '^VIX')]
+            ticker_df[sma_vix_fear_env__colname] = ticker_df[vix_fear_env__colname].rolling(pd_v).mean()
         if use_spx:
             pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_spx'), **kwargs)
             spx_values = _get_config(('use__relative_strength_vs_benchmark', 'spx_dataframe'), **kwargs)
+            assert spx_values is not None
             spx_env__colname = (f'rs__Close', 'SPX')
             sma_spx_env__colname = (f'rs__Close_SMA{pd_v}', 'SPX')
-            ticker[spx_env__colname] = spx_values[('Close', '^GSPC')]
-            ticker[sma_spx_env__colname] = ticker[spx_env__colname].rolling(pd_v).mean()
+            ticker_df[spx_env__colname] = spx_values[('Close', '^GSPC')]
+            ticker_df[sma_spx_env__colname] = ticker_df[spx_env__colname].rolling(pd_v).mean()
 
     # ----------------------------
     # Compute ATR(14) for stops
     # ----------------------------
-    high = ticker[high_label].values
-    low = ticker[low_label].values
-    close = ticker[close_label].values
+    high = ticker_df[high_label].values
+    low = ticker_df[low_label].values
+    close = ticker_df[close_label].values
     tr = np.maximum(high - low,
                     np.abs(high - np.concatenate([[close[0]], close[:-1]])),
                     np.abs(low - np.concatenate([[close[0]], close[:-1]])))
     atr_14 = pd.Series(tr).rolling(window=14, min_periods=1).mean().values
-    ticker[(atr14_colname := ('ATR_14', ticker_name))] = atr_14
+    ticker_df[(atr14_colname := ('ATR_14', ticker_name))] = atr_14
 
     # ----------------------------
     # Scanning for Buy/Sell Setup
     # ----------------------------
-    df = ticker
+    df = ticker_df
     setup_trigger_colname = buy_setup_trigger_colname if buy_setup else sell_setup_trigger_colname
     n, i = len(df), 0
     custom_signal = np.full(n, False, dtype=bool)
