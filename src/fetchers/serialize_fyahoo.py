@@ -35,7 +35,7 @@ def entry():
     start_date = (datetime.today() - timedelta(days=200)).strftime('%Y-%m-%d')
     tickers = get_all_tickers()
     data_cache ={}
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=}")
+    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1h")
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1h', auto_adjust=False, ignore_tz=True, progress=False)
         data_cache[ticker] = data

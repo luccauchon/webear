@@ -626,13 +626,13 @@ def format_execution_time(execution_time):
     return f"{hours:02d}h{minutes:02d}m{seconds:02d}s"
 
 
-def get_weekdays(today=None):
+def get_weekdays(today=None, number_of_days=3):
     if today is None:
         today = date.today()
 
     weekdays = []
     current = today
-    while len(weekdays) < 3:
+    while len(weekdays) < number_of_days:
         if current.weekday() < 5:  # Mon–Fri
             weekdays.append(current)
         current -= timedelta(days=1)
