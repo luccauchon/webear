@@ -630,11 +630,10 @@ def get_weekdays(today=None):
     if today is None:
         today = date.today()
 
-    # Map today to the most recent weekday
-    if today.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-        today = today - timedelta(days=today.weekday() - 4)
-
-    yesterday = today - timedelta(days=1)
-    before_yesterday = today - timedelta(days=2)
-
-    return today, yesterday, before_yesterday
+    weekdays = []
+    current = today
+    while len(weekdays) < 3:
+        if current.weekday() < 5:  # Mon–Fri
+            weekdays.append(current)
+        current -= timedelta(days=1)
+    return tuple(weekdays)

@@ -12,15 +12,15 @@ except:
     # Add the current directory to sys.path
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from constants import FYAHOO__OUTPUTFILENAME
 import os
 import argparse
-from algorithms.trade_prime_half_trend import trade_prime_half_trend_strategy
+import pathlib
 import json
 import pickle
 import pprint
 from tqdm import tqdm
-from algorithms.trade_prime_half_trend import trade_prime_half_trend_strategy
+from algorithms.trade_prime_half_trend import trade_prime_half_trend_strategy, get_entry_type, get_volume_confirmed, get_higher_timeframe_strong_trend, get_relative_strength_vs_benchmark, get_candlestick_confirmation_pattern
+from algorithms.trade_prime_half_trend import set_volumed_confirmed
 from datetime import datetime, timedelta, date
 import os
 import time
@@ -32,12 +32,13 @@ import pickle
 import psutil
 
 
-def _update_alerts_ui_print_only(setup_log):
+def _update_alerts_ui_print_only(setup_log, configuration_setup):
     # ANSI color codes
     GREEN = '\033[92m'
     RED = '\033[91m'
     RESET = '\033[0m'
     GRAY = '\033[90m'
+    YELLOW = '\033[93m'
 
     # Clear screen (optional, for cleaner output)
     print("\033[2J\033[H", end="")  # Clears terminal and moves cursor to top-left
@@ -45,11 +46,23 @@ def _update_alerts_ui_print_only(setup_log):
     now = datetime.now()
     print(f"{GRAY}@{now.strftime('%Y-%m-%d %H:%M')}{RESET}")
 
+    line = f"{get_entry_type(**configuration_setup)}"
+    volume_confirmed__enabled, volume_confirmed__window_size = get_volume_confirmed(**configuration_setup)
+    line += f"{(', Volume Confirmed: '+str(volume_confirmed__window_size)+'h' if volume_confirmed__enabled else '')}"
+    higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length, higher_timeframe_strong_trend__min_rate = get_higher_timeframe_strong_trend(**configuration_setup)
+    line += f"{(', Higher TimeFrame Strong Trend:'+str(higher_timeframe_strong_trend__length)+'h ('+str(higher_timeframe_strong_trend__min_rate*100)+'%)' if higher_timeframe_strong_trend__enabled else '')}"
+    (use_vix, pd_v, vix_values), (use_spx, pd_s, spx_values) = get_relative_strength_vs_benchmark(**configuration_setup)
+    line += f"{(', VIX bias ('+str(pd_v)+' hours)' if use_vix else '')}"
+    line += f"{(', SPX bias ('+str(pd_s)+' hours)' if use_spx else '')}"
+    use__candlestick_formation_pattern = get_candlestick_confirmation_pattern(**configuration_setup)
+    line += f"{(', SPX bias (' + str(pd_s) + ' hours)' if use__candlestick_formation_pattern else '')}"
+    print(f"{YELLOW}Config:{RESET} {line}")
+    #print(f"{YELLOW}Config:{RESET} {json.dumps(configuration_setup, indent=2, default=str)}")
+    print()  # Blank line for separation
     # Sort alerts newest first
     for alert in sorted(setup_log, key=lambda x: x['time'], reverse=True):
         the_time = (alert['time'] + timedelta(hours=0)).strftime('%Y-%m-%d')
         signal_at = alert['time'].strftime('%H:%M')
-        enter_at = datetime.now().strftime('%H:%M')
 
         # Determine emoji and color
         if alert['type'] == "BUY":
@@ -62,14 +75,14 @@ def _update_alerts_ui_print_only(setup_log):
         line = (
             f"[{the_time}>>{signal_at}] "
             f"{alert['type']:>4} → {alert['ticker']} , dst:{alert['distance']}h >> "
-            f"Entry:{alert['close']:.2f}@{enter_at}  "
+            f"Entry:{alert['close']:.2f}  "
             f"SL:{alert['stop_loss']:.2f}  TP:{alert['take_profit']:.2f}  "
             f"Actual:{alert['actual']:.2f} {emoji}"
         )
         print(f"{color}{line}{RESET}")
 
 
-def _worker_processor(stocks__shared, master_cmd__shared, out__shared, ):
+def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configuration_setup__shared, ):
     _debug = False
     today, yesterday, before_yesterday = get_weekdays()
     timestamp = datetime.fromtimestamp(os.path.getmtime(FYAHOO__OUTPUTFILENAME)).strftime('%Y-%m-%d %H:%M:%S')
@@ -84,6 +97,8 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, ):
             if 0 != master_cmd__shared.value:
                 break
         time.sleep(0.1)
+    configuration_setup = configuration_setup__shared.get()
+
     results = []
     # Effectuer le traitement
     while True:
@@ -102,13 +117,7 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, ):
             break  # Terminé
 
         for buy_setup in [True, False]:
-            kwargs = {'use__entry_type': 'Hard',
-                      'use__higher_timeframe_strong_trend': {'enable': False},
-                      'use__volume_confirmed': {'enable': False},
-                      'use__relative_strength_vs_benchmark': {'enable_vix': False, 'vix_dataframe': data_cache["^VIX"].copy(), 'period_vix': 10 * 7,
-                                                              'enable_spx': False, 'spx_dataframe': data_cache["^GSPC"].copy(),
-                                                              }
-                      }
+            kwargs = deepcopy(configuration_setup)
             df = trade_prime_half_trend_strategy(ticker_df=data_cache[stock].copy(), ticker_name=stock, buy_setup=buy_setup, **kwargs)
             recent_signals = df[df[('custom_signal', stock)]]
             if not recent_signals.empty:
@@ -125,13 +134,33 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, ):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Your script description')
-    parser.add_argument('-c', '--config', required=False, default=r'D:\Temp2\test.json', help='Path to the configuration file')
+    # Compute default config path relative to this script's directory
+    script_dir = pathlib.Path(__file__).resolve().parent.parent
+    default_config = os.path.join(script_dir, "config", "half_trend", "default.json")
+    parser.add_argument('-c', '--config',
+                        required=False,
+                        default=str(default_config),
+                        help='Path to the configuration file (default: config/half_trend/default.json relative to script)')
+    parser.add_argument('-s', '--rmstock',
+                        required=False,
+                        default=None,
+                        help='Use only the specified stock')
+    # Handle both --volumed_confirmed and --volumed_confirmed=20
+    parser.add_argument('--volumed_confirmed',
+                        nargs='?',
+                        const=20,  # Default value when flag is used without =value
+                        type=int,
+                        default=None,  # Default when flag is not used at all
+                        help='Enable volume confirmation with optional threshold (default: 20 if flag used)')
+
     return parser.parse_args()
 
 
 def entry():
     args = parse_args()
     config_file_path = args.config
+    rmstock = args.rmstock
+    volumed_confirmed = args.volumed_confirmed
 
     # Check if the config file exists
     if not os.path.exists(config_file_path):
@@ -148,20 +177,29 @@ def entry():
     with open(config_file_path, 'r') as f:
         configuration_setup = json.load(f)
 
-    pprint.pprint(configuration_setup)
+    # pprint.pprint(configuration_setup)
 
     # Add dataset to configuration
     configuration_setup['use__relative_strength_vs_benchmark'].update({'vix_dataframe': data_cache["^VIX"].copy()})
     configuration_setup['use__relative_strength_vs_benchmark'].update({'spx_dataframe': data_cache["^GSPC"].copy()})
 
+    # Remove all keys that are not 'rmstock'
+    if rmstock is not None:
+        if rmstock in data_cache:
+            data_cache = {rmstock: data_cache[rmstock], "^VIX": data_cache["^VIX"], "^GSPC": data_cache["^GSPC"]}
+
+    #
+    if volumed_confirmed is not None:
+        configuration_setup = set_volumed_confirmed(volumed_confirmed, **configuration_setup)
+
     stocks = list(data_cache.keys())
     # Variables partagées pour transmettre l'information aux workers
-    stocks__shared, master_cmd__shared = Queue(len(stocks)), Value("i", 0)
+    stocks__shared, configuration_setup__shared, master_cmd__shared = Queue(len(stocks)), [Queue(1) for k in range(0, NB_WORKERS)], Value("i", 0)
     out__shared = [Queue(1) for k in range(0, NB_WORKERS)]
 
     # Lancement des workers
     for k in range(0, NB_WORKERS):
-        p = Process(target=_worker_processor, args=(stocks__shared, master_cmd__shared, out__shared[k],))
+        p = Process(target=_worker_processor, args=(stocks__shared, master_cmd__shared, out__shared[k], configuration_setup__shared[k], ))
         p.start()
         pid = p.pid
         p_obj = psutil.Process(pid)
@@ -171,6 +209,8 @@ def entry():
     # print(f"Preparations de {len(data_cache.items())} annotations...")
     for k, v in data_cache.items():
         stocks__shared.put({k: deepcopy(v)})
+    for k in range(0, NB_WORKERS):
+        configuration_setup__shared[k].put(configuration_setup)
 
     # Autoriser les workers à traiter
     with master_cmd__shared.get_lock():
@@ -182,7 +222,7 @@ def entry():
         data_from_workers.extend(out__shared[k].get())
 
     # Affichage des résultats
-    _update_alerts_ui_print_only(data_from_workers)
+    _update_alerts_ui_print_only(data_from_workers, configuration_setup)
 
 if __name__ == "__main__":
     freeze_support()

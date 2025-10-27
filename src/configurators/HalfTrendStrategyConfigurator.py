@@ -1,6 +1,22 @@
+try:
+    from version import sys__name, sys__version
+except:
+    import sys
+    import os
+    import pathlib
+
+    # Get the current working directory
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    # print(parent_dir)
+    # Add the current directory to sys.path
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
+import argparse
+import sys
 
 # --- Your config (copied for reference) ---
 HALF_TREND_DEFAULT_CONFIG = {
@@ -18,12 +34,87 @@ HALF_TREND_DEFAULT_CONFIG = {
     'use__candlestick_confirmation_pattern': {'enable': False}
 }
 
+def set_nested_value(config, flat_key, value_str):
+    """
+    Set a value in nested dict using flat key with '__' as separator.
+    Tries to auto-convert value_str to bool/int/float if possible.
+    """
+    keys = flat_key.split('__')
+    current = config
+
+    # Navigate to the parent of the target key
+    for key in keys[:-1]:
+        if key not in current:
+            raise KeyError(f"Key path invalid: {'__'.join(keys)} (missing '{key}')")
+        current = current[key]
+
+    final_key = keys[-1]
+
+    if final_key not in current:
+        raise KeyError(f"Leaf key '{final_key}' not found in config path: {'__'.join(keys)}")
+
+    # Auto-parse value
+    if value_str.lower() in ('true', 'false'):
+        value = value_str.lower() == 'true'
+    else:
+        try:
+            # Try int first
+            value = int(value_str)
+        except ValueError:
+            try:
+                # Then float
+                value = float(value_str)
+            except ValueError:
+                # Keep as string
+                value = value_str
+
+    current[final_key] = value
+
+def parse_args_into_config(default_config):
+    parser = argparse.ArgumentParser(description="HalfTrend Strategy Configurator")
+    parser.add_argument(
+        '--config',
+        type=str,
+        help="Path to a JSON config file to load initially"
+    )
+    # Allow any --key__subkey value
+    parser.add_argument('overrides', nargs='*', help="Override config keys using flat notation, e.g., -- use__entry_type Hard use__volume_confirmed__enable true")
+
+    # Parse known args to avoid tkinter interference
+    args, unknown = parser.parse_known_args()
+
+    config = default_config.copy()
+
+    # Load from file if specified
+    if args.config:
+        try:
+            with open(args.config, 'r') as f:
+                file_config = json.load(f)
+            # Deep merge? For simplicity, we'll just update top-level keys
+            config.update(file_config)
+        except Exception as e:
+            print(f"Error loading config file: {e}", file=sys.stderr)
+
+    # Handle overrides: they come as a list like ['key1', 'val1', 'key2', 'val2']
+    if args.overrides:
+        if len(args.overrides) % 2 != 0:
+            raise ValueError("Overrides must be in key-value pairs.")
+        for i in range(0, len(args.overrides), 2):
+            key = args.overrides[i]
+            val = args.overrides[i+1]
+            try:
+                set_nested_value(config, key, val)
+            except Exception as e:
+                print(f"Warning: failed to set {key}={val}: {e}", file=sys.stderr)
+
+    return config
+
 class HalfTrendConfigGUI:
-    def __init__(self, root):
+    def __init__(self, root, initial_config):
         self.root = root
         self.root.title("HalfTrend Strategy Configurator")
         self.root.geometry("1024x768")
-        self.config = HALF_TREND_DEFAULT_CONFIG.copy()
+        self.config = initial_config  # Now comes from args
 
         # Main frame with scroll support
         canvas = tk.Canvas(root)
@@ -141,7 +232,7 @@ class HalfTrendConfigGUI:
                 'enable_spx': self.rs_spx.get(),
                 'period_vix': self.vix_period.get(),
                 'period_spx': self.spx_period.get(),
-                'vix_dataframe': None,  # Not editable in GUI (dataframe)
+                'vix_dataframe': None,
                 'spx_dataframe': None
             },
             'use__candlestick_confirmation_pattern': {
@@ -182,7 +273,6 @@ class HalfTrendConfigGUI:
             try:
                 with open(filepath, 'w') as f:
                     json.dump(cfg, f, indent=4)
-                # messagebox.showinfo("Success", "Config saved successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save:\n{e}")
 
@@ -195,7 +285,6 @@ class HalfTrendConfigGUI:
                 with open(filepath, 'r') as f:
                     cfg = json.load(f)
                 self.apply_config(cfg)
-                # messagebox.showinfo("Success", "Config loaded successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load:\n{e}")
 
@@ -204,6 +293,12 @@ class HalfTrendConfigGUI:
         messagebox.showinfo("Reset", "Configuration reset to default.")
 
 if __name__ == "__main__":
+    try:
+        initial_config = parse_args_into_config(HALF_TREND_DEFAULT_CONFIG)
+    except Exception as e:
+        print(f"Argument parsing error: {e}", file=sys.stderr)
+        initial_config = HALF_TREND_DEFAULT_CONFIG.copy()
+
     root = tk.Tk()
-    app = HalfTrendConfigGUI(root)
+    app = HalfTrendConfigGUI(root, initial_config)
     root.mainloop()

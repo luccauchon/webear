@@ -28,8 +28,8 @@ HALF_TREND_DEFAULT_CONFIG = {
     # ✅ 3. Relative Strength vs. Benchmark (e.g., SPX vs. VIX or 10Y Yield)
     #       Why: Breakouts fail in high-fear or rising-rate environments.
     # For SPX:
-    #
     # Only take longs when VIX is falling or below its 10-day SMA.
+    #
     # Or: SPX > 200-period SMA (long-term bullish bias).
     'use__relative_strength_vs_benchmark': {'enable_vix': False, 'enable_spx': False, 'period_vix': 10*7, 'period_spx': 200*7, 'vix_dataframe': None, 'spx_dataframe': None},
 
@@ -40,6 +40,42 @@ HALF_TREND_DEFAULT_CONFIG = {
     # A bullish engulfing, hammer, or simply close in top 50% of its range.
     'use__candlestick_confirmation_pattern': {'enable': False}
 }
+
+def get_entry_type(**kwargs):
+    return _get_config('use__entry_type', **kwargs)
+
+
+def get_volume_confirmed(**kwargs):
+    volume_confirmed__enabled = bool(_get_config(('use__volume_confirmed', 'enable'), **kwargs))
+    volume_confirmed__window_size = int(_get_config(('use__volume_confirmed', 'period'), **kwargs))
+    return volume_confirmed__enabled, volume_confirmed__window_size
+
+
+def set_volumed_confirmed(periode, **args):
+    args['use__volume_confirmed'].update({'enable': True, 'period': periode})
+    return args
+
+
+def get_higher_timeframe_strong_trend(**kwargs):
+    higher_timeframe_strong_trend__enabled = bool(_get_config(('use__higher_timeframe_strong_trend', 'enable'), **kwargs))
+    ht10_strong_n = int(_get_config(('use__higher_timeframe_strong_trend', 'length'), **kwargs))
+    min_rate = float(_get_config(('use__higher_timeframe_strong_trend', 'min_rate'), **kwargs))
+    return higher_timeframe_strong_trend__enabled, ht10_strong_n, min_rate
+
+
+def get_relative_strength_vs_benchmark(**kwargs):
+    use_vix, use_spx = _get_config(('use__relative_strength_vs_benchmark', 'enable_vix'), **kwargs), _get_config(('use__relative_strength_vs_benchmark', 'enable_spx'), **kwargs)
+    pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_vix'), **kwargs)
+    vix_values = _get_config(('use__relative_strength_vs_benchmark', 'vix_dataframe'), **kwargs)
+    pd_s = _get_config(('use__relative_strength_vs_benchmark', 'period_spx'), **kwargs)
+    spx_values = _get_config(('use__relative_strength_vs_benchmark', 'spx_dataframe'), **kwargs)
+    return (use_vix, pd_v, vix_values), (use_spx, pd_s, spx_values)
+
+
+def get_candlestick_confirmation_pattern(**kwargs):
+    use__candlestick_formation_pattern = _get_config(('use__candlestick_confirmation_pattern', 'enable'), **kwargs)
+    return use__candlestick_formation_pattern
+
 
 def _get_config(keys, **kwargs):
     if not isinstance(keys, list) and not isinstance(keys, tuple):
@@ -226,13 +262,12 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     high_colname = ('High', ticker_name)
     low_colname = ('Low', ticker_name)
     # Extraction of parameters
-    volume_confirmed__enabled = bool(_get_config(('use__volume_confirmed', 'enable'), **kwargs))
-    volume_confirmed__window_size = int(_get_config(('use__volume_confirmed', 'period'), **kwargs))
+    volume_confirmed__enabled, volume_confirmed__window_size = get_volume_confirmed(**kwargs)
     volume_confirmed__colname = (f'Volume_SMA_{volume_confirmed__window_size}', ticker_name)
-    higher_timeframe_strong_trend__enabled = bool(_get_config(('use__higher_timeframe_strong_trend', 'enable'), **kwargs))
-    use_vix, use_spx = _get_config(('use__relative_strength_vs_benchmark', 'enable_vix'), **kwargs) , _get_config(('use__relative_strength_vs_benchmark', 'enable_spx'), **kwargs)
+    higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length, higher_timeframe_strong_trend__min_rate = get_higher_timeframe_strong_trend(**kwargs)
+    (use_vix, pd_v, vix_values), (use_spx, pd_s, spx_values) = get_relative_strength_vs_benchmark(**kwargs)
     use__relative_strength_vs_benchmark__enabled = use_vix or use_spx
-    use__candlestick_formation_pattern = _get_config(('use__candlestick_confirmation_pattern', 'enable'), **kwargs)
+    use__candlestick_formation_pattern = get_candlestick_confirmation_pattern(**kwargs)
 
     # ----------------------------
     # 1. Volume SMA for confirmation
@@ -241,21 +276,22 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     ticker_df[volume_confirmed__colname] = ticker_df[volume_colname].rolling(window=volume_confirmed__window_size, min_periods=1).mean()
     if use__relative_strength_vs_benchmark__enabled:
         if use_vix:
-            pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_vix'), **kwargs)
-            vix_values = _get_config(('use__relative_strength_vs_benchmark', 'vix_dataframe'), **kwargs)
             assert vix_values is not None
             vix_fear_env__colname     = (f'rs__Close', 'VIX')
             sma_vix_fear_env__colname = (f'rs__Close_SMA{pd_v}', 'VIX')
             ticker_df[vix_fear_env__colname]     = vix_values[('Close', '^VIX')]
             ticker_df[sma_vix_fear_env__colname] = ticker_df[vix_fear_env__colname].rolling(pd_v).mean()
+            # ema_vix_fear_env__colname = (f'rs__Close_EMA{pd_v}', 'VIX')  # Updated name to reflect EMA
+            # ticker_df[ema_vix_fear_env__colname] = ticker_df[vix_fear_env__colname].ewm(span=pd_v, adjust=False, min_periods=1).mean()
         if use_spx:
-            pd_v = _get_config(('use__relative_strength_vs_benchmark', 'period_spx'), **kwargs)
-            spx_values = _get_config(('use__relative_strength_vs_benchmark', 'spx_dataframe'), **kwargs)
             assert spx_values is not None
             spx_env__colname = (f'rs__Close', 'SPX')
-            sma_spx_env__colname = (f'rs__Close_SMA{pd_v}', 'SPX')
+            sma_spx_env__colname = (f'rs__Close_SMA{pd_s}', 'SPX')
             ticker_df[spx_env__colname] = spx_values[('Close', '^GSPC')]
             ticker_df[sma_spx_env__colname] = ticker_df[spx_env__colname].rolling(pd_v).mean()
+            # ema_spx_env__colname = (f'rs__Close_EMA{pd_v}', 'SPX')  # Updated name to reflect EMA
+            # ticker_df[spx_env__colname] = spx_values[('Close', '^GSPC')]
+            # ticker_df[ema_spx_env__colname] = ticker_df[spx_env__colname].ewm(span=pd_v, adjust=False, min_periods=1).mean()
 
     # ----------------------------
     # Compute ATR(14) for stops
@@ -309,7 +345,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                 # Higher Timeframe (HT10) Must Be "Strong" trend
                 crt__ht10_strong = True
                 if higher_timeframe_strong_trend__enabled:
-                    ht10_strong_n, ht10_state = int(_get_config(('use__higher_timeframe_strong_trend', 'length'), **kwargs)), []
+                    ht10_strong_n, ht10_state = higher_timeframe_strong_trend__length, []
                     assert ht10_strong_n > 1
                     for k in reversed(range(j-ht10_strong_n, j-1)):
                         try:
@@ -317,7 +353,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                             ht10_state.append(val_1 >= val_2 if buy_setup else val_1 <= val_2)
                         except Exception:  # Not enough data
                             break
-                    min_rate, _rate = float(_get_config(('use__higher_timeframe_strong_trend', 'min_rate'), **kwargs)), -1.
+                    min_rate, _rate = higher_timeframe_strong_trend__min_rate, -1.
                     if len(ht10_state) == ((j-1)-(j-ht10_strong_n)):
                         try:
                             _count, _total = np.count_nonzero(np.asarray(ht10_state)), len(ht10_state)
@@ -330,7 +366,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                     else:
                         crt__ht10_strong = False
 
-                # Does the shortterm trend change direction
+                # Does the short term trend change direction
                 crt__flip_to__up_or_down = (df[short_trend_colname].iloc[j] == (0 if buy_setup else 1)) and (df[long_trend_colname].iloc[j] == (0 if buy_setup else 1))
 
                 # Relative Strength vs. Benchmark
@@ -342,6 +378,8 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                     if use_spx:
                         # SPX > N-period SMA (long-term bullish bias).
                         crt__bull_market = df[spx_env__colname].iloc[j] > df[sma_spx_env__colname].iloc[j]
+                elif not buy_setup and use__relative_strength_vs_benchmark__enabled:
+                    print(f"TODO *********************************")
 
                 # Candlestick confirmation pattern
                 crt__candlestick_confirmation_pattern = True
