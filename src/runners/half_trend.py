@@ -100,8 +100,8 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
     line = f"{get_entry_type(**configuration_setup)}"
     volume_confirmed__enabled, volume_confirmed__window_size = get_volume_confirmed(**configuration_setup)
     line += f"{(', Volume Confirmed: '+str(volume_confirmed__window_size)+'h' if volume_confirmed__enabled else '')}"
-    higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length, higher_timeframe_strong_trend__min_rate = get_higher_timeframe_strong_trend(**configuration_setup)
-    line += f"{(', Higher TimeFrame Strong Trend:'+str(higher_timeframe_strong_trend__length)+'h ('+str(higher_timeframe_strong_trend__min_rate*100)+'%)' if higher_timeframe_strong_trend__enabled else '')}"
+    higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length = get_higher_timeframe_strong_trend(**configuration_setup)
+    line += f"{(', Higher TimeFrame Strong Trend:'+str(higher_timeframe_strong_trend__length)+'h' if higher_timeframe_strong_trend__enabled else '')}"
     (use_vix, pd_v, vix_values), (use_spx, pd_s, spx_values) = get_relative_strength_vs_benchmark(**configuration_setup)
     line += f"{(', VIX bias ('+str(pd_v)+' hours)' if use_vix else '')}"
     line += f"{(', SPX bias ('+str(pd_s)+' hours)' if use_spx else '')}"
@@ -121,8 +121,7 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
         else:
             older_alerts.append(alert)
 
-    # Print today's alerts
-    for alert in today_alerts:
+    def create_line_for_alert(alert):
         the_time = alert['time'].strftime('%Y-%m-%d')
         signal_at = alert['time'].strftime('%H:%M')
 
@@ -135,11 +134,16 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
 
         line = (
             f"[{the_time}>>{signal_at}] "
-            f"{alert['type']:>4} → {alert['ticker']} , dst:{alert['distance']}h >> "
+            f"{alert['type']:>4} → {alert['ticker']} , width:{alert['distance']}h >> "
             f"Entry:{alert['close']:.2f}  "
             f"SL:{alert['stop_loss']:.2f}  TP:{alert['take_profit']:.2f}  "
             f"Actual:{alert['actual']:.2f} {emoji}"
         )
+        return line, color
+
+    # Print today's alerts
+    for alert in today_alerts:
+        line, color = create_line_for_alert(alert)
         print(f"{color}{line}{RESET}")
 
     # Print separator if there are both today's and older alerts
@@ -148,23 +152,7 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
 
     # Print older alerts
     for alert in older_alerts:
-        the_time = alert['time'].strftime('%Y-%m-%d')
-        signal_at = alert['time'].strftime('%H:%M')
-
-        if alert['type'] == "BUY":
-            color = GREEN
-            emoji = "✅" if alert['actual'] >= alert['close'] else "⚠️"
-        else:  # SELL
-            color = RED
-            emoji = "✅" if alert['actual'] <= alert['close'] else "⚠️"
-
-        line = (
-            f"[{the_time}>>{signal_at}] "
-            f"{alert['type']:>4} → {alert['ticker']} , dst:{alert['distance']}h >> "
-            f"Entry:{alert['close']:.2f}  "
-            f"SL:{alert['stop_loss']:.2f}  TP:{alert['take_profit']:.2f}  "
-            f"Actual:{alert['actual']:.2f} {emoji}"
-        )
+        line, color = create_line_for_alert(alert)
         print(f"{color}{line}{RESET}")
 
 
@@ -250,8 +238,11 @@ def entry():
 
     # Check if the config file exists
     if not os.path.exists(config_file_path):
-        print(f"Config file '{config_file_path}' not found.")
-        return
+        # Look in directory config/half_trend/
+        config_file_path = os.path.join(parent_dir, 'config', 'half_trend', f'{config_file_path}.json')
+        if not os.path.exists(config_file_path):
+            print(f"Config file '{config_file_path}' not found.")
+            return
 
     #timestamp = datetime.fromtimestamp(os.path.getmtime(FYAHOO__OUTPUTFILENAME)).strftime('%Y-%m-%d %H:%M:%S')
     #print(f"Reading FYAHOO data source from {FYAHOO__OUTPUTFILENAME} ({timestamp})")

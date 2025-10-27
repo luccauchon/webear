@@ -23,7 +23,7 @@ HALF_TREND_DEFAULT_CONFIG = {
     #
     # HT10 line must be rising over last N bars (e.g., ht10[i] > ht10[i-3]).
     # Or: HT10 slope > 0 (use linear regression or simple difference).
-    'use__higher_timeframe_strong_trend': {'enable': False, 'length': 21, 'min_rate': 0.95},
+    'use__higher_timeframe_strong_trend': {'enable': False, 'length': 21},
 
     # ✅ 3. Relative Strength vs. Benchmark (e.g., SPX vs. VIX or 10Y Yield)
     #       Why: Breakouts fail in high-fear or rising-rate environments.
@@ -59,8 +59,7 @@ def set_volumed_confirmed(periode, **args):
 def get_higher_timeframe_strong_trend(**kwargs):
     higher_timeframe_strong_trend__enabled = bool(_get_config(('use__higher_timeframe_strong_trend', 'enable'), **kwargs))
     ht10_strong_n = int(_get_config(('use__higher_timeframe_strong_trend', 'length'), **kwargs))
-    min_rate = float(_get_config(('use__higher_timeframe_strong_trend', 'min_rate'), **kwargs))
-    return higher_timeframe_strong_trend__enabled, ht10_strong_n, min_rate
+    return higher_timeframe_strong_trend__enabled, ht10_strong_n
 
 
 def get_relative_strength_vs_benchmark(**kwargs):
@@ -264,7 +263,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     # Extraction of parameters
     volume_confirmed__enabled, volume_confirmed__window_size = get_volume_confirmed(**kwargs)
     volume_confirmed__colname = (f'Volume_SMA_{volume_confirmed__window_size}', ticker_name)
-    higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length, higher_timeframe_strong_trend__min_rate = get_higher_timeframe_strong_trend(**kwargs)
+    higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length = get_higher_timeframe_strong_trend(**kwargs)
     (use_vix, pd_v, vix_values), (use_spx, pd_s, spx_values) = get_relative_strength_vs_benchmark(**kwargs)
     use__relative_strength_vs_benchmark__enabled = use_vix or use_spx
     use__candlestick_formation_pattern = get_candlestick_confirmation_pattern(**kwargs)
@@ -345,26 +344,14 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                 # Higher Timeframe (HT10) Must Be "Strong" trend
                 crt__ht10_strong = True
                 if higher_timeframe_strong_trend__enabled:
-                    ht10_strong_n, ht10_state = higher_timeframe_strong_trend__length, []
-                    assert ht10_strong_n > 1
-                    for k in reversed(range(j-ht10_strong_n, j-1)):
-                        try:
-                            val_1, val_2 = df[long_ht_colname].iloc[j], df[long_ht_colname].iloc[k]
-                            ht10_state.append(val_1 >= val_2 if buy_setup else val_1 <= val_2)
-                        except Exception:  # Not enough data
-                            break
-                    min_rate, _rate = higher_timeframe_strong_trend__min_rate, -1.
-                    if len(ht10_state) == ((j-1)-(j-ht10_strong_n)):
-                        try:
-                            _count, _total = np.count_nonzero(np.asarray(ht10_state)), len(ht10_state)
-                            _rate = float(_count) / float(_total)
-                        except:
-                            pass
-                    assert 0 <= min_rate <= 1.
-                    if _rate >= min_rate:
-                        crt__ht10_strong = True
-                    else:
-                        crt__ht10_strong = False
+                    try:
+                        val_1, val_2 = df[long_ht_colname].iloc[j], df[long_ht_colname].iloc[j-higher_timeframe_strong_trend__length]
+                        if val_1 >= val_2 if buy_setup else val_1 <= val_2:
+                            crt__ht10_strong = True
+                        else:
+                            crt__ht10_strong = False
+                    except Exception:  # Not enough data
+                        pass
 
                 # Does the short term trend change direction
                 crt__flip_to__up_or_down = (df[short_trend_colname].iloc[j] == (0 if buy_setup else 1)) and (df[long_trend_colname].iloc[j] == (0 if buy_setup else 1))
