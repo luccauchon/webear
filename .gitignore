@@ -1,3 +1,5 @@
 
 *.pyc
 /stubs/
+.idea/webear.iml
+.idea/misc.xml
