@@ -1,0 +1,23 @@
+{
+    "use__entry_type": "Hard",
+    "use__volume_confirmed": {
+        "enable": true,
+        "period": 20
+    },
+    "use__higher_timeframe_strong_trend": {
+        "enable": true,
+        "length": 70,
+        "min_rate": 0.95
+    },
+    "use__relative_strength_vs_benchmark": {
+        "enable_vix": false,
+        "enable_spx": false,
+        "period_vix": 70,
+        "period_spx": 1400,
+        "vix_dataframe": null,
+        "spx_dataframe": null
+    },
+    "use__candlestick_confirmation_pattern": {
+        "enable": false
+    }
+}
