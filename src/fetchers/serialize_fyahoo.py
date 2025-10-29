@@ -24,8 +24,8 @@ from constants import FYAHOO__OUTPUTFILENAME
 
 def get_all_tickers():
     sp500 = []
-    custom = ["^XSP", "^GSPC", "^VIX", "SPY", "QQQ", "AAPL", "ADBE", "AFRM", "AMD", "AMZN", "ASST", "BAC", "CLF", "COST", "CRM", "DBRG", "GOOG", "INTC",
-              "HOOD","MA", "META", "MSFT", "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT",
+    custom = ["^XSP", "^GSPC", "^VIX", "SPY", "QQQ", "AAPL", "ADBE", "AFRM", "AMD", "AMZN", "ASST", "AVGO", "BAC", "BRK-B", "CLF", "COST", "CRM", "DBRG",
+              "GOOGL", "GOOG", "HOOD", "INTC", "MA", "META", "MSFT", "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT",
               "RKT", "SOFI", "TSLA", "TSM", "UUUU", "V", "WMT"]
     # custom = ["CRM", "^VIX", "^GSPC"]
     return list(set(sp500 + custom))

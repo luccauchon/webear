@@ -32,56 +32,6 @@ import pickle
 import psutil
 
 
-# def _update_alerts_ui_print_only(setup_log, configuration_setup):
-#     # ANSI color codes
-#     GREEN = '\033[92m'
-#     RED = '\033[91m'
-#     RESET = '\033[0m'
-#     GRAY = '\033[90m'
-#     YELLOW = '\033[93m'
-#
-#     # Clear screen (optional, for cleaner output)
-#     print("\033[2J\033[H", end="")  # Clears terminal and moves cursor to top-left
-#
-#     now = datetime.now()
-#     print(f"{GRAY}@{now.strftime('%Y-%m-%d %H:%M')}{RESET}")
-#
-#     line = f"{get_entry_type(**configuration_setup)}"
-#     volume_confirmed__enabled, volume_confirmed__window_size = get_volume_confirmed(**configuration_setup)
-#     line += f"{(', Volume Confirmed: '+str(volume_confirmed__window_size)+'h' if volume_confirmed__enabled else '')}"
-#     higher_timeframe_strong_trend__enabled, higher_timeframe_strong_trend__length, higher_timeframe_strong_trend__min_rate = get_higher_timeframe_strong_trend(**configuration_setup)
-#     line += f"{(', Higher TimeFrame Strong Trend:'+str(higher_timeframe_strong_trend__length)+'h ('+str(higher_timeframe_strong_trend__min_rate*100)+'%)' if higher_timeframe_strong_trend__enabled else '')}"
-#     (use_vix, pd_v, vix_values), (use_spx, pd_s, spx_values) = get_relative_strength_vs_benchmark(**configuration_setup)
-#     line += f"{(', VIX bias ('+str(pd_v)+' hours)' if use_vix else '')}"
-#     line += f"{(', SPX bias ('+str(pd_s)+' hours)' if use_spx else '')}"
-#     use__candlestick_formation_pattern = get_candlestick_confirmation_pattern(**configuration_setup)
-#     line += f"{(', SPX bias (' + str(pd_s) + ' hours)' if use__candlestick_formation_pattern else '')}"
-#     print(f"{YELLOW}Config:{RESET} {line}")
-#     #print(f"{YELLOW}Config:{RESET} {json.dumps(configuration_setup, indent=2, default=str)}")
-#     print()  # Blank line for separation
-#     # Sort alerts newest first
-#     for alert in sorted(setup_log, key=lambda x: x['time'], reverse=True):
-#         the_time = (alert['time'] + timedelta(hours=0)).strftime('%Y-%m-%d')
-#         signal_at = alert['time'].strftime('%H:%M')
-#
-#         # Determine emoji and color
-#         if alert['type'] == "BUY":
-#             color = GREEN
-#             emoji = "✅" if alert['actual'] >= alert['close'] else "⚠️"
-#         else:  # SELL
-#             color = RED
-#             emoji = "✅" if alert['actual'] <= alert['close'] else "⚠️"
-#
-#         line = (
-#             f"[{the_time}>>{signal_at}] "
-#             f"{alert['type']:>4} → {alert['ticker']} , dst:{alert['distance']}h >> "
-#             f"Entry:{alert['close']:.2f}  "
-#             f"SL:{alert['stop_loss']:.2f}  TP:{alert['take_profit']:.2f}  "
-#             f"Actual:{alert['actual']:.2f} {emoji}"
-#         )
-#         print(f"{color}{line}{RESET}")
-
-
 def _update_alerts_ui_print_only(setup_log, configuration_setup):
     # ANSI color codes
     GREEN = '\033[92m'
@@ -127,15 +77,15 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
 
         if alert['type'] == "BUY":
             color = GREEN
-            emoji = "✅" if alert['actual'] >= alert['close'] else "⚠️"
+            emoji = "✅" if alert['actual'] >= alert['entry_price'] else "⚠️"
         else:  # SELL
             color = RED
-            emoji = "✅" if alert['actual'] <= alert['close'] else "⚠️"
+            emoji = "✅" if alert['actual'] <= alert['entry_price'] else "⚠️"
 
         line = (
             f"[{the_time}>>{signal_at}] "
             f"{alert['type']:>4} → {alert['ticker']} , width:{alert['distance']}h >> "
-            f"Entry:{alert['close']:.2f}  "
+            f"Entry:{alert['entry_price']:.2f}  "
             f"SL:{alert['stop_loss']:.2f}  TP:{alert['take_profit']:.2f}  "
             f"Actual:{alert['actual']:.2f} {emoji}"
         )
@@ -197,7 +147,7 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configura
             if not recent_signals.empty:
                 last = recent_signals.iloc[-1]
                 if last.name.date() in [today, yesterday, before_yesterday, before_before_yesterday]:
-                    alert = {'time': last.name, 'ticker': stock, 'type': 'BUY' if buy_setup else 'SELL', 'close': last[('Close', stock)],
+                    alert = {'time': last.name, 'ticker': stock, 'type': 'BUY' if buy_setup else 'SELL', 'entry_price': last[('entry_price', stock)],
                              'distance': last[('triggered_distance', stock)], 'entry_point': last[('custom_signal', stock)], 'actual': df[('Close', stock)].iloc[-1],
                              'stop_loss': last[('stop_loss', stock)], 'take_profit': last[('take_profit', stock)]}
                     results.append(alert)

@@ -313,8 +313,9 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     custom_signal = np.full(n, False, dtype=bool)
     setup_triggered = np.full(n, False, dtype=bool)
     triggered_distance = np.full(n, 0, dtype=int)
-    stop_loss = np.full(n, np.nan)
-    take_profit = np.full(n, np.nan)
+    entry_price = np.full(n, np.nan, dtype=float)
+    stop_loss = np.full(n, np.nan, dtype=float)
+    take_profit = np.full(n, np.nan, dtype=float)
     while i < n:
         # Conditions for BUY setup at candle i:
         # 1. ht10 is in uptrend (trend10 == 0)
@@ -337,7 +338,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
             for j in range(i + 1, n):
                 new_i = j
                 if df[long_trend_colname].iloc[j] == (1 if buy_setup else 0):
-                    break  # Trend reversal
+                    break  # Long trend reversal; cancel trade
                 # --- Volume confirmation on trigger candle (j) ---
                 crt__vol_confirmed = df[volume_colname].iloc[j] >= df[volume_confirmed__colname].iloc[j] if volume_confirmed__enabled else True
 
@@ -353,8 +354,9 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                     except Exception:  # Not enough data
                         pass
 
-                # Does the short term trend change direction
-                crt__flip_to__up_or_down = (df[short_trend_colname].iloc[j] == (0 if buy_setup else 1)) and (df[long_trend_colname].iloc[j] == (0 if buy_setup else 1))
+                # Does the short term trend change direction?
+                assert df[long_trend_colname].iloc[j] == (0 if buy_setup else 1)  # Long trend always in the good direction
+                crt__flip_to__up_or_down = (df[short_trend_colname].iloc[j] == (0 if buy_setup else 1))
 
                 # Relative Strength vs. Benchmark
                 crt__vix_fear, crt__bull_market = True, True
@@ -392,10 +394,10 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                 if crt__flip_to__up_or_down and crt__vol_confirmed and crt__ht10_strong and crt__vix_fear and crt__bull_market and crt__candlestick_confirmation_pattern:
                     custom_signal[j] = True
                     triggered_distance[j] = j - i
-                    entry_price = df[close_colname].iloc[j]
+                    entry_price[j] = df[close_colname].iloc[j]
                     atr_val = df[atr14_colname].iloc[j]
-                    stop_loss[j] = entry_price - 1.5 * atr_val if buy_setup else entry_price + 1.5 * atr_val
-                    take_profit[j] = entry_price + 2.0 * atr_val if buy_setup else entry_price - 2.0 * atr_val
+                    stop_loss[j]   = entry_price[j] - 1.5 * atr_val if buy_setup else entry_price[j] + 1.5 * atr_val
+                    take_profit[j] = entry_price[j] + 2.0 * atr_val if buy_setup else entry_price[j] - 2.0 * atr_val
                     break
             i = new_i
         else:
@@ -403,6 +405,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     df[('custom_signal', ticker_name)] = custom_signal
     df[('setup_triggered', ticker_name)] = setup_triggered
     df[('triggered_distance', ticker_name)] = triggered_distance
+    df[('entry_price', ticker_name)] = entry_price
     df[('stop_loss', ticker_name)] = stop_loss
     df[('take_profit', ticker_name)] = take_profit
     return df
