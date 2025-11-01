@@ -24,6 +24,17 @@ class EMATrendAnalyzer:
         }).dropna()
         return df_4h
 
+    def add_sma_and_signals(self, df, ticker_name, periods=[20, 50, 200]):
+        """Add SMA columns and signals for trend direction and price vs SMA."""
+        for period in periods:
+            sma_col = f'SMA_{period}'
+            df[sma_col] = df[('Close', ticker_name)].rolling(window=period).mean()
+            # Trend: True if SMA is rising (current > previous)
+            df[f'SMA_{period}_Up'] = df[sma_col] > df[sma_col].shift(1)
+            # Price vs SMA: True if Close > SMA
+            df[f'Close_Above_SMA_{period}'] = df[('Close', ticker_name)] > df[sma_col]
+        return df
+
     def add_ema_and_signals(self, df, ticker_name, periods=[20, 50, 200]):
         """Add EMA columns and signals for trend direction and price vs EMA."""
         for period in periods:
@@ -127,10 +138,10 @@ class EMATrendAnalyzer:
         if not valid or len(all_values) == 0:
             print("  → Cannot determine consensus due to missing data.")
         elif all(all_values):
-            print("  ✅ STRONG BULLISH CONSENSUS: All EMA trends are UP across all timeframes.")
+            print(f"  ✅ {ticker_name} STRONG BULLISH CONSENSUS: All EMA trends are UP across all timeframes.")
         elif not any(all_values):  # i.e., all are False
-            print("  🚨 STRONG BEARISH CONSENSUS: All EMA trends are DOWN across all timeframes.")
+            print(f"  🚨 {ticker_name} STRONG BEARISH CONSENSUS: All EMA trends are DOWN across all timeframes.")
         else:
-            print("  ⚠️  MIXED SIGNALS: Trends are not aligned across timeframes.")
+            print(f"  ⚠️  {ticker_name} MIXED SIGNALS: Trends are not aligned across timeframes.")
 
         return all_trends

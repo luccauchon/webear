@@ -13,12 +13,12 @@ except:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
-from algorithms.aligned_trend import EMATrendAnalyzer
+from constants import TOP_SP500_TICKERS
+from runners.aligned_trend import main as aligned_trend_entry_point
 
 
 def main(args):
-    analyzer = EMATrendAnalyzer(verbose=args.verbose)
-    analyzer.analyze(ticker_name=args.stock)
+    aligned_trend_entry_point(args)
 
 
 # Example usage
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stock",
         type=str,
-        required=True,
+        required=False,
         help="Ticker symbol of the stock to analyze (e.g., AMD, AAPL)"
     )
     parser.add_argument(
@@ -37,4 +37,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    main(args)
+    for ticker in TOP_SP500_TICKERS:
+        args.stock = ticker
+        main(args)

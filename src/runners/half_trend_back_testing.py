@@ -16,6 +16,7 @@ import os
 import argparse
 import pathlib
 import json
+import numpy as np
 import pickle
 import pprint
 from tqdm import tqdm
@@ -60,55 +61,37 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
     print(f"{YELLOW}Config:{RESET} {line}")
     print()  # Blank line for separation
 
-    # Sort alerts newest first
-    sorted_alerts = sorted(setup_log, key=lambda x: x['time'], reverse=True)
-
-    # Split into today's and older alerts
-    today_alerts, older_alerts = [], []
-    for alert in sorted_alerts:
-        if alert['time'].date() == today_date:
-            today_alerts.append(alert)
-        else:
-            older_alerts.append(alert)
-
-    def create_line_for_alert(alert):
-        the_time = alert['time'].strftime('%Y-%m-%d')
-        signal_at = alert['time'].strftime('%H:%M')
-
-        if alert['type'] == "BUY":
-            color = GREEN
-            emoji = "✅" if alert['actual'] >= alert['entry_price'] else "⚠️"
-        else:  # SELL
-            color = RED
-            emoji = "✅" if alert['actual'] <= alert['entry_price'] else "⚠️"
-
-        line = (
-            f"[{the_time}>>{signal_at}] "
-            f"{alert['type']:>4} → {alert['ticker']} , width:{alert['distance']}h >> "
-            f"Entry:{alert['entry_price']:.2f}  "
-            f"SL:{alert['stop_loss']:.2f}  TP:{alert['take_profit']:.2f}  "
-            f"Actual:{alert['actual']:.2f} {emoji}"
-        )
-        return line, color
-
-    # Print today's alerts
-    for alert in today_alerts:
-        line, color = create_line_for_alert(alert)
-        print(f"{color}{line}{RESET}")
-
-    # Print separator if there are both today's and older alerts
-    if today_alerts and older_alerts:
-        print(f"{GRAY}{'─' * 80}{RESET}")
-
-    # Print older alerts
-    for alert in older_alerts:
-        line, color = create_line_for_alert(alert)
-        print(f"{color}{line}{RESET}")
-
+    # Get all ticker
+    all_tickers = sorted(list(set([list(set(one_setup['ticker_name'].values))[0] for one_setup in setup_log])))
+    for ticker_name in all_tickers:
+        trade_success, trade_fail, p_and_l = 0, 0, 0.
+        assert 2 == len([slg for slg in setup_log if slg['ticker_name'].values[0] == ticker_name])  # A buy setup and a sell setup
+        for one_setup in [slg for slg in setup_log if slg['ticker_name'].values[0] == ticker_name]:
+            setup_triggered = one_setup[one_setup[('setup_triggered', ticker_name)]].copy()
+            custom_signal = one_setup[one_setup[('custom_signal', ticker_name)]].copy()
+            assert len(setup_triggered) >= len(custom_signal)  # Not all triggers become trade
+            for i in range(0, len(custom_signal)):
+                the_date = custom_signal.index[i]
+                is_buy_setup = custom_signal.iloc[i]['is_buy_setup'].values[0] == True
+                entry_point = custom_signal.iloc[i]['entry_price'].values[0]
+                execution_price = custom_signal.iloc[i]['execution_price'].values[0]
+                stop_loss = custom_signal.iloc[i]['stop_loss'].values[0]
+                take_profit = custom_signal.iloc[i]['take_profit'].values[0]
+                assert 1 == len(custom_signal.iloc[i]['execution_price'].values)  # Sanity check
+                if np.isnan(execution_price):
+                    trade_fail += 1
+                    if is_buy_setup:
+                        assert stop_loss - entry_point <= 0
+                    else:
+                        assert entry_point - stop_loss >= 0
+                    p_and_l -= stop_loss - entry_point if is_buy_setup else entry_point - stop_loss
+                else:
+                    trade_success += 1
+                print(f"[{ticker_name} : {'BUY' if is_buy_setup else 'SELL'}]  {the_date}  {entry_point:0.2f}$ >> {execution_price:0.2f}$  ")
+            print(f"[{ticker_name}     P/L : {trade_success/(trade_fail+trade_success)*100:0.2f}%")
 
 def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configuration_setup__shared, ):
     _debug = False
-    today, yesterday, before_yesterday, before_before_yesterday = get_weekdays(number_of_days=4)
     timestamp = datetime.fromtimestamp(os.path.getmtime(FYAHOO__OUTPUTFILENAME)).strftime('%Y-%m-%d %H:%M:%S')
     if _debug:
         print(f"[{os.getpid()}:{datetime.now()}] Reading FYAHOO data source from {FYAHOO__OUTPUTFILENAME} ({timestamp})")
@@ -130,7 +113,6 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configura
         with master_cmd__shared.get_lock():
             if 3 == master_cmd__shared.value:
                 break
-
         try:
             tmp = stocks__shared.get(timeout=0.1)
             assert 1 == len(tmp)
@@ -143,14 +125,7 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configura
         for buy_setup in [True, False]:
             kwargs = deepcopy(configuration_setup)
             df = trade_prime_half_trend_strategy(ticker_df=data_cache[stock].copy(), ticker_name=stock, buy_setup=buy_setup, **kwargs)
-            recent_signals = df[df[('custom_signal', stock)]]
-            if not recent_signals.empty:
-                last = recent_signals.iloc[-1]
-                if last.name.date() in [today, yesterday, before_yesterday, before_before_yesterday]:
-                    alert = {'time': last.name, 'ticker': stock, 'type': 'BUY' if buy_setup else 'SELL', 'entry_price': last[('entry_price', stock)],
-                             'distance': last[('triggered_distance', stock)], 'entry_point': last[('custom_signal', stock)], 'actual': df[('Close', stock)].iloc[-1],
-                             'stop_loss': last[('stop_loss', stock)], 'take_profit': last[('take_profit', stock)]}
-                    results.append(alert)
+            results.append(df.copy())
     out__shared.put(results)
     if _debug:
         print(f"[{os.getpid()}:{datetime.now()} Terminating")
@@ -194,13 +169,9 @@ def entry():
             print(f"Config file '{config_file_path}' not found.")
             return
 
-    #timestamp = datetime.fromtimestamp(os.path.getmtime(FYAHOO__OUTPUTFILENAME)).strftime('%Y-%m-%d %H:%M:%S')
-    #print(f"Reading FYAHOO data source from {FYAHOO__OUTPUTFILENAME} ({timestamp})")
     with open(FYAHOO__OUTPUTFILENAME, 'rb') as f:
         data_cache = pickle.load(f)
 
-    #timestamp = datetime.fromtimestamp(os.path.getmtime(config_file_path)).strftime('%Y-%m-%d %H:%M:%S')
-    #print(f"Reading configuration setup from {config_file_path} ({timestamp})")
     with open(config_file_path, 'r') as f:
         configuration_setup = json.load(f)
 
@@ -214,10 +185,6 @@ def entry():
     if rmstock is not None:
         if rmstock in data_cache:
             data_cache = {rmstock: data_cache[rmstock], "^VIX": data_cache["^VIX"], "^GSPC": data_cache["^GSPC"]}
-
-    #
-    if volume_confirmed is not None:
-        configuration_setup = set_volumed_confirmed(volume_confirmed, **configuration_setup)
 
     stocks = list(data_cache.keys())
     # Variables partagées pour transmettre l'information aux workers
@@ -233,7 +200,6 @@ def entry():
         p_obj.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
 
     # Envoie les informations aux workers pour traitement
-    # print(f"Preparations de {len(data_cache.items())} annotations...")
     for k, v in data_cache.items():
         stocks__shared.put({k: deepcopy(v)})
     for k in range(0, NB_WORKERS):

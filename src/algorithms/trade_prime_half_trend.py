@@ -316,6 +316,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     entry_price = np.full(n, np.nan, dtype=float)
     stop_loss = np.full(n, np.nan, dtype=float)
     take_profit = np.full(n, np.nan, dtype=float)
+    execution_price = np.full(n, np.nan, dtype=float)
     while i < n:
         # Conditions for BUY setup at candle i:
         # 1. ht10 is in uptrend (trend10 == 0)
@@ -398,6 +399,12 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                     atr_val = df[atr14_colname].iloc[j]
                     stop_loss[j]   = entry_price[j] - 1.5 * atr_val if buy_setup else entry_price[j] + 1.5 * atr_val
                     take_profit[j] = entry_price[j] + 2.0 * atr_val if buy_setup else entry_price[j] - 2.0 * atr_val
+                    for k in range(j + 1, j + 1 + 7*21):
+                        if k >= n:
+                            break
+                        if (buy_setup and df[high_colname].iloc[k] >= take_profit[j]) or (not buy_setup and df[low_colname].iloc[k] <= take_profit[j]):
+                            execution_price[j] = df[high_colname].iloc[k] if buy_setup else df[low_colname].iloc[k]
+                            break
                     break
             i = new_i
         else:
@@ -408,4 +415,6 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     df[('entry_price', ticker_name)] = entry_price
     df[('stop_loss', ticker_name)] = stop_loss
     df[('take_profit', ticker_name)] = take_profit
+    df[('execution_price', ticker_name)] = execution_price
+    df[('is_buy_setup', ticker_name)] = np.full(n, buy_setup, dtype=bool)
     return df
