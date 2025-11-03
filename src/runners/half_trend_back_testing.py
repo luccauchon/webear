@@ -60,35 +60,158 @@ def _update_alerts_ui_print_only(setup_log, configuration_setup):
     line += f"{(', Candlestick Pattern' if use__candlestick_formation_pattern else '')}"
     print(f"{YELLOW}Config:{RESET} {line}")
     print()  # Blank line for separation
-
+    line_results = ''
     # Get all ticker
     all_tickers = sorted(list(set([list(set(one_setup['ticker_name'].values))[0] for one_setup in setup_log])))
     for ticker_name in all_tickers:
-        trade_success, trade_fail, p_and_l = 0, 0, 0.
+        trade_success__buy_setup, trade_fail__buy_setup, p_and_l__sell_setup, p_and_l__buy_setup = 0, 0, [], []
+        trade_success__sell_setup, trade_fail__sell_setup = 0, 0
         assert 2 == len([slg for slg in setup_log if slg['ticker_name'].values[0] == ticker_name])  # A buy setup and a sell setup
         for one_setup in [slg for slg in setup_log if slg['ticker_name'].values[0] == ticker_name]:
             setup_triggered = one_setup[one_setup[('setup_triggered', ticker_name)]].copy()
             custom_signal = one_setup[one_setup[('custom_signal', ticker_name)]].copy()
             assert len(setup_triggered) >= len(custom_signal)  # Not all triggers become trade
+            the_setup_mode = None  # Buy or Sell
             for i in range(0, len(custom_signal)):
                 the_date = custom_signal.index[i]
                 is_buy_setup = custom_signal.iloc[i]['is_buy_setup'].values[0] == True
+                if the_setup_mode is None:
+                    the_setup_mode = is_buy_setup
+                else:
+                    assert the_setup_mode == is_buy_setup
                 entry_point = custom_signal.iloc[i]['entry_price'].values[0]
                 execution_price = custom_signal.iloc[i]['execution_price'].values[0]
                 stop_loss = custom_signal.iloc[i]['stop_loss'].values[0]
                 take_profit = custom_signal.iloc[i]['take_profit'].values[0]
                 assert 1 == len(custom_signal.iloc[i]['execution_price'].values)  # Sanity check
+                assert (stop_loss - entry_point <= 0) if is_buy_setup else (stop_loss - entry_point >= 0)
                 if np.isnan(execution_price):
-                    trade_fail += 1
                     if is_buy_setup:
+                        trade_fail__buy_setup += 1
                         assert stop_loss - entry_point <= 0
+                        p_and_l__buy_setup.append((stop_loss - entry_point) / entry_point)
                     else:
-                        assert entry_point - stop_loss >= 0
-                    p_and_l -= stop_loss - entry_point if is_buy_setup else entry_point - stop_loss
+                        trade_fail__sell_setup += 1
+                        assert entry_point - stop_loss <= 0
+                        p_and_l__sell_setup.append((entry_point - stop_loss) / entry_point)
                 else:
-                    trade_success += 1
-                print(f"[{ticker_name} : {'BUY' if is_buy_setup else 'SELL'}]  {the_date}  {entry_point:0.2f}$ >> {execution_price:0.2f}$  ")
-            print(f"[{ticker_name}     P/L : {trade_success/(trade_fail+trade_success)*100:0.2f}%")
+                    assert (take_profit - entry_point >= 0) if is_buy_setup else (take_profit - entry_point <= 0)
+                    if is_buy_setup:
+                        trade_success__buy_setup += 1
+                        assert take_profit - entry_point >= 0
+                        p_and_l__buy_setup.append((take_profit - entry_point) / entry_point)
+                    else:
+                        trade_success__sell_setup += 1
+                        assert entry_point - take_profit >= 0
+                        p_and_l__sell_setup.append((entry_point - take_profit) / entry_point)
+                # print(f"[{ticker_name} : {'BUY' if is_buy_setup else 'SELL'}]  {the_date}  {entry_point:0.2f}$ >> {execution_price:0.2f}$  ")
+            if the_setup_mode:
+                p_and_l = np.array(p_and_l__buy_setup).mean()*100.
+                assert len(np.array(p_and_l__buy_setup)[np.array(p_and_l__buy_setup) < 0]) == trade_fail__buy_setup
+                assert len(np.array(p_and_l__buy_setup)[np.array(p_and_l__buy_setup) > 0]) == trade_success__buy_setup
+                line_results += f"[{ticker_name} : {len(p_and_l__buy_setup)} BUY SETUP]     P/L : {trade_success__buy_setup/(trade_fail__buy_setup+trade_success__buy_setup)*100:0.2f}%  >> {p_and_l:0.2f}%" + "\n"
+            else:
+                p_and_l = np.array(p_and_l__sell_setup).mean()*100.
+                assert len(np.array(p_and_l__sell_setup)[np.array(p_and_l__sell_setup) < 0]) == trade_fail__sell_setup
+                assert len(np.array(p_and_l__sell_setup)[np.array(p_and_l__sell_setup) > 0]) == trade_success__sell_setup
+                line_results += f"[{ticker_name} : {len(p_and_l__sell_setup)} SELL SETUP]     P/L : {trade_success__sell_setup / (trade_fail__sell_setup + trade_success__sell_setup) * 100:0.2f}%  >> {p_and_l:0.2f}%" + "\n"
+    print(line_results)
+
+
+def _update_alerts_ui_print_only_2(setup_log, configuration_setup):
+    # ANSI color codes
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    RESET = '\033[0m'
+    GRAY = '\033[90m'
+    YELLOW = '\033[93m'
+    CYAN = '\033[96m'
+
+    # Clear screen (optional)
+    print("\033[2J\033[H", end="")
+
+    now = datetime.now()
+    print(f"{GRAY}@ {now.strftime('%Y-%m-%d %H:%M:%S')}{RESET}\n")
+
+    # Build and print config line
+    config_parts = [get_entry_type(**configuration_setup)]
+
+    volume_enabled, vol_window = get_volume_confirmed(**configuration_setup)
+    if volume_enabled:
+        config_parts.append(f"Volume Confirmed: {vol_window}h")
+
+    htft_enabled, htft_len = get_higher_timeframe_strong_trend(**configuration_setup)
+    if htft_enabled:
+        config_parts.append(f"HTF Strong Trend: {htft_len}h")
+
+    (use_vix, pd_v, _), (use_spx, pd_s, _) = get_relative_strength_vs_benchmark(**configuration_setup)
+    if use_vix:
+        config_parts.append(f"VIX bias ({pd_v}h)")
+    if use_spx:
+        config_parts.append(f"SPX bias ({pd_s}h)")
+
+    if get_candlestick_confirmation_pattern(**configuration_setup):
+        config_parts.append("Candlestick Pattern")
+
+    print(f"{YELLOW}Config:{RESET} {', '.join(config_parts)}\n")
+
+    # Process results per ticker
+    all_tickers = sorted({list(one_setup['ticker_name'].values)[0] for one_setup in setup_log})
+    result_lines = []
+
+    for ticker_name in all_tickers:
+        setups = [slg for slg in setup_log if slg['ticker_name'].values[0] == ticker_name]
+        assert len(setups) == 2, f"Expected 2 setups (buy + sell) for {ticker_name}"
+
+        for one_setup in setups:
+            setup_triggered = one_setup[one_setup[('setup_triggered', ticker_name)]].copy()
+            custom_signal = one_setup[one_setup[('custom_signal', ticker_name)]].copy()
+            assert len(setup_triggered) >= len(custom_signal)
+
+            is_buy = custom_signal.iloc[0]['is_buy_setup'].values[0] if len(custom_signal) > 0 else None
+            if is_buy is None:
+                continue
+
+            trades = []
+            for i in range(len(custom_signal)):
+                row = custom_signal.iloc[i]
+                entry = row['entry_price'].values[0]
+                exec_price = row['execution_price'].values[0]
+                sl = row['stop_loss'].values[0]
+                tp = row['take_profit'].values[0]
+                date = custom_signal.index[i]
+
+                # print(f"[{ticker_name} : {'BUY' if is_buy else 'SELL'}]  {date.strftime('%Y-%m-%d %H:%M')}  {entry:6.2f}$ ➔ {exec_price:6.2f}$")
+
+                if np.isnan(exec_price):
+                    pnl = ((sl - entry) / entry) if is_buy else ((entry - sl) / entry)
+                    trades.append((False, pnl))
+                else:
+                    pnl = ((tp - entry) / entry) if is_buy else ((entry - tp) / entry)
+                    trades.append((True, pnl))
+
+            n_trades = len(trades)
+            successes = sum(1 for t in trades if t[0])
+            failures = n_trades - successes
+            win_rate = (successes / n_trades * 100) if n_trades > 0 else 0
+            avg_pnl = np.mean([t[1] for t in trades]) * 100 if n_trades > 0 else 0
+
+            side = "BUY" if is_buy else "SELL"
+            color = GREEN if avg_pnl >= 0 else RED
+            result_line = (
+                f"{CYAN}[{ticker_name}]{RESET} "
+                f"{n_trades:2d} {side:<4} setups | "
+                f"Win Rate: {win_rate:5.1f}% | "
+                f"Avg P/L: {color}{avg_pnl:+6.2f}%{RESET}"
+            )
+            result_lines.append(result_line)
+
+    print("\n" + "=" * 70)
+    print(f"{YELLOW}SUMMARY{RESET}".center(70))
+    print("=" * 70)
+    for line in result_lines:
+        print(line)
+
 
 def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configuration_setup__shared, ):
     _debug = False
@@ -216,6 +339,8 @@ def entry():
 
     # Affichage des résultats
     _update_alerts_ui_print_only(data_from_workers, configuration_setup)
+    _update_alerts_ui_print_only_2(data_from_workers, configuration_setup)
+
 
 if __name__ == "__main__":
     freeze_support()
