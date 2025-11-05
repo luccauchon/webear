@@ -92,7 +92,7 @@ def fourier_extrapolation_auto(prices, n_predict=20, energy_threshold=0.95, conf
         'conf_level': 0,
         'z_score': 0
     }
-    lower_band, upper_band =0, 0
+    lower_band, upper_band = None, None
     return full_forecast, lower_band, upper_band, diagnostics
 
 

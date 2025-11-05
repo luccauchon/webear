@@ -17,6 +17,7 @@ import glob
 import numpy as np
 from datetime import datetime, timedelta, date
 import random
+from pathlib import Path
 
 
 os_name = platform.system()
@@ -637,3 +638,18 @@ def get_weekdays(today=None, number_of_days=3):
             weekdays.append(current)
         current -= timedelta(days=1)
     return tuple(weekdays)
+
+
+def transform_path(line, date_str):
+    """
+    Transforms a path assignment line by inserting a date folder before the filename.
+
+    Args:
+        line (str): Original line like 'FYAHOO__OUTPUTFILENAME_WEEK = r"D:\Finance\...\snapshot_week.pkl"'
+        date_str (str): Date string in format YYYY.MM.DD (e.g., "2025.10.31")
+
+    Returns:
+        str: Transformed line with date folder inserted
+    """
+    # Pattern to match the assignment and capture the path parts
+    return os.path.join(Path(line).parent, date_str, Path(line).name)
