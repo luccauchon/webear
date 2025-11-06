@@ -19,7 +19,7 @@ import yfinance as yf
 import time
 from datetime import datetime, timedelta
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME, MY_TICKERS, TOP_SP500_TICKERS, FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK
+from constants import FYAHOO__OUTPUTFILENAME, MY_TICKERS, TOP10_SP500_TICKERS, FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK
 
 
 def entry():
@@ -27,7 +27,7 @@ def entry():
     start_date = (datetime.today() - timedelta(days=365)).strftime('%Y-%m-%d')
     tickers = list(set(MY_TICKERS))
     data_cache ={}
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1h , [{start_date}]>>[{end_date}]", flush=True)
+    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1h , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1h', auto_adjust=False, ignore_tz=True, progress=False)
         data_cache[ticker] = data
@@ -42,7 +42,7 @@ def entry():
 
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
     start_date = (datetime.today() - timedelta(days=10*365)).strftime('%Y-%m-%d')
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1d , [{start_date}]>>[{end_date}]", flush=True)
+    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1d , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
         data_cache[ticker] = data
@@ -54,7 +54,7 @@ def entry():
 
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
     start_date = (datetime.today() - timedelta(days=20 * 365)).strftime('%Y-%m-%d')
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1wk , [{start_date}]>>[{end_date}]", flush=True)
+    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1wk , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1wk', auto_adjust=False, ignore_tz=True, progress=False)
         data_cache[ticker] = data
@@ -66,7 +66,7 @@ def entry():
 
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
     start_date = (datetime.today() - timedelta(days=30 * 365)).strftime('%Y-%m-%d')
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1mo , [{start_date}]>>[{end_date}]", flush=True)
+    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1mo , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1mo', auto_adjust=False, ignore_tz=True, progress=False)
         data_cache[ticker] = data
@@ -78,7 +78,7 @@ def entry():
 
     print(f"{Fore.CYAN}{Style.BRIGHT}🚀 Starting Download Tracker...{Style.RESET_ALL}\n", flush=True)
     result = {}
-    for ticker in tqdm(TOP_SP500_TICKERS):
+    for ticker in tqdm(TOP10_SP500_TICKERS):
         # Get stock data
         stock = yf.Ticker(ticker)
         result[ticker] = {

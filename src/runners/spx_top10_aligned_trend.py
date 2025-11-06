@@ -13,7 +13,7 @@ except:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
-from constants import TOP_SP500_TICKERS
+from constants import TOP10_SP500_TICKERS
 from runners.aligned_trend import main as aligned_trend_entry_point
 
 
@@ -37,6 +37,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    for ticker in TOP_SP500_TICKERS:
+    for ticker in TOP10_SP500_TICKERS:
         args.stock = ticker
         main(args)
