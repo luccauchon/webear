@@ -12,7 +12,7 @@ except:
     # Add the current directory to sys.path
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from optimizers.fourier_decomposition import entry
+from optimizers.fourier_decomposition import entry as entry_of__fourier_decomposition
 import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST
 import numpy as np
@@ -76,7 +76,7 @@ def main():
 
     one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
 
-    close_results, data_cache = entry(
+    close_results, data_cache = entry_of__fourier_decomposition(
         multi_threaded=True,
         ticker=args.ticker,
         col=args.col,

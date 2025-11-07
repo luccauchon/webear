@@ -65,7 +65,7 @@ def entry():
     print(f"Data saved to {FYAHOO__OUTPUTFILENAME_WEEK}")
 
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = (datetime.today() - timedelta(days=30 * 365)).strftime('%Y-%m-%d')
+    start_date = (datetime.today() - timedelta(days=40 * 365)).strftime('%Y-%m-%d')
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1mo , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1mo', auto_adjust=False, ignore_tz=True, progress=False)
