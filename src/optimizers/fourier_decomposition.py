@@ -37,7 +37,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             if 0 != master_cmd__shared.value:
                 break
         time.sleep(0.333)
-    best_result = {}
+    best_result, all_results_from_worker, NNN = {}, {}, 500
     while True:
         try:
             use_case = use_cases__shared.get(timeout=0.1)
@@ -75,7 +75,24 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             'diag': diag,
             'the_algo': the_algo_name,
         })
-    out__shared.put(best_result)
+        # Keep all of them
+        all_results_from_worker.update({error: {
+            'error': error,
+            'length_train_data': length_train_data,
+            'energy_threshold': round(energy_threshold, 2),
+            'y_true': y_true.copy(),
+            'y_pred': y_pred.copy(),
+            'x_series': x_series.copy(),
+            'n_predict': length_prediction,
+            'forecast': forecast.copy(),
+            'lower': lower,
+            'upper': upper,
+            'diag': diag,
+            'the_algo': the_algo_name,
+        }})
+    all_results_from_worker = dict(sorted(all_results_from_worker.items()))
+    all_results_from_worker = {k: v for i, (k, v) in enumerate(all_results_from_worker.items()) if i < NNN}
+    out__shared.put((best_result, all_results_from_worker))
 
 
 def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', show_graphics = False, fast_result=False, print_result=False,
@@ -86,6 +103,7 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
     _nb_workers = NB_WORKERS
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
+    all_results_collected = {}
     if multi_threaded:
         # Generate use cases
         use_cases = []
@@ -136,7 +154,9 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
         # Conserve les meilleurs
         best_result = {the_algo.__name__: {'error': 9999999} for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]}
         for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]:
-            for one_of_the_best in data_from_workers:
+            for tmp_payload in data_from_workers:
+                one_of_the_best, all_results_from_worker = tmp_payload[0], tmp_payload[1]
+                all_results_collected |= all_results_from_worker
                 if the_algo.__name__ not in one_of_the_best:
                     continue
                 if one_of_the_best[the_algo.__name__]['error'] < best_result[the_algo.__name__]['error']:
@@ -195,7 +215,20 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
                     y_true = y_series
                     assert len(y_pred) == len(y_true) == length_prediction
                     error = np.sqrt(np.mean((y_true - y_pred) ** 2))
-
+                    all_results_collected.update({error: {
+                            'error': error,
+                            'length_train_data': one_length_train_data,
+                            'energy_threshold': round(energy_threshold, 2),
+                            'y_true': y_true.copy(),
+                            'y_pred': y_pred.copy(),
+                            'x_series': x_series.copy(),
+                            'n_predict': length_prediction,
+                            'forecast': forecast.copy(),
+                            'lower': lower,
+                            'upper': upper,
+                            'diag': diag,
+                            'the_algo': the_algo.__name__,
+                        }})
                     # Update best result
                     if error < best_result[f'{the_algo.__name__}']['error']:
                         best_result[f'{the_algo.__name__}'].update({
@@ -329,7 +362,8 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
                 plt.grid(True, linestyle=':', alpha=0.6)
                 plt.tight_layout()
                 plt.show()
-    return best_result, data_cache.copy()
+    all_results_collected = dict(sorted(all_results_collected.items()))
+    return best_result, data_cache.copy(), all_results_collected
 
 
 if __name__ == "__main__":

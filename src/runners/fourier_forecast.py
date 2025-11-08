@@ -58,7 +58,6 @@ def main():
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="2025.10.31")  # e.g., "2025.10.31" or "None"
     parser.add_argument("--dataset_id", type=str, default='week')
-    parser.add_argument("--fast_result", action='store_true')
     parser.add_argument("--length_step_back", type=int, default=4)
     parser.add_argument("--length_prediction", type=int, default=4)
     parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
@@ -76,11 +75,11 @@ def main():
 
     one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
 
-    close_results, data_cache = entry_of__fourier_decomposition(
+    close_results, data_cache, _ = entry_of__fourier_decomposition(
         multi_threaded=True,
         ticker=args.ticker,
         col=args.col,
-        fast_result=args.fast_result,
+        fast_result=False,
         length_step_back=args.length_step_back,
         length_prediction=args.length_prediction,
         one_dataset_filename=one_dataset_filename,
