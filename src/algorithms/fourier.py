@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import norm
 
 
 def fourier_extrapolation_auto(prices, n_predict=20, energy_threshold=0.95, conf_level=None):
@@ -209,3 +210,132 @@ def fourier_forecast_log_returns_with_confidence(
     }
 
     return forecast_prices, lower_band, upper_band, diagnostics
+
+
+def fourier_extrapolation_hybrid(
+        prices,
+        n_predict=20,
+        energy_threshold=0.95,
+        conf_level=0.95
+):
+    """
+    Hybrid Fourier extrapolation combining:
+      - Log-space exponential detrending (better for financial data)
+      - Automatic harmonic selection by spectral energy
+      - Confidence bands from in-sample log-reconstruction error
+
+    Parameters:
+    - prices: 1D array of positive real prices (e.g., SPX)
+    - n_predict: number of future steps to forecast
+    - energy_threshold: fraction of spectral energy to retain (0 < th <= 1)
+    - conf_level: confidence level for prediction bands (e.g., 0.95); if None, bands are None
+
+    Returns:
+    - full_forecast: array of length len(prices) + n_predict
+    - lower_band: array of length n_predict (or None)
+    - upper_band: array of length n_predict (or None)
+    - diagnostics: dict with metadata
+    """
+    prices = np.asarray(prices, dtype=np.float64)
+    if np.any(prices <= 0):
+        raise ValueError("Prices must be strictly positive for log transformation.")
+    n = len(prices)
+    if n < 20:
+        raise ValueError("Need at least 20 data points.")
+
+    t = np.arange(n)
+    t_ext = np.arange(n + n_predict)
+
+    # --- Step 1: Log-transform ---
+    log_p = np.log(prices)
+
+    # --- Step 2: Exponential (log-linear) detrending ---
+    coeffs = np.polyfit(t, log_p, 1)  # log_p ≈ a*t + b
+    log_trend = coeffs[0] * t + coeffs[1]
+    detrended = log_p - log_trend
+
+    # --- Step 3: FFT on detrended log signal ---
+    xf = np.fft.fft(detrended)
+    power = np.abs(xf) ** 2
+    total_energy = np.sum(power) / n
+
+    # --- Step 4: Select harmonics to meet energy threshold ---
+    cum_energy = power[0] / n
+    n_harm = 0
+    target_energy = energy_threshold * total_energy
+
+    if cum_energy < target_energy:
+        for k in range(1, n // 2 + 1):
+            if k == n - k:  # Nyquist (n even)
+                pair_power = power[k]
+            else:
+                pair_power = power[k] + power[n - k]
+            cum_energy += pair_power / n
+            n_harm = k
+            if cum_energy >= target_energy:
+                break
+
+    # --- Step 5: Build truncated spectrum with conjugate symmetry ---
+    xf_trunc = np.zeros(n, dtype=complex)
+    xf_trunc[0] = xf[0]  # DC
+
+    if n_harm > 0:
+        xf_trunc[1:n_harm + 1] = xf[1:n_harm + 1]
+        if n % 2 == 0 and n_harm == n // 2:
+            # Nyquist term is its own conjugate
+            xf_trunc[n // 2] = xf[n // 2]
+        else:
+            xf_trunc[-n_harm:] = xf[-n_harm:]
+
+    # --- Step 6: Reconstruct detrended signal over extended timeline ---
+    recon_ext = np.full(n + n_predict, xf_trunc[0].real / n)
+
+    for k in range(1, n_harm + 1):
+        amp_pos = xf_trunc[k]
+        if k == n - k:
+            amp_neg = np.conj(amp_pos)  # enforce symmetry at Nyquist
+        else:
+            amp_neg = xf_trunc[n - k]
+        phase = 2 * np.pi * k * t_ext / n
+        recon_ext += (amp_pos * np.exp(1j * phase) + amp_neg * np.exp(-1j * phase)).real / n
+
+    # --- Step 7: Add back log-trend and exponentiate ---
+    log_trend_ext = coeffs[0] * t_ext + coeffs[1]
+    log_forecast = recon_ext + log_trend_ext
+    full_forecast = np.exp(log_forecast)
+
+    # --- Step 8: Compute confidence bands (if requested) ---
+    lower_band, upper_band = None, None
+    sigma_log = 0.0
+    z_score = 0.0
+
+    if conf_level is not None and 0 < conf_level < 1:
+        # Reconstruct *in-sample* detrended signal for error estimation
+        recon_insample_detrended = np.full(n, xf_trunc[0].real / n)
+        for k in range(1, n_harm + 1):
+            amp_pos = xf_trunc[k]
+            amp_neg = np.conj(amp_pos) if k == n - k else xf_trunc[n - k]
+            phase_in = 2 * np.pi * k * t / n
+            recon_insample_detrended += (amp_pos * np.exp(1j * phase_in) + amp_neg * np.exp(-1j * phase_in)).real / n
+
+        log_recon_insample = recon_insample_detrended + log_trend
+        residuals_log = log_p - log_recon_insample
+        sigma_log = np.std(residuals_log, ddof=1)  # unbiased estimate
+
+        z_score = norm.ppf(0.5 + conf_level / 2)
+        log_future = log_forecast[n:]
+        lower_log = log_future - z_score * sigma_log
+        upper_log = log_future + z_score * sigma_log
+        lower_band = np.exp(lower_log)
+        upper_band = np.exp(upper_log)
+
+    diagnostics = {
+        'n_harm': n_harm,
+        'energy_captured': min(cum_energy / total_energy, 1.0),
+        'sigma_log': sigma_log,
+        'trend_slope': coeffs[0],  # daily log-return drift
+        'conf_level': conf_level,
+        'z_score': z_score
+    }
+
+    return full_forecast, lower_band, upper_band, diagnostics

@@ -20,13 +20,14 @@ import matplotlib.pyplot as plt
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
 import numpy as np
 from tqdm import tqdm
-from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto
 from utils import transform_path
+
 # Define a registry mapping algo names (strings) to actual functions
+from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto, fourier_extrapolation_hybrid
 ALGO_REGISTRY = {
     'fourier_forecast_log_returns_with_confidence': fourier_forecast_log_returns_with_confidence,
     'fourier_extrapolation_auto': fourier_extrapolation_auto,
-    # Add more as needed
+    'fourier_extrapolation_hybrid': fourier_extrapolation_hybrid,
 }
 
 
@@ -95,29 +96,26 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
     out__shared.put((best_result, all_results_from_worker))
 
 
-def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', show_graphics = False, fast_result=False, print_result=False,
-          length_step_back=4, length_prediction=4, multi_threaded=False):
+def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, ticker= '^GSPC', col='Close', show_plots=False,
+          save_graphics = False, fast_result=False, print_result=False, length_step_back=4, multi_threaded=False, selected_algo=None):
     colname = (col, ticker)
     best_result = {}
     min_train = 20
     _nb_workers = NB_WORKERS
+    length_prediction = length_step_back
+    algorithms_to_run = list(ALGO_REGISTRY.values()) if selected_algo is None else selected_algo
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     all_results_collected = {}
     if multi_threaded:
         # Generate use cases
         use_cases = []
-        for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]:
+        for the_algo in algorithms_to_run:
             prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
             max_train = len(prices_2) - length_step_back - length_prediction
-            # Precompute energy thresholds to avoid repeated np.arange calls
-            energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
-            # Wrap outer loop with tqdm
-            for one_length_train_data in tqdm(
-                    range(min_train, max_train, 20 if fast_result else 1),
-                    desc=f"Training length ({one_dataset_id})",
-                    leave=True
-            ):
+            for one_length_train_data in range(min_train, max_train, 20 if fast_result else 1):
+                # Precompute energy thresholds to avoid repeated np.arange calls
+                energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
                     prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
@@ -152,8 +150,8 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
         for k in range(0, _nb_workers):
             data_from_workers.append(out__shared[k].get())
         # Conserve les meilleurs
-        best_result = {the_algo.__name__: {'error': 9999999} for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]}
-        for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]:
+        best_result = {the_algo.__name__: {'error': 9999999} for the_algo in algorithms_to_run}
+        for the_algo in algorithms_to_run:
             for tmp_payload in data_from_workers:
                 one_of_the_best, all_results_from_worker = tmp_payload[0], tmp_payload[1]
                 all_results_collected |= all_results_from_worker
@@ -163,7 +161,7 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
                     best_result[the_algo.__name__] = one_of_the_best[the_algo.__name__]
     else:
         # Search
-        for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]:
+        for the_algo in algorithms_to_run:
             if print_result:
                 print(f"Using algo: {the_algo.__name__}", flush=True)
             tmp = {
@@ -245,123 +243,109 @@ def entry(one_dataset_filename, one_dataset_id, ticker= '^GSPC', col='Close', sh
                             'diag': diag,
                             'the_algo': the_algo.__name__,
                         })
-        # Final report
-        for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]:
-            if print_result:
-                print(f"\n✅ [{ticker}][{colname}] Best setup found for [{the_algo.__name__}]:")
-                print(f"  RMSE: {best_result[f'{the_algo.__name__}']['error']:.4f}")
-                print(f"  Training length: {best_result[f'{the_algo.__name__}']['length_train_data']}")
-                print(f"  Energy threshold: {best_result[f'{the_algo.__name__}']['energy_threshold']:.2f}")
-                print(f"  True: {best_result[f'{the_algo.__name__}']['y_true']}")
-                print(f"  Pred: {best_result[f'{the_algo.__name__}']['y_pred']}")
+    # Final report
+    for the_algo in algorithms_to_run:
+        if print_result:
+            print(f"\n✅ [{ticker}][{colname}] Best setup found for [{the_algo.__name__}]:")
+            print(f"  RMSE: {best_result[f'{the_algo.__name__}']['error']:.4f}")
+            print(f"  Training length: {best_result[f'{the_algo.__name__}']['length_train_data']}")
+            print(f"  Energy threshold: {best_result[f'{the_algo.__name__}']['energy_threshold']:.2f}")
+            print(f"  True: {best_result[f'{the_algo.__name__}']['y_true']}")
+            print(f"  Pred: {best_result[f'{the_algo.__name__}']['y_pred']}")
 
-            prices   = best_result[f'{the_algo.__name__}']['x_series']
-            n_pred   = best_result[f'{the_algo.__name__}']['n_predict']
-            forecast = best_result[f'{the_algo.__name__}']['forecast']
-            y_true   = best_result[f'{the_algo.__name__}']['y_true']
-            error    = best_result[f'{the_algo.__name__}']['error']
-            lower    = best_result[f'{the_algo.__name__}']['lower']
-            upper    = best_result[f'{the_algo.__name__}']['upper']
-            diag     = best_result[f'{the_algo.__name__}']['diag']
-            # Plot
-            if show_graphics:
-                plt.figure(figsize=(14, 7))
-                obs_t = np.arange(len(prices))
-                future_t = np.arange(len(prices), len(prices) + n_pred)
+        prices   = best_result[f'{the_algo.__name__}']['x_series']
+        n_pred   = best_result[f'{the_algo.__name__}']['n_predict']
+        forecast = best_result[f'{the_algo.__name__}']['forecast']
+        y_true   = best_result[f'{the_algo.__name__}']['y_true']
+        error    = best_result[f'{the_algo.__name__}']['error']
+        lower    = best_result[f'{the_algo.__name__}']['lower']
+        upper    = best_result[f'{the_algo.__name__}']['upper']
+        diag     = best_result[f'{the_algo.__name__}']['diag']
+        # Plot
+        if save_graphics or show_plots:
+            plt.figure(figsize=(14, 7))
+            obs_t = np.arange(len(prices))
+            future_t = np.arange(len(prices), len(prices) + n_pred)
 
-                plt.plot(obs_t, prices, color='black', label='Observed SPX Close', linewidth=1.2)
-                if length_step_back > 0:
-                    assert len(forecast[-n_pred:]) == len(y_true)
-                plt.plot(future_t, forecast[-n_pred:], color='red', marker='o', label='Fourier Forecast (log + exp detrend)', linewidth=2)
-                if length_step_back > 0:
-                    plt.plot(future_t, y_true, color='blue', marker='+', label='Ground Truth', linewidth=2)
+            plt.plot(obs_t, prices, color='black', label='Observed SPX Close', linewidth=1.2)
+            if length_step_back > 0:
+                assert len(forecast[-n_pred:]) == len(y_true)
+            plt.plot(future_t, forecast[-n_pred:], color='red', marker='o', label='Fourier Forecast (log + exp detrend)', linewidth=2)
+            if length_step_back > 0:
+                plt.plot(future_t, y_true, color='blue', marker='+', label='Ground Truth', linewidth=2)
+            if lower is not None and upper is not None:
                 plt.fill_between(future_t, lower, upper, color='red', alpha=0.2, label=f'{int(diag["conf_level"] * 100)}% Confidence Band')
 
-                # Optional: show full reconstruction for diagnostics
-                plt.plot(np.arange(len(forecast)), forecast, color='blue', alpha=0.4, label='Full Reconstruction + Forecast')
+            # Optional: show full reconstruction for diagnostics
+            plt.plot(np.arange(len(forecast)), forecast, color='blue', alpha=0.4, label='Full Reconstruction + Forecast')
 
-                plt.axvline(len(prices) - 1, color='gray', linestyle='--')
-                if length_step_back > 0:
-                    plt.title(f'S&P 500 Forecast: Log Returns + Exponential Detrending + Confidence Bands ({diag["n_harm"]} harmonics)  mean error:{error:0.2f}')
-                else:
-                    plt.title(f'S&P 500 Forecast: Log Returns + Exponential Detrending + Confidence Bands ({diag["n_harm"]} harmonics)  IN THE FUTURE')
-                plt.xlabel(f'Time Step ({one_dataset_id})')
-                plt.ylabel('Price')
-                plt.legend()
-                plt.grid(True, linestyle=':', alpha=0.6)
-                plt.tight_layout()
-                plt.show()
-        # Projection
-        length_step_back = 0
-        for the_algo in [fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto]:
-            length_prediction = best_result[f'{the_algo.__name__}']['n_predict']
-            energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
-            length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
-            with open(one_dataset_filename, 'rb') as f:
-                data_cache = pickle.load(f)
-            prices = data_cache['^GSPC'][('Close', '^GSPC')].values.astype(np.float64)
-
+            plt.axvline(len(prices) - 1, color='gray', linestyle='--')
             if length_step_back > 0:
-                assert length_prediction <= length_step_back
-            assert len(prices) > length_train_data + length_step_back + length_prediction
-            if length_step_back > 0:
-                x_series = prices[len(prices) - length_train_data - length_step_back:-length_step_back]
+                plt.title(f'S&P 500 Training: {the_algo.__name__} ({diag["n_harm"]} harmonics)  mean error:{error:0.2f}')
             else:
-                x_series = prices[len(prices) - length_train_data - length_step_back:]
-            assert len(x_series) == length_train_data
-            y_series = prices[len(prices) - length_step_back:len(prices) - length_step_back + length_prediction]
-            if length_step_back > 0:
-                assert len(y_series) == length_prediction
-            else:
-                assert 0 == len(y_series)
-            prices = x_series
-            n_pred = length_prediction
+                plt.title(f'S&P 500 Training: {the_algo.__name__} ({diag["n_harm"]} harmonics)  IN THE FUTURE')
+            plt.xlabel(f'Time Step ({one_dataset_id})')
+            plt.ylabel('Price')
+            plt.legend()
+            plt.grid(True, linestyle=':', alpha=0.6)
+            plt.tight_layout()
+            if save_graphics:
+                # Save figure instead of showing
+                safe_algo_name = the_algo.__name__.replace("/", "_").replace("\\", "_")  # sanitize if needed
+                filename = f"Training_{ticker}_{colname}_{safe_algo_name}.png"
+                plt.savefig(filename, dpi=150)
+            if not show_plots:
+                plt.close()  # Important: frees memory and prevents figure accumulation
+    # Projection
+    length_step_back = 0
+    for the_algo in algorithms_to_run:
+        energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
+        length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
+        with open(one_dataset_filename, 'rb') as f:
+            data_cache = pickle.load(f)
+        prices = data_cache['^GSPC'][('Close', '^GSPC')].values.astype(np.float64)
+        assert len(prices) > length_train_data + length_step_back + length_prediction_for_forecast
+        x_series = prices[len(prices) - length_train_data - length_step_back:]
+        assert len(x_series) == length_train_data
+        # Forecast
+        forecast, lower, upper, diag = the_algo(
+            prices=x_series,
+            n_predict=length_prediction_for_forecast,
+            energy_threshold=energy_threshold,
+            conf_level=0.95
+        )
+        assert len(forecast) == len(x_series) + length_prediction_for_forecast
+        # Plot
+        if save_graphics or show_plots:
+            plt.figure(figsize=(14, 7))
+            obs_t = np.arange(len(prices))
+            future_t = np.arange(len(prices), len(prices) + length_prediction_for_forecast)
 
-            # Forecast
-            forecast, lower, upper, diag = the_algo(
-                prices=prices,
-                n_predict=n_pred,
-                energy_threshold=energy_threshold,
-                conf_level=0.95
-            )
-            if length_step_back > 0:
-                assert len(forecast[-n_pred:]) == len(y_series)
-
-                def mse(y_true, y_pred):
-                    return np.mean((y_true - y_pred) ** 2)
-
-                y_true, y_pred = y_series, forecast[-n_pred:]
-                error = mse(forecast[-n_pred:], y_series) ** 0.5
-                print(f"Error: {error:0.2f}   {y_true} ? {y_pred}")
-
-            # Plot
-            if show_graphics:
-                plt.figure(figsize=(14, 7))
-                obs_t = np.arange(len(prices))
-                future_t = np.arange(len(prices), len(prices) + n_pred)
-
-                plt.plot(obs_t, prices, color='black', label='Observed SPX Close', linewidth=1.2)
-                if length_step_back > 0:
-                    assert len(forecast[-n_pred:]) == len(y_true)
-                plt.plot(future_t, forecast[-n_pred:], color='red', marker='o', label='Fourier Forecast (log + exp detrend)', linewidth=2)
-                if length_step_back > 0:
-                    plt.plot(future_t, y_true, color='blue', marker='+', label='Ground Truth', linewidth=2)
+            plt.plot(obs_t, prices, color='black', label='Observed SPX Close', linewidth=1.2)
+            plt.plot(future_t, forecast[-length_prediction_for_forecast:], color='red', marker='o', label='Fourier Forecast', linewidth=2)
+            if lower is not None and upper is not None:
                 plt.fill_between(future_t, lower, upper, color='red', alpha=0.2, label=f'{int(diag["conf_level"] * 100)}% Confidence Band')
 
-                # Optional: show full reconstruction for diagnostics
-                plt.plot(np.arange(len(forecast)), forecast, color='blue', alpha=0.4, label='Full Reconstruction + Forecast')
+            # Optional: show full reconstruction for diagnostics
+            # plt.plot(np.arange(len(forecast)), forecast, color='blue', alpha=0.4, label='Full Reconstruction + Forecast')
 
-                plt.axvline(len(prices) - 1, color='gray', linestyle='--')
-                if length_step_back > 0:
-                    plt.title(f'S&P 500 Forecast: {the_algo} ({diag["n_harm"]} harmonics)  mean error:{error:0.2f}')
-                else:
-                    plt.title(f'S&P 500 Forecast: {the_algo} ({diag["n_harm"]} harmonics)  IN THE FUTURE')
-                plt.xlabel(f'Time Step ({one_dataset_id})')
-                plt.ylabel('Price')
-                plt.legend()
-                plt.grid(True, linestyle=':', alpha=0.6)
-                plt.tight_layout()
-                plt.show()
+            plt.axvline(len(prices) - 1, color='gray', linestyle='--')
+            plt.title(f'S&P 500 Forecast: {the_algo} ({diag["n_harm"]} harmonics)  IN THE FUTURE')
+            plt.xlabel(f'Time Step ({one_dataset_id})')
+            plt.ylabel('Price')
+            plt.legend()
+            plt.grid(True, linestyle=':', alpha=0.6)
+            plt.tight_layout()
+            if save_graphics:
+                # Save figure instead of showing
+                safe_algo_name = the_algo.__name__.replace("/", "_").replace("\\", "_")  # sanitize if needed
+                filename = f"Forecast_{ticker}_{colname}_{safe_algo_name}.png"
+                plt.savefig(filename, dpi=150)
+            if not show_plots:
+                plt.close()  # Important: frees memory and prevents figure accumulation
+    # Show all plots at once if requested
+    if show_plots:
+        plt.show()  # This will display all open figures simultaneously (backend-dependent)
     all_results_collected = dict(sorted(all_results_collected.items()))
     return best_result, data_cache.copy(), all_results_collected
 
@@ -371,5 +355,5 @@ if __name__ == "__main__":
     older_dataset = "2025.10.31"
     one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
     one_dataset_id = 'week'
-    entry(show_graphics=True, length_step_back=8, length_prediction=8, one_dataset_filename=one_dataset_filename,one_dataset_id=one_dataset_id,
-          print_result=False)
+    entry(save_graphics=False, length_step_back=4, length_prediction_for_forecast=4, one_dataset_filename=one_dataset_filename,one_dataset_id=one_dataset_id,
+          show_plots=True,print_result=False, fast_result=False, multi_threaded=True, selected_algo=[fourier_extrapolation_hybrid])
