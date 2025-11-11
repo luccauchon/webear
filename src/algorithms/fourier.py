@@ -339,3 +339,247 @@ def fourier_extrapolation_hybrid(
     }
 
     return full_forecast, lower_band, upper_band, diagnostics
+
+
+def fourier_extrapolation_loess_bootstrap(
+        prices,
+        n_predict=20,
+        energy_threshold=0.95,  # kept for API compatibility (unused)
+        conf_level=0.95
+):
+    """
+    Forecast using LOESS (local polynomial regression) + block bootstrap for CIs.
+    Addresses Fourier limitations: no stationarity, no cycles, no FFT edge effects.
+
+    Parameters:
+    - prices: 1D array of positive real prices
+    - n_predict: forecast horizon
+    - energy_threshold: ignored (for API compatibility)
+    - conf_level: confidence level for prediction bands
+
+    Returns:
+    - full_forecast: original + predicted prices
+    - lower_band, upper_band: arrays of length n_predict
+    - diagnostics: dict
+    """
+    from scipy.interpolate import interp1d
+    prices = np.asarray(prices, dtype=np.float64)
+    n = len(prices)
+    if n < 20:
+        raise ValueError("Need at least 20 data points.")
+    if np.any(prices <= 0):
+        raise ValueError("Prices must be positive.")
+
+    t = np.arange(n)
+    t_future = np.arange(n, n + n_predict)
+    t_full = np.concatenate([t, t_future])
+
+    # --- Step 1: Fit LOESS-like smoother using LOWESS approximation
+    # Since we avoid external libs, use rolling polynomial fit with adaptive window
+    def local_poly_forecast(t_train, y_train, t_target, frac=0.3, order=1):
+        """Local linear regression at each target point."""
+        y_pred = np.empty_like(t_target, dtype=np.float64)
+        window_size = max(10, int(frac * len(t_train)))
+        for i, t0 in enumerate(t_target):
+            # Compute distances and weights (tri-cube kernel)
+            distances = np.abs(t_train - t0)
+            max_dist = np.partition(distances, min(window_size - 1, len(distances) - 1))[window_size - 1]
+            if max_dist == 0:
+                weights = np.ones_like(distances)
+            else:
+                rel_dist = distances / max_dist
+                weights = (1 - rel_dist ** 3) ** 3
+                weights[rel_dist > 1] = 0
+
+            # Fit weighted polynomial
+            try:
+                coeffs = np.polyfit(t_train, y_train, order, w=np.sqrt(weights + 1e-12))
+                y_pred[i] = np.polyval(coeffs, t0)
+            except np.linalg.LinAlgError:
+                # Fallback to last observed value
+                y_pred[i] = y_train[-1]
+        return y_pred
+
+    # Work in log space for stability
+    log_prices = np.log(prices)
+    log_forecast_future = local_poly_forecast(t, log_prices, t_future, frac=0.3, order=1)
+    log_full = np.concatenate([log_prices, log_forecast_future])
+    full_forecast = np.exp(log_full)
+
+    lower_band, upper_band = None, None
+    sigma_log = 0.0
+    trend_slope = 0.0
+
+    if conf_level is not None and 0 < conf_level < 1:
+        # --- Step 2: Block bootstrap for prediction intervals ---
+        # Use overlapping blocks to preserve temporal dependence
+        block_size = min(10, n // 3)
+        n_boot = 500
+        boot_forecasts = np.empty((n_boot, n_predict))
+
+        residuals = log_prices - local_poly_forecast(t, log_prices, t, frac=0.3, order=1)
+        # Remove NaNs
+        residuals = residuals[np.isfinite(residuals)]
+
+        if len(residuals) < block_size:
+            # Fallback to Gaussian if not enough residuals
+            sigma_log = np.std(log_prices[1:] - log_prices[:-1])
+            z = norm.ppf(0.5 + conf_level / 2)
+            lower_log = log_forecast_future - z * sigma_log * np.sqrt(np.arange(1, n_predict + 1))
+            upper_log = log_forecast_future + z * sigma_log * np.sqrt(np.arange(1, n_predict + 1))
+        else:
+            for b in range(n_boot):
+                # Resample blocks
+                boot_resid = np.empty(n)
+                i = 0
+                while i < n:
+                    start = np.random.randint(0, len(residuals) - block_size + 1)
+                    chunk = residuals[start:start + block_size]
+                    end = min(i + block_size, n)
+                    boot_resid[i:end] = chunk[:end - i]
+                    i += block_size
+
+                # Add bootstrapped noise to original fit
+                boot_log = log_prices + boot_resid
+                boot_future = local_poly_forecast(t, boot_log, t_future, frac=0.3, order=1)
+                boot_forecasts[b, :] = boot_future
+
+            # Compute quantiles
+            alpha = (1 - conf_level) / 2
+            lower_log = np.quantile(boot_forecasts, alpha, axis=0)
+            upper_log = np.quantile(boot_forecasts, 1 - alpha, axis=0)
+
+        lower_band = np.exp(lower_log)
+        upper_band = np.exp(upper_log)
+        sigma_log = np.std(residuals) if len(residuals) > 1 else 0.0
+
+    # Estimate trend from last segment
+    if n >= 5:
+        recent_trend = np.polyfit(t[-5:], log_prices[-5:], 1)[0]
+        trend_slope = recent_trend
+    else:
+        trend_slope = 0.0
+
+    diagnostics = {
+        'n_harm': -1,  # not applicable
+        'energy_captured': 0.0,  # not applicable
+        'sigma_log': sigma_log,
+        'trend_slope': trend_slope,
+        'conf_level': conf_level,
+        'z_score': norm.ppf(0.5 + conf_level / 2) if conf_level else 0
+    }
+
+    return full_forecast, lower_band, upper_band, diagnostics
+
+
+def sarimax_auto_forecast(
+    prices,
+    n_predict=20,
+    energy_threshold=0.95,  # kept for API compatibility (unused)
+    conf_level=0.95
+):
+    """
+    Forecast using SARIMAX with automatic order selection (via pmdarima).
+    Falls back to ARIMA(1,1,1) if pmdarima is not available.
+
+    Parameters:
+    - prices: 1D array of positive real prices
+    - n_predict: forecast horizon
+    - energy_threshold: ignored (for API compatibility)
+    - conf_level: confidence level for prediction bands
+
+    Returns:
+    - full_forecast: original + predicted prices
+    - lower_band, upper_band: arrays of length n_predict
+    - diagnostics: dict
+    """
+    import numpy as np
+    from scipy.stats import norm
+
+    prices = np.asarray(prices, dtype=np.float64)
+    n = len(prices)
+    if n < 20:
+        raise ValueError("Need at least 20 data points.")
+    if np.any(prices <= 0):
+        raise ValueError("Prices must be positive.")
+
+    # Try to use pmdarima for auto SARIMAX; fall back if not available
+    try:
+        import pmdarima as pm
+        auto_model = pm.auto_arima(
+            prices,
+            seasonal=False,        # disable seasonality unless you have strong reason
+            stepwise=True,
+            suppress_warnings=True,
+            error_action='ignore',
+            max_p=5,
+            max_d=2,
+            max_q=5,
+            m=1,                   # non-seasonal
+            trace=False,
+            n_jobs=1
+        )
+        fitted_model = auto_model.fit(prices)
+        forecast_result = fitted_model.predict(
+            n_periods=n_predict,
+            return_conf_int=True,
+            alpha=1 - conf_level if conf_level else 0.05
+        )
+        if conf_level is not None:
+            forecast_vals, conf_int = forecast_result
+            lower_band = conf_int[:, 0]
+            upper_band = conf_int[:, 1]
+        else:
+            forecast_vals = forecast_result
+            lower_band = upper_band = None
+
+        # Extract model order for diagnostics
+        order = fitted_model.order
+        seasonal_order = fitted_model.seasonal_order
+        sigma = np.sqrt(fitted_model.model_result.mse) if hasattr(fitted_model, 'model_result') else np.std(np.diff(prices))
+    except ImportError:
+        # Fallback: simple ARIMA(1,1,1) using statsmodels if pmdarima not available
+        try:
+            from statsmodels.tsa.arima.model import ARIMA
+            model = ARIMA(prices, order=(1, 1, 1))
+            fitted = model.fit()
+            forecast_obj = fitted.get_forecast(steps=n_predict)
+            forecast_vals = forecast_obj.predicted_mean
+            if conf_level is not None:
+                conf_int = forecast_obj.conf_int(alpha=1 - conf_level)
+                lower_band = conf_int[:, 0]
+                upper_band = conf_int[:, 1]
+            else:
+                lower_band = upper_band = None
+            order = (1, 1, 1)
+            seasonal_order = (0, 0, 0, 0)
+            sigma = np.sqrt(fitted.mse)
+        except Exception as e:
+            # Ultimate fallback: naive forecast
+            last_val = prices[-1]
+            forecast_vals = np.full(n_predict, last_val)
+            lower_band = upper_band = None
+            order = (0, 0, 0)
+            seasonal_order = (0, 0, 0, 0)
+            sigma = np.std(prices)
+
+    full_forecast = np.concatenate([prices, forecast_vals])
+
+    # Estimate linear trend in log space for diagnostics
+    t = np.arange(n)
+    log_p = np.log(prices)
+    coeffs = np.polyfit(t, log_p, 1)
+    trend_slope = coeffs[0]
+
+    diagnostics = {
+        'n_harm': -2,  # code for SARIMAX
+        'energy_captured': 0.0,  # not applicable
+        'sigma_log': sigma / np.mean(prices),  # normalized for comparability (approx)
+        'trend_slope': trend_slope,
+        'conf_level': conf_level,
+        'z_score': norm.ppf(0.5 + conf_level / 2) if conf_level else 0,
+        'sarimax_order': order,
+        'sarimax_seasonal_order': seasonal_order
+    }
+
+    return full_forecast, lower_band, upper_band, diagnostics

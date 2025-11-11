@@ -82,7 +82,6 @@ def main():
         col=args.col,
         fast_result=False,
         length_step_back=args.length_step_back,
-        length_prediction=args.length_prediction,
         one_dataset_filename=one_dataset_filename,
         one_dataset_id=args.dataset_id
     )

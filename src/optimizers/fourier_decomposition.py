@@ -21,14 +21,30 @@ from multiprocessing import freeze_support, Lock, Process, Queue, Value
 import numpy as np
 from tqdm import tqdm
 from utils import transform_path
+import os
 
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="'force_all_finite' was renamed to 'ensure_all_finite'",
+    category=FutureWarning,
+    module="sklearn.utils.deprecation"
+)
+
+###############################################################################
+# NE JAMAIS CHANGE L'ORDRE
+# JUSTE AJOUTER DES METHODES
+###############################################################################
 # Define a registry mapping algo names (strings) to actual functions
-from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto, fourier_extrapolation_hybrid
-ALGO_REGISTRY = {
-    'fourier_forecast_log_returns_with_confidence': fourier_forecast_log_returns_with_confidence,
-    'fourier_extrapolation_auto': fourier_extrapolation_auto,
-    'fourier_extrapolation_hybrid': fourier_extrapolation_hybrid,
-}
+from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto, fourier_extrapolation_hybrid, fourier_extrapolation_loess_bootstrap, sarimax_auto_forecast
+ALGO_REGISTRY = [fourier_forecast_log_returns_with_confidence,
+                 fourier_extrapolation_auto,
+                 fourier_extrapolation_hybrid,
+                 fourier_extrapolation_loess_bootstrap,]
+    # 'sarimax_auto_forecast': sarimax_auto_forecast,
+###############################################################################
+###############################################################################
 
 
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
@@ -44,20 +60,22 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             use_case = use_cases__shared.get(timeout=0.1)
         except:
             break  # Terminé
-        the_algo_name   = use_case['the_algo']
-        algo_func       = ALGO_REGISTRY[the_algo_name]
+        the_algo_name   = use_case['the_algo_name']
+        the_algo_index  = use_case['the_algo_index']
+        algo_func       = ALGO_REGISTRY[the_algo_index]
         x_series        = use_case['prices']
         y_series        = use_case['y_series']
         length_prediction = use_case['n_predict']
         energy_threshold  = use_case['energy_threshold']
         length_train_data = use_case['length_train_data']
-
+        t1 = time.time()
+        assert length_train_data == len(x_series)
         forecast, lower, upper, diag = algo_func(prices=x_series, n_predict=length_prediction, energy_threshold=round(energy_threshold, 2), conf_level=0.95)
         y_pred = forecast[-length_prediction:]
         y_true = y_series
         assert len(y_pred) == len(y_true) == length_prediction
         error = np.sqrt(np.mean((y_true - y_pred) ** 2))
-
+        # print(f"[{os.getpid()}] <<{the_algo_name}>>  {length_train_data}  {time.time()-t1:.2f} seconds")
         # Update best result
         if the_algo_name not in best_result:
             best_result.update({the_algo_name: {'error': 9999999}})
@@ -96,26 +114,30 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
     out__shared.put((best_result, all_results_from_worker))
 
 
-def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, ticker= '^GSPC', col='Close', show_plots=False,
-          save_graphics = False, fast_result=False, print_result=False, length_step_back=4, multi_threaded=False, selected_algo=None):
+def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, ticker= '^GSPC', col='Close', show_plots=False, selected_algo=(0,1,2),
+          save_graphics = False, fast_result=False, print_result=False, length_step_back=4, multi_threaded=False):
     colname = (col, ticker)
     best_result = {}
     min_train = 20
     _nb_workers = NB_WORKERS
     length_prediction = length_step_back
-    algorithms_to_run = list(ALGO_REGISTRY.values()) if selected_algo is None else selected_algo
+    algorithms_to_run = [e for e, el in enumerate(ALGO_REGISTRY) if e in selected_algo]
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     all_results_collected = {}
     if multi_threaded:
         # Generate use cases
         use_cases = []
-        for the_algo in algorithms_to_run:
+        for the_algo_index in algorithms_to_run:
+            the_algo = ALGO_REGISTRY[the_algo_index]
+            is_one_pass = True if the_algo == fourier_extrapolation_loess_bootstrap or the_algo == sarimax_auto_forecast else False
             prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
-            max_train = len(prices_2) - length_step_back - length_prediction
-            for one_length_train_data in range(min_train, max_train, 20 if fast_result else 1):
+            max_train = range(min_train, min_train+10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction)
+            max_train = [len(prices_2) - length_step_back - length_prediction - 1] if is_one_pass else max_train
+            for one_length_train_data in max_train:
                 # Precompute energy thresholds to avoid repeated np.arange calls
                 energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
+                energy_thresholds = [1] if is_one_pass else energy_thresholds
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
                     prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
@@ -127,7 +149,8 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
                     y_series = prices[len(prices) - length_step_back: len(prices) - length_step_back + length_prediction]
                     assert len(x_series) == one_length_train_data
                     assert len(y_series) == length_prediction
-                    use_cases.append({'the_algo': the_algo.__name__, 'prices': x_series, 'y_series': y_series, 'n_predict': length_prediction,
+                    use_cases.append({'the_algo_name': the_algo.__name__, 'the_algo_index': the_algo_index,
+                                      'prices': x_series, 'y_series': y_series, 'n_predict': length_prediction,
                                       'energy_threshold': round(energy_threshold, 2), 'length_train_data': one_length_train_data})
         # Search
         use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
@@ -150,8 +173,9 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
         for k in range(0, _nb_workers):
             data_from_workers.append(out__shared[k].get())
         # Conserve les meilleurs
-        best_result = {the_algo.__name__: {'error': 9999999} for the_algo in algorithms_to_run}
-        for the_algo in algorithms_to_run:
+        best_result = {ALGO_REGISTRY[the_algo_index].__name__: {'error': 9999999} for the_algo_index in algorithms_to_run}
+        for the_algo_index in algorithms_to_run:
+            the_algo = ALGO_REGISTRY[the_algo_index]
             for tmp_payload in data_from_workers:
                 one_of_the_best, all_results_from_worker = tmp_payload[0], tmp_payload[1]
                 all_results_collected |= all_results_from_worker
@@ -161,9 +185,8 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
                     best_result[the_algo.__name__] = one_of_the_best[the_algo.__name__]
     else:
         # Search
-        for the_algo in algorithms_to_run:
-            if print_result:
-                print(f"Using algo: {the_algo.__name__}", flush=True)
+        for the_algo_index in algorithms_to_run:
+            the_algo = ALGO_REGISTRY[the_algo_index]
             tmp = {
                 'error': float('inf'),
                 'length_train_data': None,
@@ -173,18 +196,12 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
             }
             best_result.update({f'{the_algo.__name__}': tmp})
             prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
-
-            max_train = len(prices_2) - length_step_back - length_prediction
-
-            # Precompute energy thresholds to avoid repeated np.arange calls
-            energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
-
+            max_train = range(min_train, min_train + 10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction)
+            max_train = [len(prices_2) - length_step_back - length_prediction - 1] if the_algo == sarimax_auto_forecast else max_train
             # Wrap outer loop with tqdm
-            for one_length_train_data in tqdm(
-                    range(min_train, max_train, 33 if fast_result else 1),
-                    desc=f"Training length ({one_dataset_id})",
-                    leave=True
-            ):
+            for one_length_train_data in tqdm(max_train,desc=f"Training length ({one_dataset_id})",leave=True):
+                energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
+                energy_thresholds = [1] if the_algo == fourier_extrapolation_loess_bootstrap or the_algo == sarimax_auto_forecast else energy_thresholds
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
                     prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
@@ -244,7 +261,8 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
                             'the_algo': the_algo.__name__,
                         })
     # Final report
-    for the_algo in algorithms_to_run:
+    for the_algo_index in algorithms_to_run:
+        the_algo = ALGO_REGISTRY[the_algo_index]
         if print_result:
             print(f"\n✅ [{ticker}][{colname}] Best setup found for [{the_algo.__name__}]:")
             print(f"  RMSE: {best_result[f'{the_algo.__name__}']['error']:.4f}")
@@ -270,7 +288,7 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
             plt.plot(obs_t, prices, color='black', label='Observed SPX Close', linewidth=1.2)
             if length_step_back > 0:
                 assert len(forecast[-n_pred:]) == len(y_true)
-            plt.plot(future_t, forecast[-n_pred:], color='red', marker='o', label='Fourier Forecast (log + exp detrend)', linewidth=2)
+            plt.plot(future_t, forecast[-n_pred:], color='red', marker='o', label=f'{the_algo.__name__}', linewidth=2)
             if length_step_back > 0:
                 plt.plot(future_t, y_true, color='blue', marker='+', label='Ground Truth', linewidth=2)
             if lower is not None and upper is not None:
@@ -298,7 +316,8 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
                 plt.close()  # Important: frees memory and prevents figure accumulation
     # Projection
     length_step_back = 0
-    for the_algo in algorithms_to_run:
+    for the_algo_index in algorithms_to_run:
+        the_algo = ALGO_REGISTRY[the_algo_index]
         energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
         length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
         with open(one_dataset_filename, 'rb') as f:
@@ -322,7 +341,7 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
             future_t = np.arange(len(prices), len(prices) + length_prediction_for_forecast)
 
             plt.plot(obs_t, prices, color='black', label='Observed SPX Close', linewidth=1.2)
-            plt.plot(future_t, forecast[-length_prediction_for_forecast:], color='red', marker='o', label='Fourier Forecast', linewidth=2)
+            plt.plot(future_t, forecast[-length_prediction_for_forecast:], color='red', marker='o', label=f'{the_algo.__name__}', linewidth=2)
             if lower is not None and upper is not None:
                 plt.fill_between(future_t, lower, upper, color='red', alpha=0.2, label=f'{int(diag["conf_level"] * 100)}% Confidence Band')
 
@@ -356,4 +375,4 @@ if __name__ == "__main__":
     one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
     one_dataset_id = 'week'
     entry(save_graphics=False, length_step_back=4, length_prediction_for_forecast=4, one_dataset_filename=one_dataset_filename,one_dataset_id=one_dataset_id,
-          show_plots=True,print_result=False, fast_result=False, multi_threaded=True, selected_algo=[fourier_extrapolation_hybrid])
+          show_plots=True,print_result=False, fast_result=False, multi_threaded=False, selected_algo=[fourier_extrapolation_loess_bootstrap])

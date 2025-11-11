@@ -59,9 +59,8 @@ def main():
     parser.add_argument("--older_dataset", type=str, default="2025.10.31")  # e.g., "2025.10.31" or "None"
     parser.add_argument("--dataset_id", type=str, default='week')
     parser.add_argument("--length_step_back", type=int, default=4)
-    parser.add_argument("--length_prediction", type=int, default=4)
     parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
-
+    parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     args = parser.parse_args()
 
     # --- Nicely print the arguments ---
@@ -81,9 +80,10 @@ def main():
         col=args.col,
         fast_result=False,
         length_step_back=args.length_step_back,
-        length_prediction=args.length_prediction,
+        length_prediction_for_forecast=args.length_prediction_for_the_future,
         one_dataset_filename=one_dataset_filename,
-        one_dataset_id=args.dataset_id
+        one_dataset_id=args.dataset_id,
+        selected_algo=[int(num) for num in args.algorithms_to_run.split(",")]
     )
 
     best_prediction = min(close_results.values(), key=lambda v: v['error'])
@@ -101,7 +101,7 @@ def main():
 
     # --- Plotting ---
     plt.figure(figsize=(14, 7))
-    n_train_plot = min(args.length_prediction, len(close_values))
+    n_train_plot = min(args.length_prediction_for_forecast, len(close_values))
     plot_start_idx = len(close_values) - n_train_plot
     train_indices_full = np.arange(len(close_values))
     train_indices_plot = train_indices_full[plot_start_idx:]
