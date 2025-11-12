@@ -53,7 +53,7 @@ def entry():
     print(f"Data saved to {FYAHOO__OUTPUTFILENAME_DAY}")
 
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = (datetime.today() - timedelta(days=20 * 365)).strftime('%Y-%m-%d')
+    start_date = "2005-01-01"  # (datetime.today() - timedelta(days=20 * 365)).strftime('%Y-%m-%d')
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1wk , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1wk', auto_adjust=False, ignore_tz=True, progress=False)
@@ -65,7 +65,7 @@ def entry():
     print(f"Data saved to {FYAHOO__OUTPUTFILENAME_WEEK}")
 
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = (datetime.today() - timedelta(days=40 * 365)).strftime('%Y-%m-%d')
+    start_date = "1980-01-01"  # (datetime.today() - timedelta(days=40 * 365)).strftime('%Y-%m-%d')
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1mo , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1mo', auto_adjust=False, ignore_tz=True, progress=False)

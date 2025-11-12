@@ -12,32 +12,57 @@ except ImportError:
 from constants import FYAHOO__OUTPUTFILENAME_MONTH
 import pandas as pd
 import pickle
+from utils import transform_path
 
-def main(direction: str):
+
+def main(direction: str, method: str, older_dataset: str):
     ticker_name = '^GSPC'
     close_col = ('Close', ticker_name)
     open_col = ('Open', ticker_name)
     groupid_col = ('group_id', ticker_name)
     monthlyreturn_col = ('monthly_return', ticker_name)
 
+    one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
+    # print(f"Loading {one_dataset_filename}")
     # Load cached monthly data
-    with open(FYAHOO__OUTPUTFILENAME_MONTH, 'rb') as f:
+    with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
 
     df_full = data_cache[ticker_name]
     direction_label = "Negative" if direction == "neg" else "Positive"
     emoji = "📉" if direction == "neg" else "📈"
-    print(f"{emoji} Analyzing monthly data for {ticker_name}   (USING OPEN/CLOSE VALUES OF A MONTH TO IDENTIFY {direction_label.upper()} ONES)")
+
+    if method == "open_close":
+        method_desc = f"USING OPEN/CLOSE VALUES OF A MONTH TO IDENTIFY {direction_label.upper()} ONES"
+    elif method == "prev_close":
+        method_desc = f"USING CURRENT VS PREVIOUS MONTH CLOSE TO IDENTIFY {direction_label.upper()} ONES"
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    print(f"{emoji} Analyzing monthly data for {ticker_name}   ({method_desc})")
     print(f"   Period: {df_full.index[0].strftime('%Y-%m')} → {df_full.index[-1].strftime('%Y-%m')}")
     print("-" * 60)
 
-    # Define condition column and name
+    # Define condition column
     condition_col = ('positive', ticker_name) if direction == "pos" else ('negative', ticker_name)
     df_base = df_full.copy()
-    if direction == "pos":
-        df_base[condition_col] = df_base[close_col] > df_base[open_col]
-    else:
-        df_base[condition_col] = df_base[close_col] < df_base[open_col]
+
+    if method == "open_close":
+        if direction == "pos":
+            df_base[condition_col] = df_base[close_col] > df_base[open_col]
+        else:
+            df_base[condition_col] = df_base[close_col] < df_base[open_col]
+    elif method == "prev_close":
+        prev_close = df_base[close_col].shift(1)
+        if direction == "pos":
+            df_base[condition_col] = df_base[close_col] > prev_close
+        else:
+            df_base[condition_col] = df_base[close_col] < prev_close
+
+    # Remove the first row if using prev_close (since it will be NaN)
+    if method == "prev_close":
+        df_base = df_base.dropna(subset=[close_col])  # ensure no NaN in close
+        df_base = df_base.iloc[1:]  # drop first row where prev_close is NaN
 
     df_base[groupid_col] = (df_base[condition_col] != df_base[condition_col].shift(1)).cumsum()
     all_groups = df_base.loc[df_base[condition_col]].groupby(groupid_col).size()
@@ -49,7 +74,12 @@ def main(direction: str):
         if long_streak_group_ids.empty:
             prob = 0.0
         else:
-            df_base[monthlyreturn_col] = (df_base[close_col] - df_base[open_col]) / df_base[open_col]
+            if method == "open_close":
+                df_base[monthlyreturn_col] = (df_base[close_col] - df_base[open_col]) / df_base[open_col]
+            else:  # prev_close
+                prev_close = df_base[close_col].shift(1)
+                df_base[monthlyreturn_col] = (df_base[close_col] - prev_close) / prev_close
+
             long_streak_rows = df_base[df_base[groupid_col].isin(long_streak_group_ids) & df_base[condition_col]]
 
             grouped = long_streak_rows.groupby(groupid_col)
@@ -57,16 +87,22 @@ def main(direction: str):
                 start_date=(groupid_col, lambda x: x.index.min()),
                 end_date=(groupid_col, lambda x: x.index.max()),
                 length=(groupid_col, 'size'),
-                start_open=(open_col, 'first'),
+                start_open=(open_col if method == "open_close" else close_col, 'first'),
                 end_close=(close_col, 'last'),
                 avg_monthly_return=(monthlyreturn_col, 'mean'),
                 return_volatility=(monthlyreturn_col, 'std'),
             ).reset_index(drop=True)
 
-            streak_summary['total_return_%'] = (
-                (streak_summary['end_close'] - streak_summary['start_open']) /
-                streak_summary['start_open'] * 100
-            ).round(2)
+            if method == "open_close":
+                streak_summary['total_return_%'] = (
+                    (streak_summary['end_close'] - streak_summary['start_open']) /
+                    streak_summary['start_open'] * 100
+                ).round(2)
+            else:
+                streak_summary['total_return_%'] = (
+                    (streak_summary['end_close'] - streak_summary['start_open']) /
+                    streak_summary['start_open'] * 100
+                ).round(2)
 
             streak_summary['avg_monthly_return_%'] = (streak_summary['avg_monthly_return'] * 100).round(2)
             streak_summary['volatility_%'] = (
@@ -88,7 +124,14 @@ if __name__ == "__main__":
         "-d", "--direction",
         choices=["pos", "neg"],
         default="pos",
-        help="Direction of streaks to analyze: 'pos' for positive, 'neg' for negative (default: neg)"
+        help="Direction of streaks to analyze: 'pos' for positive, 'neg' for negative (default: pos)"
     )
+    parser.add_argument(
+        "-m", "--method",
+        choices=["open_close", "prev_close"],
+        default="open_close",
+        help="Method to determine sign: 'open_close' uses Close vs Open of same month; 'prev_close' uses Close vs previous month Close (default: open_close)"
+    )
+    parser.add_argument("-o","--older_dataset", type=str, default="")
     args = parser.parse_args()
-    main(args.direction)
+    main(args.direction, args.method, args.older_dataset)
