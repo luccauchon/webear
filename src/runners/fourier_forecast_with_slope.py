@@ -21,35 +21,7 @@ from utils import transform_path
 from multiprocessing import freeze_support
 from datetime import datetime
 import argparse
-
-
-def get_prediction_for_the_future(_best_setup, _data_cache, _col, _length_prediction, ticker):
-    prices = _data_cache[ticker][(_col, ticker)].values.astype(np.float64).copy()
-    length_train_data = _best_setup['length_train_data']
-    length_step_back = 0
-    n_pred = _length_prediction
-    energy_threshold = _best_setup['energy_threshold']
-    the_algo = _best_setup['the_algo']
-
-    import algorithms.fourier
-    the_function = getattr(algorithms.fourier, the_algo)
-
-    assert len(prices) > length_train_data + length_step_back + n_pred
-    x_series = prices[len(prices) - length_train_data - length_step_back:]
-    assert len(x_series) == length_train_data
-    y_series = prices[len(prices) - length_step_back:len(prices) - length_step_back + n_pred]
-    assert len(y_series) == 0  # because length_step_back=0
-
-    forecast, lower, upper, diag = the_function(x_series, n_predict=n_pred, energy_threshold=energy_threshold, conf_level=0.95)
-
-    prediction = forecast[-n_pred:].copy()
-    assert len(prediction) == n_pred
-    if lower is not None:
-        assert len(upper) == n_pred
-        assert len(lower) == n_pred
-    x = forecast[:-n_pred].copy()
-    assert len(x) == length_train_data
-    return prediction, x, lower, upper
+from runners.fourier_forecast import get_prediction_for_the_future
 
 
 def main():
@@ -59,10 +31,9 @@ def main():
     parser.add_argument("--older_dataset", type=str, default="2025.10.31")  # e.g., "2025.10.31" or "None"
     parser.add_argument("--dataset_id", type=str, default='week')
     parser.add_argument("--length_step_back", type=int, default=4)
-    parser.add_argument("--length_prediction", type=int, default=4)
     parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
+    parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
-
     args = parser.parse_args()
 
     # --- Nicely print the arguments ---
@@ -83,7 +54,8 @@ def main():
         fast_result=False,
         length_step_back=args.length_step_back,
         one_dataset_filename=one_dataset_filename,
-        one_dataset_id=args.dataset_id
+        one_dataset_id=args.dataset_id,
+        selected_algo=[int(num) for num in args.algorithms_to_run.split(",")]
     )
 
     # Load full data_cache from file (needed for get_prediction_for_the_future)

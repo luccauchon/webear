@@ -114,7 +114,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
     out__shared.put((best_result, all_results_from_worker))
 
 
-def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, ticker= '^GSPC', col='Close', show_plots=False, selected_algo=(0,1,2),
+def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=None, ticker= '^GSPC', col='Close', show_plots=False, selected_algo=(0,1,2),
           save_graphics = False, fast_result=False, print_result=False, length_step_back=4, multi_threaded=False):
     colname = (col, ticker)
     best_result = {}
@@ -317,6 +317,9 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast, 
     # Projection
     length_step_back = 0
     for the_algo_index in algorithms_to_run:
+        if length_prediction_for_forecast is None:
+            continue
+        assert length_prediction_for_forecast > 0
         the_algo = ALGO_REGISTRY[the_algo_index]
         energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
         length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']

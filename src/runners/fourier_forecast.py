@@ -80,7 +80,6 @@ def main():
         col=args.col,
         fast_result=False,
         length_step_back=args.length_step_back,
-        length_prediction_for_forecast=args.length_prediction_for_the_future,
         one_dataset_filename=one_dataset_filename,
         one_dataset_id=args.dataset_id,
         selected_algo=[int(num) for num in args.algorithms_to_run.split(",")]
@@ -101,7 +100,7 @@ def main():
 
     # --- Plotting ---
     plt.figure(figsize=(14, 7))
-    n_train_plot = min(args.length_prediction_for_forecast, len(close_values))
+    n_train_plot = min(args.length_prediction_for_the_future, len(close_values))
     plot_start_idx = len(close_values) - n_train_plot
     train_indices_full = np.arange(len(close_values))
     train_indices_plot = train_indices_full[plot_start_idx:]
