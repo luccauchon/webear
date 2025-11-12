@@ -37,11 +37,11 @@ warnings.filterwarnings(
 # JUSTE AJOUTER DES METHODES
 ###############################################################################
 # Define a registry mapping algo names (strings) to actual functions
-from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto, fourier_extrapolation_hybrid, fourier_extrapolation_loess_bootstrap, sarimax_auto_forecast
-ALGO_REGISTRY = [fourier_forecast_log_returns_with_confidence,
-                 fourier_extrapolation_auto,
-                 fourier_extrapolation_hybrid,
-                 fourier_extrapolation_loess_bootstrap,]
+from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto, fourier_extrapolation_hybrid
+ALGO_REGISTRY = [fourier_forecast_log_returns_with_confidence,  # 0
+                 fourier_extrapolation_auto,  # 1
+                 # fourier_extrapolation_hybrid,  # 2   Identique à #0. À voir .
+                 ]
     # 'sarimax_auto_forecast': sarimax_auto_forecast,
 ###############################################################################
 ###############################################################################
@@ -114,43 +114,48 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
     out__shared.put((best_result, all_results_from_worker))
 
 
-def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=None, ticker= '^GSPC', col='Close', show_plots=False, selected_algo=(0,1,2),
-          save_graphics = False, fast_result=False, print_result=False, length_step_back=4, multi_threaded=False):
+def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_forecast=None, ticker= '^GSPC', col='Close', show_plots=False, selected_algo=(0,1,2),
+          save_graphics = False, fast_result=False, print_result=False, length_step_back=4, multi_threaded=False, use_this_df=None):
     colname = (col, ticker)
     best_result = {}
     min_train = 20
     _nb_workers = NB_WORKERS
-    length_prediction = length_step_back
+    length_prediction_in_training = length_step_back
     algorithms_to_run = [e for e, el in enumerate(ALGO_REGISTRY) if e in selected_algo]
-    with open(one_dataset_filename, 'rb') as f:
-        data_cache = pickle.load(f)
+    if use_this_df is None:
+        assert one_dataset_filename is not None
+        with open(one_dataset_filename, 'rb') as f:
+            data_cache = pickle.load(f)
+        prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
+    else:
+        data_cache = None
+        prices_2 = use_this_df.copy()
+    # Precompute energy thresholds to avoid repeated np.arange calls
+    energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
+    max_train = range(min_train, min_train + 10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction_in_training)
+    # print(f"Computing {len(algorithms_to_run)*len(max_train)*len(energy_thresholds)} configuration")
     all_results_collected = {}
     if multi_threaded:
         # Generate use cases
         use_cases = []
         for the_algo_index in algorithms_to_run:
+            if the_algo_index >= len(ALGO_REGISTRY):
+                continue
             the_algo = ALGO_REGISTRY[the_algo_index]
-            is_one_pass = True if the_algo == fourier_extrapolation_loess_bootstrap or the_algo == sarimax_auto_forecast else False
-            prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
-            max_train = range(min_train, min_train+10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction)
-            max_train = [len(prices_2) - length_step_back - length_prediction - 1] if is_one_pass else max_train
             for one_length_train_data in max_train:
-                # Precompute energy thresholds to avoid repeated np.arange calls
-                energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
-                energy_thresholds = [1] if is_one_pass else energy_thresholds
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
                     prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
-                    assert len(prices) > one_length_train_data + length_step_back + length_prediction
+                    assert len(prices) > one_length_train_data + length_step_back + length_prediction_in_training
                     xi1, xi2 = len(prices) - one_length_train_data - length_step_back, -length_step_back
-                    yi1, yi2 = len(prices) - length_step_back, len(prices) - length_step_back + length_prediction
+                    yi1, yi2 = len(prices) - length_step_back, len(prices) - length_step_back + length_prediction_in_training
                     assert len(prices) + xi2 == yi1  # La fin du X correspond au début du Y
                     x_series = prices[len(prices) - one_length_train_data - length_step_back: -length_step_back]
-                    y_series = prices[len(prices) - length_step_back: len(prices) - length_step_back + length_prediction]
+                    y_series = prices[len(prices) - length_step_back: len(prices) - length_step_back + length_prediction_in_training]
                     assert len(x_series) == one_length_train_data
-                    assert len(y_series) == length_prediction
+                    assert len(y_series) == length_prediction_in_training
                     use_cases.append({'the_algo_name': the_algo.__name__, 'the_algo_index': the_algo_index,
-                                      'prices': x_series, 'y_series': y_series, 'n_predict': length_prediction,
+                                      'prices': x_series, 'y_series': y_series, 'n_predict': length_prediction_in_training,
                                       'energy_threshold': round(energy_threshold, 2), 'length_train_data': one_length_train_data})
         # Search
         use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
@@ -186,6 +191,8 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=N
     else:
         # Search
         for the_algo_index in algorithms_to_run:
+            if the_algo_index >= len(ALGO_REGISTRY):
+                continue
             the_algo = ALGO_REGISTRY[the_algo_index]
             tmp = {
                 'error': float('inf'),
@@ -195,40 +202,29 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=N
                 'y_pred': None
             }
             best_result.update({f'{the_algo.__name__}': tmp})
-            prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
-            max_train = range(min_train, min_train + 10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction)
-            max_train = [len(prices_2) - length_step_back - length_prediction - 1] if the_algo == sarimax_auto_forecast else max_train
             # Wrap outer loop with tqdm
             for one_length_train_data in tqdm(max_train,desc=f"Training length ({one_dataset_id})",leave=True):
-                energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
-                energy_thresholds = [1] if the_algo == fourier_extrapolation_loess_bootstrap or the_algo == sarimax_auto_forecast else energy_thresholds
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
                     prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
-                    assert len(prices) > one_length_train_data + length_step_back + length_prediction
+                    assert len(prices) > one_length_train_data + length_step_back + length_prediction_in_training
                     xi1, xi2 = len(prices) - one_length_train_data - length_step_back, -length_step_back
-                    yi1, yi2 = len(prices) - length_step_back, len(prices) - length_step_back + length_prediction
+                    yi1, yi2 = len(prices) - length_step_back, len(prices) - length_step_back + length_prediction_in_training
                     assert len(prices)+xi2 ==  yi1  # La fin du X correspond au début du Y
-                    assert yi2-yi1 == length_prediction
-                    if print_result:
-                        print(f"Train from {data_cache[ticker][colname].index[xi1]} to {data_cache[ticker][colname].index[xi2]}")
-                        print(f"Pred  from {data_cache[ticker][colname].index[yi1]} to {length_prediction} time steps ahead")
+                    assert yi2-yi1 == length_prediction_in_training
                     x_series = prices[len(prices) - one_length_train_data - length_step_back: -length_step_back]
-                    y_series = prices[len(prices) - length_step_back: len(prices) - length_step_back + length_prediction]
+                    y_series = prices[len(prices) - length_step_back: len(prices) - length_step_back + length_prediction_in_training]
                     assert len(x_series) == one_length_train_data
-                    assert len(y_series) == length_prediction
-                    #print(f"{data_cache[ticker].index[xi1:xi2][0]} --> {data_cache[ticker].index[xi1:xi2][-1]}")
-                    #print(f"{data_cache[ticker].index[yi1:yi2][0]} --> {data_cache[ticker].index[yi1:yi2][-1]}")
+                    assert len(y_series) == length_prediction_in_training
                     # Forecast
                     forecast, lower, upper, diag = the_algo(
                         prices=x_series,
-                        n_predict=length_prediction,
+                        n_predict=length_prediction_in_training,
                         energy_threshold=round(energy_threshold, 2),  # mitigate FP errors
                         conf_level=0.95)
-
-                    y_pred = forecast[-length_prediction:]
+                    y_pred = forecast[-length_prediction_in_training:]
                     y_true = y_series
-                    assert len(y_pred) == len(y_true) == length_prediction
+                    assert len(y_pred) == len(y_true) == length_prediction_in_training
                     error = np.sqrt(np.mean((y_true - y_pred) ** 2))
                     all_results_collected.update({error: {
                             'error': error,
@@ -237,7 +233,7 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=N
                             'y_true': y_true.copy(),
                             'y_pred': y_pred.copy(),
                             'x_series': x_series.copy(),
-                            'n_predict': length_prediction,
+                            'n_predict': length_prediction_in_training,
                             'forecast': forecast.copy(),
                             'lower': lower,
                             'upper': upper,
@@ -253,7 +249,7 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=N
                             'y_true': y_true.copy(),
                             'y_pred': y_pred.copy(),
                             'x_series': x_series.copy(),
-                            'n_predict': length_prediction,
+                            'n_predict': length_prediction_in_training,
                             'forecast': forecast.copy(),
                             'lower': lower,
                             'upper': upper,
@@ -369,7 +365,7 @@ def entry(one_dataset_filename, one_dataset_id, length_prediction_for_forecast=N
     if show_plots:
         plt.show()  # This will display all open figures simultaneously (backend-dependent)
     all_results_collected = dict(sorted(all_results_collected.items()))
-    return best_result, data_cache.copy(), all_results_collected
+    return best_result, data_cache.copy() if data_cache is not None else None, all_results_collected
 
 
 if __name__ == "__main__":
@@ -377,5 +373,8 @@ if __name__ == "__main__":
     older_dataset = "2025.10.31"
     one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
     one_dataset_id = 'week'
-    entry(save_graphics=False, length_step_back=4, length_prediction_for_forecast=4, one_dataset_filename=one_dataset_filename,one_dataset_id=one_dataset_id,
-          show_plots=True,print_result=False, fast_result=False, multi_threaded=False, selected_algo=[fourier_extrapolation_loess_bootstrap])
+    for length_step_back in [1, 2, 3, 4, 5, 6]:
+        best_result, _, _ = entry(save_graphics=False, length_step_back=length_step_back, length_prediction_for_forecast=4,
+                                  one_dataset_filename=one_dataset_filename,one_dataset_id=one_dataset_id,
+                                  show_plots=False, print_result=True, fast_result=False, multi_threaded=True, selected_algo=[0, 1])
+        #print(best_result)

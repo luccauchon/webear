@@ -23,8 +23,8 @@ from datetime import datetime
 import argparse
 
 
-def get_prediction_for_the_future(_best_setup, _data_cache, _col, _length_prediction, ticker):
-    prices = _data_cache[ticker][(_col, ticker)].values.astype(np.float64).copy()
+def get_prediction_for_the_future_with_fourier_algo(_best_setup, _data_cache, _col, _ticker, _length_prediction):
+    prices = _data_cache[_ticker][(_col, _ticker)].values.astype(np.float64).copy()
     length_train_data = _best_setup['length_train_data']
     length_step_back = 0
     n_pred = _length_prediction
@@ -90,12 +90,12 @@ def main():
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
 
-    close_prediction, close_values, close_prediction_lower, close_prediction_upper = get_prediction_for_the_future(
+    close_prediction, close_values, close_prediction_lower, close_prediction_upper = get_prediction_for_the_future_with_fourier_algo(
         _best_setup=best_prediction,
         _data_cache=data_cache,
         _col=args.col,
         _length_prediction=args.length_prediction_for_the_future,
-        ticker=args.ticker
+        _ticker=args.ticker
     )
 
     # --- Plotting ---

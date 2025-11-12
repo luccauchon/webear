@@ -21,7 +21,7 @@ from utils import transform_path
 from multiprocessing import freeze_support
 from datetime import datetime
 import argparse
-from runners.fourier_forecast import get_prediction_for_the_future
+from runners.fourier_forecast import get_prediction_for_the_future_with_fourier_algo
 
 
 def main():
@@ -71,12 +71,12 @@ def main():
         n_forecasts = len(all_sorted)
 
     first_best = all_sorted[0]
-    _, base_close_values, _, _ = get_prediction_for_the_future(
+    _, base_close_values, _, _ = get_prediction_for_the_future_with_fourier_algo(
         _best_setup=first_best,
         _data_cache=data_cache.copy(),
         _col=args.col,
         _length_prediction=args.length_prediction_for_the_future,
-        ticker=args.ticker
+        _ticker=args.ticker
     )
 
     # Generate N forecasts
@@ -85,12 +85,12 @@ def main():
 
     for i in range(args.n_forecasts):
         setup = all_sorted[i]
-        pred, _, _, _ = get_prediction_for_the_future(
+        pred, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
             _best_setup=setup,
             _data_cache=data_cache.copy(),
             _col=args.col,
             _length_prediction=args.length_prediction_for_the_future,
-            ticker=args.ticker
+            _ticker=args.ticker
         )
         forecasts.append(pred)
         if pred_indices is None:
