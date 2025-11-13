@@ -167,8 +167,9 @@ def main():
 
     # Save and show AFTER adding text
     today_str = datetime.today().strftime('%Y-%m-%d')
-    plt.savefig(f"mean_tendency_{args.ticker}_{args.dataset_id}_{args.n_forecasts}forecasts_{today_str}.png",
-                dpi=300, bbox_inches='tight')
+    os.makedirs(os.path.join(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, args.older_dataset), exist_ok=True)
+    figure_filename = os.path.join(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, args.older_dataset, f"forecast_mean_slope_{args.ticker}_{args.dataset_id}__.png")
+    plt.savefig(figure_filename, dpi=300, bbox_inches='tight')
     plt.show()
 
 

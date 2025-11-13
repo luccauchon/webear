@@ -29,7 +29,7 @@ import argparse
 from utils import transform_path
 
 
-def main(P, Q, older_dataset):
+def main(P, Q, older_dataset, bold):
     # ----------------------------
     # Configuration
     # ----------------------------
@@ -207,6 +207,7 @@ if __name__ == "__main__":
     parser.add_argument('--P', type=int, default=6, help='Number of consecutive positive months (default: 6)')
     parser.add_argument('--Q', type=int, default=1, help='Number of consecutive negative months after P positives (default: 1)')
     parser.add_argument("--older_dataset", type=str, default="")
+    parser.add_argument("--bold",default=2,help="Display in bold the element of interest")
     args = parser.parse_args()
 
-    main(P=args.P, Q=args.Q, older_dataset=args.older_dataset)
+    main(P=args.P, Q=args.Q, older_dataset=args.older_dataset, bold=int(args.bold))

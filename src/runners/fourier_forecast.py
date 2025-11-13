@@ -23,6 +23,23 @@ from datetime import datetime
 import argparse
 
 
+def get_prediction_for_the_future_with_fourier_algo_2(_best_setup, _x_series, _length_prediction):
+    n_pred = _length_prediction
+    energy_threshold = _best_setup['energy_threshold']
+    the_algo = _best_setup['the_algo']
+    import algorithms.fourier
+    the_function = getattr(algorithms.fourier, the_algo)
+    forecast, lower, upper, diag = the_function(_x_series, n_predict=n_pred, energy_threshold=energy_threshold, conf_level=0.95)
+    prediction = forecast[-n_pred:].copy()
+    assert len(prediction) == n_pred
+    if lower is not None:
+        assert len(upper) == n_pred
+        assert len(lower) == n_pred
+    x = forecast[:-n_pred].copy()
+    assert len(x) == len(_x_series)
+    return prediction, x, lower, upper
+
+
 def get_prediction_for_the_future_with_fourier_algo(_best_setup, _data_cache, _col, _ticker, _length_prediction):
     prices = _data_cache[_ticker][(_col, _ticker)].values.astype(np.float64).copy()
     length_train_data = _best_setup['length_train_data']
@@ -147,7 +164,7 @@ def main():
     plt.tight_layout()
 
     os.makedirs(os.path.join(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, args.older_dataset), exist_ok=True)
-    figure_filename = os.path.join(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, args.older_dataset, f"forecast_{args.ticker}_{args.dataset_id}_{today_str}.png")
+    figure_filename = os.path.join(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, args.older_dataset, f"forecast_{args.ticker}_{args.dataset_id}__.png")
     plt.savefig(figure_filename, dpi=300, bbox_inches='tight')
 
     plt.show()

@@ -15,7 +15,7 @@ import pickle
 from utils import transform_path
 
 
-def main(direction: str, method: str, older_dataset: str):
+def main(direction: str, method: str, older_dataset: str, bold: int):
     ticker_name = '^GSPC'
     close_col = ('Close', ticker_name)
     open_col = ('Open', ticker_name)
@@ -113,7 +113,10 @@ def main(direction: str, method: str, older_dataset: str):
             prob = num_long_streaks / total_streaks
 
         count = int(prob * total_streaks)
-        print(f"• Streaks ≥{NN:2d} months: {prob:>6.2%} ({count} out of {total_streaks})")
+        if NN == bold:
+            print(f"\033[1m• Streaks ≥{NN:2d} months: {prob:>6.2%} ({count} out of {total_streaks}) *\033[0m")
+        else:
+            print(f"• Streaks ≥{NN:2d} months: {prob:>6.2%} ({count} out of {total_streaks})")
 
     print("-" * 60)
     print(f"✅ {direction_label} streak analysis complete.")
@@ -133,5 +136,10 @@ if __name__ == "__main__":
         help="Method to determine sign: 'open_close' uses Close vs Open of same month; 'prev_close' uses Close vs previous month Close (default: open_close)"
     )
     parser.add_argument("-o","--older_dataset", type=str, default="")
+    parser.add_argument(
+        "-b", "--bold",
+        default=2,
+        help="Display in bold the element of interest"
+    )
     args = parser.parse_args()
-    main(args.direction, args.method, args.older_dataset)
+    main(args.direction, args.method, args.older_dataset, int(args.bold))
