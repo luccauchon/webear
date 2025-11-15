@@ -9,22 +9,29 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 
-from constants import FYAHOO__OUTPUTFILENAME_MONTH
+from constants import FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_YEAR
 import pandas as pd
 import pickle
 from utils import transform_path
 
 
-def main(direction: str, method: str, older_dataset: str, bold: int):
+def main(direction: str, method: str, older_dataset: str, bold: int, frequency: str):
     ticker_name = '^GSPC'
     close_col = ('Close', ticker_name)
     open_col = ('Open', ticker_name)
     groupid_col = ('group_id', ticker_name)
     monthlyreturn_col = ('monthly_return', ticker_name)
 
-    one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
-    # print(f"Loading {one_dataset_filename}")
-    # Load cached monthly data
+    if frequency == 'monthly':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
+    elif frequency == 'daily':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_DAY if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_DAY, older_dataset)
+    elif frequency == 'weekly':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
+    elif frequency == 'yearly':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_YEAR if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_YEAR, older_dataset)
+    else:
+        assert False, f"{frequency=}"
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
 
@@ -33,13 +40,13 @@ def main(direction: str, method: str, older_dataset: str, bold: int):
     emoji = "📉" if direction == "neg" else "📈"
 
     if method == "open_close":
-        method_desc = f"USING OPEN/CLOSE VALUES OF A MONTH TO IDENTIFY {direction_label.upper()} ONES"
+        method_desc = f"using intra-step (Open/Close) to identify {direction_label.upper()} ones"
     elif method == "prev_close":
-        method_desc = f"USING CURRENT VS PREVIOUS MONTH CLOSE TO IDENTIFY {direction_label.upper()} ONES"
+        method_desc = f"Using inter-step (Close-to-Close) to identify {direction_label.upper()} ones"
     else:
         raise ValueError(f"Unknown method: {method}")
 
-    print(f"{emoji} Analyzing monthly data for {ticker_name}   ({method_desc})")
+    print(f"{emoji} Analyzing {frequency} data for {ticker_name}   ({method_desc})")
     print(f"   Period: {df_full.index[0].strftime('%Y-%m')} → {df_full.index[-1].strftime('%Y-%m')}")
     print("-" * 60)
 
@@ -114,15 +121,15 @@ def main(direction: str, method: str, older_dataset: str, bold: int):
 
         count = int(prob * total_streaks)
         if NN == bold:
-            print(f"\033[1m• Streaks ≥{NN:2d} months: {prob:>6.2%} ({count} out of {total_streaks}) *\033[0m")
+            print(f"\033[1m• Streaks ≥{NN:2d} {frequency}s: {prob:>6.2%} ({count} out of {total_streaks}) *\033[0m")
         else:
-            print(f"• Streaks ≥{NN:2d} months: {prob:>6.2%} ({count} out of {total_streaks})")
+            print(f"• Streaks ≥{NN:2d} {frequency}s: {prob:>6.2%} ({count} out of {total_streaks})")
 
     print("-" * 60)
     print(f"✅ {direction_label} streak analysis complete.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze positive or negative monthly streaks for ^GSPC.")
+    parser = argparse.ArgumentParser(description="Analyze positive or negative streaks for ^GSPC.")
     parser.add_argument(
         "-d", "--direction",
         choices=["pos", "neg"],
@@ -139,7 +146,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-b", "--bold",
         default=2,
-        help="Display in bold the element of interest"
+        help="Display in bold the element of interest in the sequence"
     )
+    parser.add_argument("--frequency", type=str, default="monthly", choices=["daily", "weekly", "monthly", "yearly"])
     args = parser.parse_args()
-    main(args.direction, args.method, args.older_dataset, int(args.bold))
+    main(args.direction, args.method, args.older_dataset, int(args.bold), args.frequency)

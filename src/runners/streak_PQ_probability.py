@@ -19,7 +19,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from constants import FYAHOO__OUTPUTFILENAME_MONTH
+from constants import FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_WEEK
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -29,23 +29,29 @@ import argparse
 from utils import transform_path
 
 
-def main(P, Q, older_dataset, bold):
+def main(P, Q, older_dataset, frequency, detailed, quiet):
     # ----------------------------
     # Configuration
     # ----------------------------
     TICKER = "^GSPC"
-
     # ----------------------------
     # Fetch Data
     # ----------------------------
-    one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
+    if frequency == 'monthly':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
+    elif frequency == 'daily':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_DAY if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_DAY, older_dataset)
+    elif frequency == 'weekly':
+        one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
+    else:
+        assert False, f"{frequency=}"
     # print(f"Loading {one_dataset_filename}")
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
-    data = data_cache['^GSPC']
-
-    print(f"📅 Data range: {data.index[0].strftime('%Y-%m')} → {data.index[-1].strftime('%Y-%m')} "
-          f"({len(data)} months)\n")
+    data = data_cache[TICKER]
+    if not quiet:
+        print(f"📅 Data range: {data.index[0].strftime('%Y-%m')} → {data.index[-1].strftime('%Y-%m')} "
+              f"({len(data)} , {one_dataset_filename})\n")
 
     # Column references (multi-index)
     close_col = ('Close', TICKER)
@@ -66,18 +72,13 @@ def main(P, Q, older_dataset, bold):
     df[groupid_col] = (df[positive_col] != df[positive_col].shift(1)).cumsum()
 
     # ----------------------------
-    # Identify Long Positive Streaks (≥ NN months)
-    # ----------------------------
-    positive_mask = df[positive_col]
-    all_positive_groups = df.loc[positive_mask].groupby(groupid_col).size()
-    num_all_positive_streaks = len(all_positive_groups)
-
-    # ----------------------------
     # Pattern Analysis: P↑ → Q↓ → Next Month?
     # ----------------------------
-    print("\n" + "=" * 60)
-    print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction --- USING CLOSE VALUES BETWEEN MONTH TO IDENTIFY POSITIVE AND NEGATIVE SEQUENCE")
-
+    if not quiet:
+        print("\n" + "=" * 60)
+        print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction (using Close-to-Close values)")
+    results_to_return = {"price_based":{'total_patterns': 0, 'positive_outcomes': 0, 'prob': 0},
+                         "intra_step":{'total_patterns': 0, 'positive_outcomes': 0, 'prob': 0}}
     close_values_month = data[close_col].dropna()
     min_required = P + Q + 1
     if len(close_values_month) < min_required:
@@ -119,26 +120,29 @@ def main(P, Q, older_dataset, bold):
             total_patterns = len(results_df)
             positive_outcomes = (results_df["next_return_%"] > 0).sum()
             prob = positive_outcomes / total_patterns
-
-            print(f"Total patterns found: {total_patterns}")
-            print(f"Next positive:        {positive_outcomes}")
-            print(f"Probability:          {prob:.2%}\n")
-
-            print("📋 Detailed Pattern Outcomes:")
-            print(tabulate(
-                results_df[["pattern_end", "next_date", "end_close", "next_close", "next_return_%", "direction"]],
-                headers=["Pattern End", "Next Date", "End Close", "Next Close", "Next Return (%)", "Dir"],
-                tablefmt="simple",
-                floatfmt=(".2f", ".2f", ".2f", ".2f", ".2f", "")
-            ))
+            results_to_return['price_based'].update({'total_patterns': total_patterns, 'positive_outcomes': positive_outcomes, 'prob': prob})
+            if not quiet:
+                print(f"Total patterns found: {total_patterns}")
+                print(f"Next positive:        {positive_outcomes}")
+                print(f"Probability:          {prob:.2%}\n")
+            if detailed and not quiet:
+                print("📋 Detailed Pattern Outcomes:")
+                print(tabulate(
+                    results_df[["pattern_end", "next_date", "end_close", "next_close", "next_return_%", "direction"]],
+                    headers=["Pattern End", "Next Date", "End Close", "Next Close", "Next Return (%)", "Dir"],
+                    tablefmt="simple",
+                    floatfmt=(".2f", ".2f", ".2f", ".2f", ".2f", "")
+                ))
         else:
-            print("No occurrences of this pattern in the data.")
+            if not quiet:
+                print("No occurrences of this pattern in the data.")
 
     # ----------------------------
     # Pattern Analysis: P↑ → Q↓ → Next Month? (Using Open/Close within month)
     # ----------------------------
-    print("\n\n" + "=" * 60)
-    print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction --- USING OPEN/CLOSE VALUES OF A MONTH TO IDENTIFY POSITIVE AND NEGATIVE SEQUENCE")
+    if not quiet:
+        print("\n\n" + "=" * 60)
+        print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction (using Open/Close values)")
 
     open_monthly = data[open_col].dropna()
     close_monthly = data[close_col].dropna()
@@ -186,28 +190,31 @@ def main(P, Q, older_dataset, bold):
             total_patterns = len(results_df)
             positive_outcomes = (results_df["next_return_%"] > 0).sum()
             prob = positive_outcomes / total_patterns
-
-            print(f"Total patterns found: {total_patterns}")
-            print(f"Next positive:        {positive_outcomes}")
-            print(f"Probability:          {prob:.2%}\n")
-
-            print("📋 Detailed Pattern Outcomes:")
-            print(tabulate(
-                results_df[["pattern_end", "next_date", "end_close", "next_close", "next_return_%", "direction"]],
-                headers=["Pattern End", "Next Date", "End Close", "Next Close", "Next Return (%)", "Dir"],
-                tablefmt="simple",
-                floatfmt=(".2f", ".2f", ".2f", ".2f", ".2f", "")
-            ))
+            results_to_return['intra_step'].update({'total_patterns': total_patterns, 'positive_outcomes': positive_outcomes, 'prob': prob})
+            if not quiet:
+                print(f"Total patterns found: {total_patterns}")
+                print(f"Next positive:        {positive_outcomes}")
+                print(f"Probability:          {prob:.2%}\n")
+            if detailed and not quiet:
+                print("📋 Detailed Pattern Outcomes:")
+                print(tabulate(
+                    results_df[["pattern_end", "next_date", "end_close", "next_close", "next_return_%", "direction"]],
+                    headers=["Pattern End", "Next Date", "End Close", "Next Close", "Next Return (%)", "Dir"],
+                    tablefmt="simple",
+                    floatfmt=(".2f", ".2f", ".2f", ".2f", ".2f", "")
+                ))
         else:
-            print("No occurrences of this pattern in the data.")
+            if not quiet:
+                print("No occurrences of this pattern in the data.")
+    return results_to_return
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze S&P 500 monthly streaks and P↑→Q↓ patterns.")
+    parser = argparse.ArgumentParser(description="Analyze S&P 500 streaks of P↑→Q↓ patterns.")
     parser.add_argument('--P', type=int, default=6, help='Number of consecutive positive months (default: 6)')
     parser.add_argument('--Q', type=int, default=1, help='Number of consecutive negative months after P positives (default: 1)')
     parser.add_argument("--older_dataset", type=str, default="")
-    parser.add_argument("--bold",default=2,help="Display in bold the element of interest")
+    parser.add_argument("--frequency", type=str, default="monthly", choices=["daily", "weekly", "monthly"])
+    parser.add_argument("--detailed", type=bool, default=False)
+    parser.add_argument("--quiet", type=bool, default=False)
     args = parser.parse_args()
-
-    main(P=args.P, Q=args.Q, older_dataset=args.older_dataset, bold=int(args.bold))

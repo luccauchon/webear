@@ -12,7 +12,7 @@ except:
     # Add the current directory to sys.path
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from constants import FYAHOO__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_MONTH, NB_WORKERS
+from constants import NB_WORKERS
 import pickle
 import time
 import psutil
@@ -122,13 +122,14 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
     _nb_workers = NB_WORKERS
     length_prediction_in_training = length_step_back
     algorithms_to_run = [e for e, el in enumerate(ALGO_REGISTRY) if e in selected_algo]
-    if use_this_df is None:
+    if use_this_df is None or 0 == len(use_this_df):
         assert one_dataset_filename is not None
         with open(one_dataset_filename, 'rb') as f:
             data_cache = pickle.load(f)
         prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
     else:
         data_cache = None
+        one_dataset_filename = None
         prices_2 = use_this_df.copy()
     # Precompute energy thresholds to avoid repeated np.arange calls
     energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
@@ -256,6 +257,11 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
                             'diag': diag,
                             'the_algo': the_algo.__name__,
                         })
+    # Wipe not good result
+    for the_algo_index in algorithms_to_run:
+        the_algo = ALGO_REGISTRY[the_algo_index]
+        if best_result[f'{the_algo.__name__}']['error'] > 9999998.:
+            del best_result[f'{the_algo.__name__}']
     # Final report
     for the_algo_index in algorithms_to_run:
         the_algo = ALGO_REGISTRY[the_algo_index]
@@ -266,7 +272,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
             print(f"  Energy threshold: {best_result[f'{the_algo.__name__}']['energy_threshold']:.2f}")
             print(f"  True: {best_result[f'{the_algo.__name__}']['y_true']}")
             print(f"  Pred: {best_result[f'{the_algo.__name__}']['y_pred']}")
-
+        l_train  = best_result[f'{the_algo.__name__}']['length_train_data']
         prices   = best_result[f'{the_algo.__name__}']['x_series']
         n_pred   = best_result[f'{the_algo.__name__}']['n_predict']
         forecast = best_result[f'{the_algo.__name__}']['forecast']
@@ -295,7 +301,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
 
             plt.axvline(len(prices) - 1, color='gray', linestyle='--')
             if length_step_back > 0:
-                plt.title(f'S&P 500 Training: {the_algo.__name__} ({diag["n_harm"]} harmonics)  mean error:{error:0.2f}')
+                plt.title(f'S&P 500 Training: {the_algo.__name__} ({diag["n_harm"]} harmonics, {l_train} training points)  mean error:{error:0.2f}')
             else:
                 plt.title(f'S&P 500 Training: {the_algo.__name__} ({diag["n_harm"]} harmonics)  IN THE FUTURE')
             plt.xlabel(f'Time Step ({one_dataset_id})')
@@ -319,9 +325,9 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         the_algo = ALGO_REGISTRY[the_algo_index]
         energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
         length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
-        with open(one_dataset_filename, 'rb') as f:
-            data_cache = pickle.load(f)
-        prices = data_cache['^GSPC'][('Close', '^GSPC')].values.astype(np.float64)
+        # with open(one_dataset_filename, 'rb') as f:
+        #     data_cache = pickle.load(f)
+        prices = prices_2.copy()
         assert len(prices) > length_train_data + length_step_back + length_prediction_for_forecast
         x_series = prices[len(prices) - length_train_data - length_step_back:]
         assert len(x_series) == length_train_data
@@ -366,15 +372,3 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         plt.show()  # This will display all open figures simultaneously (backend-dependent)
     all_results_collected = dict(sorted(all_results_collected.items()))
     return best_result, data_cache.copy() if data_cache is not None else None, all_results_collected
-
-
-if __name__ == "__main__":
-    freeze_support()
-    older_dataset = "2025.10.31"
-    one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
-    one_dataset_id = 'week'
-    for length_step_back in [1, 2, 3, 4, 5, 6]:
-        best_result, _, _ = entry(save_graphics=False, length_step_back=length_step_back, length_prediction_for_forecast=4,
-                                  one_dataset_filename=one_dataset_filename,one_dataset_id=one_dataset_id,
-                                  show_plots=False, print_result=True, fast_result=False, multi_threaded=True, selected_algo=[0, 1])
-        #print(best_result)

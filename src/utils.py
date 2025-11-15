@@ -646,7 +646,7 @@ def transform_path(line, date_str):
 
     Args:
         line (str): Original line like 'FYAHOO__OUTPUTFILENAME_WEEK = r"D:\Finance\...\snapshot_week.pkl"'
-        date_str (str): Date string in format YYYY.MM.DD (e.g., "2025.10.31")
+        date_str (str or None): Date string in format YYYY.MM.DD (e.g., "2025.10.31")
 
     Returns:
         str: Transformed line with date folder inserted

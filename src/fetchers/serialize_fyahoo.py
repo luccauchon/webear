@@ -19,7 +19,7 @@ import yfinance as yf
 import time
 from datetime import datetime, timedelta
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME, MY_TICKERS, TOP10_SP500_TICKERS, FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK
+from constants import FYAHOO__OUTPUTFILENAME_YEAR, FYAHOO__OUTPUTFILENAME, MY_TICKERS, TOP10_SP500_TICKERS, FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK
 
 
 def entry():
@@ -27,6 +27,9 @@ def entry():
     start_date = (datetime.today() - timedelta(days=365)).strftime('%Y-%m-%d')
     tickers = list(set(MY_TICKERS))
     data_cache ={}
+    ###########################################################################
+    # 1 hour
+    ###########################################################################
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1h , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1h', auto_adjust=False, ignore_tz=True, progress=False)
@@ -40,8 +43,11 @@ def entry():
     with open(FYAHOO__OUTPUTFILENAME, 'rb') as f:
         loaded_data = pickle.load(f)
 
+    ###########################################################################
+    # 1 day
+    ###########################################################################
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = (datetime.today() - timedelta(days=10*365)).strftime('%Y-%m-%d')
+    start_date = "1975-01-01"  # (datetime.today() - timedelta(days=10*365)).strftime('%Y-%m-%d')
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1d , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
@@ -52,30 +58,80 @@ def entry():
         pickle.dump(data_cache, f)
     print(f"Data saved to {FYAHOO__OUTPUTFILENAME_DAY}")
 
-    end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = "2005-01-01"  # (datetime.today() - timedelta(days=20 * 365)).strftime('%Y-%m-%d')
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1wk , ", flush=True)
+    ###########################################################################
+    # 1 week
+    ###########################################################################
+    # end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+    # start_date = "1980-01-01"  # (datetime.today() - timedelta(days=20 * 365)).strftime('%Y-%m-%d')
+    # print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1wk , ", flush=True)
+    # for ticker in tqdm(tickers):
+    #     data = yf.download(ticker, start=start_date, end=end_date, interval='1wk', auto_adjust=False, ignore_tz=True, progress=False)
+    #     data_cache[ticker] = data
+    #     # time.sleep(0.1)
+    with open(FYAHOO__OUTPUTFILENAME_DAY, 'rb') as f:
+        daily_data_cache = pickle.load(f)
+    data_cache = {}
     for ticker in tqdm(tickers):
-        data = yf.download(ticker, start=start_date, end=end_date, interval='1wk', auto_adjust=False, ignore_tz=True, progress=False)
-        data_cache[ticker] = data
-        # time.sleep(0.1)
+        data_cache[ticker] = daily_data_cache[ticker].resample('W-FRI').agg({
+            ('Open', ticker): 'first',
+            ('High', ticker): 'max',
+            ('Low', ticker): 'min',
+            ('Close', ticker): 'last',
+            ('Volume', ticker): 'sum'
+        }).copy()
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME_WEEK, 'wb') as f:
         pickle.dump(data_cache, f)
-    print(f"Data saved to {FYAHOO__OUTPUTFILENAME_WEEK}")
+    print(f"Weekly data saved to {FYAHOO__OUTPUTFILENAME_WEEK}")
 
-    end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = "1980-01-01"  # (datetime.today() - timedelta(days=40 * 365)).strftime('%Y-%m-%d')
-    print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1mo , ", flush=True)
+    ###########################################################################
+    # 1 month
+    ###########################################################################
+    # end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+    # start_date = "1980-01-01"  # (datetime.today() - timedelta(days=40 * 365)).strftime('%Y-%m-%d')
+    # print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1mo , ", flush=True)
+    # for ticker in tqdm(tickers):
+    #     data = yf.download(ticker, start=start_date, end=end_date, interval='1mo', auto_adjust=False, ignore_tz=True, progress=False)
+    #     data_cache[ticker] = data
+    #     # time.sleep(0.1)
+    with open(FYAHOO__OUTPUTFILENAME_DAY, 'rb') as f:
+        daily_data_cache = pickle.load(f)
+    data_cache = {}
     for ticker in tqdm(tickers):
-        data = yf.download(ticker, start=start_date, end=end_date, interval='1mo', auto_adjust=False, ignore_tz=True, progress=False)
-        data_cache[ticker] = data
-        # time.sleep(0.1)
+        data_cache[ticker] = daily_data_cache[ticker].resample('ME').agg({
+            ('Open', ticker): 'first',
+            ('High', ticker): 'max',
+            ('Low', ticker): 'min',
+            ('Close', ticker): 'last',
+            ('Volume', ticker): 'sum'
+        }).copy()
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME_MONTH, 'wb') as f:
         pickle.dump(data_cache, f)
-    print(f"Data saved to {FYAHOO__OUTPUTFILENAME_MONTH}")
+    print(f"Monthly data saved to {FYAHOO__OUTPUTFILENAME_MONTH}")
 
+    ###########################################################################
+    # 1 year
+    ###########################################################################
+    with open(FYAHOO__OUTPUTFILENAME_DAY, 'rb') as f:
+        daily_data_cache = pickle.load(f)
+    data_cache = {}
+    for ticker in tqdm(tickers):
+        data_cache[ticker] = daily_data_cache[ticker].resample('YE').agg({
+            ('Open', ticker): 'first',
+            ('High', ticker): 'max',
+            ('Low', ticker): 'min',
+            ('Close', ticker): 'last',
+            ('Volume', ticker): 'sum'
+        }).copy()
+    # Serialize
+    with open(FYAHOO__OUTPUTFILENAME_YEAR, 'wb') as f:
+        pickle.dump(data_cache, f)
+    print(f"Yearly data saved to {FYAHOO__OUTPUTFILENAME_YEAR}")
+
+    ###########################################################################
+    # Economic
+    ###########################################################################
     print(f"{Fore.CYAN}{Style.BRIGHT}🚀 Starting Download Tracker...{Style.RESET_ALL}\n", flush=True)
     result = {}
     for ticker in tqdm(TOP10_SP500_TICKERS):
