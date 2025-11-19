@@ -32,6 +32,7 @@ def main(direction: str, method: str, older_dataset: str, bold: int, frequency: 
         one_dataset_filename = FYAHOO__OUTPUTFILENAME_YEAR if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_YEAR, older_dataset)
     else:
         assert False, f"{frequency=}"
+    print(f"Using {one_dataset_filename}")
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
 

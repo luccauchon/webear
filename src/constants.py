@@ -2,6 +2,7 @@ FYAHOO__OUTPUTFILENAME       = r"D:\Finance\data\yfinance\snapshot.pkl"
 FYAHOO__OUTPUTFILENAME_DAY   = r"D:\Finance\data\yfinance\snapshot_day.pkl"
 FYAHOO__OUTPUTFILENAME_WEEK  = r"D:\Finance\data\yfinance\snapshot_week.pkl"
 FYAHOO__OUTPUTFILENAME_MONTH = r"D:\Finance\data\yfinance\snapshot_month.pkl"
+FYAHOO__OUTPUTFILENAME_QUARTER  = r"D:\Finance\data\yfinance\snapshot_quarter.pkl"
 FYAHOO__OUTPUTFILENAME_YEAR  = r"D:\Finance\data\yfinance\snapshot_year.pkl"
 FYAHOO_TICKER__OUTPUTFILENAME = r"D:\Finance\data\yfinance\snapshot_ticker.pkl"
 NB_WORKERS = 12

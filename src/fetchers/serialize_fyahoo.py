@@ -19,7 +19,8 @@ import yfinance as yf
 import time
 from datetime import datetime, timedelta
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME_YEAR, FYAHOO__OUTPUTFILENAME, MY_TICKERS, TOP10_SP500_TICKERS, FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK
+from constants import FYAHOO__OUTPUTFILENAME_YEAR, FYAHOO__OUTPUTFILENAME, MY_TICKERS, TOP10_SP500_TICKERS
+from constants import FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER
 
 
 def entry():
@@ -109,6 +110,25 @@ def entry():
     with open(FYAHOO__OUTPUTFILENAME_MONTH, 'wb') as f:
         pickle.dump(data_cache, f)
     print(f"Monthly data saved to {FYAHOO__OUTPUTFILENAME_MONTH}")
+
+    ###########################################################################
+    # 1 quarter
+    ###########################################################################
+    with open(FYAHOO__OUTPUTFILENAME_DAY, 'rb') as f:
+        daily_data_cache = pickle.load(f)
+    data_cache = {}
+    for ticker in tqdm(tickers):
+        data_cache[ticker] = daily_data_cache[ticker].resample('QE').agg({
+            ('Open', ticker): 'first',
+            ('High', ticker): 'max',
+            ('Low', ticker): 'min',
+            ('Close', ticker): 'last',
+            ('Volume', ticker): 'sum'
+        }).copy()
+    # Serialize
+    with open(FYAHOO__OUTPUTFILENAME_QUARTER, 'wb') as f:
+        pickle.dump(data_cache, f)
+    print(f"Monthly data saved to {FYAHOO__OUTPUTFILENAME_QUARTER}")
 
     ###########################################################################
     # 1 year

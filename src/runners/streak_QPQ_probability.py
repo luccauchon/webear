@@ -103,7 +103,7 @@ def main(Q1, P, Q2, older_dataset, frequency, detailed):
         one_dataset_filename = FYAHOO__OUTPUTFILENAME_DAY if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_DAY, older_dataset)
     else:
         assert False
-
+    print(f"Using {one_dataset_filename}")
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     data = data_cache[TICKER]

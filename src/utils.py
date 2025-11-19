@@ -621,11 +621,27 @@ def calculate_macd(df, slow=26, fast=12, signal=9, col_name='Close_SPY'):
 
 
 def format_execution_time(execution_time):
+    """Format a duration in seconds into a zero-padded HHhMMmSSs string.
+
+    Always includes hours, minutes, and seconds, padded with leading zeros
+    to ensure two digits for each unit.
+
+    Examples:
+        format_execution_time(3663)  -> '01h01m03s'
+        format_execution_time(61)    -> '00h01m01s'
+        format_execution_time(5)     -> '00h00m05s'
+        format_execution_time(0)     -> '00h00m00s'
+
+    Args:
+        execution_time (float or int): A non-negative duration in seconds.
+
+    Returns:
+        str: A zero-padded string in the format 'HHhMMmSSs'.
+    """
     hours = int(execution_time // 3600)
     minutes = int((execution_time % 3600) // 60)
     seconds = int(execution_time % 60)
     return f"{hours:02d}h{minutes:02d}m{seconds:02d}s"
-
 
 def get_weekdays(today=None, number_of_days=3):
     if today is None:
@@ -653,3 +669,38 @@ def transform_path(line, date_str):
     """
     # Pattern to match the assignment and capture the path parts
     return os.path.join(Path(line).parent, date_str, Path(line).name)
+
+
+def format_duration(seconds):
+    """Convert a duration in seconds to a compact human-readable string.
+
+    Formats the input duration as a concatenation of hours, minutes, and seconds,
+    omitting any units with zero values, except when the total duration is less
+    than a minute—in that case, seconds are always shown (including '0s' for zero).
+
+    Examples:
+        format_duration(3663)  -> '1h1m3s'
+        format_duration(61)    -> '1m1s'
+        format_duration(5)     -> '5s'
+        format_duration(0)     -> '0s'
+
+    Args:
+        seconds (float or int): A non-negative duration in seconds. Will be
+            converted to an integer (truncated toward zero).
+
+    Returns:
+        str: A compact time string using 'h', 'm', and 's' suffixes.
+    """
+    seconds = int(seconds)  # Ensure it's an integer
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:  # Always show seconds if duration is <1 min, or if it's 0s
+        parts.append(f"{secs}s")
+
+    return ''.join(parts)

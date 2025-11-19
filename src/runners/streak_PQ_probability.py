@@ -45,7 +45,8 @@ def main(P, Q, older_dataset, frequency, detailed, quiet):
         one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
     else:
         assert False, f"{frequency=}"
-    # print(f"Loading {one_dataset_filename}")
+    if not quiet:
+        print(f"Using {one_dataset_filename}")
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     data = data_cache[TICKER]
@@ -218,3 +219,5 @@ if __name__ == "__main__":
     parser.add_argument("--detailed", type=bool, default=False)
     parser.add_argument("--quiet", type=bool, default=False)
     args = parser.parse_args()
+
+    main(P=args.P, Q=args.Q, older_dataset=args.older_dataset, frequency=args.frequency, detailed=args.detailed, quiet=args.quiet)
