@@ -226,15 +226,8 @@ def main():
     close_col = ('Close', ticker)
     n_forecast_length = 4
     n_models_to_keep = 60
-    for step_back in tqdm(range(0, 2000)):
-        use_cases = []
-        with open(df_filename, 'rb') as f:
-            data_cache = pickle.load(f)
-        data = data_cache[ticker]
-        this_year = data[:-(step_back+1)].index[-1].year
-        print(this_year)
-    sys.exit(0)
-    for step_back in tqdm(range(0, 2000)):
+    performance_tracking = {'put':[], 'call': []}
+    for step_back in tqdm(range(0, 1)):#2605)):
         use_cases = []
         with open(df_filename, 'rb') as f:
             data_cache = pickle.load(f)
@@ -326,26 +319,43 @@ def main():
             lower_line = last_train_price * (1. - threshold_ep)
             plt.axhline(y=upper_line, color='orange', linestyle='--', alpha=0.6, linewidth=1, label=f"+/-{2.5}%")
             plt.axhline(y=lower_line, color='orange', linestyle='--', alpha=0.6, linewidth=1)
-            th1, th2, etry_price = upper_line, lower_line, last_train_price
-            # mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)
+
+            th1, th2, entry_price = upper_line, lower_line, last_train_price
+            assert th1 > entry_price > th2 and th1 > th2
+            sell__call_credit_spread, sell__put_credit_spread, nope__= False, False, False
+            mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)
             # Rules to Sell Call Credit Spread
-            # sell__call_credit_spread = False
             # starts above th2 + goes below th2 + ends above th2 + neg slope
-            # r1 = mean_forecast[0] > th2 and 0 != np.count_nonzero(mean_forecast < th2) and mslope_pred < 0
+            r1 = mean_forecast[0] > th2 and 0 != np.count_nonzero(mean_forecast < th2) and mslope_pred < 0
             # starts above th2 + ends below th2 + neg slope
-            # r2 = mean_forecast[0] > th2 and mean_forecast[-1] < th2 and mslope_pred < 0:
+            r2 = mean_forecast[0] > th2 > mean_forecast[-1] and mslope_pred < 0
             # starts below th2, stays below th2, with neg slope
-            # r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2)
-            #
+            r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2)
+            if r1 or r2 or r3:
+                sell__call_credit_spread = True
+            # Rules to Sell Put Credit Spread
+            # stays between th1 and th2, with positive slope
+            s1 = mslope_pred > 0 and len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
+            # starts above th2, ends above th1, with positive slope
+            s2 = mslope_pred > 0 and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
+            # starts above th1, ends above th1, with positive slope
+            s3 = mslope_pred > 0 and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
+            if s1 or s2 or s3:
+                sell__put_credit_spread = True
             # Not sure
             # stays between th1 and th2, with negative slope
-            # len(mean_forecast) == np.count_nonzero(th1 < mean_forecast < th2) and mslope_pred < 0
-            #
-            #
-            # Rules to Sell Put Credit Spread
-            # if mslope_pred > 0 and len(mean_forecast) == np.count_nonzero(th1 < mean_forecast < th2)
-            # if mslope_pred > 0 and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
-            # if mslope_pred > 0 and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
+            z1 = mslope_pred < 0 and len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
+            if z1 or (not sell__call_credit_spread and not sell__put_credit_spread):
+                nope__ = True
+            assert sell__call_credit_spread or sell__put_credit_spread or nope__
+            if sell__call_credit_spread:
+                assert gt_prices.shape == mean_forecast.shape
+                number_of_times_real_price_goes_above_call_strike_price = np.count_nonzero((gt_prices - th1) > 0)
+                performance_tracking['call'].append((step_back, number_of_times_real_price_goes_above_call_strike_price))
+            if sell__put_credit_spread:
+                assert gt_prices.shape == mean_forecast.shape
+                number_of_times_real_price_goes_below_put_strike_price = np.count_nonzero((th2 - gt_prices) > 0)
+                performance_tracking['put'].append((step_back, number_of_times_real_price_goes_below_put_strike_price))
 
             mean_rmse = np.sqrt(np.mean((mean_forecast - gt_prices) ** 2))
             true_diff = np.diff(gt_prices)
