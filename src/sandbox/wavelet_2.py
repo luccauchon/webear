@@ -604,11 +604,11 @@ def main(args):
                     (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
                     (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
         else: # Just have a point.
-            assert 1 == len(mean_forecast) and 1 == len(gt_prices)
+            assert 1 == len(mean_forecast) and 1 == len(gt_prices) and th1 > th2
             # Prediction is between th1 and th2 --> Iron Condor
             if th2 < mean_forecast[0] < th1:
                 # For an iron condor to work, closing price shall be between th1 and th2
-                if th2 < gt_prices[0] < th2:
+                if th2 < gt_prices[0] < th1:
                     performance_tracking_1_point_prediction['iron_condor_0DTE']['success'].append(step_back)
                 else:
                     performance_tracking_1_point_prediction['iron_condor_0DTE']['failure'].append(step_back)
@@ -767,9 +767,27 @@ def main(args):
         print("\n" + "=" * 60)
         print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1f}%".center(60))
         print("=" * 60)
-        return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
     else:
-        print(performance_tracking_1_point_prediction)
+        # Nicely formatted output for 1-point prediction performance
+        print("\n" + "=" * 70)
+        print("1-POINT PREDICTION PERFORMANCE SUMMARY".center(70))
+        print("=" * 70)
+        total_number_of_winning_trade = 0
+        total_number_of_loosing_trade = 0
+        for strategy, results in performance_tracking_1_point_prediction.items():
+            success = results['success']
+            failure = results['failure']
+            total = len(success) + len(failure)
+            success_rate = (len(success) / total * 100) if total > 0 else 0.0
+            total_number_of_winning_trade += len(success)
+            total_number_of_loosing_trade += len(failure)
+            print(f"\n{strategy.replace('_', ' ').title()}:")
+            print(f"  ✅ Success: {len(success):3d} {success}")
+            print(f"  ❌ Failure: {len(failure):3d} {failure}")
+            print(f"  🎯 Success Rate: {success_rate:5.1f}%  (out of {total} trades)")
+        print("\n" + "=" * 70)
+        total_number_of_possible_trade = number_of_step_back
+    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
 
 
 if __name__ == "__main__":
