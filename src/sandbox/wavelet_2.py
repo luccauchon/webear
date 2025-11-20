@@ -363,6 +363,7 @@ def main(args):
     number_of_step_back = int(args.number_of_step_back)
     sequence_for_train_length = range(8, 32)
     sequence_for_level = range(1, 8)
+    print(f"TODO quantify method to determine if it is a succes + IronCondor. Last price lies between range")
     for step_back in tqdm(range(0, number_of_step_back)):
         use_cases = []
         with open(df_filename, 'rb') as f:
@@ -544,7 +545,7 @@ def main(args):
             horizontalalignment='right'
         )
         plt.text(
-            x=n_train_length + n_forecast_length - 6.5,
+            x=n_train_length + n_forecast_length - 9.5,
             y=lower_line,
             s=f"{lower_line:.2f}",
             fontsize=20,
@@ -738,7 +739,7 @@ def main(args):
     total_number_of_winning_trade  = number_of_step_back - len(failed_trades)
     total_number_of_loosing_trade  = len(failed_trades)
     print("\n" + "=" * 60)
-    print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1}%".center(60))
+    print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1f}%".center(60))
     print("=" * 60)
     return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
 
