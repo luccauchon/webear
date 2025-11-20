@@ -4,7 +4,7 @@ import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME_WEEK
+from constants import FYAHOO__OUTPUTFILENAME_DAY
 import pickle
 import pywt
 from constants import NB_WORKERS
@@ -220,15 +220,15 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
 
 def main():
     ticker = "^GSPC"
-    df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    _nb_workers = NB_WORKERS
+    df_filename = FYAHOO__OUTPUTFILENAME_DAY
+    _nb_workers = NB_WORKERS//6
     plot=False
     save_to_disk = True
     close_col = ('Close', ticker)
-    n_forecast_length = 4
+    n_forecast_length = 2
     n_models_to_keep = 60
     performance_tracking = {'put':[], 'call': [], '?': []}
-    for step_back in tqdm(range(0, 2605)):
+    for step_back in tqdm(range(0, 99)):
         use_cases = []
         with open(df_filename, 'rb') as f:
             data_cache = pickle.load(f)
@@ -384,7 +384,7 @@ def main():
         if plot:
             plt.show()
         if save_to_disk:
-            output_dir = "images_2"
+            output_dir = "images_3"
             os.makedirs(output_dir, exist_ok=True)
             plt.savefig(os.path.join(output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
         try:

@@ -1,10 +1,14 @@
+import numpy as np
+import pywt
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler
 import os
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
 import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME_WEEK
+from constants import FYAHOO__OUTPUTFILENAME_DAY
 import pickle
 import pywt
 from constants import NB_WORKERS
@@ -19,90 +23,105 @@ warnings.filterwarnings("ignore", message="Level value.*too high.*")
 # Or suppress only specific RuntimeWarnings from NumPy
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
-def wavelet_forecast(
-    prices,
-    forecast_steps: int = 5,
-    wavelet: str = 'db4',
-    level: int = 3
-) -> np.ndarray:
+
+def forecast_coeff_series(coeff, forecast_len, lag=10):
+    """
+    Forecast a 1D coefficient series using recursive linear regression.
+    """
+    coeff = np.array(coeff, dtype=np.float64)
+    n = len(coeff)
+
+    lag = min(lag, max(3, n // 3))  # adaptive lag
+
+    if n <= lag:
+        # too short → extend with last value
+        return np.concatenate([coeff, np.full(forecast_len, coeff[-1])])
+
+    # Build lagged features
+    X = np.array([coeff[j - lag:j] for j in range(lag, n)])
+    y = coeff[lag:]
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    # Recursive prediction
+    forecast = []
+    current = coeff[-lag:].copy()
+    for _ in range(forecast_len):
+        next_val = model.predict(current.reshape(1, -1))[0]
+        forecast.append(next_val)
+        current = np.append(current[1:], next_val)
+
+    return np.concatenate([coeff, forecast])
+
+
+def wavelet_multi_forecast(
+        prices,
+        forecast_steps=5,
+        wavelet='db4',
+        level=3,
+        forecast_detail_levels=(3, 2)  # which detail levels to forecast: cD3, cD2
+):
+    prices = np.asarray(prices)
     n = len(prices)
 
     # Normalize
     scaler = MinMaxScaler()
-    scaled_prices = scaler.fit_transform(prices.reshape(-1, 1)).flatten()
+    scaled = scaler.fit_transform(prices.reshape(-1, 1)).flatten()
 
     # Wavelet decomposition
-    coeffs = pywt.wavedec(scaled_prices, wavelet, level=level)
+    coeffs = pywt.wavedec(scaled, wavelet, level=level)
+    # coeffs = [cA, cD3, cD2, cD1]
 
-    # Determine how many points to add to approximation coefficients
-    approx_extension = int(np.ceil(forecast_steps / (2 ** level)))
+    # Determine extension for each level
+    # Lower frequency → fewer points needed
+    ext_sizes = []
+    for i in range(level + 1):
+        # i=0 => cA
+        ext_sizes.append(int(np.ceil(forecast_steps / (2 ** i))))
 
     forecasted_coeffs = []
-    for i, coeff in enumerate(coeffs):
-        coeff = np.array(coeff, dtype=np.float64)
-        if i == 0:  # Approximation coefficients (trend)
-            length = len(coeff)
-            lag = min(10, max(1, length // 3))
 
-            if length <= lag:
-                # Not enough data: extend with last value
-                extended = np.full(approx_extension, coeff[-1])
-                new_coeff = np.concatenate([coeff, extended])
-            else:
-                # Build lagged features
-                X = np.array([coeff[j - lag:j] for j in range(lag, length)])
-                y = coeff[lag:]
-                model = LinearRegression()
-                model.fit(X, y)
+    for i, c in enumerate(coeffs):
+        if i == 0:
+            # Approximation (always forecast)
+            new_c = forecast_coeff_series(c, ext_sizes[i])
+            forecasted_coeffs.append(new_c)
 
-                # Recursive forecasting
-                current_input = coeff[-lag:].copy()
-                forecast = []
-                for _ in range(approx_extension):
-                    next_val = model.predict(current_input.reshape(1, -1))[0]
-                    forecast.append(next_val)
-                    current_input = np.append(current_input[1:], next_val)
-                new_coeff = np.concatenate([coeff, forecast])
-            forecasted_coeffs.append(new_coeff)
+        elif (level - i + 1) in forecast_detail_levels:
+            # Forecast selected detail levels
+            new_c = forecast_coeff_series(c, ext_sizes[i])
+            forecasted_coeffs.append(new_c)
+
         else:
-            # Detail coefficients: DO NOT extend (keep original length)
-            forecasted_coeffs.append(coeff)
+            # Skip forecasting noisy high-frequency cD1 etc.
+            forecasted_coeffs.append(c)
 
-    # After building forecasted_coeffs with extended cA and original cD's:
-    # We need to make sure waverec won't fail due to length mismatch.
+    # Align coeff lengths using a dummy signal
+    dummy = np.zeros(n + forecast_steps)
+    dummy_coeffs = pywt.wavedec(dummy, wavelet, level=level)
 
-    # Create a dummy signal of desired length to get correct coeff lengths
-    dummy_signal = np.zeros(n + forecast_steps)
-    dummy_coeffs = pywt.wavedec(dummy_signal, wavelet, level=level)
-
-    # Pad or truncate each coefficient to match dummy
-    final_coeffs = []
-    for orig_c, dummy_c in zip(forecasted_coeffs, dummy_coeffs):
-        if len(orig_c) < len(dummy_c):
-            padded = np.pad(orig_c, (0, len(dummy_c) - len(orig_c)), mode='edge')
+    aligned = []
+    for fc, dc in zip(forecasted_coeffs, dummy_coeffs):
+        if len(fc) < len(dc):
+            fc = np.pad(fc, (0, len(dc) - len(fc)), mode='edge')
         else:
-            padded = orig_c[:len(dummy_c)]
-        final_coeffs.append(padded)
+            fc = fc[:len(dc)]
+        aligned.append(fc)
 
-    # Now reconstruct
-    forecasted_signal = pywt.waverec(final_coeffs, wavelet)
+    # Reconstruct forecasted series
+    forecasted = pywt.waverec(aligned, wavelet)
 
-    # Truncate or pad to exact desired length
-    expected_length = n + forecast_steps
-    if len(forecasted_signal) < expected_length:
-        forecasted_signal = np.pad(
-            forecasted_signal,
-            (0, expected_length - len(forecasted_signal)),
-            mode='edge'
-        )
-    forecasted_signal = forecasted_signal[:expected_length]
+    expected_len = n + forecast_steps
+    if len(forecasted) < expected_len:
+        forecasted = np.pad(forecasted, (0, expected_len - len(forecasted)), mode='edge')
+
+    forecasted = forecasted[:expected_len]
 
     # Denormalize
-    forecast_original_scale = scaler.inverse_transform(
-        forecasted_signal.reshape(-1, 1)
-    ).flatten()
+    forecasted = scaler.inverse_transform(forecasted.reshape(-1, 1)).flatten()
 
-    return forecast_original_scale
+    return forecasted
 
 
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker, data_filename):
@@ -149,7 +168,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
             train_prices = train_prices.values.astype(np.float64).copy()
             gt_prices    = gt_prices.values.astype(np.float64).copy()
             try:
-                forecast_values = wavelet_forecast(
+                forecast_values = wavelet_multi_forecast(
                     prices=train_prices,
                     forecast_steps=n_forecast_length,
                     wavelet=wavlet_type,
@@ -220,15 +239,15 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
 
 def main():
     ticker = "^GSPC"
-    df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    _nb_workers = NB_WORKERS
+    df_filename = FYAHOO__OUTPUTFILENAME_DAY
+    _nb_workers = NB_WORKERS//6
     plot=False
     save_to_disk = True
     close_col = ('Close', ticker)
-    n_forecast_length = 4
+    n_forecast_length = 2
     n_models_to_keep = 60
     performance_tracking = {'put':[], 'call': [], '?': []}
-    for step_back in tqdm(range(0, 2605)):
+    for step_back in tqdm(range(0, 99)):
         use_cases = []
         with open(df_filename, 'rb') as f:
             data_cache = pickle.load(f)
@@ -384,7 +403,7 @@ def main():
         if plot:
             plt.show()
         if save_to_disk:
-            output_dir = "images_2"
+            output_dir = "images_gpt"
             os.makedirs(output_dir, exist_ok=True)
             plt.savefig(os.path.join(output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
         try:
