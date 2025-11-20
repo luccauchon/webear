@@ -354,7 +354,7 @@ def main(args):
     performance_tracking = {'put':[], 'call': [], '?': []}
     thresholds_ep = (0.025, 0.02)
     output_dir = r"../../stubs/wavelet_2/"
-    number_of_step_back = 1#2605
+    number_of_step_back = 2605
     for step_back in tqdm(range(0, number_of_step_back)):
         use_cases = []
         with open(df_filename, 'rb') as f:
