@@ -193,7 +193,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Fourier-based stock forecast.")
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
-    parser.add_argument("--older_dataset", type=str, default="2025.10.31")  # e.g., "2025.10.31" or "None"
+    parser.add_argument("--older_dataset", type=str, default="")
     parser.add_argument("--dataset_id", type=str, default='week')
     parser.add_argument("--length_step_back", type=int, default=4)
     parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
