@@ -1,5 +1,8 @@
 import os
-IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else -1
+try:
+    IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else -1
+except:
+    IS_RUNNING_ON_CASIR = False
 # Determine base finance data directory based on drive availability
 if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
