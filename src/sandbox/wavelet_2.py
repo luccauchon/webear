@@ -343,29 +343,26 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
 
 def main(args):
     ticker = args.ticker
-    df_filename = FYAHOO__OUTPUTFILENAME_WEEK
+    if args.dataset_id == 'day':
+        df_filename = FYAHOO__OUTPUTFILENAME_DAY
+    elif args.dataset_id == 'week':
+        df_filename = FYAHOO__OUTPUTFILENAME_WEEK
     _nb_workers = NB_WORKERS
-    plot=False
+    plot         = False
     save_to_disk = True
     index_of_algo = 0
     close_col = ('Close', ticker)
-    n_forecast_length = 4
-    n_models_to_keep = 60
-    performance_tracking = {'put':[], 'call': [], '?': []}
-    thresholds_ep = (0.025, 0.02)
+    n_forecast_length = int(args.n_forecast_length)
+    n_models_to_keep = int(args.n_models_to_keep)
+    performance_tracking     = {'put':[], 'call': [], '?': []}
+    performance_tracking_xtm = {'put': [], 'call': []}
+    thresholds_ep = eval(args.thresholds_ep)
     output_dir = r"../../stubs/wavelet_2/"
-    number_of_step_back = 2605
-
-    df_filename = FYAHOO__OUTPUTFILENAME_DAY
-    n_forecast_length = 2
-    number_of_step_back = 6000
-
+    os.makedirs(output_dir, exist_ok=True)
+    threshold_for_shape_similarity = 0.6
+    number_of_step_back = int(args.number_of_step_back)
     sequence_for_train_length = range(8, 32)
     sequence_for_level = range(1, 8)
-
-    sequence_for_train_length = range(8, 10)
-    sequence_for_level = range(1, 2)
-    number_of_step_back = 33
     for step_back in tqdm(range(0, number_of_step_back)):
         use_cases = []
         with open(df_filename, 'rb') as f:
@@ -488,7 +485,7 @@ def main(args):
         is_between_th1_and_th2 = len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
         is_slope_neg            = mslope_pred < 0
         is_slope_pos            = mslope_pred > 0
-        is_shape_sim_high       = shape_similarity > 0.5
+        is_shape_sim_high       = shape_similarity > threshold_for_shape_similarity
         #######################################################################
         # Rules to Sell Call Credit Spread
         #######################################################################
@@ -497,7 +494,7 @@ def main(args):
         # starts above th2 + ends below th2 + neg slope
         r2 = mean_forecast[0] > th2 > mean_forecast[-1] and is_slope_neg
         # starts below th2, stays below th2 + neg slope
-        r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2)
+        r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2) and is_slope_neg
         # stays between th1 and th2 + neg slope + high sim
         r4 = is_between_th1_and_th2 and is_slope_neg and is_shape_sim_high
         if r1 or r2 or r3 or r4:
@@ -511,28 +508,43 @@ def main(args):
         s2 = is_slope_pos and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
         # starts above th1, ends above th1, with positive slope
         s3 = is_slope_pos and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
-        if s1 or s2 or s3:
+        # stays between th1 and th2 + pos slope + high sim
+        s4 = is_between_th1_and_th2 and is_slope_pos and is_shape_sim_high
+        if s1 or s2 or s3 or s4:
             sell__put_credit_spread = True
         #######################################################################
         # Not sure
         #######################################################################
-        # stays between th1 and th2, with negative slope
-        z1 = is_slope_neg and is_between_th1_and_th2
-        if z1 or (not sell__call_credit_spread and not sell__put_credit_spread):
+        z1 = not sell__call_credit_spread and not sell__put_credit_spread
+        if z1:
             nope__ = True
-
         assert ((sell__call_credit_spread and not sell__put_credit_spread and not nope__) or
                 (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
                 (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
         assert gt_prices.shape == mean_forecast.shape
+
+        #######################################################################
+        # Compute statistic based on the real price of the asset
+        #######################################################################
         if sell__call_credit_spread:
-            number_of_times_real_price_goes_above_call_strike_price = np.count_nonzero((gt_prices - th1) > 0)
-            performance_tracking['call'].append((step_back, number_of_times_real_price_goes_above_call_strike_price))
+            condition_call = (gt_prices - th1) > 0
+            indices_call = np.where(condition_call)[0]  # or np.nonzero(condition_call)[0]
+            number_of_times_real_price_goes_above_call_strike_price = len(indices_call)
+            performance_tracking['call'].append((step_back, number_of_times_real_price_goes_above_call_strike_price, [int(b) for b in indices_call]))
+            # if last price is OTM, it is a success
+            if gt_prices[-1] < th1:
+                performance_tracking_xtm['call'].append((step_back, gt_prices[-1], th1))
         if sell__put_credit_spread:
-            number_of_times_real_price_goes_below_put_strike_price = np.count_nonzero((th2 - gt_prices) > 0)
-            performance_tracking['put'].append((step_back, number_of_times_real_price_goes_below_put_strike_price))
+            condition_put = (th2 - gt_prices) > 0
+            indices_put = np.where(condition_put)[0]  # or np.nonzero(condition_put)[0]
+            number_of_times_real_price_goes_below_put_strike_price = len(indices_put)
+            performance_tracking['put'].append((step_back, number_of_times_real_price_goes_below_put_strike_price, [int(b) for b in indices_put]))
+            # if last price is OTM, it is a success
+            if gt_prices[-1] > th2:
+                performance_tracking_xtm['put'].append((step_back, gt_prices[-1], th2))
         if nope__:
-            performance_tracking['?'].append((step_back, 9999))
+            performance_tracking['?'].append((step_back, 9999, []))
+
         mean_rmse = np.sqrt(np.mean((mean_forecast - gt_prices) ** 2))
         true_diff = np.diff(gt_prices)
         pred_diff = np.diff(mean_forecast)
@@ -567,9 +579,7 @@ def main(args):
         except:
             pass
     # === Performance Tracking Summary ===
-    os.makedirs(output_dir, exist_ok=True)
-    breach_file = os.path.join(output_dir, "breach.txt")
-    with open(breach_file, "w") as f:
+    with open(os.path.join(output_dir, "breach.txt"), "w") as f:
         json.dump(performance_tracking, f, indent=2)
     call_events = performance_tracking['call']
     put_events  = performance_tracking['put']
@@ -577,14 +587,14 @@ def main(args):
     total_call_signals = len(call_events)
     total_put_signals  = len(put_events)
     total_nope_signals = len(nope_events)
-    call_breaches = sum(1 for _, breaches in call_events if breaches > 0)
-    put_breaches  = sum(1 for _, breaches in put_events if breaches > 0)
+    call_breaches = sum(1 for _, breaches, idx in call_events if breaches > 0)
+    put_breaches  = sum(1 for _, breaches, idx in put_events if breaches > 0)
     print("\n" + "=" * 60)
     print("PERFORMANCE TRACKING SUMMARY".center(60))
     print("=" * 60)
     print(f"Call Credit Spread Signals : {total_call_signals}")
     if 0 != total_call_signals:
-        print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%}")
+        print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%})")
     print()
     print(f"Put  Credit Spread Signals : {total_put_signals}")
     if 0 != total_put_signals:
@@ -594,23 +604,76 @@ def main(args):
     print()
     total_signals = total_call_signals + total_put_signals
     total_breaches = call_breaches + put_breaches
-    print(f"Overall breach rate          : {total_breaches}/{total_signals} ({total_breaches / total_signals:.1%})")
+    sdfg = f"({total_breaches / total_signals:.1%})" if total_signals > 0 else ""
+    print(f"Overall breach rate          : {total_breaches}/{total_signals} {sdfg}")
     print("=" * 60)
+    # Identify out_of_breach step_back values
+    call_out_of_breach = [step for step, breaches, idx in call_events if breaches != 0]
+    put_out_of_breach  = [step for step, breaches, idx in put_events  if breaches != 0]
+    nope_out_of_breach = [step for step, _, _ in nope_events]  # all are "out of breach" by definition
+    print("\n" + "=" * 60)
+    print("OUT-OF-BREACH step_back VALUES".center(60))
+    print("=" * 60)
+    print(f"Call  (breach)       : {call_out_of_breach}")
+    print(f"Put   (breach)       : {put_out_of_breach}")
+    print(f"?     (skipped trade): {nope_out_of_breach}")
+    print("=" * 60)
+    out_of_breach_summary = {
+        'call_out_of_breach': call_out_of_breach,
+        'put_out_of_breach': put_out_of_breach,
+        'nope_steps': nope_out_of_breach
+    }
+    with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
+        json.dump(out_of_breach_summary, f, indent=2)
+
+    # Identify puts and calls that ended OTM
+    call_otm = [step[0] for step in performance_tracking_xtm['call']]
+    put_otm  = [step[0] for step in performance_tracking_xtm['put']]
+    print("\n" + "=" * 60)
+    print("OUT-OF-MONEY CALLs and PUTs".center(60))
+    print("=" * 60)
+    print(f"Call  (OTM): {call_otm}")
+    print(f"Put   (OTM): {put_otm}")
+    print("=" * 60)
+    otm_summary = {
+        'call_otm': call_otm,
+        'put_otm': put_otm,
+    }
+    with open(os.path.join(output_dir, "otm.txt"), "w") as f:
+        json.dump(otm_summary, f, indent=2)
+
+    print("\n" + "=" * 60)
+    print("List of fails - based on that the user keeps the trade open until the end".center(60))
+    print("=" * 60)
+    failed_trades = []
+    for step_back in range(0, number_of_step_back):
+        if step_back in nope_out_of_breach:
+            continue  # No trade
+        if step_back in call_otm or step_back in put_otm:
+            continue  # Trade success
+        failed_trades.append(step_back)
+    print(f"Failed: {failed_trades}")
+    print("=" * 60)
+    failed_summary = {'failed_trades': failed_trades,}
+    with open(os.path.join(output_dir, "failed_trades.txt"), "w") as f:
+        json.dump(failed_summary, f, indent=2)
 
 
 if __name__ == "__main__":
     freeze_support()
-    parser = argparse.ArgumentParser(description="Run Fourier-based stock forecast.")
+    parser = argparse.ArgumentParser(description="Run Wavelet-based stock forecast.")
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="")
-    parser.add_argument("--dataset_id", type=str, default='week')
-    parser.add_argument("--length_step_back", type=int, default=4)
-    parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
+    parser.add_argument("--dataset_id", type=str, default='day', choices=['day', 'week'])
+    parser.add_argument("--number_of_step_back", type=int, default=2605)
+    parser.add_argument("--n_forecast_length", type=int, default=2)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
+    parser.add_argument("--n_models_to_keep", type=int, default=60)
     parser.add_argument("--use_this_df", type=json.loads, default={})
     parser.add_argument("--plot_graph", type=bool, default=True)
     parser.add_argument("--quiet", type=bool, default=False)
+    parser.add_argument("--thresholds_ep", type=str, default="(0.025, 0.02)")
     args = parser.parse_args()
     main(args)
