@@ -357,7 +357,7 @@ def main(args):
     performance_tracking     = {'put':[], 'call': [], '?': []}
     performance_tracking_xtm = {'put': [], 'call': []}
     thresholds_ep = eval(args.thresholds_ep)
-    output_dir = r"../../stubs/wavelet_2/"
+    output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
     threshold_for_shape_similarity = 0.6
     number_of_step_back = int(args.number_of_step_back)
@@ -544,7 +544,7 @@ def main(args):
             horizontalalignment='right'
         )
         plt.text(
-            x=n_train_length + n_forecast_length - 4.5,
+            x=n_train_length + n_forecast_length - 6.5,
             y=lower_line,
             s=f"{lower_line:.2f}",
             fontsize=20,
@@ -734,6 +734,14 @@ def main(args):
     with open(os.path.join(output_dir, "failed_trades.txt"), "w") as f:
         json.dump(failed_summary, f, indent=2)
 
+    total_number_of_possible_trade = number_of_step_back
+    total_number_of_winning_trade  = number_of_step_back - len(failed_trades)
+    total_number_of_loosing_trade  = len(failed_trades)
+    print("\n" + "=" * 60)
+    print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1}%".center(60))
+    print("=" * 60)
+    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
+
 
 if __name__ == "__main__":
     freeze_support()
@@ -742,6 +750,7 @@ if __name__ == "__main__":
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="")
     parser.add_argument("--dataset_id", type=str, default='day', choices=['day', 'week'])
+    parser.add_argument("--output_dir", type=str, default=r"../../stubs/wavelet_2/")
     parser.add_argument("--number_of_step_back", type=int, default=2605)
     parser.add_argument("--n_forecast_length", type=int, default=2)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
