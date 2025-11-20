@@ -1,10 +1,11 @@
 import os
+import argparse
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
 import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME_WEEK
+from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 import pickle
 import pywt
 from constants import NB_WORKERS
@@ -19,11 +20,118 @@ warnings.filterwarnings("ignore", message="Level value.*too high.*")
 # Or suppress only specific RuntimeWarnings from NumPy
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
-def wavelet_forecast(
+import numpy as np
+import pywt
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler
+
+
+def forecast_coeff_series(coeff, forecast_len, lag=10):
+    """
+    Forecast a 1D coefficient series using recursive linear regression.
+    """
+    coeff = np.array(coeff, dtype=np.float64)
+    n = len(coeff)
+
+    lag = min(lag, max(3, n // 3))  # adaptive lag
+
+    if n <= lag:
+        # too short → extend with last value
+        return np.concatenate([coeff, np.full(forecast_len, coeff[-1])])
+
+    # Build lagged features
+    X = np.array([coeff[j - lag:j] for j in range(lag, n)])
+    y = coeff[lag:]
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    # Recursive prediction
+    forecast = []
+    current = coeff[-lag:].copy()
+    for _ in range(forecast_len):
+        next_val = model.predict(current.reshape(1, -1))[0]
+        forecast.append(next_val)
+        current = np.append(current[1:], next_val)
+
+    return np.concatenate([coeff, forecast])
+
+
+def wavelet_multi_forecast__version_2(
+        prices,
+        forecast_steps=5,
+        wavelet='db4',
+        level=3,
+        forecast_detail_levels=(3, 2)  # which detail levels to forecast: cD3, cD2
+):
+    prices = np.asarray(prices)
+    n = len(prices)
+
+    # Normalize
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(prices.reshape(-1, 1)).flatten()
+
+    # Wavelet decomposition
+    coeffs = pywt.wavedec(scaled, wavelet, level=level)
+    # coeffs = [cA, cD3, cD2, cD1]
+
+    # Determine extension for each level
+    # Lower frequency → fewer points needed
+    ext_sizes = []
+    for i in range(level + 1):
+        # i=0 => cA
+        ext_sizes.append(int(np.ceil(forecast_steps / (2 ** i))))
+
+    forecasted_coeffs = []
+
+    for i, c in enumerate(coeffs):
+        if i == 0:
+            # Approximation (always forecast)
+            new_c = forecast_coeff_series(c, ext_sizes[i])
+            forecasted_coeffs.append(new_c)
+
+        elif (level - i + 1) in forecast_detail_levels:
+            # Forecast selected detail levels
+            new_c = forecast_coeff_series(c, ext_sizes[i])
+            forecasted_coeffs.append(new_c)
+
+        else:
+            # Skip forecasting noisy high-frequency cD1 etc.
+            forecasted_coeffs.append(c)
+
+    # Align coeff lengths using a dummy signal
+    dummy = np.zeros(n + forecast_steps)
+    dummy_coeffs = pywt.wavedec(dummy, wavelet, level=level)
+
+    aligned = []
+    for fc, dc in zip(forecasted_coeffs, dummy_coeffs):
+        if len(fc) < len(dc):
+            fc = np.pad(fc, (0, len(dc) - len(fc)), mode='edge')
+        else:
+            fc = fc[:len(dc)]
+        aligned.append(fc)
+
+    # Reconstruct forecasted series
+    forecasted = pywt.waverec(aligned, wavelet)
+
+    expected_len = n + forecast_steps
+    if len(forecasted) < expected_len:
+        forecasted = np.pad(forecasted, (0, expected_len - len(forecasted)), mode='edge')
+
+    forecasted = forecasted[:expected_len]
+
+    # Denormalize
+    forecasted = scaler.inverse_transform(forecasted.reshape(-1, 1)).flatten()
+
+    return forecasted
+
+
+def wavelet_forecast__version_1(
     prices,
     forecast_steps: int = 5,
     wavelet: str = 'db4',
-    level: int = 3
+    level: int = 3,
+    forecast_detail_levels=None,
 ) -> np.ndarray:
     n = len(prices)
 
@@ -105,6 +213,17 @@ def wavelet_forecast(
     return forecast_original_scale
 
 
+###############################################################################
+# NE JAMAIS CHANGE L'ORDRE
+# JUSTE AJOUTER DES METHODES
+###############################################################################
+# Define a registry mapping algo names (strings) to actual functions
+WAVELET_ALGO_REGISTRY = [wavelet_multi_forecast__version_2,  # 0
+                         wavelet_forecast__version_1,  # 1
+                        ]
+###############################################################################
+###############################################################################
+
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker, data_filename):
     with open(data_filename, 'rb') as f:
         data_cache = pickle.load(f)
@@ -136,6 +255,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
             close_col         = use_case['close_col']
             RMSE_TOL          = use_case['RMSE_TOL']
             step_back         = use_case['step_back']
+            index_of_algo     = use_case['index_of_algo']
             if 0 == step_back:
                 df = data[close_col].copy()
             else:
@@ -149,11 +269,12 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
             train_prices = train_prices.values.astype(np.float64).copy()
             gt_prices    = gt_prices.values.astype(np.float64).copy()
             try:
-                forecast_values = wavelet_forecast(
+                algo = WAVELET_ALGO_REGISTRY[index_of_algo]
+                forecast_values = algo(
                     prices=train_prices,
                     forecast_steps=n_forecast_length,
                     wavelet=wavlet_type,
-                    level=level
+                    level=level,
                 )
             except Exception as e:
                 continue
@@ -198,6 +319,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
                 best_rmse['pred_values'] = pred_values.copy()
                 best_rmse['n_forecast_length'] = n_forecast_length
                 best_rmse['times'] = (t1, t2, t3, t4)
+                best_rmse['index_of_algo'] = index_of_algo
             tmp = {}
             tmp['rmse'] = rmse
             tmp['directional_accuracy'] = directional_accuracy
@@ -209,6 +331,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
             tmp['pred_values'] = pred_values.copy()
             tmp['n_forecast_length'] = n_forecast_length
             tmp['times'] = (t1, t2, t3, t4)
+            tmp['index_of_algo'] = index_of_algo
             all_results_computed.append(tmp)
     all_results_computed.sort(key=lambda x: x['rmse'])  # ascending: best (lowest RMSE) first
     # Get top NNN results (as a list)
@@ -218,17 +341,21 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
     out__shared.put((best_rmse, all_results_from_worker))
 
 
-def main():
-    ticker = "^GSPC"
+def main(args):
+    ticker = args.ticker
     df_filename = FYAHOO__OUTPUTFILENAME_WEEK
     _nb_workers = NB_WORKERS
     plot=False
     save_to_disk = True
+    index_of_algo = 0
     close_col = ('Close', ticker)
     n_forecast_length = 4
     n_models_to_keep = 60
     performance_tracking = {'put':[], 'call': [], '?': []}
-    for step_back in tqdm(range(0, 2605)):
+    thresholds_ep = (0.025, 0.02)
+    output_dir = r"../../stubs/wavelet_2/"
+    number_of_step_back = 1#2605
+    for step_back in tqdm(range(0, number_of_step_back)):
         use_cases = []
         with open(df_filename, 'rb') as f:
             data_cache = pickle.load(f)
@@ -240,7 +367,7 @@ def main():
             for level in range(1, 8):
                 for wavlet_type in pywt.wavelist(kind='discrete'):
                     use_cases.append({'n_train_length': n_train_length, 'level': level, 'wavlet_type': wavlet_type, 'n_forecast_length': n_forecast_length,
-                                      'close_col': close_col, 'RMSE_TOL': RMSE_TOL, 'step_back': step_back})
+                                      'close_col': close_col, 'RMSE_TOL': RMSE_TOL, 'step_back': step_back, 'index_of_algo': index_of_algo})
         # print(f"[{step_back=}] Evaluating {len(use_cases)} experiences with {_nb_workers} workers...")
         use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
         out__shared = [Queue(1) for k in range(0, _nb_workers)]
@@ -274,7 +401,7 @@ def main():
         train_prices = best_rmse['prices']
         gt_prices = best_rmse['gt_prices']
         n_forecast_length = best_rmse['n_forecast_length']
-
+        algo_name = WAVELET_ALGO_REGISTRY[best_rmse['index_of_algo']].__name__
         # ---------------------------
         # Plotting All Forecasts + Mean
         # ---------------------------
@@ -313,13 +440,35 @@ def main():
             mean_pairwise_corr = 1.0
         shape_similarity = mean_pairwise_corr
 
-        # Add ±2.5% horizontal lines based on last training price
-        threshold_ep = 0.025
+        # Add horizontal lines based on last training price
+        threshold_up_ep, threshold_down_ep = thresholds_ep[0], thresholds_ep[1]
         last_train_price = train_prices[-1]
-        upper_line = last_train_price * (1. + threshold_ep)
-        lower_line = last_train_price * (1. - threshold_ep)
-        plt.axhline(y=upper_line, color='orange', linestyle='--', alpha=0.6, linewidth=1, label=f"+/-{2.5}%")
+        upper_line = last_train_price * (1. + threshold_up_ep)
+        lower_line = last_train_price * (1. - threshold_down_ep)
+        plt.axhline(y=upper_line, color='orange', linestyle='--', alpha=0.6, linewidth=1, label=f"+{threshold_up_ep*100:.2f}% / -{threshold_down_ep*100:.2f}%")
         plt.axhline(y=lower_line, color='orange', linestyle='--', alpha=0.6, linewidth=1)
+
+        # Add bold, black text labels for upper_line and lower_line
+        plt.text(
+            x=n_train_length + n_forecast_length - 4.5,  # slightly left of right edge
+            y=upper_line,
+            s=f"{upper_line:.2f}",
+            fontsize=20,
+            fontweight='bold',
+            color='black',
+            verticalalignment='center',
+            horizontalalignment='right'
+        )
+        plt.text(
+            x=n_train_length + n_forecast_length - 4.5,
+            y=lower_line,
+            s=f"{lower_line:.2f}",
+            fontsize=20,
+            fontweight='bold',
+            color='black',
+            verticalalignment='center',
+            horizontalalignment='right'
+        )
 
         th1, th2, entry_price = upper_line, lower_line, last_train_price
         assert th1 > entry_price > th2 and th1 > th2
@@ -374,7 +523,7 @@ def main():
         plt.title(f'{ticker} Forecast ({Path(df_filename).stem.upper()}) — '
                   f'Mean RMSE: {mean_rmse:.2f}{da_str} | '
                   f'Shape Sim: {shape_similarity:.2f} | \n'
-                  f'{top_n} Models Shown   Step Back:{step_back}   {time_str}', fontsize=12)
+                  f'{top_n} Models Shown   Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
         plt.xlabel('Time Index')
         plt.ylabel('Price')
         plt.legend()
@@ -384,9 +533,9 @@ def main():
         if plot:
             plt.show()
         if save_to_disk:
-            output_dir = "images_2"
-            os.makedirs(output_dir, exist_ok=True)
-            plt.savefig(os.path.join(output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
+            my_output_dir = os.path.join(output_dir, "images")
+            os.makedirs(my_output_dir, exist_ok=True)
+            plt.savefig(os.path.join(my_output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
         try:
             plt.close()
         except:
@@ -420,6 +569,21 @@ def main():
     print(f"Overall breach rate          : {total_breaches}/{total_signals} ({total_breaches / total_signals:.1%})")
     print("=" * 60)
 
+
 if __name__ == "__main__":
     freeze_support()
+    parser = argparse.ArgumentParser(description="Run Fourier-based stock forecast.")
+    parser.add_argument("--ticker", type=str, default='^GSPC')
+    parser.add_argument("--col", type=str, default='Close')
+    parser.add_argument("--older_dataset", type=str, default="")
+    parser.add_argument("--dataset_id", type=str, default='week')
+    parser.add_argument("--length_step_back", type=int, default=4)
+    parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
+    parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
+    parser.add_argument("--n_forecasts", type=int, default=19)
+    parser.add_argument("--use_this_df", type=json.loads, default={})
+    parser.add_argument("--plot_graph", type=bool, default=True)
+    parser.add_argument("--quiet", type=bool, default=False)
+    args = parser.parse_args()
+    main(args)
     main()

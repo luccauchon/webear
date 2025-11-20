@@ -38,10 +38,10 @@ warnings.filterwarnings(
 ###############################################################################
 # Define a registry mapping algo names (strings) to actual functions
 from algorithms.fourier import fourier_forecast_log_returns_with_confidence, fourier_extrapolation_auto, fourier_extrapolation_hybrid
-ALGO_REGISTRY = [fourier_forecast_log_returns_with_confidence,  # 0
-                 fourier_extrapolation_auto,  # 1
-                 # fourier_extrapolation_hybrid,  # 2   Identique à #0. À voir .
-                 ]
+FOURIER_ALGO_REGISTRY = [fourier_forecast_log_returns_with_confidence,  # 0
+                         fourier_extrapolation_auto,  # 1
+                         # fourier_extrapolation_hybrid,  # 2   Identique à #0. À voir .
+                        ]
     # 'sarimax_auto_forecast': sarimax_auto_forecast,
 ###############################################################################
 ###############################################################################
@@ -62,7 +62,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             break  # Terminé
         the_algo_name   = use_case['the_algo_name']
         the_algo_index  = use_case['the_algo_index']
-        algo_func       = ALGO_REGISTRY[the_algo_index]
+        algo_func       = FOURIER_ALGO_REGISTRY[the_algo_index]
         x_series        = use_case['prices']
         y_series        = use_case['y_series']
         length_prediction = use_case['n_predict']
@@ -121,7 +121,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
     min_train = 20
     _nb_workers = NB_WORKERS
     length_prediction_in_training = length_step_back
-    algorithms_to_run = [e for e, el in enumerate(ALGO_REGISTRY) if e in selected_algo]
+    algorithms_to_run = [e for e, el in enumerate(FOURIER_ALGO_REGISTRY) if e in selected_algo]
     if use_this_df is None or 0 == len(use_this_df):
         assert one_dataset_filename is not None
         with open(one_dataset_filename, 'rb') as f:
@@ -140,9 +140,9 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         # Generate use cases
         use_cases = []
         for the_algo_index in algorithms_to_run:
-            if the_algo_index >= len(ALGO_REGISTRY):
+            if the_algo_index >= len(FOURIER_ALGO_REGISTRY):
                 continue
-            the_algo = ALGO_REGISTRY[the_algo_index]
+            the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
             for one_length_train_data in max_train:
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
@@ -179,9 +179,9 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         for k in range(0, _nb_workers):
             data_from_workers.append(out__shared[k].get())
         # Conserve les meilleurs
-        best_result = {ALGO_REGISTRY[the_algo_index].__name__: {'error': 9999999} for the_algo_index in algorithms_to_run}
+        best_result = {FOURIER_ALGO_REGISTRY[the_algo_index].__name__: {'error': 9999999} for the_algo_index in algorithms_to_run}
         for the_algo_index in algorithms_to_run:
-            the_algo = ALGO_REGISTRY[the_algo_index]
+            the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
             for tmp_payload in data_from_workers:
                 one_of_the_best, all_results_from_worker = tmp_payload[0], tmp_payload[1]
                 all_results_collected |= all_results_from_worker
@@ -192,9 +192,9 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
     else:
         # Search
         for the_algo_index in algorithms_to_run:
-            if the_algo_index >= len(ALGO_REGISTRY):
+            if the_algo_index >= len(FOURIER_ALGO_REGISTRY):
                 continue
-            the_algo = ALGO_REGISTRY[the_algo_index]
+            the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
             tmp = {
                 'error': float('inf'),
                 'length_train_data': None,
@@ -259,12 +259,12 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
                         })
     # Wipe not good result
     for the_algo_index in algorithms_to_run:
-        the_algo = ALGO_REGISTRY[the_algo_index]
+        the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
         if best_result[f'{the_algo.__name__}']['error'] > 9999998.:
             del best_result[f'{the_algo.__name__}']
     # Final report
     for the_algo_index in algorithms_to_run:
-        the_algo = ALGO_REGISTRY[the_algo_index]
+        the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
         if print_result:
             print(f"\n✅ [{ticker}][{colname}] Best setup found for [{the_algo.__name__}]:")
             print(f"  RMSE: {best_result[f'{the_algo.__name__}']['error']:.4f}")
@@ -322,7 +322,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         if length_prediction_for_forecast is None:
             continue
         assert length_prediction_for_forecast > 0
-        the_algo = ALGO_REGISTRY[the_algo_index]
+        the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
         energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
         length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
         # with open(one_dataset_filename, 'rb') as f:
