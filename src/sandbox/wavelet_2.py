@@ -360,6 +360,12 @@ def main(args):
     n_forecast_length = 2
     number_of_step_back = 6000
 
+    sequence_for_train_length = range(8, 32)
+    sequence_for_level = range(1, 8)
+
+    sequence_for_train_length = range(8, 10)
+    sequence_for_level = range(1, 2)
+    number_of_step_back = 33
     for step_back in tqdm(range(0, number_of_step_back)):
         use_cases = []
         with open(df_filename, 'rb') as f:
@@ -368,8 +374,8 @@ def main(args):
         this_year = data[:-(step_back+1)].index[-1].year
         typical_price = data[data.index.year==this_year][close_col].mean()
         RMSE_TOL = max(0.5, 0.0001 * typical_price)
-        for n_train_length in range(8, 32):
-            for level in range(1, 8):
+        for n_train_length in sequence_for_train_length:
+            for level in sequence_for_level:
                 for wavlet_type in pywt.wavelist(kind='discrete'):
                     use_cases.append({'n_train_length': n_train_length, 'level': level, 'wavlet_type': wavlet_type, 'n_forecast_length': n_forecast_length,
                                       'close_col': close_col, 'RMSE_TOL': RMSE_TOL, 'step_back': step_back, 'index_of_algo': index_of_algo})
@@ -479,30 +485,45 @@ def main(args):
         assert th1 > entry_price > th2 and th1 > th2
         sell__call_credit_spread, sell__put_credit_spread, nope__= False, False, False
         mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)
+        is_between_th1_and_th2 = len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
+        is_slope_neg            = mslope_pred < 0
+        is_slope_pos            = mslope_pred > 0
+        is_shape_sim_high       = shape_similarity > 0.5
+        #######################################################################
         # Rules to Sell Call Credit Spread
+        #######################################################################
         # starts above th2 + goes below th2 + ends above th2 + neg slope
-        r1 = mean_forecast[0] > th2 and 0 != np.count_nonzero(mean_forecast < th2) and mslope_pred < 0
+        r1 = mean_forecast[0] > th2 and 0 != np.count_nonzero(mean_forecast < th2) and is_slope_neg
         # starts above th2 + ends below th2 + neg slope
-        r2 = mean_forecast[0] > th2 > mean_forecast[-1] and mslope_pred < 0
-        # starts below th2, stays below th2, with neg slope
+        r2 = mean_forecast[0] > th2 > mean_forecast[-1] and is_slope_neg
+        # starts below th2, stays below th2 + neg slope
         r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2)
-        if r1 or r2 or r3:
+        # stays between th1 and th2 + neg slope + high sim
+        r4 = is_between_th1_and_th2 and is_slope_neg and is_shape_sim_high
+        if r1 or r2 or r3 or r4:
             sell__call_credit_spread = True
+        #######################################################################
         # Rules to Sell Put Credit Spread
+        #######################################################################
         # stays between th1 and th2, with positive slope
-        s1 = mslope_pred > 0 and len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
+        s1 = is_slope_pos and is_between_th1_and_th2
         # starts above th2, ends above th1, with positive slope
-        s2 = mslope_pred > 0 and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
+        s2 = is_slope_pos and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
         # starts above th1, ends above th1, with positive slope
-        s3 = mslope_pred > 0 and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
+        s3 = is_slope_pos and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
         if s1 or s2 or s3:
             sell__put_credit_spread = True
+        #######################################################################
         # Not sure
+        #######################################################################
         # stays between th1 and th2, with negative slope
-        z1 = mslope_pred < 0 and len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
+        z1 = is_slope_neg and is_between_th1_and_th2
         if z1 or (not sell__call_credit_spread and not sell__put_credit_spread):
             nope__ = True
-        assert sell__call_credit_spread or sell__put_credit_spread or nope__
+
+        assert ((sell__call_credit_spread and not sell__put_credit_spread and not nope__) or
+                (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
+                (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
         assert gt_prices.shape == mean_forecast.shape
         if sell__call_credit_spread:
             number_of_times_real_price_goes_above_call_strike_price = np.count_nonzero((gt_prices - th1) > 0)
@@ -546,7 +567,9 @@ def main(args):
         except:
             pass
     # === Performance Tracking Summary ===
-    with open('wavelet_2.txt', "w") as f:
+    os.makedirs(output_dir, exist_ok=True)
+    breach_file = os.path.join(output_dir, "breach.txt")
+    with open(breach_file, "w") as f:
         json.dump(performance_tracking, f, indent=2)
     call_events = performance_tracking['call']
     put_events  = performance_tracking['put']
@@ -561,11 +584,11 @@ def main(args):
     print("=" * 60)
     print(f"Call Credit Spread Signals : {total_call_signals}")
     if 0 != total_call_signals:
-        print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%} if signals > 0)")
+        print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%}")
     print()
     print(f"Put  Credit Spread Signals : {total_put_signals}")
     if 0 != total_put_signals:
-        print(f"  → Price breached put strike  : {put_breaches} times ({put_breaches / total_put_signals:.1%} if signals > 0)")
+        print(f"  → Price breached put strike  : {put_breaches} times ({put_breaches / total_put_signals:.1%})")
     print()
     print(f"Nope  Signals : {total_nope_signals}")
     print()
@@ -591,4 +614,3 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", type=bool, default=False)
     args = parser.parse_args()
     main(args)
-    main()
