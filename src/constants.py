@@ -3,8 +3,19 @@ try:
     IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else -1
 except:
     IS_RUNNING_ON_CASIR = False
+
 # Determine base finance data directory based on drive availability
-if os.path.exists('D:') and os.path.isdir('D:'):
+def is_drive_writable(path):
+    try:
+        test_file = os.path.join(path, 'test.txt')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        return True
+    except:
+        return False
+
+if os.path.exists('D:') and os.path.isdir('D:') and is_drive_writable('D:\\'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
     BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
 else:
