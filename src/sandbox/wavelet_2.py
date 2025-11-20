@@ -356,6 +356,9 @@ def main(args):
     n_models_to_keep = int(args.n_models_to_keep)
     performance_tracking     = {'put':[], 'call': [], '?': []}
     performance_tracking_xtm = {'put': [], 'call': []}
+    performance_tracking_1_point_prediction = {'iron_condor_0DTE':   {'success': [], 'failure': []},
+                                               'put_credit_spread':  {'success': [], 'failure': []},
+                                               'call_credit_spread': {'success': [], 'failure': []}}
     thresholds_ep = eval(args.thresholds_ep)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
@@ -558,48 +561,70 @@ def main(args):
         th1, th2, entry_price = upper_line, lower_line, last_train_price
         assert th1 > entry_price > th2 and th1 > th2
         sell__call_credit_spread, sell__put_credit_spread, nope__= False, False, False
-        mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1) if n_forecast_length > 1 else 1., None
+        mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1) if n_forecast_length > 1 else 0., None
         is_between_th1_and_th2 = len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
         is_slope_neg            = mslope_pred < 0
         is_slope_pos            = mslope_pred > 0
+        is_no_slope             = mslope_pred == 0
         is_shape_sim_high       = shape_similarity > threshold_for_shape_similarity
-        #######################################################################
-        # Rules to Sell Call Credit Spread
-        #######################################################################
-        # starts above th2 + goes below th2 + ends above th2 + neg slope
-        r1 = mean_forecast[0] > th2 and 0 != np.count_nonzero(mean_forecast < th2) and is_slope_neg
-        # starts above th2 + ends below th2 + neg slope
-        r2 = mean_forecast[0] > th2 > mean_forecast[-1] and is_slope_neg
-        # starts below th2, stays below th2 + neg slope
-        r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2) and is_slope_neg
-        # stays between th1 and th2 + neg slope + high sim
-        r4 = is_between_th1_and_th2 and is_slope_neg and is_shape_sim_high
-        if r1 or r2 or r3 or r4:
-            sell__call_credit_spread = True
-        #######################################################################
-        # Rules to Sell Put Credit Spread
-        #######################################################################
-        # stays between th1 and th2, with positive slope
-        s1 = is_slope_pos and is_between_th1_and_th2
-        # starts above th2, ends above th1, with positive slope
-        s2 = is_slope_pos and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
-        # starts above th1, ends above th1, with positive slope
-        s3 = is_slope_pos and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
-        # stays between th1 and th2 + pos slope + high sim
-        s4 = is_between_th1_and_th2 and is_slope_pos and is_shape_sim_high
-        if s1 or s2 or s3 or s4:
-            sell__put_credit_spread = True
-        #######################################################################
-        # Not sure
-        #######################################################################
-        z1 = not sell__call_credit_spread and not sell__put_credit_spread
-        if z1:
-            nope__ = True
-        assert ((sell__call_credit_spread and not sell__put_credit_spread and not nope__) or
-                (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
-                (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
+        if n_forecast_length > 1:
+            #######################################################################
+            # Rules to Sell Call Credit Spread
+            #######################################################################
+            # starts above th2 + goes below th2 + ends above th2 + neg slope
+            r1 = mean_forecast[0] > th2 and 0 != np.count_nonzero(mean_forecast < th2) and is_slope_neg
+            # starts above th2 + ends below th2 + neg slope
+            r2 = mean_forecast[0] > th2 > mean_forecast[-1] and is_slope_neg
+            # starts below th2, stays below th2 + neg slope
+            r3 = mean_forecast[0] < th2 and 0 == np.count_nonzero(mean_forecast > th2) and is_slope_neg
+            # stays between th1 and th2 + neg slope + high sim
+            r4 = is_between_th1_and_th2 and is_slope_neg and is_shape_sim_high
+            if r1 or r2 or r3 or r4:
+                sell__call_credit_spread = True
+            #######################################################################
+            # Rules to Sell Put Credit Spread
+            #######################################################################
+            # stays between th1 and th2, with positive slope
+            s1 = is_slope_pos and is_between_th1_and_th2
+            # starts above th2, ends above th1, with positive slope
+            s2 = is_slope_pos and mean_forecast[0]  > th2 and mean_forecast[-1] > th1
+            # starts above th1, ends above th1, with positive slope
+            s3 = is_slope_pos and mean_forecast[-1] > th1 and mean_forecast[-1] > th1
+            # stays between th1 and th2 + pos slope + high sim
+            s4 = is_between_th1_and_th2 and is_slope_pos and is_shape_sim_high
+            if s1 or s2 or s3 or s4:
+                sell__put_credit_spread = True
+            #######################################################################
+            # Not sure
+            #######################################################################
+            z1 = not sell__call_credit_spread and not sell__put_credit_spread
+            if z1:
+                nope__ = True
+            assert ((sell__call_credit_spread and not sell__put_credit_spread and not nope__) or
+                    (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
+                    (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
+        else: # Just have a point.
+            assert 1 == len(mean_forecast) and 1 == len(gt_prices)
+            # Prediction is between th1 and th2 --> Iron Condor
+            if th2 < mean_forecast[0] < th1:
+                # For an iron condor to work, closing price shall be between th1 and th2
+                if th2 < gt_prices[0] < th2:
+                    performance_tracking_1_point_prediction['iron_condor_0DTE']['success'].append(step_back)
+                else:
+                    performance_tracking_1_point_prediction['iron_condor_0DTE']['failure'].append(step_back)
+            # Prediction is above th1 --> sell an Credit Put Spread @ th2
+            if mean_forecast[0] > th1:
+                if gt_prices[0] > th2:
+                    performance_tracking_1_point_prediction['put_credit_spread']['success'].append(step_back)
+                else:
+                    performance_tracking_1_point_prediction['put_credit_spread']['failure'].append(step_back)
+            # Prediction is below th2 --> sell an Call Put Spread @ th1
+            if mean_forecast[0] < th2:
+                if gt_prices[0] < th1:
+                    performance_tracking_1_point_prediction['call_credit_spread']['success'].append(step_back)
+                else:
+                    performance_tracking_1_point_prediction['call_credit_spread']['failure'].append(step_back)
         assert gt_prices.shape == mean_forecast.shape
-
         #######################################################################
         # Compute statistic based on the real price of the asset
         #######################################################################
@@ -656,92 +681,95 @@ def main(args):
         except:
             pass
     # === Performance Tracking Summary ===
-    with open(os.path.join(output_dir, "breach.txt"), "w") as f:
-        json.dump(performance_tracking, f, indent=2)
-    call_events = performance_tracking['call']
-    put_events  = performance_tracking['put']
-    nope_events = performance_tracking['?']
-    total_call_signals = len(call_events)
-    total_put_signals  = len(put_events)
-    total_nope_signals = len(nope_events)
-    call_breaches = sum(1 for _, breaches, idx in call_events if breaches > 0)
-    put_breaches  = sum(1 for _, breaches, idx in put_events if breaches > 0)
-    print("\n" + "=" * 60)
-    print("PERFORMANCE TRACKING SUMMARY".center(60))
-    print("=" * 60)
-    print(f"Call Credit Spread Signals : {total_call_signals}")
-    if 0 != total_call_signals:
-        print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%})")
-    print()
-    print(f"Put  Credit Spread Signals : {total_put_signals}")
-    if 0 != total_put_signals:
-        print(f"  → Price breached put strike  : {put_breaches} times ({put_breaches / total_put_signals:.1%})")
-    print()
-    print(f"Nope  Signals : {total_nope_signals}")
-    print()
-    total_signals = total_call_signals + total_put_signals
-    total_breaches = call_breaches + put_breaches
-    sdfg = f"({total_breaches / total_signals:.1%})" if total_signals > 0 else ""
-    print(f"Overall breach rate          : {total_breaches}/{total_signals} {sdfg}")
-    print("=" * 60)
-    # Identify out_of_breach step_back values
-    call_out_of_breach = [step for step, breaches, idx in call_events if breaches != 0]
-    put_out_of_breach  = [step for step, breaches, idx in put_events  if breaches != 0]
-    nope_out_of_breach = [step for step, _, _ in nope_events]  # all are "out of breach" by definition
-    print("\n" + "=" * 60)
-    print("OUT-OF-BREACH step_back VALUES".center(60))
-    print("=" * 60)
-    print(f"Call  (breach)       : {call_out_of_breach}")
-    print(f"Put   (breach)       : {put_out_of_breach}")
-    print(f"?     (skipped trade): {nope_out_of_breach}")
-    print("=" * 60)
-    out_of_breach_summary = {
-        'call_out_of_breach': call_out_of_breach,
-        'put_out_of_breach': put_out_of_breach,
-        'nope_steps': nope_out_of_breach
-    }
-    with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
-        json.dump(out_of_breach_summary, f, indent=2)
+    if n_forecast_length > 1:
+        with open(os.path.join(output_dir, "breach.txt"), "w") as f:
+            json.dump(performance_tracking, f, indent=2)
+        call_events = performance_tracking['call']
+        put_events  = performance_tracking['put']
+        nope_events = performance_tracking['?']
+        total_call_signals = len(call_events)
+        total_put_signals  = len(put_events)
+        total_nope_signals = len(nope_events)
+        call_breaches = sum(1 for _, breaches, idx in call_events if breaches > 0)
+        put_breaches  = sum(1 for _, breaches, idx in put_events if breaches > 0)
+        print("\n" + "=" * 60)
+        print("PERFORMANCE TRACKING SUMMARY".center(60))
+        print("=" * 60)
+        print(f"Call Credit Spread Signals : {total_call_signals}")
+        if 0 != total_call_signals:
+            print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%})")
+        print()
+        print(f"Put  Credit Spread Signals : {total_put_signals}")
+        if 0 != total_put_signals:
+            print(f"  → Price breached put strike  : {put_breaches} times ({put_breaches / total_put_signals:.1%})")
+        print()
+        print(f"Nope  Signals : {total_nope_signals}")
+        print()
+        total_signals = total_call_signals + total_put_signals
+        total_breaches = call_breaches + put_breaches
+        sdfg = f"({total_breaches / total_signals:.1%})" if total_signals > 0 else ""
+        print(f"Overall breach rate          : {total_breaches}/{total_signals} {sdfg}")
+        print("=" * 60)
+        # Identify out_of_breach step_back values
+        call_out_of_breach = [step for step, breaches, idx in call_events if breaches != 0]
+        put_out_of_breach  = [step for step, breaches, idx in put_events  if breaches != 0]
+        nope_out_of_breach = [step for step, _, _ in nope_events]  # all are "out of breach" by definition
+        print("\n" + "=" * 60)
+        print("OUT-OF-BREACH step_back VALUES".center(60))
+        print("=" * 60)
+        print(f"Call  (breach)       : {call_out_of_breach}")
+        print(f"Put   (breach)       : {put_out_of_breach}")
+        print(f"?     (skipped trade): {nope_out_of_breach}")
+        print("=" * 60)
+        out_of_breach_summary = {
+            'call_out_of_breach': call_out_of_breach,
+            'put_out_of_breach': put_out_of_breach,
+            'nope_steps': nope_out_of_breach
+        }
+        with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
+            json.dump(out_of_breach_summary, f, indent=2)
 
-    # Identify puts and calls that ended OTM
-    call_otm = [step[0] for step in performance_tracking_xtm['call']]
-    put_otm  = [step[0] for step in performance_tracking_xtm['put']]
-    print("\n" + "=" * 60)
-    print("OUT-OF-MONEY CALLs and PUTs".center(60))
-    print("=" * 60)
-    print(f"Call  (OTM): {call_otm}")
-    print(f"Put   (OTM): {put_otm}")
-    print("=" * 60)
-    otm_summary = {
-        'call_otm': call_otm,
-        'put_otm': put_otm,
-    }
-    with open(os.path.join(output_dir, "otm.txt"), "w") as f:
-        json.dump(otm_summary, f, indent=2)
+        # Identify puts and calls that ended OTM
+        call_otm = [step[0] for step in performance_tracking_xtm['call']]
+        put_otm  = [step[0] for step in performance_tracking_xtm['put']]
+        print("\n" + "=" * 60)
+        print("OUT-OF-MONEY CALLs and PUTs".center(60))
+        print("=" * 60)
+        print(f"Call  (OTM): {call_otm}")
+        print(f"Put   (OTM): {put_otm}")
+        print("=" * 60)
+        otm_summary = {
+            'call_otm': call_otm,
+            'put_otm': put_otm,
+        }
+        with open(os.path.join(output_dir, "otm.txt"), "w") as f:
+            json.dump(otm_summary, f, indent=2)
 
-    print("\n" + "=" * 60)
-    print("List of fails - based on that the user keeps the trade open until the end".center(60))
-    print("=" * 60)
-    failed_trades = []
-    for step_back in range(0, number_of_step_back):
-        if step_back in nope_out_of_breach:
-            continue  # No trade
-        if step_back in call_otm or step_back in put_otm:
-            continue  # Trade success
-        failed_trades.append(step_back)
-    print(f"Failed: {failed_trades}")
-    print("=" * 60)
-    failed_summary = {'failed_trades': failed_trades,}
-    with open(os.path.join(output_dir, "failed_trades.txt"), "w") as f:
-        json.dump(failed_summary, f, indent=2)
+        print("\n" + "=" * 60)
+        print("List of fails - based on that the user keeps the trade open until the end".center(60))
+        print("=" * 60)
+        failed_trades = []
+        for step_back in range(0, number_of_step_back):
+            if step_back in nope_out_of_breach:
+                continue  # No trade
+            if step_back in call_otm or step_back in put_otm:
+                continue  # Trade success
+            failed_trades.append(step_back)
+        print(f"Failed: {failed_trades}")
+        print("=" * 60)
+        failed_summary = {'failed_trades': failed_trades,}
+        with open(os.path.join(output_dir, "failed_trades.txt"), "w") as f:
+            json.dump(failed_summary, f, indent=2)
 
-    total_number_of_possible_trade = number_of_step_back
-    total_number_of_winning_trade  = number_of_step_back - len(failed_trades)
-    total_number_of_loosing_trade  = len(failed_trades)
-    print("\n" + "=" * 60)
-    print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1f}%".center(60))
-    print("=" * 60)
-    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
+        total_number_of_possible_trade = number_of_step_back
+        total_number_of_winning_trade  = number_of_step_back - len(failed_trades)
+        total_number_of_loosing_trade  = len(failed_trades)
+        print("\n" + "=" * 60)
+        print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1f}%".center(60))
+        print("=" * 60)
+        return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
+    else:
+        print(performance_tracking_1_point_prediction)
 
 
 if __name__ == "__main__":
