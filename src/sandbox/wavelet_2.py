@@ -496,7 +496,7 @@ def main(args):
         # # Determine current ensemble decision (reuse your existing flags)
         # ensemble_decision = 'call' if sell__call_credit_spread else ('put' if sell__put_credit_spread else '?')
         # decision_consensus = np.mean([d == ensemble_decision for d in decision_labels])
-        plt.plot(future_indices, mean_forecast, label='Mean Forecast', color='red', linewidth=2.5)
+        plt.plot(future_indices, mean_forecast, label='Mean Forecast', marker='p', color='red', linewidth=2.5)
         assert len(mean_forecast) == len(gt_prices)
 
         # >>> SHAPE SIMILARITY METRIC <<<
@@ -558,7 +558,7 @@ def main(args):
         th1, th2, entry_price = upper_line, lower_line, last_train_price
         assert th1 > entry_price > th2 and th1 > th2
         sell__call_credit_spread, sell__put_credit_spread, nope__= False, False, False
-        mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)
+        mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1) if n_forecast_length > 1 else 1., None
         is_between_th1_and_th2 = len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
         is_slope_neg            = mslope_pred < 0
         is_slope_pos            = mslope_pred > 0
