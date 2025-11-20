@@ -436,6 +436,65 @@ def main(args):
         # Compute and plot mean forecast
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)
         mean_forecast = np.mean(all_forecasts, axis=0)
+
+        # ==============================
+        # ENHANCED ROBUSTNESS METRICS
+        # ==============================
+
+        # 1. Forecast dispersion (normalized std)
+        forecast_std = np.std(all_forecasts, axis=0)
+        mean_std = np.mean(forecast_std)
+        normalized_std = mean_std / (np.mean(np.abs(mean_forecast)) + 1e-8)
+
+        # 2. RMSE consistency within top-N
+        best_rmse_val = sorted_data_from_workers[0]['rmse']
+        nth_rmse_val = sorted_data_from_workers[top_n - 1]['rmse']
+        relative_rmse_gap = (nth_rmse_val - best_rmse_val) / (best_rmse_val + 1e-8)
+        rmse_consistency = 1.0 / (1.0 + relative_rmse_gap)
+
+        # 3. Directional (slope) consensus
+        if n_forecast_length > 1:
+            ensemble_slope = np.polyfit(np.arange(n_forecast_length), mean_forecast, 1)[0]
+            individual_slopes = np.array([
+                np.polyfit(np.arange(n_forecast_length), pred, 1)[0]
+                for pred in all_forecasts
+            ])
+            directional_consensus = np.mean(np.sign(individual_slopes) == np.sign(ensemble_slope))
+        else:
+            directional_consensus = 1.0
+
+        # # 4. Decision consensus (using YOUR rules)
+        # decision_labels = []
+        # for pred in all_forecasts:
+        #     pred_slope = np.polyfit(np.arange(len(pred)), pred, 1)[0]
+        #     pred_is_between = (pred > lower_line).all() and (pred < upper_line).all()
+        #
+        #     # Call conditions (mirroring your logic)
+        #     call_cond = (
+        #             (pred[0] > lower_line and np.any(pred < lower_line) and pred_slope < 0) or
+        #             (pred[0] > lower_line > pred[-1] and pred_slope < 0) or
+        #             (pred[0] < lower_line and not np.any(pred > lower_line) and pred_slope < 0) or
+        #             (pred_is_between and pred_slope < 0 and shape_similarity > threshold_for_shape_similarity)
+        #     )
+        #
+        #     # Put conditions
+        #     put_cond = (
+        #             (pred_slope > 0 and pred_is_between) or
+        #             (pred_slope > 0 and pred[0] > lower_line and pred[-1] > upper_line) or
+        #             (pred_slope > 0 and pred[-1] > upper_line) or
+        #             (pred_is_between and pred_slope > 0 and shape_similarity > threshold_for_shape_similarity)
+        #     )
+        #
+        #     if call_cond:
+        #         decision_labels.append('call')
+        #     elif put_cond:
+        #         decision_labels.append('put')
+        #     else:
+        #         decision_labels.append('?')
+        #
+        # # Determine current ensemble decision (reuse your existing flags)
+        # ensemble_decision = 'call' if sell__call_credit_spread else ('put' if sell__put_credit_spread else '?')
+        # decision_consensus = np.mean([d == ensemble_decision for d in decision_labels])
         plt.plot(future_indices, mean_forecast, label='Mean Forecast', color='red', linewidth=2.5)
         assert len(mean_forecast) == len(gt_prices)
 
@@ -447,6 +506,23 @@ def main(args):
         else:
             mean_pairwise_corr = 1.0
         shape_similarity = mean_pairwise_corr
+        shape_similarity = 0. if np.isnan(shape_similarity) else shape_similarity
+        # 5. Composite robustness score (0–1)
+        norm_shape_sim = np.clip(shape_similarity, 0.0, 1.0)
+        norm_low_disp = np.clip(1.0 - normalized_std, 0.0, 1.0)
+        norm_rmse_cons = np.clip(rmse_consistency, 0.0, 1.0)
+        norm_dir_cons = np.clip(directional_consensus, 0.0, 1.0)
+        # norm_dec_cons = np.clip(decision_consensus, 0.0, 1.0)
+
+        robustness_score = np.mean([
+            norm_shape_sim,
+            norm_low_disp,
+            norm_rmse_cons,
+            norm_dir_cons,
+            # norm_dec_cons
+        ])
+        # Update plot title to show robustness
+        robustness_str = f", Robust: {robustness_score:.2f}"
 
         # Add horizontal lines based on last training price
         threshold_up_ep, threshold_down_ep = thresholds_ep[0], thresholds_ep[1]
@@ -560,7 +636,7 @@ def main(args):
         da_str = f", DA: {mean_directional_accuracy:.2%}"
         plt.title(f'{ticker} Forecast ({Path(df_filename).stem.upper()}) — '
                   f'Mean RMSE: {mean_rmse:.2f}{da_str} | '
-                  f'Shape Sim: {shape_similarity:.2f} | \n'
+                  f'Shape Sim: {shape_similarity:.2f} | Robust: {robustness_score:.2f} |\n'
                   f'{top_n} Models Shown   Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
         plt.xlabel('Time Index')
         plt.ylabel('Price')
