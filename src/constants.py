@@ -21,7 +21,7 @@ FYAHOO__OUTPUTFILENAME_YEAR  = os.path.join(BASE_UFINANCE_DIR, "snapshot_year.pk
 FYAHOO_TICKER__OUTPUTFILENAME = os.path.join(BASE_UFINANCE_DIR, "snapshot_ticker.pkl")
 
 # Constants
-NB_WORKERS = 12
+NB_WORKERS = os.cpu_count()
 
 MY_TICKERS = [
     "^XSP", "^GSPC", "^VIX", "SPY", "QQQ", "AAPL", "ADBE", "AFRM", "AMD", "AMZN",
