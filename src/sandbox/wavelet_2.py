@@ -8,7 +8,7 @@ from tqdm import tqdm
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 import pickle
 import pywt
-from constants import NB_WORKERS
+from constants import NB_WORKERS, IS_RUNNING_ON_CASIR
 import psutil
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LinearRegression
@@ -377,7 +377,7 @@ def main(args):
             p.start()
             pid = p.pid
             p_obj = psutil.Process(pid)
-            p_obj.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            p_obj.nice(10 if IS_RUNNING_ON_CASIR else psutil.BELOW_NORMAL_PRIORITY_CLASS)
         # Envoie les informations aux workers pour traitement
         for use_case in use_cases:
             use_cases__shared.put(use_case)
