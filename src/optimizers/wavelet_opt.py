@@ -1,3 +1,15 @@
+from random import choices
+
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    import sys
+    import pathlib
+
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
 import os
 import argparse
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
@@ -10,7 +22,7 @@ import pickle
 from constants import NB_WORKERS, IS_RUNNING_ON_CASIR
 import psutil
 import json
-
+import math
 import warnings
 warnings.filterwarnings("ignore", message="Level value.*too high.*")
 # Or suppress only specific RuntimeWarnings from NumPy
@@ -159,9 +171,10 @@ def main(args):
     elif args.dataset_id == 'week':
         df_filename = FYAHOO__OUTPUTFILENAME_WEEK
     _nb_workers = NB_WORKERS
-    plot         = False
-    save_to_disk = True
+    plot         = args.plot_graph
+    save_to_disk = args.save_graph
     index_of_algo = 0
+    verbose      = not args.quiet
     close_col = ('Close', ticker)
     n_forecast_length = int(args.n_forecast_length)
     n_models_to_keep = int(args.n_models_to_keep)
@@ -178,7 +191,12 @@ def main(args):
     number_of_step_back = int(args.number_of_step_back)
     sequence_for_train_length = range(8, 32)
     sequence_for_level = range(1, 8)
+    floor_and_ceil = args.floor_and_ceil
+    maintenance_margin = args.maintenance_margin
+    description_of_what_user_shall_do = {}  # Trace of what user shall do to execute the trade
+    close_graph = not args.do_not_close_graph
     for step_back in tqdm(range(0, number_of_step_back)):
+        description_of_what_user_shall_do.update({step_back: {}})
         use_cases = []
         with open(df_filename, 'rb') as f:
             data_cache = pickle.load(f)
@@ -423,18 +441,32 @@ def main(args):
                     performance_tracking_1_point_prediction['iron_condor_0DTE']['success'].append(step_back)
                 else:
                     performance_tracking_1_point_prediction['iron_condor_0DTE']['failure'].append(step_back)
+                th2_rounded = math.floor(th2 / floor_and_ceil) * floor_and_ceil
+                th1_ceiled  = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
+                distance_for_protection = maintenance_margin // 2 // 100
+                description_of_what_user_shall_do[step_back]['description']  = f"Do an Iron Condor:"
+                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
             # Prediction is above th1 --> sell an Credit Put Spread @ th2
             if mean_forecast[0] > th1:
                 if gt_prices[0] > th2:
                     performance_tracking_1_point_prediction['put_credit_spread']['success'].append(step_back)
                 else:
                     performance_tracking_1_point_prediction['put_credit_spread']['failure'].append(step_back)
+                th2_rounded = math.floor(th2 / floor_and_ceil) * floor_and_ceil
+                distance_for_protection = maintenance_margin // 100
+                description_of_what_user_shall_do[step_back]['description'] = f"Do a Put Credit Vertical Spread:"
+                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
             # Prediction is below th2 --> sell an Call Put Spread @ th1
             if mean_forecast[0] < th2:
                 if gt_prices[0] < th1:
                     performance_tracking_1_point_prediction['call_credit_spread']['success'].append(step_back)
                 else:
                     performance_tracking_1_point_prediction['call_credit_spread']['failure'].append(step_back)
+                th1_ceiled = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
+                distance_for_protection = maintenance_margin // 100
+                description_of_what_user_shall_do[step_back]['description'] = f"Do a Call Credit Vertical Spread:"
+                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
         assert gt_prices.shape == mean_forecast.shape
         #######################################################################
         # Compute statistic based on the real price of the asset
@@ -492,7 +524,8 @@ def main(args):
             os.makedirs(my_output_dir, exist_ok=True)
             plt.savefig(os.path.join(my_output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
         try:
-            plt.close()
+            if close_graph:
+                plt.close()
         except:
             pass
     # === Performance Tracking Summary ===
@@ -529,34 +562,36 @@ def main(args):
         # call_out_of_breach = [step for step, breaches, idx in call_events if breaches != 0]
         # put_out_of_breach  = [step for step, breaches, idx in put_events  if breaches != 0]
         nope_out_of_breach = [step for step, _, _ in nope_events]  # all are "out of breach" by definition
-        print("\n" + "=" * 60)
-        print("OUT-OF-BREACH step_back VALUES".center(60))
-        print("=" * 60)
-        # print(f"Call  (breach)       : {call_out_of_breach}")
-        # print(f"Put   (breach)       : {put_out_of_breach}")
-        print(f"?     (skipped trade): {nope_out_of_breach}")
-        # print("=" * 60)
-        # out_of_breach_summary = {
-        #     'call_out_of_breach': call_out_of_breach,
-        #     'put_out_of_breach': put_out_of_breach,
-        #     'nope_steps': nope_out_of_breach
-        # }
-        # with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
-        #     json.dump(out_of_breach_summary, f, indent=2)
+        if verbose:
+            print("\n" + "=" * 60)
+            print("OUT-OF-BREACH step_back VALUES".center(60))
+            print("=" * 60)
+            # print(f"Call  (breach)       : {call_out_of_breach}")
+            # print(f"Put   (breach)       : {put_out_of_breach}")
+            print(f"?     (skipped trade): {nope_out_of_breach}")
+            # print("=" * 60)
+            # out_of_breach_summary = {
+            #     'call_out_of_breach': call_out_of_breach,
+            #     'put_out_of_breach': put_out_of_breach,
+            #     'nope_steps': nope_out_of_breach
+            # }
+            # with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
+            #     json.dump(out_of_breach_summary, f, indent=2)
 
         # Identify puts and calls that ended OTM
         call_otm = [step[0] for step in performance_tracking_xtm['call']['success']]
         put_otm  = [step[0] for step in performance_tracking_xtm['put']['success']]
         call_itm = [step[0] for step in performance_tracking_xtm['call']['failure']]
         put_itm  = [step[0] for step in performance_tracking_xtm['put']['failure']]
-        print("\n" + "=" * 60)
-        print("OUT-OF-MONEY CALLs and PUTs".center(60))
-        print("=" * 60)
-        print(f"Call  (OTM): {call_otm if len(call_otm) < 75 else len(call_otm)}")
-        print(f"Put   (OTM): {put_otm if len(put_otm) < 75 else len(put_otm)}")
-        print(f"Call  (ITM): {call_itm if len(call_itm) < 75 else len(call_itm)}")
-        print(f"Put   (ITM): {put_itm if len(put_itm) < 75 else len(put_itm)}")
-        print("=" * 60)
+        if verbose:
+            print("\n" + "=" * 60)
+            print("OUT-OF-MONEY CALLs and PUTs".center(60))
+            print("=" * 60)
+            print(f"Call  (OTM): {call_otm if len(call_otm) < 75 else len(call_otm)}")
+            print(f"Put   (OTM): {put_otm if len(put_otm) < 75 else len(put_otm)}")
+            print(f"Call  (ITM): {call_itm if len(call_itm) < 75 else len(call_itm)}")
+            print(f"Put   (ITM): {put_itm if len(put_itm) < 75 else len(put_itm)}")
+            print("=" * 60)
         otm_summary = {
             'call_otm': call_otm,
             'put_otm': put_otm,
@@ -564,9 +599,10 @@ def main(args):
         with open(os.path.join(output_dir, "otm.txt"), "w") as f:
             json.dump(otm_summary, f, indent=2)
 
-        print("\n" + "=" * 60)
-        print("List of fails - based on that the user keeps the trade open until the end".center(60))
-        print("=" * 60)
+        if verbose:
+            print("\n" + "=" * 60)
+            print("List of fails - based on that the user keeps the trade open until the end".center(60))
+            print("=" * 60)
         failed_trades = []
         for step_back in range(0, number_of_step_back):
             if step_back in nope_out_of_breach:
@@ -574,8 +610,9 @@ def main(args):
             if step_back in call_otm or step_back in put_otm:
                 continue  # Trade success
             failed_trades.append(step_back)
-        print(f"Failed: {failed_trades}")
-        print("=" * 60)
+        if verbose:
+            print(f"Failed: {failed_trades}")
+            print("=" * 60)
         failed_summary = {'failed_trades': failed_trades,}
         with open(os.path.join(output_dir, "failed_trades.txt"), "w") as f:
             json.dump(failed_summary, f, indent=2)
@@ -583,14 +620,16 @@ def main(args):
         total_number_of_possible_trade = number_of_step_back
         total_number_of_winning_trade  = number_of_step_back - len(failed_trades)
         total_number_of_loosing_trade  = len(failed_trades)
-        print("\n" + "=" * 60)
-        print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1f}%".center(60))
-        print("=" * 60)
+        if verbose:
+            print("\n" + "=" * 60)
+            print(f"Succes rate is {total_number_of_winning_trade/total_number_of_possible_trade*100:0.1f}%".center(60))
+            print("=" * 60)
     else:
-        # Nicely formatted output for 1-point prediction performance
-        print("\n" + "=" * 70)
-        print("1-POINT PREDICTION PERFORMANCE SUMMARY".center(70))
-        print("=" * 70)
+        if verbose:
+            # Nicely formatted output for 1-point prediction performance
+            print("\n" + "=" * 70)
+            print("1-POINT PREDICTION PERFORMANCE SUMMARY".center(70))
+            print("=" * 70)
         total_number_of_winning_trade = 0
         total_number_of_loosing_trade = 0
         for strategy, results in performance_tracking_1_point_prediction.items():
@@ -600,31 +639,37 @@ def main(args):
             success_rate = (len(success) / total * 100) if total > 0 else 0.0
             total_number_of_winning_trade += len(success)
             total_number_of_loosing_trade += len(failure)
-            print(f"\n{strategy.replace('_', ' ').title()}:")
-            print(f"  ✅ Success: {len(success):3d} {success}")
-            print(f"  ❌ Failure: {len(failure):3d} {failure}")
-            print(f"  🎯 Success Rate: {success_rate:5.1f}%  (out of {total} trades)")
-        print("\n" + "=" * 70)
+            if verbose:
+                print(f"\n{strategy.replace('_', ' ').title()}:")
+                print(f"  ✅ Success: {len(success):3d} {success}")
+                print(f"  ❌ Failure: {len(failure):3d} {failure}")
+                print(f"  🎯 Success Rate: {success_rate:5.1f}%  (out of {total} trades)")
+        if verbose:
+            print("\n" + "=" * 70)
         total_number_of_possible_trade = number_of_step_back
-    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade
+    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade, description_of_what_user_shall_do
 
 
 if __name__ == "__main__":
     freeze_support()
     parser = argparse.ArgumentParser(description="Run Wavelet-based stock forecast.")
-    parser.add_argument("--ticker", type=str, default='^GSPC')
+    parser.add_argument("--ticker", type=str, default='^GSPC', choices=['^GSPC'])  # Need to modify maintenance margin and so on if we change the stock
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="")
     parser.add_argument("--dataset_id", type=str, default='day', choices=['day', 'week'])
-    parser.add_argument("--output_dir", type=str, default=r"../../stubs/wavelet_2/")
+    parser.add_argument("--output_dir", type=str, default=r"../../stubs/wavelet_opt/")
     parser.add_argument("--number_of_step_back", type=int, default=2605)
     parser.add_argument("--n_forecast_length", type=int, default=2)
+    parser.add_argument("--floor_and_ceil", type=float, default=5.)
+    parser.add_argument("--maintenance_margin", type=float, default=2000)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
     parser.add_argument("--use_this_df", type=json.loads, default={})
-    parser.add_argument("--plot_graph", type=bool, default=True)
+    parser.add_argument("--plot_graph", type=bool, default=False)
+    parser.add_argument("--save_graph", type=bool, default=True)
     parser.add_argument("--quiet", type=bool, default=False)
+    parser.add_argument("--do_not_close_graph", type=bool, default=False)
     parser.add_argument("--thresholds_ep", type=str, default="(0.025, 0.02)")
     args = parser.parse_args()
     main(args)
