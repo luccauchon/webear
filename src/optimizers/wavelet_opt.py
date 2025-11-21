@@ -1,5 +1,3 @@
-from random import choices
-
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -17,7 +15,6 @@ import time
 import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
-from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 import pickle
 from constants import NB_WORKERS, IS_RUNNING_ON_CASIR
 import psutil
@@ -27,12 +24,12 @@ import warnings
 warnings.filterwarnings("ignore", message="Level value.*too high.*")
 # Or suppress only specific RuntimeWarnings from NumPy
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
-
+import pandas as pd
 import numpy as np
 import pywt
-
-
-
+import pyarrow as pa
+from pyarrow import ipc
+from utils import next_weekday
 
 
 ###############################################################################
@@ -47,10 +44,37 @@ WAVELET_ALGO_REGISTRY = [wavelet_multi_forecast__version_2,  # 0
 ###############################################################################
 ###############################################################################
 
-def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker, data_filename):
-    with open(data_filename, 'rb') as f:
-        data_cache = pickle.load(f)
-    data = data_cache[ticker]
+def serialize_dict_of_dfs(df_dict):
+    """
+    Convert a dict of pandas DataFrames to a dict of Arrow IPC bytes.
+    """
+    serialized = {}
+    for key, df in df_dict.items():
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(f"Value for key '{key}' is not a pandas DataFrame")
+        table = pa.Table.from_pandas(df)
+        sink = pa.BufferOutputStream()
+        with ipc.new_stream(sink, table.schema) as writer:
+            writer.write_table(table)
+        serialized[key] = sink.getvalue().to_pybytes()
+    return serialized
+
+def deserialize_dict_of_dfs(serialized_dict):
+    """
+    Convert a dict of Arrow IPC bytes back to a dict of pandas DataFrames.
+    """
+    df_dict = {}
+    for key, data_bytes in serialized_dict.items():
+        reader = ipc.open_stream(pa.BufferReader(data_bytes))
+        table = reader.read_all()
+        df_dict[key] = table.to_pandas()
+    return df_dict
+
+
+def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__shared, df_filename):
+    with open(df_filename, 'rb') as f:
+        data = pickle.load(f)
+
     NNN = 88
     # Attendre le Go du master
     while True:
@@ -164,20 +188,123 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, ticker
     out__shared.put((best_rmse, all_results_from_worker))
 
 
+def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__shared, df_filename):
+    with open(df_filename, 'rb') as f:
+        data = pickle.load(f)
+
+    # Attendre le Go du master
+    while True:
+        with master_cmd__shared.get_lock():
+            if 0 != master_cmd__shared.value:
+                break
+        time.sleep(0.333)
+
+    all_results_computed = []
+    while True:
+        use_case_batch = []
+        while len(use_case_batch) < 10:
+            try:
+                item = use_cases__shared.get(timeout=0.1)
+                use_case_batch.append(item)
+            except:
+                break  # Queue is empty or no more items within timeout
+        if 0 == len(use_case_batch):
+            break
+        for use_case in use_case_batch:
+            n_train_length    = use_case['n_train_length']
+            level             = use_case['level']
+            wavlet_type       = use_case['wavlet_type']
+            n_forecast_length = use_case['n_forecast_length']
+            close_col         = use_case['close_col']
+            index_of_algo     = use_case['index_of_algo']
+            dataset_id        = use_case['dataset_id']
+
+            df = data[close_col].copy()
+            train_prices = df[-n_train_length:]
+
+            assert train_prices.index.is_unique
+
+            t1, t2, t3, t4 = train_prices.index[0], train_prices.index[-1], None, None
+
+            assert dataset_id in ['day', 'week']
+            freq = 'W'
+            if dataset_id == 'day':
+                freq = 'D'
+
+            # Map freq to DateOffset keyword
+            freq_to_offset = {
+                'D': 'days',
+                'W': 'weeks',
+                'H': 'hours',
+                'min': 'minutes',
+                's': 'seconds',
+                # add more if needed
+            }
+
+            n = n_forecast_length
+
+            if freq in ['D', 'H', 'min', 's']:
+                t3 = next_weekday(t2)
+                t4 = next_weekday(t2)
+                for ppp in range(1, n):
+                    t4 = next_weekday(t4)
+            else:
+                offset_key = freq_to_offset[freq]  # e.g., 'W' → 'weeks'
+                t3 = t2 + pd.DateOffset(**{offset_key: 1})
+                t4 = t2 + pd.DateOffset(**{offset_key: n})
+            # print(f"[{t1.strftime('%Y%m%d')}-{t2.strftime('%m%d')}→{t3.strftime('%Y%m%d')}-{t4.strftime('%m%d')}]")
+            train_prices = train_prices.values.astype(np.float64).copy()
+
+            try:
+                algo = WAVELET_ALGO_REGISTRY[index_of_algo]
+                forecast_values = algo(
+                    prices=train_prices,
+                    forecast_steps=n_forecast_length,
+                    wavelet=wavlet_type,
+                    level=level,
+                )
+            except Exception as e:
+                continue
+            assert len(forecast_values) == n_train_length + n_forecast_length
+            pred_values = forecast_values[-n_forecast_length:]
+            assert len(pred_values) == n_forecast_length
+
+            directional_accuracy = np.nan
+
+            tmp = {}
+            tmp['rmse'] = 9999.
+            tmp['directional_accuracy'] = directional_accuracy
+            tmp['level'] = level
+            tmp['wavlet_type'] = wavlet_type
+            tmp['n_train_length'] = n_train_length
+            tmp['prices'] = train_prices.copy()
+            tmp['gt_prices'] = None
+            tmp['pred_values'] = pred_values.copy()
+            tmp['n_forecast_length'] = n_forecast_length
+            tmp['times'] = (t1, t2, t3, t4)
+            tmp['index_of_algo'] = index_of_algo
+            all_results_computed.append(tmp)
+
+    # If you really need a dictionary (e.g., indexed by rank), you can do:
+    all_results_from_worker = {i: result for i, result in enumerate(all_results_computed)}
+    out__shared.put((9999., all_results_from_worker))
+
+
 def main(args):
     ticker = args.ticker
-    if args.dataset_id == 'day':
-        df_filename = FYAHOO__OUTPUTFILENAME_DAY
-    elif args.dataset_id == 'week':
-        df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    _nb_workers = NB_WORKERS
-    plot         = args.plot_graph
+    plot_graph   = args.plot_graph
+    show_graph   = args.show_graph
     save_to_disk = args.save_graph
     index_of_algo = 0
+    use_given_gt_truth = args.use_given_gt_truth if isinstance(args.use_given_gt_truth, np.ndarray) else None
     verbose      = not args.quiet
     close_col = ('Close', ticker)
     n_forecast_length = int(args.n_forecast_length)
     n_models_to_keep = int(args.n_models_to_keep)
+    real_time = args.real_time
+    if not real_time:
+        assert use_given_gt_truth is None
+    _nb_workers = _nb_workers = 4 if real_time else NB_WORKERS
     performance_tracking     = {'put':[], 'call': [], '?': []}
     performance_tracking_xtm = {'put':  {'success': [], 'failure': []},
                                 'call': {'success': [], 'failure': []}}
@@ -194,27 +321,53 @@ def main(args):
     floor_and_ceil = args.floor_and_ceil
     maintenance_margin = args.maintenance_margin
     description_of_what_user_shall_do = {}  # Trace of what user shall do to execute the trade
+    parameters_best_models= {}
     close_graph = not args.do_not_close_graph
-    for step_back in tqdm(range(0, number_of_step_back)):
+    if real_time:
+        assert 1 == number_of_step_back
+        number_of_step_back = 1
+    # Serialize the data locally for our processing.
+    master_data_cache = args.master_data_cache
+    df_filename = "??????"   # TODO FIXME REMOVE ME
+    the_filename = args.temp_filename
+    # Serialize ONCE
+    try:
+        os.remove(the_filename)
+    except:
+        pass
+    with open(the_filename, 'wb') as f:
+        pickle.dump(master_data_cache, f)
+    misc_returned = {}
+    # Iterate through time
+    for step_back in tqdm(range(0, number_of_step_back), disable=not args.display_tqdm):
         description_of_what_user_shall_do.update({step_back: {}})
+        parameters_best_models.update({step_back: []})
+        misc_returned.update({step_back: {}})
         use_cases = []
-        with open(df_filename, 'rb') as f:
-            data_cache = pickle.load(f)
-        data = data_cache[ticker]
-        this_year = data[:-(step_back+1)].index[-1].year
-        typical_price = data[data.index.year==this_year][close_col].mean()
-        RMSE_TOL = max(0.5, 0.0001 * typical_price)
-        for n_train_length in sequence_for_train_length:
-            for level in sequence_for_level:
-                for wavlet_type in pywt.wavelist(kind='discrete'):
-                    use_cases.append({'n_train_length': n_train_length, 'level': level, 'wavlet_type': wavlet_type, 'n_forecast_length': n_forecast_length,
-                                      'close_col': close_col, 'RMSE_TOL': RMSE_TOL, 'step_back': step_back, 'index_of_algo': index_of_algo})
-        # print(f"[{step_back=}] Evaluating {len(use_cases)} experiences with {_nb_workers} workers...")
+        if real_time:
+            use_cases =  args.real_time_use_cases
+            # In real time, the use cases are given. Just add information for forecasting.
+            for a_use_case in use_cases:
+                a_use_case.update({'n_forecast_length': n_forecast_length, 'close_col': close_col, 'index_of_algo': index_of_algo, 'dataset_id': args.dataset_id})
+        else:
+            data = master_data_cache.copy()
+            this_year = data[:-(step_back+1)].index[-1].year
+            typical_price = data[data.index.year==this_year][close_col].mean()
+            RMSE_TOL = max(0.5, 0.0001 * typical_price)
+            for n_train_length in sequence_for_train_length:
+                for level in sequence_for_level:
+                    for wavlet_type in pywt.wavelist(kind='discrete'):
+                        use_cases.append({'n_train_length': n_train_length, 'level': level, 'wavlet_type': wavlet_type, 'n_forecast_length': n_forecast_length,
+                                          'close_col': close_col, 'RMSE_TOL': RMSE_TOL, 'step_back': step_back, 'index_of_algo': index_of_algo})
         use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
         out__shared = [Queue(1) for k in range(0, _nb_workers)]
+
         # Lancement des workers
         for k in range(0, _nb_workers):
-            p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k], ticker, df_filename))
+            if real_time:
+                p = Process(target=_worker_processor_realtime, args=(use_cases__shared, master_cmd__shared, out__shared[k], the_filename))
+            else:
+                p = Process(target=_worker_processor_backtesting, args=(use_cases__shared, master_cmd__shared, out__shared[k], the_filename))
             p.start()
             pid = p.pid
             p_obj = psutil.Process(pid)
@@ -236,8 +389,12 @@ def main(args):
         sorted_data_from_workers = sorted(compilation, key=lambda x: x['rmse'])
         assert n_models_to_keep < len(sorted_data_from_workers)
 
-        best_rmse = sorted_data_from_workers[0]
+        # Keep all the parameters needed to run the real time processor
+        if not real_time:
+            for a_good_example in sorted_data_from_workers:
+                parameters_best_models[step_back].append({'level': a_good_example['level'], 'wavlet_type': a_good_example['wavlet_type'], 'n_train_length': a_good_example['n_train_length']})
 
+        best_rmse = sorted_data_from_workers[0]
         n_train_length = best_rmse['n_train_length']
         train_prices = best_rmse['prices']
         gt_prices = best_rmse['gt_prices']
@@ -246,16 +403,14 @@ def main(args):
         # ---------------------------
         # Plotting All Forecasts + Mean
         # ---------------------------
-        plt.figure(figsize=(12, 6))
+        if plot_graph:
+            plt.figure(figsize=(12, 6))
 
-        # Plot training data
-        plt.plot(range(0, n_train_length), train_prices, label='Training Data', color='blue')
+            # Plot training data
+            plt.plot(range(0, n_train_length), train_prices, label='Training Data', color='blue')
 
         # Plot actual future values
         future_indices = np.arange(n_train_length, n_train_length + n_forecast_length)
-        plt.plot(future_indices, gt_prices, label='Actual', marker='o', color='green', linewidth=2)
-        # Add vertical line separating training and forecast
-        plt.axvline(x=n_train_length, color='black', linestyle='--', linewidth=1, label='Train / Forecast Boundary')
 
         # Collect forecasts from top 19 models
         top_n = min(n_models_to_keep, len(sorted_data_from_workers))
@@ -263,12 +418,25 @@ def main(args):
         for i in range(top_n):
             pred = sorted_data_from_workers[i]['pred_values']
             all_forecasts.append(pred)
-            # Light gray lines for individual forecasts
-            plt.plot(future_indices, pred, color='lightgray', alpha=0.6, linewidth=1)
+            if plot_graph:
+                # Light gray lines for individual forecasts
+                plt.plot(future_indices, pred, color='lightgray', alpha=0.6, linewidth=1)
 
         # Compute and plot mean forecast
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)
         mean_forecast = np.mean(all_forecasts, axis=0)
+        if real_time:
+            if use_given_gt_truth:
+                gt_prices = use_given_gt_truth
+            else:
+                gt_prices = mean_forecast.copy()
+            misc_returned[step_back]['mean_forecast'] = mean_forecast.copy()
+        # Plot actual future values
+        future_indices = np.arange(n_train_length, n_train_length + n_forecast_length)
+        if plot_graph:
+            plt.plot(future_indices, gt_prices, label='Actual', marker='o', color='green', linewidth=2)
+            # Add vertical line separating training and forecast
+            plt.axvline(x=n_train_length, color='black', linestyle='--', linewidth=1, label='Train / Forecast Boundary')
 
         # ==============================
         # ENHANCED ROBUSTNESS METRICS
@@ -328,7 +496,8 @@ def main(args):
         # # Determine current ensemble decision (reuse your existing flags)
         # ensemble_decision = 'call' if sell__call_credit_spread else ('put' if sell__put_credit_spread else '?')
         # decision_consensus = np.mean([d == ensemble_decision for d in decision_labels])
-        plt.plot(future_indices, mean_forecast, label='Mean Forecast', marker='p', color='red', linewidth=2.5)
+        if plot_graph:
+            plt.plot(future_indices, mean_forecast, label='Mean Forecast', marker='p', color='red', linewidth=2.5)
         assert len(mean_forecast) == len(gt_prices)
 
         # >>> SHAPE SIMILARITY METRIC <<<
@@ -362,30 +531,31 @@ def main(args):
         last_train_price = train_prices[-1]
         upper_line = last_train_price * (1. + threshold_up_ep)
         lower_line = last_train_price * (1. - threshold_down_ep)
-        plt.axhline(y=upper_line, color='orange', linestyle='--', alpha=0.6, linewidth=1, label=f"+{threshold_up_ep*100:.2f}% / -{threshold_down_ep*100:.2f}%")
-        plt.axhline(y=lower_line, color='orange', linestyle='--', alpha=0.6, linewidth=1)
+        if plot_graph:
+            plt.axhline(y=upper_line, color='orange', linestyle='--', alpha=0.6, linewidth=1, label=f"+{threshold_up_ep*100:.2f}% / -{threshold_down_ep*100:.2f}%")
+            plt.axhline(y=lower_line, color='orange', linestyle='--', alpha=0.6, linewidth=1)
 
-        # Add bold, black text labels for upper_line and lower_line
-        plt.text(
-            x=n_train_length + n_forecast_length - 4.5,  # slightly left of right edge
-            y=upper_line,
-            s=f"{upper_line:.2f}",
-            fontsize=20,
-            fontweight='bold',
-            color='black',
-            verticalalignment='center',
-            horizontalalignment='right'
-        )
-        plt.text(
-            x=n_train_length + n_forecast_length - 9.5,
-            y=lower_line,
-            s=f"{lower_line:.2f}",
-            fontsize=20,
-            fontweight='bold',
-            color='black',
-            verticalalignment='center',
-            horizontalalignment='right'
-        )
+            # Add bold, black text labels for upper_line and lower_line
+            plt.text(
+                x=n_train_length + n_forecast_length - 4.5,  # slightly left of right edge
+                y=upper_line,
+                s=f"{upper_line:.2f}",
+                fontsize=20,
+                fontweight='bold',
+                color='black',
+                verticalalignment='center',
+                horizontalalignment='right'
+            )
+            plt.text(
+                x=n_train_length + n_forecast_length - 9.5,
+                y=lower_line,
+                s=f"{lower_line:.2f}",
+                fontsize=20,
+                fontweight='bold',
+                color='black',
+                verticalalignment='center',
+                horizontalalignment='right'
+            )
 
         th1, th2, entry_price = upper_line, lower_line, last_train_price
         assert th1 > entry_price > th2 and th1 > th2
@@ -432,6 +602,22 @@ def main(args):
             assert ((sell__call_credit_spread and not sell__put_credit_spread and not nope__) or
                     (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
                     (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
+            if not sell__put_credit_spread and not sell__call_credit_spread:
+                description_of_what_user_shall_do[step_back]['op'] = {'action': ''}
+                description_of_what_user_shall_do[step_back]['description'] = f"Do no trade this setup"
+            else:
+                if sell__put_credit_spread:
+                    th2_rounded = math.floor(th2 / floor_and_ceil) * floor_and_ceil
+                    distance_for_protection = maintenance_margin // 100
+                    description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Put Credit Spread:"
+                    description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
+                    description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_put', 'sell1': th2_rounded, 'buy1': th2_rounded - distance_for_protection}
+                if sell__call_credit_spread:
+                    th1_ceiled = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
+                    distance_for_protection = maintenance_margin // 100
+                    description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Call Credit Spread:"
+                    description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + th1_ceiled}$"
+                    description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_call', 'sell1': th1_ceiled, 'buy1': th1_ceiled + distance_for_protection}
         else: # Just have a point.
             assert 1 == len(mean_forecast) and 1 == len(gt_prices) and th1 > th2
             # Prediction is between th1 and th2 --> Iron Condor
@@ -447,6 +633,9 @@ def main(args):
                 description_of_what_user_shall_do[step_back]['description']  = f"Do an Iron Condor:"
                 description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
                 description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['op'] = {'action': 'iron_condor',
+                                                                      'sell1': th2_rounded, 'buy1': th2_rounded - distance_for_protection,
+                                                                      'sell2': th1_ceiled,  'buy2': th1_ceiled + distance_for_protection}
             # Prediction is above th1 --> sell an Credit Put Spread @ th2
             if mean_forecast[0] > th1:
                 if gt_prices[0] > th2:
@@ -455,8 +644,9 @@ def main(args):
                     performance_tracking_1_point_prediction['put_credit_spread']['failure'].append(step_back)
                 th2_rounded = math.floor(th2 / floor_and_ceil) * floor_and_ceil
                 distance_for_protection = maintenance_margin // 100
-                description_of_what_user_shall_do[step_back]['description'] = f"Do a Put Credit Vertical Spread:"
+                description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Put Credit Spread:"
                 description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_put', 'sell1': th2_rounded, 'buy1': th2_rounded - distance_for_protection}
             # Prediction is below th2 --> sell an Call Put Spread @ th1
             if mean_forecast[0] < th2:
                 if gt_prices[0] < th1:
@@ -465,8 +655,9 @@ def main(args):
                     performance_tracking_1_point_prediction['call_credit_spread']['failure'].append(step_back)
                 th1_ceiled = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
                 distance_for_protection = maintenance_margin // 100
-                description_of_what_user_shall_do[step_back]['description'] = f"Do a Call Credit Vertical Spread:"
+                description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Call Credit Spread:"
                 description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_call', 'sell1': th1_ceiled, 'buy1': th1_ceiled + distance_for_protection}
         assert gt_prices.shape == mean_forecast.shape
         #######################################################################
         # Compute statistic based on the real price of the asset
@@ -507,25 +698,28 @@ def main(args):
         time_str = f"[{t1.strftime('%Y%m%d')}-{t2.strftime('%m%d')}→{t3.strftime('%Y%m%d')}-{t4.strftime('%m%d')}]"
         # Title info (using best model for metadata)
         da_str = f", DA: {mean_directional_accuracy:.2%}"
-        plt.title(f'{ticker} Forecast ({Path(df_filename).stem.upper()}) — '
-                  f'Mean RMSE: {mean_rmse:.2f}{da_str} | '
-                  f'Shape Sim: {shape_similarity:.2f} | Robust: {robustness_score:.2f} |\n'
-                  f'{top_n} Models Shown   Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
-        plt.xlabel('Time Index')
-        plt.ylabel('Price')
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.5)
-        plt.tight_layout()
+        if plot_graph:
+            plt.title(f'{ticker} Forecast ({df_filename}) — '
+                      f'Mean RMSE: {mean_rmse:.2f}{da_str} | '
+                      f'Shape Sim: {shape_similarity:.2f} | Robust: {robustness_score:.2f} |\n'
+                      f'{top_n} Models Shown   Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
+            plt.xlabel('Time Index')
+            plt.ylabel('Price')
+            plt.legend()
+            plt.grid(True, linestyle='--', alpha=0.5)
+            plt.tight_layout()
 
-        if plot:
+        if plot_graph and show_graph:
             plt.show()
         if save_to_disk:
             my_output_dir = os.path.join(output_dir, "images")
             os.makedirs(my_output_dir, exist_ok=True)
-            plt.savefig(os.path.join(my_output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
+            if plot_graph:
+                plt.savefig(os.path.join(my_output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
         try:
             if close_graph:
-                plt.close()
+                if plot_graph and show_graph:
+                    plt.close()
         except:
             pass
     # === Performance Tracking Summary ===
@@ -647,7 +841,7 @@ def main(args):
         if verbose:
             print("\n" + "=" * 70)
         total_number_of_possible_trade = number_of_step_back
-    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade, description_of_what_user_shall_do
+    return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade, description_of_what_user_shall_do, parameters_best_models, misc_returned
 
 
 if __name__ == "__main__":
@@ -667,9 +861,24 @@ if __name__ == "__main__":
     parser.add_argument("--n_models_to_keep", type=int, default=60)
     parser.add_argument("--use_this_df", type=json.loads, default={})
     parser.add_argument("--plot_graph", type=bool, default=False)
+    parser.add_argument("--show_graph", type=bool, default=True)
     parser.add_argument("--save_graph", type=bool, default=True)
+    parser.add_argument("--real_time", type=bool, default=False)
+    parser.add_argument("--display_tqdm", type=bool, default=True)
     parser.add_argument("--quiet", type=bool, default=False)
     parser.add_argument("--do_not_close_graph", type=bool, default=False)
     parser.add_argument("--thresholds_ep", type=str, default="(0.025, 0.02)")
+    parser.add_argument("--use_given_gt_truth", type=str, default=None)
+    parser.add_argument("--temp_filename", type=str, default=r"C:\Temp2\toto.pkl")
     args = parser.parse_args()
+
+    from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
+    if args.dataset_id == 'day':
+        df_filename = FYAHOO__OUTPUTFILENAME_DAY
+    elif args.dataset_id == 'week':
+        df_filename = FYAHOO__OUTPUTFILENAME_WEEK
+    with open(df_filename, 'rb') as f:
+        master_data_cache = pickle.load(f)
+    args.master_data_cache = master_data_cache.copy()
+
     main(args)
