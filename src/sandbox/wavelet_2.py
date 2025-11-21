@@ -355,7 +355,8 @@ def main(args):
     n_forecast_length = int(args.n_forecast_length)
     n_models_to_keep = int(args.n_models_to_keep)
     performance_tracking     = {'put':[], 'call': [], '?': []}
-    performance_tracking_xtm = {'put': [], 'call': []}
+    performance_tracking_xtm = {'put':  {'success': [], 'failure': []},
+                                'call': {'success': [], 'failure': []}}
     performance_tracking_1_point_prediction = {'iron_condor_0DTE':   {'success': [], 'failure': []},
                                                'put_credit_spread':  {'success': [], 'failure': []},
                                                'call_credit_spread': {'success': [], 'failure': []}}
@@ -366,7 +367,6 @@ def main(args):
     number_of_step_back = int(args.number_of_step_back)
     sequence_for_train_length = range(8, 32)
     sequence_for_level = range(1, 8)
-    print(f"TODO quantify method to determine if it is a succes + IronCondor. Last price lies between range")
     for step_back in tqdm(range(0, number_of_step_back)):
         use_cases = []
         with open(df_filename, 'rb') as f:
@@ -561,7 +561,7 @@ def main(args):
         th1, th2, entry_price = upper_line, lower_line, last_train_price
         assert th1 > entry_price > th2 and th1 > th2
         sell__call_credit_spread, sell__put_credit_spread, nope__= False, False, False
-        mslope_pred, _ = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1) if n_forecast_length > 1 else 0., None
+        mslope_pred = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)[0] if n_forecast_length > 1 else 0.
         is_between_th1_and_th2 = len(mean_forecast) == np.count_nonzero(mean_forecast < th1) and len(mean_forecast) == np.count_nonzero(mean_forecast > th2)
         is_slope_neg            = mslope_pred < 0
         is_slope_pos            = mslope_pred > 0
@@ -635,7 +635,9 @@ def main(args):
             performance_tracking['call'].append((step_back, number_of_times_real_price_goes_above_call_strike_price, [int(b) for b in indices_call]))
             # if last price is OTM, it is a success
             if gt_prices[-1] < th1:
-                performance_tracking_xtm['call'].append((step_back, gt_prices[-1], th1))
+                performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1))
+            else:
+                performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1))
         if sell__put_credit_spread:
             condition_put = (th2 - gt_prices) > 0
             indices_put = np.where(condition_put)[0]  # or np.nonzero(condition_put)[0]
@@ -643,7 +645,9 @@ def main(args):
             performance_tracking['put'].append((step_back, number_of_times_real_price_goes_below_put_strike_price, [int(b) for b in indices_put]))
             # if last price is OTM, it is a success
             if gt_prices[-1] > th2:
-                performance_tracking_xtm['put'].append((step_back, gt_prices[-1], th2))
+                performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th2))
+            else:
+                performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th2))
         if nope__:
             performance_tracking['?'].append((step_back, 9999, []))
 
@@ -682,61 +686,65 @@ def main(args):
             pass
     # === Performance Tracking Summary ===
     if n_forecast_length > 1:
-        with open(os.path.join(output_dir, "breach.txt"), "w") as f:
-            json.dump(performance_tracking, f, indent=2)
-        call_events = performance_tracking['call']
-        put_events  = performance_tracking['put']
+        # with open(os.path.join(output_dir, "breach.txt"), "w") as f:
+        #     json.dump(performance_tracking, f, indent=2)
+        # call_events = performance_tracking['call']
+        # put_events  = performance_tracking['put']
         nope_events = performance_tracking['?']
-        total_call_signals = len(call_events)
-        total_put_signals  = len(put_events)
-        total_nope_signals = len(nope_events)
-        call_breaches = sum(1 for _, breaches, idx in call_events if breaches > 0)
-        put_breaches  = sum(1 for _, breaches, idx in put_events if breaches > 0)
-        print("\n" + "=" * 60)
-        print("PERFORMANCE TRACKING SUMMARY".center(60))
-        print("=" * 60)
-        print(f"Call Credit Spread Signals : {total_call_signals}")
-        if 0 != total_call_signals:
-            print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%})")
-        print()
-        print(f"Put  Credit Spread Signals : {total_put_signals}")
-        if 0 != total_put_signals:
-            print(f"  → Price breached put strike  : {put_breaches} times ({put_breaches / total_put_signals:.1%})")
-        print()
-        print(f"Nope  Signals : {total_nope_signals}")
-        print()
-        total_signals = total_call_signals + total_put_signals
-        total_breaches = call_breaches + put_breaches
-        sdfg = f"({total_breaches / total_signals:.1%})" if total_signals > 0 else ""
-        print(f"Overall breach rate          : {total_breaches}/{total_signals} {sdfg}")
-        print("=" * 60)
-        # Identify out_of_breach step_back values
-        call_out_of_breach = [step for step, breaches, idx in call_events if breaches != 0]
-        put_out_of_breach  = [step for step, breaches, idx in put_events  if breaches != 0]
+        # total_call_signals = len(call_events)
+        # total_put_signals  = len(put_events)
+        # total_nope_signals = len(nope_events)
+        # call_breaches = sum(1 for _, breaches, idx in call_events if breaches > 0)
+        # put_breaches  = sum(1 for _, breaches, idx in put_events if breaches > 0)
+        # print("\n" + "=" * 60)
+        # print("PERFORMANCE TRACKING SUMMARY".center(60))
+        # print("=" * 60)
+        # print(f"Call Credit Spread Signals : {total_call_signals}")
+        # if 0 != total_call_signals:
+        #     print(f"  → Price breached call strike : {call_breaches} times ({call_breaches / total_call_signals:.1%})")
+        # print()
+        # print(f"Put  Credit Spread Signals : {total_put_signals}")
+        # if 0 != total_put_signals:
+        #     print(f"  → Price breached put strike  : {put_breaches} times ({put_breaches / total_put_signals:.1%})")
+        # print()
+        # print(f"Nope  Signals : {total_nope_signals}")
+        # print()
+        # total_signals = total_call_signals + total_put_signals
+        # total_breaches = call_breaches + put_breaches
+        # sdfg = f"({total_breaches / total_signals:.1%})" if total_signals > 0 else ""
+        # print(f"Overall breach rate          : {total_breaches}/{total_signals} {sdfg}")
+        # print("=" * 60)
+        # # Identify out_of_breach step_back values
+        # call_out_of_breach = [step for step, breaches, idx in call_events if breaches != 0]
+        # put_out_of_breach  = [step for step, breaches, idx in put_events  if breaches != 0]
         nope_out_of_breach = [step for step, _, _ in nope_events]  # all are "out of breach" by definition
         print("\n" + "=" * 60)
         print("OUT-OF-BREACH step_back VALUES".center(60))
         print("=" * 60)
-        print(f"Call  (breach)       : {call_out_of_breach}")
-        print(f"Put   (breach)       : {put_out_of_breach}")
+        # print(f"Call  (breach)       : {call_out_of_breach}")
+        # print(f"Put   (breach)       : {put_out_of_breach}")
         print(f"?     (skipped trade): {nope_out_of_breach}")
-        print("=" * 60)
-        out_of_breach_summary = {
-            'call_out_of_breach': call_out_of_breach,
-            'put_out_of_breach': put_out_of_breach,
-            'nope_steps': nope_out_of_breach
-        }
-        with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
-            json.dump(out_of_breach_summary, f, indent=2)
+        # print("=" * 60)
+        # out_of_breach_summary = {
+        #     'call_out_of_breach': call_out_of_breach,
+        #     'put_out_of_breach': put_out_of_breach,
+        #     'nope_steps': nope_out_of_breach
+        # }
+        # with open(os.path.join(output_dir, "out_of_breach.txt"), "w") as f:
+        #     json.dump(out_of_breach_summary, f, indent=2)
 
         # Identify puts and calls that ended OTM
-        call_otm = [step[0] for step in performance_tracking_xtm['call']]
-        put_otm  = [step[0] for step in performance_tracking_xtm['put']]
+        call_otm = [step[0] for step in performance_tracking_xtm['call']['success']]
+        put_otm  = [step[0] for step in performance_tracking_xtm['put']['success']]
+        call_itm = [step[0] for step in performance_tracking_xtm['call']['failure']]
+        put_itm  = [step[0] for step in performance_tracking_xtm['put']['failure']]
         print("\n" + "=" * 60)
         print("OUT-OF-MONEY CALLs and PUTs".center(60))
         print("=" * 60)
-        print(f"Call  (OTM): {call_otm}")
-        print(f"Put   (OTM): {put_otm}")
+        print(f"Call  (OTM): {call_otm if len(call_otm) < 75 else len(call_otm)}")
+        print(f"Put   (OTM): {put_otm if len(put_otm) < 75 else len(put_otm)}")
+        print(f"Call  (ITM): {call_itm if len(call_itm) < 75 else len(call_itm)}")
+        print(f"Put   (ITM): {put_itm if len(put_itm) < 75 else len(put_itm)}")
         print("=" * 60)
         otm_summary = {
             'call_otm': call_otm,
