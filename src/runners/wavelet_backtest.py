@@ -33,15 +33,6 @@ def main(args):
     thresholds_ep = args.thresholds_ep
     number_of_step_back = args.step_back_range
 
-    # Inside main(), after assigning thresholds_ep:
-    try:
-        thresholds_ep_parsed = ast.literal_eval(args.thresholds_ep)
-        if not isinstance(thresholds_ep_parsed, tuple) or len(thresholds_ep_parsed) != 2:
-            raise ValueError
-        thresholds_ep = thresholds_ep_parsed
-    except (ValueError, SyntaxError):
-        raise ValueError(f"Invalid format for --thresholds-ep. Expected a tuple string like '(0.01, 0.02)', got: {args.thresholds_ep}")
-
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif dataset_id == 'week':

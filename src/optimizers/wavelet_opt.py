@@ -285,9 +285,12 @@ def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__share
             tmp['index_of_algo'] = index_of_algo
             all_results_computed.append(tmp)
 
+    all_results_computed.sort(key=lambda x: x['n_train_length'])
+    # Get top NNN results (as a list)
+    top_results = all_results_computed
     # If you really need a dictionary (e.g., indexed by rank), you can do:
-    all_results_from_worker = {i: result for i, result in enumerate(all_results_computed)}
-    out__shared.put((9999., all_results_from_worker))
+    all_results_from_worker = {i: result for i, result in enumerate(top_results)}
+    out__shared.put((None, all_results_from_worker))
 
 
 def main(args):
@@ -304,7 +307,7 @@ def main(args):
     real_time = args.real_time
     if not real_time:
         assert use_given_gt_truth is None
-    _nb_workers = _nb_workers = 4 if real_time else NB_WORKERS
+    _nb_workers = _nb_workers = 8 if real_time else NB_WORKERS
     performance_tracking     = {'put':[], 'call': [], '?': []}
     performance_tracking_xtm = {'put':  {'success': [], 'failure': []},
                                 'call': {'success': [], 'failure': []}}
