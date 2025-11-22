@@ -28,7 +28,7 @@ def main(args):
     col = 'Close'
     col_name = (col, ticker)
     dataset_id = 'day'
-    n_forecast_length   = 1
+    n_forecast_length = 2
     thresholds_ep = "(0.0125, 0.0125)"
 
     if dataset_id == 'day':
@@ -39,16 +39,21 @@ def main(args):
         master_data_cache = pickle.load(f)
     master_data_cache = master_data_cache[ticker].copy()
     performance = {}
-    number_of_step_back=999
+    number_of_step_back=5
     for step_back in range(1, number_of_step_back + 1):
+        # Create the "Now" dataframe
+        df = master_data_cache.iloc[:-step_back].copy()
+        # print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
         # All data except the last `step_back` rows → for parameter extraction
-        data_cache_for_parameter_extraction = master_data_cache.iloc[:-step_back].copy()
-        performance.update({step_back: {}})
-        # The single row at position `-step_back` → for forecasting
-        data_cache_for_forecasting = master_data_cache.iloc[[-step_back]].copy()
-        assert n_forecast_length == len(data_cache_for_forecasting)
+        data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
+        # Rows at position `-step_back` → for forecasting
+        data_cache_for_forecasting = df.iloc[-n_forecast_length: ].copy()
+        # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
+        assert n_forecast_length == len(data_cache_for_forecasting), f"{len(data_cache_for_forecasting)}"
+        assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty, "Indices must be disjoint"
         output_dir = rf"../../stubs/wavelet_backtesting_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/__{step_back}/"
         os.makedirs(output_dir, exist_ok=True)
+        performance.update({step_back: {}})
         args = Namespace(
             master_data_cache=data_cache_for_parameter_extraction.copy(),
             ticker=ticker, col=col,
@@ -61,8 +66,11 @@ def main(args):
             display_tqdm=False,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
+        #print(user_instruction)
+        #print(misc_returned)
         operation_data = user_instruction['op']
         operation_request, operation_success, operation_missed_threshold = operation_data['action'], False, 0
+        operation_aborted = False
         if operation_request == 'iron_condor':
             if 1 == n_forecast_length:
                 assert 1 == len(data_cache_for_forecasting[col_name].values)
@@ -73,7 +81,14 @@ def main(args):
                 else:
                     operation_missed_threshold = low - real_value if real_value < low else real_value - high
             else:
-                assert False
+                assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
+                real_values = data_cache_for_forecasting[col_name].values
+                last_real_value = real_values[-1]
+                low, high = operation_data['sell1'], operation_data['sell2']
+                if low < last_real_value < high:
+                    operation_success = True
+                else:
+                    operation_missed_threshold = low - last_real_value if last_real_value < low else last_real_value - high
         if operation_request == 'vertical_put':
             if 1 == n_forecast_length:
                 assert 1 == len(data_cache_for_forecasting[col_name].values)
@@ -81,8 +96,17 @@ def main(args):
                 low = operation_data['sell1']
                 if real_value > low:
                     operation_success = True
+                else:
+                    operation_missed_threshold = low - real_value
             else:
-                assert False
+                assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
+                real_values = data_cache_for_forecasting[col_name].values
+                last_real_value = real_values[-1]
+                low = operation_data['sell1']
+                if last_real_value > low:
+                    operation_success = True
+                else:
+                    operation_missed_threshold = low - last_real_value
         if operation_request == 'vertical_call':
             if 1 == n_forecast_length:
                 assert 1 == len(data_cache_for_forecasting[col_name].values)
@@ -90,14 +114,44 @@ def main(args):
                 high = operation_data['sell1']
                 if real_value < high:
                     operation_success = True
+                else:
+                    operation_missed_threshold = real_value - high
             else:
-                assert False
-        performance[step_back].update({})
-        if operation_success:
-            print(f"\tOn the day {data_cache_for_forecasting.index[0]} , the {operation_request} was successful")
+                assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
+                real_values = data_cache_for_forecasting[col_name].values
+                last_real_value = real_values[-1]
+                high = operation_data['sell1']
+                if last_real_value < high:
+                    operation_success = True
+                else:
+                    operation_missed_threshold = last_real_value - high
+        if operation_request == 'do_nothing':
+            operation_aborted = True
+        performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                       'operation_request': operation_request,
+                                       'operation_success': operation_success,
+                                       'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+        if operation_aborted:
+            print(f"\tOn the day {data_cache_for_forecasting.index[0]} , no operation was taken")
         else:
-            print(f"\tOn the day {data_cache_for_forecasting.index[0]} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
+            if operation_success:
+                print(f"\tOn the day {data_cache_for_forecasting.index[0]} , the {operation_request} was successful")
+            else:
+                print(f"\tOn the day {data_cache_for_forecasting.index[0]} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
+    # --- Summary Report ---
+    total_runs = len(performance)
+    successes = sum(1 for v in performance.values() if v['operation_success'])
+    failures = sum(1 for v in performance.values() if not v['operation_success'] and not v['operation_aborted'])
+    skipped = sum(1 for v in performance.values() if v['operation_aborted'])
 
+    print("\n" + "="*50)
+    print("BACKTESTING PERFORMANCE SUMMARY".center(50))
+    print("="*50)
+    print(f"Total Backtest Windows     : {total_runs}")
+    print(f"Successful Trades          : {successes} ({successes/total_runs*100:.1f}%)")
+    print(f"Failed Trades              : {failures} ({failures/total_runs*100:.1f}%)")
+    print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
+    print("="*50)
 
 if __name__ == "__main__":
     freeze_support()

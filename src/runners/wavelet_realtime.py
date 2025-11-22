@@ -33,7 +33,7 @@ def main(args):
         temp_filename=os.path.join(args.output_dir, 'real_time.pkl'),
         older_dataset=None,
         dataset_id=args.dataset_id,
-        number_of_step_back=1,  # FIXME TODO permettre plusieurs steps
+        number_of_step_back=1,  # FIXME TODO permettre plusieurs steps , même dans le real time
         n_forecast_length=args.n_forecast_length,  # FIXME TODO un length pour ici et un autre pour le forecast voulu? si !=, alors, boucle de retroaction
         n_models_to_keep=60,
         plot_graph=False,
@@ -56,9 +56,9 @@ def main(args):
     # Projection dans le futur
     #######################################################################
     # Adjust some parameters
-    configuration.real_time = True
+    configuration.real_time           = True
     configuration.real_time_use_cases = parameters_best_models[0]
-    configuration.plot_graph = True
+    configuration.plot_graph          = args.plot_graph
     if args.use_given_gt_truth is not None:
         configuration.use_given_gt_truth = args.use_given_gt_truth
     # Run the real time processor
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     dataset_id = 'day'
     output_dir = f"../../stubs/wavelet_realtime_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/"
     os.makedirs(output_dir, exist_ok=True)
-    n_forecast_length   = 1
+    n_forecast_length   = 2
     thresholds_ep = "(0.0125, 0.012)"
 
     if dataset_id == 'day':

@@ -426,10 +426,10 @@ def main(args):
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)
         mean_forecast = np.mean(all_forecasts, axis=0)
         if real_time:
-            if use_given_gt_truth:
-                gt_prices = use_given_gt_truth
-            else:
+            if use_given_gt_truth is None:
                 gt_prices = mean_forecast.copy()
+            else:
+                gt_prices = use_given_gt_truth
             misc_returned[step_back]['mean_forecast'] = mean_forecast.copy()
         # Plot actual future values
         future_indices = np.arange(n_train_length, n_train_length + n_forecast_length)
@@ -603,7 +603,7 @@ def main(args):
                     (sell__put_credit_spread and not sell__call_credit_spread and not nope__) or
                     (nope__ and not sell__call_credit_spread and not sell__put_credit_spread))
             if not sell__put_credit_spread and not sell__call_credit_spread:
-                description_of_what_user_shall_do[step_back]['op'] = {'action': ''}
+                description_of_what_user_shall_do[step_back]['op'] = {'action': 'do_nothing'}
                 description_of_what_user_shall_do[step_back]['description'] = f"Do no trade this setup"
             else:
                 if sell__put_credit_spread:
