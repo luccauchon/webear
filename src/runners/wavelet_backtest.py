@@ -21,15 +21,26 @@ import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 from tqdm import tqdm
 from runners.wavelet_realtime import main as wavelet_realtime_entry_point
+import ast
 
 
 def main(args):
-    ticker = '^GSPC'
-    col = 'Close'
+    ticker = args.ticker
+    col = args.col
     col_name = (col, ticker)
-    dataset_id = 'day'
-    n_forecast_length = 2
-    thresholds_ep = "(0.0125, 0.0125)"
+    dataset_id = args.dataset_id
+    n_forecast_length = args.n_forecast_length
+    thresholds_ep = args.thresholds_ep
+    number_of_step_back = args.step_back_range
+
+    # Inside main(), after assigning thresholds_ep:
+    try:
+        thresholds_ep_parsed = ast.literal_eval(args.thresholds_ep)
+        if not isinstance(thresholds_ep_parsed, tuple) or len(thresholds_ep_parsed) != 2:
+            raise ValueError
+        thresholds_ep = thresholds_ep_parsed
+    except (ValueError, SyntaxError):
+        raise ValueError(f"Invalid format for --thresholds-ep. Expected a tuple string like '(0.01, 0.02)', got: {args.thresholds_ep}")
 
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
@@ -38,8 +49,20 @@ def main(args):
     with open(df_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = master_data_cache[ticker].copy()
+    # --- Parameter Summary ---
+    print("\n" + "="*50)
+    print("BACKTESTING PARAMETERS SUMMARY".center(50))
+    print("="*50)
+    print(f"Ticker               : {ticker}")
+    print(f"Column               : {col}")
+    print(f"Dataset Frequency    : {dataset_id}")
+    print(f"Forecast Length      : {n_forecast_length}")
+    print(f"Thresholds (EP)      : {thresholds_ep}")
+    print(f"Step-Back Range      : {number_of_step_back}")
+    print(f"Data File            : {df_filename}")
+    print("="*50)
+    input("Press Enter to start backtesting...")
     performance = {}
-    number_of_step_back=5
     for step_back in range(1, number_of_step_back + 1):
         # Create the "Now" dataframe
         df = master_data_cache.iloc[:-step_back].copy()
@@ -153,9 +176,26 @@ def main(args):
     print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
     print("="*50)
 
+
 if __name__ == "__main__":
     freeze_support()
-    parser = argparse.ArgumentParser(description="Run Wavelet-based stock real time estimator.")
+    parser = argparse.ArgumentParser(description="Run Wavelet-based stock backtesting.")
+
+    parser.add_argument('--ticker', type=str, default='^GSPC',
+                        help="Yahoo Finance ticker symbol (default: ^GSPC)")
+    parser.add_argument('--col', type=str, default='Close',
+                        choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'],
+                        help="Price column to use (default: Close)")
+    parser.add_argument('--dataset-id', type=str, default='day',
+                        choices=['day', 'week'],
+                        help="Dataset frequency: 'day' or 'week' (default: day)")
+    parser.add_argument('--n-forecast-length', type=int, default=2,
+                        help="Number of future steps to forecast (default: 2)")
+    parser.add_argument('--thresholds-ep', type=str, default="(0.0125, 0.0125)",
+                        help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
+    parser.add_argument('--step-back-range', type=int, default=5,
+                        help="Number of past steps to backtest (default: 5)")
+
     args = parser.parse_args()
 
     main(args)
