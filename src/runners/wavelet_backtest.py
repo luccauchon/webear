@@ -53,7 +53,7 @@ def main(args):
     print(f"Data File            : {df_filename}")
     print("="*50)
     # input("Press Enter to start backtesting...")
-    performance = {}
+    performance, put_credit_spread_performance, call_credit_spread_performance = {}, {}, {}
     for step_back in range(1, number_of_step_back + 1):
 #        while True:
         # Create the "Now" dataframe
@@ -68,7 +68,6 @@ def main(args):
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty, "Indices must be disjoint"
         output_dir = rf"../../stubs/wavelet_backtesting_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/__{step_back}/"
         os.makedirs(output_dir, exist_ok=True)
-        performance.update({step_back: {}})
         args = Namespace(
             master_data_cache=data_cache_for_parameter_extraction.copy(),
             ticker=ticker, col=col,
@@ -140,10 +139,23 @@ def main(args):
                     operation_missed_threshold = last_real_value - high
         if operation_request == 'do_nothing':
             operation_aborted = True
+        performance.update({step_back: {}})
         performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
                                        'operation_request': operation_request,
                                        'operation_success': operation_success,
                                        'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+        if operation_request == 'vertical_put':
+            put_credit_spread_performance.update({step_back: {}})
+            put_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                                             'operation_request': operation_request,
+                                                             'operation_success': operation_success,
+                                                             'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+        if operation_request == 'vertical_call':
+            call_credit_spread_performance.update({step_back: {}})
+            call_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                                              'operation_request': operation_request,
+                                                              'operation_success': operation_success,
+                                                              'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
         if operation_aborted:
             print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
         else:
@@ -155,8 +167,8 @@ def main(args):
     # --- Summary Report ---
     total_runs = len(performance)
     successes = sum(1 for v in performance.values() if v['operation_success'])
-    failures = sum(1 for v in performance.values() if not v['operation_success'] and not v['operation_aborted'])
-    skipped = sum(1 for v in performance.values() if v['operation_aborted'])
+    failures  = sum(1 for v in performance.values() if not v['operation_success'] and not v['operation_aborted'])
+    skipped   = sum(1 for v in performance.values() if v['operation_aborted'])
 
     print("\n" + "="*50)
     print("BACKTESTING PERFORMANCE SUMMARY".center(50))
@@ -166,6 +178,24 @@ def main(args):
     print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
     print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
     print("="*50)
+
+    # --- Put Credit Spread Summary ---
+    put_runs = len(put_credit_spread_performance)
+    if put_runs > 0:
+        put_successes = sum(1 for v in put_credit_spread_performance.values() if v['operation_success'])
+        put_failures = put_runs - put_successes
+        print(f"\nPut Credit Spreads ({put_runs} trades):")
+        print(f"  Successes: {put_successes} ({put_successes/put_runs*100:.1f}%)")
+        print(f"  Failures : {put_failures} ({put_failures/put_runs*100:.1f}%)")
+
+    # --- Call Credit Spread Summary ---
+    call_runs = len(call_credit_spread_performance)
+    if call_runs > 0:
+        call_successes = sum(1 for v in call_credit_spread_performance.values() if v['operation_success'])
+        call_failures = call_runs - call_successes
+        print(f"\nCall Credit Spreads ({call_runs} trades):")
+        print(f"  Successes: {call_successes} ({call_successes/call_runs*100:.1f}%)")
+        print(f"  Failures : {call_failures} ({call_failures/call_runs*100:.1f}%)")
 
 
 if __name__ == "__main__":
