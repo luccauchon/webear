@@ -51,7 +51,7 @@ def main(args):
     # Get the best parameters for the real time processor
     _, _, _, _, parameters_best_models, _ = wavelet_optimizer_entry_point(configuration)
     assert 1 == len(parameters_best_models)
-
+    # print(len(parameters_best_models[0]))
     #######################################################################
     # Projection dans le futur
     #######################################################################

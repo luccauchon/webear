@@ -613,13 +613,13 @@ def main(args):
                     th2_rounded = math.floor(th2 / floor_and_ceil) * floor_and_ceil
                     distance_for_protection = maintenance_margin // 100
                     description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Put Credit Spread:"
-                    description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
+                    description_of_what_user_shall_do[step_back]['description'] += f" Write Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
                     description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_put', 'sell1': th2_rounded, 'buy1': th2_rounded - distance_for_protection}
                 if sell__call_credit_spread:
                     th1_ceiled = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
                     distance_for_protection = maintenance_margin // 100
                     description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Call Credit Spread:"
-                    description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + th1_ceiled}$"
+                    description_of_what_user_shall_do[step_back]['description'] += f" Write Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
                     description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_call', 'sell1': th1_ceiled, 'buy1': th1_ceiled + distance_for_protection}
         else: # Just have a point.
             assert 1 == len(mean_forecast) and 1 == len(gt_prices) and th1 > th2
@@ -634,8 +634,8 @@ def main(args):
                 th1_ceiled  = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
                 distance_for_protection = maintenance_margin // 2 // 100
                 description_of_what_user_shall_do[step_back]['description']  = f"Do an Iron Condor:"
-                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
-                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['description'] += f" Write Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['description'] += f" Write Call @{th1_ceiled}$ with protection @{th1_ceiled  + distance_for_protection}$"
                 description_of_what_user_shall_do[step_back]['op'] = {'action': 'iron_condor',
                                                                       'sell1': th2_rounded, 'buy1': th2_rounded - distance_for_protection,
                                                                       'sell2': th1_ceiled,  'buy2': th1_ceiled + distance_for_protection}
@@ -648,7 +648,7 @@ def main(args):
                 th2_rounded = math.floor(th2 / floor_and_ceil) * floor_and_ceil
                 distance_for_protection = maintenance_margin // 100
                 description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Put Credit Spread:"
-                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['description'] += f" Write Put @{th2_rounded}$ with protection @{th2_rounded - distance_for_protection}$"
                 description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_put', 'sell1': th2_rounded, 'buy1': th2_rounded - distance_for_protection}
             # Prediction is below th2 --> sell an Call Put Spread @ th1
             if mean_forecast[0] < th2:
@@ -659,7 +659,7 @@ def main(args):
                 th1_ceiled = math.ceil(th1 / floor_and_ceil) * floor_and_ceil
                 distance_for_protection = maintenance_margin // 100
                 description_of_what_user_shall_do[step_back]['description'] = f"Do a Vertical Call Credit Spread:"
-                description_of_what_user_shall_do[step_back]['description'] += f"\n\tWrite Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
+                description_of_what_user_shall_do[step_back]['description'] += f" Write Call @{th1_ceiled}$ with protection @{th1_ceiled + distance_for_protection}$"
                 description_of_what_user_shall_do[step_back]['op'] = {'action': 'vertical_call', 'sell1': th1_ceiled, 'buy1': th1_ceiled + distance_for_protection}
         assert gt_prices.shape == mean_forecast.shape
         #######################################################################
@@ -853,7 +853,7 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default='^GSPC', choices=['^GSPC'])  # Need to modify maintenance margin and so on if we change the stock
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="")
-    parser.add_argument("--dataset_id", type=str, default='day', choices=['day', 'week'])
+    parser.add_argument("--dataset_id", type=str, default='day', choices=['day', 'week', 'month'])
     parser.add_argument("--output_dir", type=str, default=r"../../stubs/wavelet_opt/")
     parser.add_argument("--number_of_step_back", type=int, default=2605)
     parser.add_argument("--n_forecast_length", type=int, default=2)
@@ -875,11 +875,13 @@ if __name__ == "__main__":
     parser.add_argument("--temp_filename", type=str, default=r"C:\Temp2\toto.pkl")
     args = parser.parse_args()
 
-    from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
+    from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH
     if args.dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif args.dataset_id == 'week':
         df_filename = FYAHOO__OUTPUTFILENAME_WEEK
+    elif args.dataset_id == 'month':
+        df_filename = FYAHOO__OUTPUTFILENAME_MONTH
     with open(df_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     args.master_data_cache = master_data_cache.copy()

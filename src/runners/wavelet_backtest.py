@@ -52,9 +52,10 @@ def main(args):
     print(f"Step-Back Range      : {number_of_step_back}")
     print(f"Data File            : {df_filename}")
     print("="*50)
-    input("Press Enter to start backtesting...")
+    # input("Press Enter to start backtesting...")
     performance = {}
     for step_back in range(1, number_of_step_back + 1):
+#        while True:
         # Create the "Now" dataframe
         df = master_data_cache.iloc[:-step_back].copy()
         # print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
@@ -80,8 +81,6 @@ def main(args):
             display_tqdm=False,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
-        #print(user_instruction)
-        #print(misc_returned)
         operation_data = user_instruction['op']
         operation_request, operation_success, operation_missed_threshold = operation_data['action'], False, 0
         operation_aborted = False
@@ -146,12 +145,13 @@ def main(args):
                                        'operation_success': operation_success,
                                        'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
         if operation_aborted:
-            print(f"\tOn the day {data_cache_for_forecasting.index[0]} , no operation was taken")
+            print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
         else:
             if operation_success:
-                print(f"\tOn the day {data_cache_for_forecasting.index[0]} , the {operation_request} was successful")
+                print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was successful")
             else:
-                print(f"\tOn the day {data_cache_for_forecasting.index[0]} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
+                print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
+        print(f"\t\t{user_instruction['description']}")
     # --- Summary Report ---
     total_runs = len(performance)
     successes = sum(1 for v in performance.values() if v['operation_success'])
@@ -162,8 +162,8 @@ def main(args):
     print("BACKTESTING PERFORMANCE SUMMARY".center(50))
     print("="*50)
     print(f"Total Backtest Windows     : {total_runs}")
-    print(f"Successful Trades          : {successes} ({successes/total_runs*100:.1f}%)")
-    print(f"Failed Trades              : {failures} ({failures/total_runs*100:.1f}%)")
+    print(f"Successful Trades          : {successes} ({successes/(successes+failures)*100:.1f}%)")
+    print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
     print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
     print("="*50)
 
