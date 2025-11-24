@@ -53,3 +53,6 @@ TOP10_SP500_TICKERS = ["AMZN", "AAPL", "AVGO", "BRK-B", "GOOG", "GOOGL", "META",
 # Forecast output directory (still assumes D: is preferred)
 OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST = os.path.join(BASE_FORECAST_DIR, r"Fourier_based_stock_forecast")
 os.makedirs(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, exist_ok=True)
+
+OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST = os.path.join(BASE_FORECAST_DIR, r"Wavlet_based_stock_forecast")
+os.makedirs(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, exist_ok=True)

@@ -18,7 +18,7 @@ from optimizers.wavelet_opt import main as wavelet_optimizer_entry_point
 from argparse import Namespace
 import matplotlib.pyplot as plt
 import pickle
-from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
+from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST
 from utils import transform_path
 
 
@@ -96,6 +96,12 @@ def main(args):
         )
 
         plt.tight_layout(rect=[0, 0.1, 1, 1])  # Make room for the text at the bottom
+        # Save and show AFTER adding text
+        if older_dataset is not None:
+            today_str = datetime.today().strftime('%Y-%m-%d')
+            os.makedirs(os.path.join(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, args.older_dataset), exist_ok=True)
+            figure_filename = os.path.join(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, args.older_dataset, f"forecast__{args.ticker}_{args.dataset_id}__.png")
+            plt.savefig(figure_filename, dpi=300, bbox_inches='tight')
         plt.show()
         plt.close()
     return description_of_what_user_shall_do[0], misc_returned[0]
@@ -104,15 +110,15 @@ def main(args):
 if __name__ == "__main__":
     freeze_support()
     parser = argparse.ArgumentParser(description="Run Wavelet-based stock real time estimator.")
+    parser.add_argument("--ticker", type=str, default='^GSPC')
+    parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day'])
     parser.add_argument("--n_forecast_length", type=int, default=4)
-    parser.add_argument('--thresholds-ep', type=str, default="(0.0125, 0.0125)")
+    parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
     parser.add_argument('--verbose', type=bool, default=False)
     args = parser.parse_args()
 
-    ticker = '^GSPC'
-    col = 'Close'
     output_dir = f"../../stubs/wavelet_realtime_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -125,12 +131,12 @@ if __name__ == "__main__":
 
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
-    master_data_cache = master_data_cache[ticker].copy()
+    master_data_cache = master_data_cache[args.ticker].copy()
 
     args = Namespace(
         master_data_cache=master_data_cache.copy(),
-        ticker=ticker,
-        col=col,
+        ticker=args.ticker,
+        col=args.col,
         output_dir=output_dir,
         temp_filename=os.path.join(output_dir, "real_time.pkl"),
         dataset_id=args.dataset_id,
@@ -143,5 +149,12 @@ if __name__ == "__main__":
         strategy_for_exit = 'hold_until_the_end_with_roll',
         verbose = args.verbose,
     )
-
+    # --- Nicely print the arguments ---
+    print("🔧 Arguments:")
+    for arg, value in vars(args).items():
+        if 'master_data_cache' in arg:
+            print(f"    {arg:.<40} {value.index[0].strftime('%Y-%m-%d')} to {value.index[-1].strftime('%Y-%m-%d')}")
+            continue
+        print(f"    {arg:.<40} {value}")
+    print("-" * 80, flush=True)
     main(args)
