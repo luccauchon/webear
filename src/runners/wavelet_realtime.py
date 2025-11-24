@@ -19,6 +19,7 @@ from argparse import Namespace
 import matplotlib.pyplot as plt
 import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
+from utils import transform_path
 
 
 def main(args):
@@ -31,7 +32,7 @@ def main(args):
         col= args.col,
         output_dir = args.output_dir,
         temp_filename=os.path.join(args.output_dir, 'real_time.pkl'),
-        older_dataset=None,
+        older_dataset=None,  # Don't modify
         dataset_id=args.dataset_id,
         number_of_step_back=1,  # FIXME TODO permettre plusieurs steps , même dans le real time
         n_forecast_length=args.n_forecast_length,  # FIXME TODO un length pour ici et un autre pour le forecast voulu? si !=, alors, boucle de retroaction
@@ -47,11 +48,12 @@ def main(args):
         real_time = False,
         use_given_gt_truth = None,
         display_tqdm = args.display_tqdm,
+        strategy_for_exit=args.strategy_for_exit,
     )
     # Get the best parameters for the real time processor
     _, _, _, _, parameters_best_models, _ = wavelet_optimizer_entry_point(configuration)
     assert 1 == len(parameters_best_models)
-    # print(len(parameters_best_models[0]))
+
     #######################################################################
     # Projection dans le futur
     #######################################################################
@@ -101,21 +103,25 @@ def main(args):
 if __name__ == "__main__":
     freeze_support()
     parser = argparse.ArgumentParser(description="Run Wavelet-based stock real time estimator.")
+    parser.add_argument("--older_dataset", type=str, default="None")
+    parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day'])
+    parser.add_argument("--n_forecast_length", type=int, default=4)
+    parser.add_argument('--thresholds-ep', type=str, default="(0.0125, 0.0125)")
     args = parser.parse_args()
 
     ticker = '^GSPC'
     col = 'Close'
-    dataset_id = 'day'
     output_dir = f"../../stubs/wavelet_realtime_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/"
     os.makedirs(output_dir, exist_ok=True)
-    n_forecast_length   = 2
-    thresholds_ep = "(0.0125, 0.012)"
 
-    if dataset_id == 'day':
+    if args.dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
-    elif dataset_id == 'week':
+    elif args.dataset_id == 'week':
         df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    with open(df_filename, 'rb') as f:
+    older_dataset = None if args.older_dataset == "None" else args.older_dataset
+    one_dataset_filename = df_filename if older_dataset is None else transform_path(df_filename, older_dataset)
+
+    with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = master_data_cache[ticker].copy()
 
@@ -125,12 +131,14 @@ if __name__ == "__main__":
         col=col,
         output_dir=output_dir,
         temp_filename=os.path.join(output_dir, "real_time.pkl"),
-        dataset_id=dataset_id,
-        n_forecast_length=n_forecast_length,
-        thresholds_ep=thresholds_ep,
+        dataset_id=args.dataset_id,
+        older_dataset=args.older_dataset,
+        n_forecast_length=args.n_forecast_length,
+        thresholds_ep=args.thresholds_ep,
         plot_graph = True,
         use_given_gt_truth = None,
         display_tqdm = False,
+        strategy_for_exit = 'hold_until_the_end_with_roll',
     )
 
     main(args)

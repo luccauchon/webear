@@ -21,7 +21,9 @@ import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 from tqdm import tqdm
 from runners.wavelet_realtime import main as wavelet_realtime_entry_point
+from utils import format_execution_time
 import ast
+import time
 
 
 def main(args):
@@ -32,7 +34,7 @@ def main(args):
     n_forecast_length = args.n_forecast_length
     thresholds_ep = args.thresholds_ep
     number_of_step_back = args.step_back_range
-
+    exit_strategy = 'hold_until_the_end_with_roll'
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif dataset_id == 'week':
@@ -51,11 +53,12 @@ def main(args):
     print(f"Thresholds (EP)      : {thresholds_ep}")
     print(f"Step-Back Range      : {number_of_step_back}")
     print(f"Data File            : {df_filename}")
+    print(f"Exit strategy        : {exit_strategy}")
     print("="*50)
     # input("Press Enter to start backtesting...")
     performance, put_credit_spread_performance, call_credit_spread_performance = {}, {}, {}
     for step_back in range(1, number_of_step_back + 1):
-#        while True:
+        t1 = time.time()
         # Create the "Now" dataframe
         df = master_data_cache.iloc[:-step_back].copy()
         # print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
@@ -78,6 +81,7 @@ def main(args):
             plot_graph=False,
             use_given_gt_truth=data_cache_for_forecasting[col_name].values,
             display_tqdm=False,
+            strategy_for_exit=args.strategy_for_exit,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
         operation_data = user_instruction['op']
@@ -156,6 +160,8 @@ def main(args):
                                                               'operation_request': operation_request,
                                                               'operation_success': operation_success,
                                                               'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+        t2 = time.time()
+        print(f"[{step_back}/{number_of_step_back}] used {format_execution_time(t2-t1)}")
         if operation_aborted:
             print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
         else:
@@ -216,6 +222,9 @@ if __name__ == "__main__":
                         help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
     parser.add_argument('--step-back-range', type=int, default=5,
                         help="Number of past steps to backtest (default: 5)")
+    parser.add_argument('--strategy-for-exit', type=str, default="hold_until_the_end_with_roll",
+                        choices=['hold_until_the_end', 'hold_until_the_end_with_roll'],
+                        help="")
 
     args = parser.parse_args()
 

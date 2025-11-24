@@ -29,7 +29,7 @@ import numpy as np
 import pywt
 import pyarrow as pa
 from pyarrow import ipc
-from utils import next_weekday
+from utils import next_weekday, transform_path
 
 
 ###############################################################################
@@ -71,8 +71,8 @@ def deserialize_dict_of_dfs(serialized_dict):
     return df_dict
 
 
-def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__shared, df_filename):
-    with open(df_filename, 'rb') as f:
+def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__shared, the_filename_for_worker):
+    with open(the_filename_for_worker, 'rb') as f:
         data = pickle.load(f)
 
     NNN = 88
@@ -188,8 +188,8 @@ def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__sh
     out__shared.put((best_rmse, all_results_from_worker))
 
 
-def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__shared, df_filename):
-    with open(df_filename, 'rb') as f:
+def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__shared, the_filename_for_worker):
+    with open(the_filename_for_worker, 'rb') as f:
         data = pickle.load(f)
 
     # Attendre le Go du master
@@ -329,17 +329,18 @@ def main(args):
     if real_time:
         assert 1 == number_of_step_back
         number_of_step_back = 1
+
     # Serialize the data locally for our processing.
-    master_data_cache = args.master_data_cache
-    df_filename = "??????"   # TODO FIXME REMOVE ME
-    the_filename = args.temp_filename
-    # Serialize ONCE
+    assert args.master_data_cache is not None
+    the_filename_for_worker = args.temp_filename
     try:
-        os.remove(the_filename)
+        os.remove(the_filename_for_worker)
     except:
         pass
-    with open(the_filename, 'wb') as f:
-        pickle.dump(master_data_cache, f)
+    with open(the_filename_for_worker, 'wb') as f:
+        pickle.dump(args.master_data_cache, f)
+
+    strategy_for_exit = args.strategy_for_exit
     misc_returned = {}
     # Iterate through time
     for step_back in tqdm(range(0, number_of_step_back), disable=not args.display_tqdm):
@@ -353,7 +354,7 @@ def main(args):
             for a_use_case in use_cases:
                 a_use_case.update({'n_forecast_length': n_forecast_length, 'close_col': close_col, 'index_of_algo': index_of_algo, 'dataset_id': args.dataset_id})
         else:
-            data = master_data_cache.copy()
+            data = args.master_data_cache.copy()
             this_year = data[:-(step_back+1)].index[-1].year
             typical_price = data[data.index.year==this_year][close_col].mean()
             RMSE_TOL = max(0.5, 0.0001 * typical_price)
@@ -368,9 +369,9 @@ def main(args):
         # Lancement des workers
         for k in range(0, _nb_workers):
             if real_time:
-                p = Process(target=_worker_processor_realtime, args=(use_cases__shared, master_cmd__shared, out__shared[k], the_filename))
+                p = Process(target=_worker_processor_realtime, args=(use_cases__shared, master_cmd__shared, out__shared[k], the_filename_for_worker))
             else:
-                p = Process(target=_worker_processor_backtesting, args=(use_cases__shared, master_cmd__shared, out__shared[k], the_filename))
+                p = Process(target=_worker_processor_backtesting, args=(use_cases__shared, master_cmd__shared, out__shared[k], the_filename_for_worker))
             p.start()
             pid = p.pid
             p_obj = psutil.Process(pid)
@@ -532,8 +533,10 @@ def main(args):
         # Add horizontal lines based on last training price
         threshold_up_ep, threshold_down_ep = thresholds_ep[0], thresholds_ep[1]
         last_train_price = train_prices[-1]
-        upper_line = last_train_price * (1. + threshold_up_ep)
-        lower_line = last_train_price * (1. - threshold_down_ep)
+        upper_line = last_train_price * (1. + threshold_up_ep)  # th1
+        upper_line = math.ceil(upper_line / floor_and_ceil) * floor_and_ceil
+        lower_line = last_train_price * (1. - threshold_down_ep)  # th2
+        lower_line = math.floor(lower_line / floor_and_ceil) * floor_and_ceil
         if plot_graph:
             plt.axhline(y=upper_line, color='orange', linestyle='--', alpha=0.6, linewidth=1, label=f"+{threshold_up_ep*100:.2f}% / -{threshold_down_ep*100:.2f}%")
             plt.axhline(y=lower_line, color='orange', linestyle='--', alpha=0.6, linewidth=1)
@@ -670,21 +673,57 @@ def main(args):
             indices_call = np.where(condition_call)[0]  # or np.nonzero(condition_call)[0]
             number_of_times_real_price_goes_above_call_strike_price = len(indices_call)
             performance_tracking['call'].append((step_back, number_of_times_real_price_goes_above_call_strike_price, [int(b) for b in indices_call]))
-            # if last price is OTM, it is a success
-            if gt_prices[-1] < th1:
-                performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1))
-            else:
-                performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1))
+            if strategy_for_exit == 'hold_until_the_end':
+                # if last price is OTM, it is a success
+                if gt_prices[-1] < th1:
+                    performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1))
+                else:
+                    performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1))
+            if strategy_for_exit == 'hold_until_the_end_with_roll':
+                # Look at t-2, if we decide to roll the position
+                is_roll_being_requested = True if gt_prices[-2] > th1 else False
+                if is_roll_being_requested:
+                    # Roll it
+                    price_on_tm2 = gt_prices[-2]
+                    new_th1 = price_on_tm2 * (1. + threshold_up_ep)  # th1
+                    new_th1 = math.ceil(new_th1 / floor_and_ceil) * floor_and_ceil
+                    if gt_prices[-1] < new_th1:
+                        performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1, new_th1))
+                    else:
+                        performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1, new_th1))
+                else:
+                    if gt_prices[-1] < th1:
+                        performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1, None))
+                    else:
+                        performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1, None))
         if sell__put_credit_spread:
             condition_put = (th2 - gt_prices) > 0
             indices_put = np.where(condition_put)[0]  # or np.nonzero(condition_put)[0]
             number_of_times_real_price_goes_below_put_strike_price = len(indices_put)
             performance_tracking['put'].append((step_back, number_of_times_real_price_goes_below_put_strike_price, [int(b) for b in indices_put]))
-            # if last price is OTM, it is a success
-            if gt_prices[-1] > th2:
-                performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th2))
-            else:
-                performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th2))
+            if strategy_for_exit == 'hold_until_the_end':
+                # if last price is OTM, it is a success
+                if gt_prices[-1] > th2:
+                    performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th2))
+                else:
+                    performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th2))
+            if strategy_for_exit == 'hold_until_the_end_with_roll':
+                # Look at t-2, if we decide to roll the position
+                is_roll_being_requested = True if gt_prices[-2] < th2 else False
+                if is_roll_being_requested:
+                    # Roll it
+                    price_on_tm2 = gt_prices[-2]
+                    new_th2 = price_on_tm2 * (1. - threshold_down_ep)  # th2
+                    new_th2 = math.floor(new_th2 / floor_and_ceil) * floor_and_ceil
+                    if gt_prices[-1] > new_th2:
+                        performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th1, new_th2))
+                    else:
+                        performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th1, new_th2))
+                else:
+                    if gt_prices[-1] > th2:
+                        performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th2, None))
+                    else:
+                        performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], None))
         if nope__:
             performance_tracking['?'].append((step_back, 9999, []))
 
@@ -702,7 +741,7 @@ def main(args):
         # Title info (using best model for metadata)
         da_str = f", DA: {mean_directional_accuracy:.2%}"
         if plot_graph:
-            plt.title(f'{ticker} Forecast ({df_filename}) — '
+            plt.title(f'{ticker} Forecast ({args.dataset_id}) — '
                       f'Mean RMSE: {mean_rmse:.2f}{da_str} | '
                       f'Shape Sim: {shape_similarity:.2f} | Robust: {robustness_score:.2f} |\n'
                       f'{top_n} Models Shown   Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
@@ -872,7 +911,8 @@ if __name__ == "__main__":
     parser.add_argument("--do_not_close_graph", type=bool, default=False)
     parser.add_argument("--thresholds_ep", type=str, default="(0.025, 0.02)")
     parser.add_argument("--use_given_gt_truth", type=str, default=None)
-    parser.add_argument("--temp_filename", type=str, default=r"C:\Temp2\toto.pkl")
+    parser.add_argument("--temp_filename", type=str, required=True)
+    parser.add_argument("--strategy_for_exit", type=str, default=r"hold_until_the_end_with_roll")
     args = parser.parse_args()
 
     from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH
@@ -882,7 +922,11 @@ if __name__ == "__main__":
         df_filename = FYAHOO__OUTPUTFILENAME_WEEK
     elif args.dataset_id == 'month':
         df_filename = FYAHOO__OUTPUTFILENAME_MONTH
-    with open(df_filename, 'rb') as f:
+    older_dataset = None if args.older_dataset == "None" else args.older_dataset
+    one_dataset_filename = None
+    if args.use_this_df is None or 0 == len(args.use_this_df):
+        one_dataset_filename = df_filename if older_dataset is None else transform_path(df_filename, older_dataset)
+    with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     args.master_data_cache = master_data_cache.copy()
 

@@ -21,6 +21,7 @@ from utils import transform_path
 from multiprocessing import freeze_support
 from datetime import datetime
 import argparse
+import os
 
 
 def get_prediction_for_the_future_with_fourier_algo_2(_best_setup, _x_series, _length_prediction):
