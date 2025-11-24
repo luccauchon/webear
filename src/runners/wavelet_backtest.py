@@ -34,7 +34,7 @@ def main(args):
     n_forecast_length = args.n_forecast_length
     thresholds_ep = args.thresholds_ep
     number_of_step_back = args.step_back_range
-    exit_strategy = 'hold_until_the_end_with_roll'
+    exit_strategy = args.strategy_for_exit
     verbose = args.verbose
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
@@ -215,16 +215,16 @@ if __name__ == "__main__":
     parser.add_argument('--col', type=str, default='Close',
                         choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'],
                         help="Price column to use (default: Close)")
-    parser.add_argument('--dataset-id', type=str, default='day',
+    parser.add_argument('--dataset_id', type=str, default='day',
                         choices=['day', 'week'],
                         help="Dataset frequency: 'day' or 'week' (default: day)")
-    parser.add_argument('--n-forecast-length', type=int, default=2,
+    parser.add_argument('--n_forecast_length', type=int, default=2,
                         help="Number of future steps to forecast (default: 2)")
-    parser.add_argument('--thresholds-ep', type=str, default="(0.0125, 0.0125)",
+    parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)",
                         help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
     parser.add_argument('--step-back-range', type=int, default=5,
                         help="Number of past steps to backtest (default: 5)")
-    parser.add_argument('--strategy-for-exit', type=str, default="hold_until_the_end_with_roll",
+    parser.add_argument('--strategy_for_exit', type=str, default="hold_until_the_end_with_roll",
                         choices=['hold_until_the_end', 'hold_until_the_end_with_roll'],
                         help="")
     parser.add_argument('--verbose', type=bool, default=False)
