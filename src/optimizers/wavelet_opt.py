@@ -819,8 +819,8 @@ def main(args):
         put_otm  = [step[0] for step in performance_tracking_xtm['put']['success']]
         call_itm = [step[0] for step in performance_tracking_xtm['call']['failure']]
         put_itm  = [step[0] for step in performance_tracking_xtm['put']['failure']]
-        call_rolled = [step for step in performance_tracking_xtm['call']['success'] if step[3] is not None]
-        put_rolled = [step for step in performance_tracking_xtm['put']['success'] if step[3] is not None]
+        call_rolled = [step for step in performance_tracking_xtm['call']['success'] if len(step) > 3 and step[3] is not None]
+        put_rolled  = [step for step in performance_tracking_xtm['put']['success']  if len(step) > 3 and step[3] is not None]
         if verbose:
             print("\n" + "=" * 60)
             print("OUT-OF-MONEY CALLs and PUTs".center(60))
