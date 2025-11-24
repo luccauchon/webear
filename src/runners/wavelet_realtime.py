@@ -61,6 +61,7 @@ def main(args):
     configuration.real_time           = True
     configuration.real_time_use_cases = parameters_best_models[0]
     configuration.plot_graph          = args.plot_graph
+    configuration.quiet               = not args.verbose
     if args.use_given_gt_truth is not None:
         configuration.use_given_gt_truth = args.use_given_gt_truth
     # Run the real time processor
@@ -107,6 +108,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day'])
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument('--thresholds-ep', type=str, default="(0.0125, 0.0125)")
+    parser.add_argument('--verbose', type=bool, default=False)
     args = parser.parse_args()
 
     ticker = '^GSPC'
@@ -139,6 +141,7 @@ if __name__ == "__main__":
         use_given_gt_truth = None,
         display_tqdm = False,
         strategy_for_exit = 'hold_until_the_end_with_roll',
+        verbose = args.verbose,
     )
 
     main(args)

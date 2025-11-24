@@ -723,7 +723,7 @@ def main(args):
                     if gt_prices[-1] > th2:
                         performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th2, None))
                     else:
-                        performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], None))
+                        performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th2, None))
         if nope__:
             performance_tracking['?'].append((step_back, 9999, []))
 
@@ -819,14 +819,18 @@ def main(args):
         put_otm  = [step[0] for step in performance_tracking_xtm['put']['success']]
         call_itm = [step[0] for step in performance_tracking_xtm['call']['failure']]
         put_itm  = [step[0] for step in performance_tracking_xtm['put']['failure']]
+        call_rolled = [step for step in performance_tracking_xtm['call']['success'] if step[3] is not None]
+        put_rolled = [step for step in performance_tracking_xtm['put']['success'] if step[3] is not None]
         if verbose:
             print("\n" + "=" * 60)
             print("OUT-OF-MONEY CALLs and PUTs".center(60))
             print("=" * 60)
-            print(f"Call  (OTM): {call_otm if len(call_otm) < 75 else len(call_otm)}")
-            print(f"Put   (OTM): {put_otm if len(put_otm) < 75 else len(put_otm)}")
-            print(f"Call  (ITM): {call_itm if len(call_itm) < 75 else len(call_itm)}")
-            print(f"Put   (ITM): {put_itm if len(put_itm) < 75 else len(put_itm)}")
+            print(f"Call  (OTM): {call_otm if len(call_otm) < 25 else f'#{len(call_otm)}'}")
+            print(f"Put   (OTM): {put_otm if len(put_otm) < 25 else f'#{len(put_otm)}'}")
+            print(f"Call  (ITM): {call_itm if len(call_itm) < 25 else f'#{len(call_itm)}'}")
+            print(f"Put   (ITM): {put_itm if len(put_itm) < 25 else f'#{len(put_itm)}'}")
+            print(f"Call Rolled: {len(call_rolled)}")
+            print(f"Put  Rolled: {len(put_rolled)}")
             print("=" * 60)
         otm_summary = {
             'call_otm': call_otm,
@@ -837,7 +841,7 @@ def main(args):
 
         if verbose:
             print("\n" + "=" * 60)
-            print("List of fails - based on that the user keeps the trade open until the end".center(60))
+            print(f"List of fails - based on strategy '{strategy_for_exit}'".center(60))
             print("=" * 60)
         failed_trades = []
         for step_back in range(0, number_of_step_back):

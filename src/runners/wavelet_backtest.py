@@ -35,6 +35,7 @@ def main(args):
     thresholds_ep = args.thresholds_ep
     number_of_step_back = args.step_back_range
     exit_strategy = 'hold_until_the_end_with_roll'
+    verbose = args.verbose
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif dataset_id == 'week':
@@ -82,6 +83,7 @@ def main(args):
             use_given_gt_truth=data_cache_for_forecasting[col_name].values,
             display_tqdm=False,
             strategy_for_exit=args.strategy_for_exit,
+            verbose=verbose,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
         operation_data = user_instruction['op']
@@ -225,6 +227,7 @@ if __name__ == "__main__":
     parser.add_argument('--strategy-for-exit', type=str, default="hold_until_the_end_with_roll",
                         choices=['hold_until_the_end', 'hold_until_the_end_with_roll'],
                         help="")
+    parser.add_argument('--verbose', type=bool, default=False)
 
     args = parser.parse_args()
 
