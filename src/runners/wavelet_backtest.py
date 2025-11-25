@@ -32,6 +32,7 @@ def main(args):
     col_name = (col, ticker)
     dataset_id = args.dataset_id
     n_forecast_length = args.n_forecast_length
+    n_forecast_length_in_training = args.n_forecast_length_in_training
     thresholds_ep = args.thresholds_ep
     number_of_step_back = args.step_back_range
     exit_strategy = args.strategy_for_exit
@@ -51,6 +52,7 @@ def main(args):
     print(f"Column               : {col}")
     print(f"Dataset Frequency    : {dataset_id}")
     print(f"Forecast Length      : {n_forecast_length}")
+    print(f"Forecast Length Train: {n_forecast_length_in_training}")
     print(f"Thresholds (EP)      : {thresholds_ep}")
     print(f"Step-Back Range      : {number_of_step_back}")
     print(f"Data File            : {df_filename}")
@@ -78,6 +80,7 @@ def main(args):
             output_dir=output_dir,
             dataset_id=dataset_id,
             n_forecast_length=n_forecast_length,
+            n_forecast_length_in_training=n_forecast_length_in_training,
             thresholds_ep=thresholds_ep,
             plot_graph=False,
             use_given_gt_truth=data_cache_for_forecasting[col_name].values,
