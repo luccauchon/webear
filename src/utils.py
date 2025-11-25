@@ -4,7 +4,6 @@ import sys
 import re
 from types import SimpleNamespace
 import platform
-from torchmetrics import MeanSquaredError, MeanAbsoluteError, R2Score
 import os
 import yfinance as yf
 #from hurst import compute_Hc
@@ -354,7 +353,7 @@ def calculate_regression_metrics(y_true, y_pred):
     """
 
     assert y_pred.squeeze().shape == y_true.squeeze().shape
-
+    from torchmetrics import MeanSquaredError, MeanAbsoluteError, R2Score
     mse_metric = MeanSquaredError()
     mae_metric = MeanAbsoluteError()
     r2_metric = R2Score()
