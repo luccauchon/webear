@@ -303,6 +303,7 @@ def main(args):
     verbose      = not args.quiet
     close_col = ('Close', ticker)
     n_forecast_length = int(args.n_forecast_length)
+    n_forecast_length_in_training = int(args.n_forecast_length_in_training)
     n_models_to_keep = int(args.n_models_to_keep)
     real_time = args.real_time
     if not real_time:
@@ -319,8 +320,8 @@ def main(args):
     os.makedirs(output_dir, exist_ok=True)
     threshold_for_shape_similarity = 0.6
     number_of_step_back = int(args.number_of_step_back)
-    sequence_for_train_length = range(8, 32)
-    sequence_for_level = range(1, 8)
+    sequence_for_train_length = range(4, int(args.sequence_for_train_length))
+    sequence_for_level = range(1, 16)
     floor_and_ceil = args.floor_and_ceil
     maintenance_margin = args.maintenance_margin
     description_of_what_user_shall_do = {}  # Trace of what user shall do to execute the trade
@@ -361,11 +362,11 @@ def main(args):
             for n_train_length in sequence_for_train_length:
                 for level in sequence_for_level:
                     for wavlet_type in pywt.wavelist(kind='discrete'):
-                        use_cases.append({'n_train_length': n_train_length, 'level': level, 'wavlet_type': wavlet_type, 'n_forecast_length': n_forecast_length,
+                        use_cases.append({'n_train_length': n_train_length, 'level': level, 'wavlet_type': wavlet_type, 'n_forecast_length': n_forecast_length_in_training,
                                           'close_col': close_col, 'RMSE_TOL': RMSE_TOL, 'step_back': step_back, 'index_of_algo': index_of_algo})
         use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
         out__shared = [Queue(1) for k in range(0, _nb_workers)]
-
+        # print(f"{len(use_cases)} use_cases to evaluate")
         # Lancement des workers
         for k in range(0, _nb_workers):
             if real_time:
@@ -416,7 +417,7 @@ def main(args):
         # Plot actual future values
         future_indices = np.arange(n_train_length, n_train_length + n_forecast_length)
 
-        # Collect forecasts from top 19 models
+        # Collect forecasts from top N models
         top_n = min(n_models_to_keep, len(sorted_data_from_workers))
         all_forecasts = []
         for i in range(top_n):
@@ -900,6 +901,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=r"../../stubs/wavelet_opt/")
     parser.add_argument("--number_of_step_back", type=int, default=2605)
     parser.add_argument("--n_forecast_length", type=int, default=2)
+    parser.add_argument("--n_forecast_length_in_training", type=int, default=2)
+    parser.add_argument("--sequence_for_train_length", type=int, default=64)
     parser.add_argument("--floor_and_ceil", type=float, default=5.)
     parser.add_argument("--maintenance_margin", type=float, default=2000)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")

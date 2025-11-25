@@ -36,7 +36,8 @@ def main(args):
         dataset_id=args.dataset_id,
         number_of_step_back=1,  # FIXME TODO permettre plusieurs steps , même dans le real time
         n_forecast_length=args.n_forecast_length,  # FIXME TODO un length pour ici et un autre pour le forecast voulu? si !=, alors, boucle de retroaction
-        n_models_to_keep=60,
+        n_forecast_length_in_training=args.n_forecast_length_in_training,
+        n_models_to_keep=args.n_models_to_keep,
         plot_graph=False,
         show_graph=False,
         save_graph=False,
@@ -115,6 +116,8 @@ if __name__ == "__main__":
     parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day'])
     parser.add_argument("--n_forecast_length", type=int, default=4)
+    parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
+    parser.add_argument("--n_models_to_keep", type=int, default=60)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
     parser.add_argument('--verbose', type=bool, default=False)
     args = parser.parse_args()
@@ -142,6 +145,8 @@ if __name__ == "__main__":
         dataset_id=args.dataset_id,
         older_dataset=args.older_dataset,
         n_forecast_length=args.n_forecast_length,
+        n_forecast_length_in_training=args.n_forecast_length_in_training,
+        n_models_to_keep=args.n_models_to_keep,
         thresholds_ep=args.thresholds_ep,
         plot_graph = True,
         use_given_gt_truth = None,
@@ -153,7 +158,7 @@ if __name__ == "__main__":
     print("🔧 Arguments:")
     for arg, value in vars(args).items():
         if 'master_data_cache' in arg:
-            print(f"    {arg:.<40} {value.index[0].strftime('%Y-%m-%d')} to {value.index[-1].strftime('%Y-%m-%d')}")
+            print(f"    {arg:.<40} {value.index[0].strftime('%Y-%m-%d')} to {value.index[-1].strftime('%Y-%m-%d')} ({one_dataset_filename})")
             continue
         print(f"    {arg:.<40} {value}")
     print("-" * 80, flush=True)
