@@ -18,7 +18,7 @@ from optimizers.wavelet_opt import main as wavelet_optimizer_entry_point
 from argparse import Namespace
 import matplotlib.pyplot as plt
 import pickle
-from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST
+from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, FYAHOO__OUTPUTFILENAME_MONTH
 from utils import transform_path
 
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="None")
-    parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day'])
+    parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day', 'month'])
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
@@ -130,6 +130,8 @@ if __name__ == "__main__":
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif args.dataset_id == 'week':
         df_filename = FYAHOO__OUTPUTFILENAME_WEEK
+    elif args.dataset_id == 'month':
+        df_filename = FYAHOO__OUTPUTFILENAME_MONTH
     older_dataset = None if args.older_dataset == "None" else args.older_dataset
     one_dataset_filename = df_filename if older_dataset is None else transform_path(df_filename, older_dataset)
 

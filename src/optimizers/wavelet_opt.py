@@ -27,8 +27,6 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 import pandas as pd
 import numpy as np
 import pywt
-# import pyarrow as pa
-# from pyarrow import ipc
 from utils import next_weekday, transform_path
 
 
@@ -43,33 +41,6 @@ WAVELET_ALGO_REGISTRY = [wavelet_multi_forecast__version_2,  # 0
                         ]
 ###############################################################################
 ###############################################################################
-
-# def serialize_dict_of_dfs(df_dict):
-#     """
-#     Convert a dict of pandas DataFrames to a dict of Arrow IPC bytes.
-#     """
-#     serialized = {}
-#     for key, df in df_dict.items():
-#         if not isinstance(df, pd.DataFrame):
-#             raise TypeError(f"Value for key '{key}' is not a pandas DataFrame")
-#         table = pa.Table.from_pandas(df)
-#         sink = pa.BufferOutputStream()
-#         with ipc.new_stream(sink, table.schema) as writer:
-#             writer.write_table(table)
-#         serialized[key] = sink.getvalue().to_pybytes()
-#     return serialized
-#
-# def deserialize_dict_of_dfs(serialized_dict):
-#     """
-#     Convert a dict of Arrow IPC bytes back to a dict of pandas DataFrames.
-#     """
-#     df_dict = {}
-#     for key, data_bytes in serialized_dict.items():
-#         reader = ipc.open_stream(pa.BufferReader(data_bytes))
-#         table = reader.read_all()
-#         df_dict[key] = table.to_pandas()
-#     return df_dict
-
 
 def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__shared, the_filename_for_worker):
     with open(the_filename_for_worker, 'rb') as f:
@@ -226,19 +197,21 @@ def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__share
 
             t1, t2, t3, t4 = train_prices.index[0], train_prices.index[-1], None, None
 
-            assert dataset_id in ['day', 'week']
+            assert dataset_id in ['day', 'week', 'month']
             freq = 'W'
             if dataset_id == 'day':
                 freq = 'D'
+            elif dataset_id == 'month':
+                freq = 'M'
 
             # Map freq to DateOffset keyword
             freq_to_offset = {
                 'D': 'days',
                 'W': 'weeks',
+                'M': 'months',
                 'H': 'hours',
                 'min': 'minutes',
                 's': 'seconds',
-                # add more if needed
             }
 
             n = n_forecast_length
@@ -681,8 +654,10 @@ def main(args):
                 else:
                     performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1))
             if strategy_for_exit == 'hold_until_the_end_with_roll':
+                # If price is below call @t2, ... t-2 , exit and take profit
+                exit_before_roll = len([iop for iop in range(1, len(gt_prices)-1) if gt_prices[iop] < th1]) > 0
                 # Look at t-2, if we decide to roll the position
-                is_roll_being_requested = True if gt_prices[-2] > th1 else False
+                is_roll_being_requested = True if gt_prices[-2] > th1 and not exit_before_roll else False
                 if is_roll_being_requested:
                     # Roll it
                     price_on_tm2 = gt_prices[-2]
@@ -693,7 +668,7 @@ def main(args):
                     else:
                         performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1, new_th1))
                 else:
-                    if gt_prices[-1] < th1:
+                    if gt_prices[-1] < th1 or exit_before_roll:
                         performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1, None))
                     else:
                         performance_tracking_xtm['call']['failure'].append((step_back, gt_prices[-1], th1, None))
@@ -709,14 +684,16 @@ def main(args):
                 else:
                     performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th2))
             if strategy_for_exit == 'hold_until_the_end_with_roll':
+                # If price is above put @t2, ... t-2 , exit and take profit
+                exit_before_roll = len([iop for iop in range(1, len(gt_prices) - 1) if gt_prices[iop] > th2]) > 0
                 # Look at t-2, if we decide to roll the position
-                is_roll_being_requested = True if gt_prices[-2] < th2 else False
+                is_roll_being_requested = True if gt_prices[-2] < th2 and not exit_before_roll else False
                 if is_roll_being_requested:
                     # Roll it
                     price_on_tm2 = gt_prices[-2]
                     new_th2 = price_on_tm2 * (1. - threshold_down_ep)  # th2
                     new_th2 = math.floor(new_th2 / floor_and_ceil) * floor_and_ceil
-                    if gt_prices[-1] > new_th2:
+                    if gt_prices[-1] > new_th2 or exit_before_roll:
                         performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th1, new_th2))
                     else:
                         performance_tracking_xtm['put']['failure'].append((step_back, gt_prices[-1], th1, new_th2))
