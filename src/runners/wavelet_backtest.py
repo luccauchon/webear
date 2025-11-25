@@ -186,15 +186,16 @@ def main(args):
                                                               'operation_success': operation_success,
                                                               'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
         t2 = time.time()
-        print(f"[{step_back}/{number_of_step_back}] used {format_execution_time(t2-t1)}")
-        if operation_aborted:
-            print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
-        else:
-            if operation_success:
-                print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was successful")
+        if verbose:
+            print(f"[{step_back}/{number_of_step_back}] used {format_execution_time(t2-t1)}")
+            if operation_aborted:
+                print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
             else:
-                print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
-        print(f"\t\t{user_instruction['description']}")
+                if operation_success:
+                    print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was successful")
+                else:
+                    print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
+            print(f"\t\t{user_instruction['description']}")
     # --- Summary Report ---
     total_runs = len(performance)
     successes = sum(1 for v in performance.values() if v['operation_success'])
