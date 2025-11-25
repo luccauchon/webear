@@ -661,7 +661,7 @@ def main(args):
                 if is_roll_being_requested:
                     # Roll it
                     price_on_tm2 = gt_prices[-2]
-                    new_th1 = price_on_tm2 * (1. + 2.*threshold_up_ep)  # th1
+                    new_th1 = price_on_tm2 * (1. + 1.25*threshold_up_ep)  # th1
                     new_th1 = math.ceil(new_th1 / floor_and_ceil) * floor_and_ceil
                     if gt_prices[-1] < new_th1:
                         performance_tracking_xtm['call']['success'].append((step_back, gt_prices[-1], th1, new_th1))
@@ -691,7 +691,7 @@ def main(args):
                 if is_roll_being_requested:
                     # Roll it
                     price_on_tm2 = gt_prices[-2]
-                    new_th2 = price_on_tm2 * (1. - 2.*threshold_down_ep)  # th2
+                    new_th2 = price_on_tm2 * (1. - 1.25*threshold_down_ep)  # th2
                     new_th2 = math.floor(new_th2 / floor_and_ceil) * floor_and_ceil
                     if gt_prices[-1] > new_th2 or exit_before_roll:
                         performance_tracking_xtm['put']['success'].append((step_back, gt_prices[-1], th1, new_th2))
