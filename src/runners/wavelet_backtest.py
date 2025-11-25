@@ -78,7 +78,7 @@ def main(args):
             #print("Month end:", month_end)
 
             # Check if last_date is in the last week of the month
-            last_week_start = month_end - pd.Timedelta(days=6)
+            last_week_start = month_end - pd.Timedelta(days=5)
             is_in_last_week = last_date >= last_week_start
             #print("Is in last week of month:", is_in_last_week)
             if not is_in_last_week:
