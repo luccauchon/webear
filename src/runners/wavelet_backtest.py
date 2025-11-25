@@ -220,6 +220,7 @@ if __name__ == "__main__":
                         help="Dataset frequency: 'day' or 'week' (default: day)")
     parser.add_argument('--n_forecast_length', type=int, default=2,
                         help="Number of future steps to forecast (default: 2)")
+    parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)",
                         help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
     parser.add_argument('--step-back-range', type=int, default=5,
