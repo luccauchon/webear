@@ -65,7 +65,7 @@ def main(args):
     print(f"Last week of month   : {use_last_week_only}")
     print("="*50)
     # input("Press Enter to start backtesting...")
-    performance, put_credit_spread_performance, call_credit_spread_performance = {}, {}, {}
+    performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
     for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
         # Create the "Now" dataframe
@@ -173,6 +173,12 @@ def main(args):
                                        'operation_request': operation_request,
                                        'operation_success': operation_success,
                                        'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+        if operation_request == 'iron_condor':
+            iron_condor_performance.update({step_back: {}})
+            iron_condor_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                                        'operation_request': operation_request,
+                                                        'operation_success': operation_success,
+                                                        'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
         if operation_request == 'vertical_put':
             put_credit_spread_performance.update({step_back: {}})
             put_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
@@ -210,6 +216,15 @@ def main(args):
     print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
     print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
     print("="*50)
+
+    # --- Iron Condor Summary ---
+    iron_condor_runs = len(iron_condor_performance)
+    if iron_condor_runs > 0:
+        iron_condor_successes = sum(1 for v in iron_condor_performance.values() if v['operation_success'])
+        iron_condor_failures = iron_condor_runs - iron_condor_successes
+        print(f"\nIron Condor ({iron_condor_runs} trades):")
+        print(f"  Successes: {iron_condor_successes} ({iron_condor_successes / iron_condor_runs * 100:.1f}%)")
+        print(f"  Failures : {iron_condor_failures} ({iron_condor_failures / iron_condor_runs * 100:.1f}%)")
 
     # --- Put Credit Spread Summary ---
     put_runs = len(put_credit_spread_performance)
