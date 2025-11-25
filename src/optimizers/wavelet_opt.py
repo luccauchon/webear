@@ -27,8 +27,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 import pandas as pd
 import numpy as np
 import pywt
-import pyarrow as pa
-from pyarrow import ipc
+# import pyarrow as pa
+# from pyarrow import ipc
 from utils import next_weekday, transform_path
 
 
@@ -44,31 +44,31 @@ WAVELET_ALGO_REGISTRY = [wavelet_multi_forecast__version_2,  # 0
 ###############################################################################
 ###############################################################################
 
-def serialize_dict_of_dfs(df_dict):
-    """
-    Convert a dict of pandas DataFrames to a dict of Arrow IPC bytes.
-    """
-    serialized = {}
-    for key, df in df_dict.items():
-        if not isinstance(df, pd.DataFrame):
-            raise TypeError(f"Value for key '{key}' is not a pandas DataFrame")
-        table = pa.Table.from_pandas(df)
-        sink = pa.BufferOutputStream()
-        with ipc.new_stream(sink, table.schema) as writer:
-            writer.write_table(table)
-        serialized[key] = sink.getvalue().to_pybytes()
-    return serialized
-
-def deserialize_dict_of_dfs(serialized_dict):
-    """
-    Convert a dict of Arrow IPC bytes back to a dict of pandas DataFrames.
-    """
-    df_dict = {}
-    for key, data_bytes in serialized_dict.items():
-        reader = ipc.open_stream(pa.BufferReader(data_bytes))
-        table = reader.read_all()
-        df_dict[key] = table.to_pandas()
-    return df_dict
+# def serialize_dict_of_dfs(df_dict):
+#     """
+#     Convert a dict of pandas DataFrames to a dict of Arrow IPC bytes.
+#     """
+#     serialized = {}
+#     for key, df in df_dict.items():
+#         if not isinstance(df, pd.DataFrame):
+#             raise TypeError(f"Value for key '{key}' is not a pandas DataFrame")
+#         table = pa.Table.from_pandas(df)
+#         sink = pa.BufferOutputStream()
+#         with ipc.new_stream(sink, table.schema) as writer:
+#             writer.write_table(table)
+#         serialized[key] = sink.getvalue().to_pybytes()
+#     return serialized
+#
+# def deserialize_dict_of_dfs(serialized_dict):
+#     """
+#     Convert a dict of Arrow IPC bytes back to a dict of pandas DataFrames.
+#     """
+#     df_dict = {}
+#     for key, data_bytes in serialized_dict.items():
+#         reader = ipc.open_stream(pa.BufferReader(data_bytes))
+#         table = reader.read_all()
+#         df_dict[key] = table.to_pandas()
+#     return df_dict
 
 
 def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__shared, the_filename_for_worker):

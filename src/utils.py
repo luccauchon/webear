@@ -8,8 +8,6 @@ import os
 import yfinance as yf
 #from hurst import compute_Hc
 import pandas as pd
-import torch
-import torch.nn.functional as F
 import warnings
 import glob
 import numpy as np
