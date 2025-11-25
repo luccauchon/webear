@@ -291,7 +291,7 @@ def main(args):
     thresholds_ep = eval(args.thresholds_ep)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
-    threshold_for_shape_similarity = 0.6
+    threshold_for_shape_similarity = 0.
     number_of_step_back = int(args.number_of_step_back)
     sequence_for_train_length = range(int(eval(args.maxmin_sequence_for_train_length)[0]), int(eval(args.maxmin_sequence_for_train_length)[1]))
     sequence_for_level = range(1, 16)
