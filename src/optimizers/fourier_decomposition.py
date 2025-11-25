@@ -167,7 +167,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
             p.start()
             pid = p.pid
             p_obj = psutil.Process(pid)
-            p_obj.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            # p_obj.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         # Envoie les informations aux workers pour traitement
         for use_case in use_cases:
             use_cases__shared.put(use_case)
