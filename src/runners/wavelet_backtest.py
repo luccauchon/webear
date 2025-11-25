@@ -34,6 +34,7 @@ def main(args):
     n_forecast_length = args.n_forecast_length
     n_forecast_length_in_training = args.n_forecast_length_in_training
     thresholds_ep = args.thresholds_ep
+    n_models_to_keep = args.n_models_to_keep
     number_of_step_back = args.step_back_range
     exit_strategy = args.strategy_for_exit
     verbose = args.verbose
@@ -53,6 +54,7 @@ def main(args):
     print(f"Dataset Frequency    : {dataset_id}")
     print(f"Forecast Length      : {n_forecast_length}")
     print(f"Forecast Length Train: {n_forecast_length_in_training}")
+    print(f"N models to keep     : {n_models_to_keep}")
     print(f"Thresholds (EP)      : {thresholds_ep}")
     print(f"Step-Back Range      : {number_of_step_back}")
     print(f"Data File            : {df_filename}")
@@ -86,6 +88,7 @@ def main(args):
             use_given_gt_truth=data_cache_for_forecasting[col_name].values,
             display_tqdm=False,
             strategy_for_exit=args.strategy_for_exit,
+            n_models_to_keep=n_models_to_keep,
             verbose=verbose,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
@@ -224,6 +227,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_forecast_length', type=int, default=2,
                         help="Number of future steps to forecast (default: 2)")
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
+    parser.add_argument("--n_models_to_keep", type=int, default=60)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)",
                         help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
     parser.add_argument('--step-back-range', type=int, default=5,
