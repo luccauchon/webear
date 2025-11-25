@@ -735,7 +735,7 @@ def main(args):
             my_output_dir = os.path.join(output_dir, "images")
             os.makedirs(my_output_dir, exist_ok=True)
             if plot_graph:
-                plt.savefig(os.path.join(my_output_dir, f'{step_back}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
+                plt.savefig(os.path.join(my_output_dir, f'{step_back}__{args.dataset_id}___E{mean_rmse:.2f}_D{mean_directional_accuracy:.2f}___{ticker}_ensemble_forecast_plot.png'), dpi=300)
         try:
             if close_graph:
                 if plot_graph and show_graph:
