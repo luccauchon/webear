@@ -44,6 +44,7 @@ def main(args):
         save_graph=False,
         do_not_close_graph=True,
         thresholds_ep = args.thresholds_ep,
+        threshold_for_shape_similarity=args.threshold_for_shape_similarity,
         quiet = True,
         floor_and_ceil = 5,
         maintenance_margin = 2000,
@@ -119,6 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
+    parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
     parser.add_argument('--verbose', type=bool, default=False)
     args = parser.parse_args()
@@ -151,6 +153,7 @@ if __name__ == "__main__":
         n_forecast_length_in_training=args.n_forecast_length_in_training,
         n_models_to_keep=args.n_models_to_keep,
         thresholds_ep=args.thresholds_ep,
+        threshold_for_shape_similarity=args.threshold_for_shape_similarity,
         plot_graph = True,
         use_given_gt_truth = None,
         display_tqdm = False,

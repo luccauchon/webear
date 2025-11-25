@@ -291,7 +291,7 @@ def main(args):
     thresholds_ep = eval(args.thresholds_ep)
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
-    threshold_for_shape_similarity = 0.
+    threshold_for_shape_similarity = float(args.threshold_for_shape_similarity)
     number_of_step_back = int(args.number_of_step_back)
     sequence_for_train_length = range(int(eval(args.maxmin_sequence_for_train_length)[0]), int(eval(args.maxmin_sequence_for_train_length)[1]))
     sequence_for_level = range(1, 16)
@@ -882,6 +882,7 @@ if __name__ == "__main__":
     parser.add_argument("--maxmin_sequence_for_train_length", type=str, default="(4,64)")
     parser.add_argument("--floor_and_ceil", type=float, default=5.)
     parser.add_argument("--maintenance_margin", type=float, default=2000)
+    parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
     parser.add_argument("--n_models_to_keep", type=int, default=60)

@@ -22,7 +22,7 @@ from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 from tqdm import tqdm
 from runners.wavelet_realtime import main as wavelet_realtime_entry_point
 from utils import format_execution_time
-import ast
+import pandas as pd
 import time
 
 
@@ -37,7 +37,9 @@ def main(args):
     n_models_to_keep = args.n_models_to_keep
     number_of_step_back = args.step_back_range
     exit_strategy = args.strategy_for_exit
+    threshold_for_shape_similarity = args.threshold_for_shape_similarity
     verbose = args.verbose
+    use_last_week_only=args.use_last_week_only
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif dataset_id == 'week':
@@ -55,10 +57,12 @@ def main(args):
     print(f"Forecast Length      : {n_forecast_length}")
     print(f"Forecast Length Train: {n_forecast_length_in_training}")
     print(f"N models to keep     : {n_models_to_keep}")
+    print(f"T Shape Similarity   : {threshold_for_shape_similarity}")
     print(f"Thresholds (EP)      : {thresholds_ep}")
     print(f"Step-Back Range      : {number_of_step_back}")
     print(f"Data File            : {df_filename}")
     print(f"Exit strategy        : {exit_strategy}")
+    print(f"Last week of month   : {use_last_week_only}")
     print("="*50)
     # input("Press Enter to start backtesting...")
     performance, put_credit_spread_performance, call_credit_spread_performance = {}, {}, {}
@@ -66,7 +70,19 @@ def main(args):
         t1 = time.time()
         # Create the "Now" dataframe
         df = master_data_cache.iloc[:-step_back].copy()
-        # print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
+        #print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
+        if use_last_week_only:
+            assert 'week' == dataset_id
+            last_date = df.index[-1]
+            month_end = last_date + pd.offsets.MonthEnd(0)
+            #print("Month end:", month_end)
+
+            # Check if last_date is in the last week of the month
+            last_week_start = month_end - pd.Timedelta(days=6)
+            is_in_last_week = last_date >= last_week_start
+            #print("Is in last week of month:", is_in_last_week)
+            if not is_in_last_week:
+                continue
         # All data except the last `step_back` rows → for parameter extraction
         data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
         # Rows at position `-step_back` → for forecasting
@@ -89,6 +105,7 @@ def main(args):
             display_tqdm=False,
             strategy_for_exit=args.strategy_for_exit,
             n_models_to_keep=n_models_to_keep,
+            threshold_for_shape_similarity=threshold_for_shape_similarity,
             verbose=verbose,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
@@ -228,6 +245,7 @@ if __name__ == "__main__":
                         help="Number of future steps to forecast (default: 2)")
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
+    parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)",
                         help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
     parser.add_argument('--step-back-range', type=int, default=5,
@@ -236,6 +254,7 @@ if __name__ == "__main__":
                         choices=['hold_until_the_end', 'hold_until_the_end_with_roll'],
                         help="")
     parser.add_argument('--verbose', type=bool, default=False)
+    parser.add_argument('--use_last_week_only', type=bool, default=False)
 
     args = parser.parse_args()
 
