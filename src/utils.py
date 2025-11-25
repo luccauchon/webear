@@ -4,7 +4,6 @@ import sys
 import re
 from types import SimpleNamespace
 import platform
-from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
 from torchmetrics import MeanSquaredError, MeanAbsoluteError, R2Score
 import os
 import yfinance as yf
@@ -387,7 +386,7 @@ def calculate_binary_classification_metrics(y_true, y_pred):
     Returns:
     dict: Dictionary containing accuracy, precision, recall, F1 score, and AUC-ROC.
     """
-
+    from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
     metric = BinaryAccuracy(threshold=0.5)
     assert y_pred.squeeze().shape == y_true.squeeze().shape
     if 1 == len(y_pred):
@@ -410,7 +409,7 @@ def calculate_multiclass_classification_metrics(y_true, y_pred, num_classes):
     Returns:
     dict: Dictionary containing accuracy, precision, recall, F1 score, and AUC-ROC.
     """
-
+    from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
     metric = MulticlassAccuracy()
     assert y_pred.shape[1] == num_classes and y_true.shape[0] == y_pred.shape[0]
     metric.update(y_pred, y_true)
