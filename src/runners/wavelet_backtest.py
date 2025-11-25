@@ -66,7 +66,7 @@ def main(args):
     print("="*50)
     # input("Press Enter to start backtesting...")
     performance, put_credit_spread_performance, call_credit_spread_performance = {}, {}, {}
-    for step_back in range(1, number_of_step_back + 1):
+    for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
         # Create the "Now" dataframe
         df = master_data_cache.iloc[:-step_back].copy()
