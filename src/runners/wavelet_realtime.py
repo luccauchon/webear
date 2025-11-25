@@ -38,6 +38,7 @@ def main(args):
         n_forecast_length=args.n_forecast_length,  # FIXME TODO un length pour ici et un autre pour le forecast voulu? si !=, alors, boucle de retroaction
         n_forecast_length_in_training=args.n_forecast_length_in_training,
         n_models_to_keep=args.n_models_to_keep,
+        maxmin_sequence_for_train_length="(4,64)",
         plot_graph=False,
         show_graph=False,
         save_graph=False,

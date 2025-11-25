@@ -320,7 +320,7 @@ def main(args):
     os.makedirs(output_dir, exist_ok=True)
     threshold_for_shape_similarity = 0.6
     number_of_step_back = int(args.number_of_step_back)
-    sequence_for_train_length = range(4, int(args.sequence_for_train_length))
+    sequence_for_train_length = range(int(eval(args.maxmin_sequence_for_train_length)[0]), int(eval(args.maxmin_sequence_for_train_length)[1]))
     sequence_for_level = range(1, 16)
     floor_and_ceil = args.floor_and_ceil
     maintenance_margin = args.maintenance_margin
@@ -902,7 +902,7 @@ if __name__ == "__main__":
     parser.add_argument("--number_of_step_back", type=int, default=2605)
     parser.add_argument("--n_forecast_length", type=int, default=2)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=2)
-    parser.add_argument("--sequence_for_train_length", type=int, default=64)
+    parser.add_argument("--maxmin_sequence_for_train_length", type=str, default="(4,64)")
     parser.add_argument("--floor_and_ceil", type=float, default=5.)
     parser.add_argument("--maintenance_margin", type=float, default=2000)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
