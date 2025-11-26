@@ -22,7 +22,7 @@ import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 from tqdm import tqdm
 from runners.wavelet_realtime import main as wavelet_realtime_entry_point
-from utils import format_execution_time
+from utils import format_execution_time, is_friday, is_monday
 import pandas as pd
 import time
 
@@ -88,7 +88,10 @@ def main(args):
         data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
         # Rows at position `-step_back` → for forecasting
         data_cache_for_forecasting = df.iloc[-n_forecast_length: ].copy()
-        #print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
+        # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
+        day_of_the_trade = data_cache_for_parameter_extraction.index[-1]
+        if is_friday(day_of_the_trade) or is_monday(day_of_the_trade):
+            continue
         assert n_forecast_length == len(data_cache_for_forecasting), f"{len(data_cache_for_forecasting)}"
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty, "Indices must be disjoint"
         output_dir = rf"../../stubs/wavelet_backtesting_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/__{step_back}/"

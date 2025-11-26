@@ -700,3 +700,48 @@ def format_duration(seconds):
         parts.append(f"{secs}s")
 
     return ''.join(parts)
+
+
+def is_monday(dt=None):
+    """Return True if the given date is a Monday. If no date is given, use today."""
+    if dt is None:
+        dt = date.today()
+    elif isinstance(dt, str):
+        dt = datetime.strptime(dt, "%Y-%m-%d").date()
+    return dt.weekday() == 0  # Monday is 0 in Python
+
+
+def is_tuesday(dt=None):
+    """Return True if the given date is a Tuesday. If no date is given, use today."""
+    if dt is None:
+        dt = date.today()
+    elif isinstance(dt, str):
+        dt = datetime.strptime(dt, "%Y-%m-%d").date()
+    return dt.weekday() == 1  # Tuesday is 1
+
+
+def is_wednesday(dt=None):
+    """Return True if the given date is a Wednesday. If no date is given, use today."""
+    if dt is None:
+        dt = date.today()
+    elif isinstance(dt, str):
+        dt = datetime.strptime(dt, "%Y-%m-%d").date()
+    return dt.weekday() == 2  # Wednesday is 2
+
+
+def is_thursday(dt=None):
+    """Return True if the given date is a Thursday. If no date is given, use today."""
+    if dt is None:
+        dt = date.today()
+    elif isinstance(dt, str):
+        dt = datetime.strptime(dt, "%Y-%m-%d").date()
+    return dt.weekday() == 3  # Thursday is 3
+
+
+def is_friday(dt=None):
+    """Return True if the given date is a Friday. If no date is given, use today."""
+    if dt is None:
+        dt = date.today()
+    elif isinstance(dt, str):
+        dt = datetime.strptime(dt, "%Y-%m-%d").date()
+    return dt.weekday() == 4  # Friday is 4
