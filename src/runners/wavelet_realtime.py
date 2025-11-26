@@ -65,8 +65,7 @@ def main(args):
     configuration.real_time_use_cases = parameters_best_models[0]
     configuration.plot_graph          = args.plot_graph
     configuration.quiet               = not args.verbose
-    if args.use_given_gt_truth is not None:
-        configuration.use_given_gt_truth = args.use_given_gt_truth
+    configuration.use_given_gt_truth  = args.use_given_gt_truth
     # Run the real time processor
     _, _, _, description_of_what_user_shall_do, _, misc_returned = wavelet_optimizer_entry_point(configuration)
     # Only a step back when we do a real forecast
