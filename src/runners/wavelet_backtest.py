@@ -68,6 +68,15 @@ def main(args):
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
     for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
+        # Sanity check
+        try:
+            df = master_data_cache.iloc[:-step_back].copy()
+            data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
+            data_cache_for_forecasting = df.iloc[-n_forecast_length:].copy()
+            assert n_forecast_length == len(data_cache_for_forecasting)
+            assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
+        except:
+            continue
         # Create the "Now" dataframe
         df = master_data_cache.iloc[:-step_back].copy()
         #print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
