@@ -90,7 +90,7 @@ def main(args):
         data_cache_for_forecasting = df.iloc[-n_forecast_length: ].copy()
         # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
         day_of_the_trade = data_cache_for_parameter_extraction.index[-1]
-        if 2 == n_forecast_length:
+        if 2 == n_forecast_length and dataset_id == 'day':
             if is_friday(day_of_the_trade) or is_thursday(day_of_the_trade):
                 continue
         assert n_forecast_length == len(data_cache_for_forecasting), f"{len(data_cache_for_forecasting)}"
