@@ -88,8 +88,11 @@ def main(args):
         data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
         # Rows at position `-step_back` → for forecasting
         data_cache_for_forecasting = df.iloc[-n_forecast_length: ].copy()
-        # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
+        #print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
         day_of_the_trade = data_cache_for_parameter_extraction.index[-1]
+        price_paid_for_the_trade = data_cache_for_parameter_extraction[col_name].values[-1]
+        #print(price_paid_for_the_trade)
+        #continue
         if 2 == n_forecast_length and dataset_id == 'day':
             if is_friday(day_of_the_trade) or is_thursday(day_of_the_trade):
                 continue
@@ -126,7 +129,7 @@ def main(args):
         mslope_pred = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)[0]
         mslope_gt   = np.polyfit(np.arange(len(gt)), gt, 1)[0]
         ddslope = ('+' if mslope_gt > 0 else '-') + ('+' if mslope_pred > 0 else '-')
-        print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}')
+        print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
     print(f"Mean RMSE: {np.mean(performance['rmse'])}")
     print(f"STD RMSE: {np.std(performance['rmse'])}")
     for p in [5, 10, 25, 50, 75, 90, 95]:
