@@ -25,6 +25,7 @@ from runners.wavelet_realtime import main as wavelet_realtime_entry_point
 from utils import format_execution_time, is_friday, is_monday, is_thursday
 import pandas as pd
 import time
+import math
 
 
 def main(args):
@@ -41,6 +42,7 @@ def main(args):
     threshold_for_shape_similarity = args.threshold_for_shape_similarity
     verbose = args.verbose
     use_last_week_only=args.use_last_week_only
+    floor_and_ceil = 5.0
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif dataset_id == 'week':
@@ -66,7 +68,7 @@ def main(args):
     print(f"Last week of month   : {use_last_week_only}")
     print("="*50)
     # input("Press Enter to start backtesting...")
-    performance = {'rmse':[]}
+    performance = {'rmse':[], 'slope':[], 'slope_success':[]}
     for step_back in range(1, number_of_step_back + 1) if verbose else (range(1, number_of_step_back + 1)):
         t1 = time.time()
         # Create the "Now" dataframe
@@ -129,11 +131,44 @@ def main(args):
         mslope_pred = np.polyfit(np.arange(len(mean_forecast)), mean_forecast, 1)[0]
         mslope_gt   = np.polyfit(np.arange(len(gt)), gt, 1)[0]
         ddslope = ('+' if mslope_gt > 0 else '-') + ('+' if mslope_pred > 0 else '-')
+        performance['slope'].append(ddslope)
+        threshold_up_ep, threshold_down_ep = float(eval(thresholds_ep)[0]), float(eval(thresholds_ep)[1])
+        upper_line = price_paid_for_the_trade * (1. + threshold_up_ep)  # th1
+        upper_line = math.ceil(upper_line / floor_and_ceil) * floor_and_ceil
+        lower_line = price_paid_for_the_trade * (1. - threshold_down_ep)  # th2
+        lower_line = math.floor(lower_line / floor_and_ceil) * floor_and_ceil
+
+        success = True
+        if ddslope not in ['++','--']:  # GT,PRED
+            if ddslope == '+-':
+                # print(f"{upper_line}  {gt}   {gt[1:]<upper_line} {np.count_nonzero(gt[1:]<upper_line)}")
+                if 0 == np.count_nonzero(gt[1:]<upper_line):
+                    success = False
+            if ddslope == '-+':
+                # print(f"{lower_line}  {gt}   {gt[1:]>lower_line} {np.count_nonzero(gt[1:]<upper_line)}")
+                if 0 == np.count_nonzero(gt[1:]>lower_line):
+                    success = False
+        performance['slope_success'].append(success)
+
         print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
     print(f"Mean RMSE: {np.mean(performance['rmse'])}")
     print(f"STD RMSE: {np.std(performance['rmse'])}")
     for p in [5, 10, 25, 50, 75, 90, 95]:
         print(f"{p}th Percentile RMSE: {np.percentile(performance['rmse'], p)}")
+    total_slope = len(performance['slope'])
+    total_slope_pos = len([ppp for ppp in performance['slope'] if ppp in ['++','--']])
+    total_slope_success = len([ppp for ppp in performance['slope_success'] if ppp])
+    # --- Slope Success Summary ---
+    print("\n" + "="*50)
+    print("SLOPE SUCCESS ANALYSIS".center(50))
+    print("="*50)
+    print(f"Total backtest steps                : {total_slope}")
+    print(f"Same-direction forecasts (++/--)    : {total_slope_pos} ({100 * total_slope_pos / total_slope:.1f}%)")
+    print(f"Successful slope-based outcomes     : {total_slope_success} ({100 * total_slope_success / total_slope:.1f}%)")
+    print("Interpretation:")
+    print("- 'Slope success' = correct directional alignment OR, when directions differ,")
+    print("  price still respected exit thresholds (e.g., didn’t breach stop-loss/take-profit)")
+    print("="*50)
 
 if __name__ == "__main__":
     freeze_support()
