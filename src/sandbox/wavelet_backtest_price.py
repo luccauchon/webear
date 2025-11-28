@@ -141,16 +141,14 @@ def main(args):
         success = True
         if ddslope not in ['++','--']:  # GT,PRED
             if ddslope == '+-':
-                # print(f"{upper_line}  {gt}   {gt[1:]<upper_line} {np.count_nonzero(gt[1:]<upper_line)}")
                 if 0 == np.count_nonzero(gt[1:]<upper_line):
                     success = False
             if ddslope == '-+':
-                # print(f"{lower_line}  {gt}   {gt[1:]>lower_line} {np.count_nonzero(gt[1:]<upper_line)}")
                 if 0 == np.count_nonzero(gt[1:]>lower_line):
                     success = False
         performance['slope_success'].append(success)
-
-        print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
+        if not success:
+            print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
     print(f"Mean RMSE: {np.mean(performance['rmse'])}")
     print(f"STD RMSE: {np.std(performance['rmse'])}")
     for p in [5, 10, 25, 50, 75, 90, 95]:

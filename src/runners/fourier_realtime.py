@@ -102,6 +102,7 @@ def main(args):
     forecasts = np.array(forecasts)  # Shape: (n_forecasts, n_pred)
     mean_forecast = np.mean(forecasts, axis=0)
     assert len(mean_forecast) == args.length_prediction_for_the_future
+    print(f"{mean_forecast.astype(int)=}")
     if args.plot_graph:
         # --- Plotting ---
         fig, ax = plt.subplots(figsize=(16, 9))
