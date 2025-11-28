@@ -136,7 +136,7 @@ def main(args):
         ax.set_ylim(all_ys.min() - y_margin, all_ys.max() + y_margin)
 
         # Labels
-        ax.set_title(f'Mean Tendency of Top {args.n_forecasts} Forecasts for {args.ticker} ({args.dataset_id})', fontsize=16)
+        ax.set_title(f'Fourier Real Time - Mean Tendency of Top {args.n_forecasts} Forecasts for {args.ticker} ({args.dataset_id})', fontsize=16)
         ax.set_xlabel('Time Index (Relative)')
         ax.set_ylabel('Close Price')
         ax.grid(True, linestyle='--', alpha=0.6)
