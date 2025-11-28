@@ -148,7 +148,7 @@ def main(args):
                     success = False
         performance['slope_success'].append(success)
         if not success:
-            print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
+            print(f'{ddslope}  RMSE:{rmse.astype(int)}  {errors.astype(int)} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
     print(f"Mean RMSE: {np.mean(performance['rmse']):0.1f}")
     print(f"STD RMSE: {np.std(performance['rmse']):0.1f}")
     for p in [5, 95]:
