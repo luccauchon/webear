@@ -69,9 +69,10 @@ def main(args):
     print(f"Last week of month   : {use_last_week_only}")
     print("="*50)
     suive_performance = {}
+    tt1 = time.time()
     for __n_forecast_length_in_training in all__n_forecast_length_in_training:
+        tt2 = time.time()
         performance = {'rmse':[], 'slope':[], 'slope_success':[]}
-        t1 = time.time()
         for step_back in range(1, number_of_step_back + 1) if verbose else (range(1, number_of_step_back + 1)):
             t1 = time.time()
             # Create the "Now" dataframe
@@ -161,7 +162,7 @@ def main(args):
         total_slope_success = len([ppp for ppp in performance['slope_success'] if ppp])
         # --- Slope Success Summary ---
         print("\n" + "="*50)
-        print(f"SLOPE SUCCESS ANALYSIS : {__n_forecast_length_in_training=}   {format_execution_time(time.time() - t1)}".center(50))
+        print(f"SLOPE SUCCESS ANALYSIS : {__n_forecast_length_in_training=}   {format_execution_time(time.time() - tt2)}".center(50))
         print("="*50)
         print(f"Total backtest steps                : {total_slope}")
         print(f"Same-direction forecasts (++/--)    : {total_slope_pos} ({100 * total_slope_pos / total_slope:.1f}%)")
@@ -173,7 +174,7 @@ def main(args):
         suive_performance.update({__n_forecast_length_in_training: {'++/--': total_slope_pos / total_slope, 'slope-based': total_slope_success / total_slope}})
     # --- Final Performance Summary Across Training Forecast Lengths ---
     print("\n" + "="*60)
-    print("OVERALL SLOPE PERFORMANCE SUMMARY".center(60))
+    print(f"OVERALL SLOPE PERFORMANCE SUMMARY   {format_execution_time(time.time() - tt1)}".center(60))
     print("="*60)
     print(f"{'Train Len':<10} {'Consistent Dir (%)':<22} {'Slope Success (%)':<22}")
     print("-" * 60)
