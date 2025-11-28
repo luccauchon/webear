@@ -149,10 +149,10 @@ def main(args):
         performance['slope_success'].append(success)
         if not success:
             print(f'{ddslope}  RMSE:{rmse:0.2f}  {errors} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
-    print(f"Mean RMSE: {np.mean(performance['rmse'])}")
-    print(f"STD RMSE: {np.std(performance['rmse'])}")
+    print(f"Mean RMSE: {np.mean(performance['rmse']):0.1f}")
+    print(f"STD RMSE: {np.std(performance['rmse']):0.1f}")
     for p in [5, 95]:
-        print(f"{p}th Percentile RMSE: {np.percentile(performance['rmse'], p)}")
+        print(f"{p}th Percentile RMSE: {np.percentile(performance['rmse'], p):0.1f}")
     total_slope = len(performance['slope'])
     total_slope_pos = len([ppp for ppp in performance['slope'] if ppp in ['++','--']])
     total_slope_success = len([ppp for ppp in performance['slope_success'] if ppp])
