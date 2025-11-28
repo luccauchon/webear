@@ -23,6 +23,7 @@ from datetime import datetime
 import argparse
 import json
 import os
+from utils import str2bool
 from runners.fourier_realtime_beta import get_prediction_for_the_future_with_fourier_algo
 
 
@@ -102,7 +103,8 @@ def main(args):
     forecasts = np.array(forecasts)  # Shape: (n_forecasts, n_pred)
     mean_forecast = np.mean(forecasts, axis=0)
     assert len(mean_forecast) == args.length_prediction_for_the_future
-    print(f"{mean_forecast.astype(int)=}")
+    if not args.quiet:
+        print(f"{mean_forecast.astype(int)=}")
     if args.plot_graph:
         # --- Plotting ---
         fig, ax = plt.subplots(figsize=(16, 9))
@@ -192,8 +194,8 @@ if __name__ == "__main__":
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
     parser.add_argument("--use_this_df", type=json.loads, default={})
-    parser.add_argument("--plot_graph", type=bool, default=True)
-    parser.add_argument("--quiet", type=bool, default=False)
+    parser.add_argument("--plot_graph", type=str2bool, default=True)
+    parser.add_argument("--quiet", type=str2bool, default=False)
     args = parser.parse_args()
     # --- Nicely print the arguments ---
     print("🔧 Arguments:")

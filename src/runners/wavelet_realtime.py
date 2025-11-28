@@ -19,7 +19,7 @@ from argparse import Namespace
 import matplotlib.pyplot as plt
 import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, FYAHOO__OUTPUTFILENAME_MONTH
-from utils import transform_path
+from utils import transform_path, str2bool
 
 
 def main(args):
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_models_to_keep", type=int, default=60)
     parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
-    parser.add_argument('--verbose', type=bool, default=False)
+    parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
 
     output_dir = f"../../stubs/wavelet_realtime_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/"

@@ -745,3 +745,8 @@ def is_friday(dt=None):
     elif isinstance(dt, str):
         dt = datetime.strptime(dt, "%Y-%m-%d").date()
     return dt.weekday() == 4  # Friday is 4
+
+
+def str2bool(v):
+    return string_to_bool(v)
+
