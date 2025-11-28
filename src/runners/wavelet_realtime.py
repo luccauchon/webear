@@ -70,7 +70,8 @@ def main(args):
     _, _, _, description_of_what_user_shall_do, _, misc_returned = wavelet_optimizer_entry_point(configuration)
     # Only a step back when we do a real forecast
     assert 1 == len(description_of_what_user_shall_do) and 1 == len(misc_returned)
-    print(f"{misc_returned[0]['mean_forecast'].astype(int)=}")
+    if args.verbose:
+        print(f"{misc_returned[0]['mean_forecast'].astype(int)=}")
     #######################################################################
     # Display
     #######################################################################
