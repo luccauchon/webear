@@ -44,7 +44,9 @@ def get_prediction_for_the_future_with_fourier_algo_2(_best_setup, _x_series, _l
 def get_prediction_for_the_future_with_fourier_algo(_best_setup, _length_prediction, _data_cache=None, _col=None, _ticker=None, prices=None):
     if prices is None:
         assert _data_cache is not None and _col is not None and _ticker is not None
-        prices = _data_cache[_ticker][(_col, _ticker)].values.astype(np.float64).copy()
+        tmp_df = _data_cache[_ticker]
+        tmp_df = tmp_df.sort_index()
+        prices = tmp_df[(_col, _ticker)].values.astype(np.float64).copy()
     else:
         assert _data_cache is None and _col is None and _ticker is None
         prices = prices.copy()

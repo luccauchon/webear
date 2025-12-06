@@ -143,7 +143,9 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configura
 
         for buy_setup in [True, False]:
             kwargs = deepcopy(configuration_setup)
-            df = trade_prime_half_trend_strategy(ticker_df=data_cache[stock].copy(), ticker_name=stock, buy_setup=buy_setup, **kwargs)
+            data_df = data_cache[stock].copy()
+            data_df = data_df.sort_index()
+            df = trade_prime_half_trend_strategy(ticker_df=data_df, ticker_name=stock, buy_setup=buy_setup, **kwargs)
             recent_signals = df[df[('custom_signal', stock)]]
             if not recent_signals.empty:
                 last = recent_signals.iloc[-1]
@@ -207,8 +209,12 @@ def entry():
     # pprint.pprint(configuration_setup)
 
     # Add dataset to configuration
-    configuration_setup['use__relative_strength_vs_benchmark'].update({'vix_dataframe': data_cache["^VIX"].copy()})
-    configuration_setup['use__relative_strength_vs_benchmark'].update({'spx_dataframe': data_cache["^GSPC"].copy()})
+    vix_df = data_cache["^VIX"].copy()
+    vix_df = vix_df.sort_index()
+    configuration_setup['use__relative_strength_vs_benchmark'].update({'vix_dataframe': vix_df})
+    spx_df = data_cache["^GSPC"].copy()
+    spx_df = spx_df.sort_index()
+    configuration_setup['use__relative_strength_vs_benchmark'].update({'spx_dataframe': spx_df})
 
     # Remove all keys that are not 'rmstock'
     if rmstock is not None:

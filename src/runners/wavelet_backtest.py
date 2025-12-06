@@ -47,6 +47,7 @@ def main(args):
     with open(df_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = master_data_cache[ticker].copy()
+    master_data_cache = master_data_cache.sort_index()
     # --- Parameter Summary ---
     print("\n" + "="*50)
     print("BACKTESTING PARAMETERS SUMMARY".center(50))

@@ -25,15 +25,19 @@ from constants import FYAHOO_TICKER__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY,
 
 def entry():
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+    end_date_m1 = (datetime.today() - timedelta(days=3)).strftime('%Y-%m-%d')
     start_date = (datetime.today() - timedelta(days=365)).strftime('%Y-%m-%d')
-    tickers = list(set(MY_TICKERS))
+    tickers = sorted(list(set(MY_TICKERS)), reverse=True)
     data_cache ={}
     ###########################################################################
     # 1 hour
     ###########################################################################
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1h , ", flush=True)
     for ticker in tqdm(tickers):
-        data = yf.download(ticker, start=start_date, end=end_date, interval='1h', auto_adjust=False, ignore_tz=True, progress=False)
+        if ticker == '^SKEW':
+            data = yf.download(ticker, start=start_date, end=end_date, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
+        else:
+            data = yf.download(ticker, start=start_date, end=end_date, interval='1h', auto_adjust=False, ignore_tz=True, progress=False)
         data_cache[ticker] = data
         # time.sleep(0.1)
     # Serialize
@@ -48,7 +52,7 @@ def entry():
     # 1 day
     ###########################################################################
     end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
-    start_date = "1975-01-01"  # (datetime.today() - timedelta(days=10*365)).strftime('%Y-%m-%d')
+    start_date = "1960-01-01"  # (datetime.today() - timedelta(days=10*365)).strftime('%Y-%m-%d')
     print(f"{len(tickers)} tickers found , {start_date=} {end_date=} , interval=1d , ", flush=True)
     for ticker in tqdm(tickers):
         data = yf.download(ticker, start=start_date, end=end_date, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)

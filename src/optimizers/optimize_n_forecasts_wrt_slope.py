@@ -2,7 +2,7 @@ from argparse import Namespace
 
 from utils import format_execution_time, format_duration
 from tqdm import tqdm
-from runners.fourier_forecast_with_slope import main as fourier_forecast_with_slope
+from runners.fourier_realtime import main as fourier_forecast_with_slope
 from constants import FYAHOO__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_MONTH, NB_WORKERS
 import pickle
 import numpy as np

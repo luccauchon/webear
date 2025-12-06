@@ -19,7 +19,7 @@ from argparse import Namespace
 import matplotlib.pyplot as plt
 import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, FYAHOO__OUTPUTFILENAME_MONTH
-from utils import transform_path, str2bool
+from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 
 
 def main(args):
@@ -100,7 +100,7 @@ def main(args):
 
         plt.tight_layout(rect=[0, 0.1, 1, 1])  # Make room for the text at the bottom
         # Save and show AFTER adding text
-        if older_dataset is not None:
+        if args.older_dataset is not None:
             today_str = datetime.today().strftime('%Y-%m-%d')
             os.makedirs(os.path.join(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, args.older_dataset), exist_ok=True)
             figure_filename = os.path.join(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, args.older_dataset, f"forecast__{args.ticker}_{args.dataset_id}__.png")
@@ -116,10 +116,11 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="None")
-    parser.add_argument("--dataset_id", type=str, default="week", choices=['week', 'day', 'month'])
+    parser.add_argument("--dataset_id", type=str, default="week", choices=DATASET_AVAILABLE)
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
+    parser.add_argument("--remove_last_n_steps", type=int, default=-1)
     parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
     parser.add_argument('--verbose', type=str2bool, default=False)
@@ -127,20 +128,13 @@ if __name__ == "__main__":
 
     output_dir = f"../../stubs/wavelet_realtime_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/"
     os.makedirs(output_dir, exist_ok=True)
-
-    if args.dataset_id == 'day':
-        df_filename = FYAHOO__OUTPUTFILENAME_DAY
-    elif args.dataset_id == 'week':
-        df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    elif args.dataset_id == 'month':
-        df_filename = FYAHOO__OUTPUTFILENAME_MONTH
-    older_dataset = None if args.older_dataset == "None" else args.older_dataset
-    one_dataset_filename = df_filename if older_dataset is None else transform_path(df_filename, older_dataset)
-
+    one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None if args.older_dataset == "None" else args.older_dataset)
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = master_data_cache[args.ticker].copy()
-
+    master_data_cache = master_data_cache.sort_index()
+    if args.remove_last_n_steps > 0:
+        master_data_cache = master_data_cache[:-args.remove_last_n_steps].copy()
     args = Namespace(
         master_data_cache=master_data_cache.copy(),
         ticker=args.ticker,

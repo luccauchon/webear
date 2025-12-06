@@ -29,7 +29,7 @@ import numpy as np
 from tabulate import tabulate
 import pickle
 import argparse
-from utils import transform_path
+from utils import str2bool, get_filename_for_dataset, DATASET_AVAILABLE
 
 
 def _find_patterns(monthly_up, monthly_down, close_series, P1, Q, P2, mode_name, detailed):
@@ -79,7 +79,7 @@ def _find_patterns(monthly_up, monthly_down, close_series, P1, Q, P2, mode_name,
 
         print(f"\n✅ {mode_name} Pattern Results:")
         print(f"Total patterns found: {total}")
-        print(f"Next month positive:  {pos_next}")
+        print(f"Next positive:        {pos_next}")
         print(f"Probability:          {prob:.2%}\n")
         if detailed:
             print("📋 Outcomes:")
@@ -95,19 +95,11 @@ def _find_patterns(monthly_up, monthly_down, close_series, P1, Q, P2, mode_name,
 
 def main(P1, Q, P2, older_dataset, frequency, detailed):
     TICKER = "^GSPC"
-    if frequency == 'monthly':
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
-    elif frequency == 'weekly':
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
-    elif frequency == 'daily':
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_DAY if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_DAY, older_dataset)
-    else:
-        assert False
-
+    one_dataset_filename = get_filename_for_dataset(frequency, older_dataset)
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     data = data_cache[TICKER]
-
+    data = data.sort_index()
     print(f"📅 Data range: {data.index[0].strftime('%Y-%m')} → {data.index[-1].strftime('%Y-%m')} "
           f"({len(data)} {frequency.upper()})\n")
 
@@ -155,11 +147,11 @@ def main(P1, Q, P2, older_dataset, frequency, detailed):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze S&P 500: P1↑ → Q↓ → P2↑ → next.")
     parser.add_argument('--P1', type=int, default=2, help='Initial positive (default: 2)')
-    parser.add_argument('--Q', type=int, default=1, help='Negative months (default: 1)')
+    parser.add_argument('--Q', type=int, default=1, help='Negative (default: 1)')
     parser.add_argument('--P2', type=int, default=2, help='Trailing positive (default: 2)')
     parser.add_argument("--older_dataset", type=str, default="")
-    parser.add_argument("--frequency", type=str, default="monthly")
-    parser.add_argument("--detailed", type=bool, default=False)
+    parser.add_argument("--frequency", type=str, default=DATASET_AVAILABLE)
+    parser.add_argument("--detailed", type=str2bool, default=False)
     args = parser.parse_args()
 
     main(P1=args.P1, Q=args.Q, P2=args.P2, older_dataset=args.older_dataset, frequency=args.frequency, detailed=args.detailed)

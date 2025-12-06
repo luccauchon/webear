@@ -107,7 +107,7 @@ def main(Q1, P, Q2, older_dataset, frequency, detailed):
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     data = data_cache[TICKER]
-
+    data = data.sort_index()
     print(f"📅 Data range: {data.index[0].strftime('%Y-%m')} → {data.index[-1].strftime('%Y-%m')} "
           f"({len(data)} {frequency.upper()})\n")
 

@@ -1,5 +1,6 @@
 import numpy as np
 from pathlib import Path
+from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
 import sys
 import re
 from types import SimpleNamespace
@@ -637,7 +638,8 @@ def format_execution_time(execution_time):
     hours = int(execution_time // 3600)
     minutes = int((execution_time % 3600) // 60)
     seconds = int(execution_time % 60)
-    return f"{hours:02d}h{minutes:02d}m{seconds:02d}s"
+    mseconds = int((execution_time % 1) * 1000)
+    return f"{hours:02d}h{minutes:02d}m{seconds:02d}s{mseconds:03d}ms"
 
 def get_weekdays(today=None, number_of_days=3):
     if today is None:
@@ -750,3 +752,16 @@ def is_friday(dt=None):
 def str2bool(v):
     return string_to_bool(v)
 
+
+DATASET_AVAILABLE = ['day', 'week', 'month', 'fourth', 'year']
+def get_filename_for_dataset(dataset_choice, older_dataset=None):
+    mapping = {
+        'day': FYAHOO__OUTPUTFILENAME_DAY,
+        'week': FYAHOO__OUTPUTFILENAME_WEEK,
+        'month': FYAHOO__OUTPUTFILENAME_MONTH,
+        'fourth': FYAHOO__OUTPUTFILENAME_QUARTER,
+        'year': FYAHOO__OUTPUTFILENAME_YEAR,
+    }
+    if older_dataset is not None and older_dataset != '':
+        return transform_path(mapping[dataset_choice], older_dataset)
+    return mapping[dataset_choice]

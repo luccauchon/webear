@@ -15,7 +15,7 @@ def is_drive_writable(path):
     except:
         return False
 
-if os.path.exists('D:') and os.path.isdir('D:') and is_drive_writable('D:\\'):
+if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
     BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
 else:
@@ -35,15 +35,17 @@ FYAHOO__OUTPUTFILENAME_MONTH = os.path.join(BASE_YFINANCE_DIR, "snapshot_month.p
 FYAHOO__OUTPUTFILENAME_QUARTER = os.path.join(BASE_YFINANCE_DIR, "snapshot_quarter.pkl")
 FYAHOO__OUTPUTFILENAME_YEAR  = os.path.join(BASE_YFINANCE_DIR, "snapshot_year.pkl")
 FYAHOO_TICKER__OUTPUTFILENAME = os.path.join(BASE_YFINANCE_DIR, "snapshot_ticker.pkl")
+FYAHOO_SPX500__OUTPUTFILENAME = os.path.join(BASE_YFINANCE_DIR, "sp500_daily_data.parquet")
 
 # Constants
 NB_WORKERS = os.cpu_count()
 
 MY_TICKERS = [
-    "^XSP", "^GSPC", "^VIX", "SPY", "QQQ", "AAPL", "ADBE", "AFRM", "AMD", "AMZN",
+    "^XSP", "^GSPC", "^VIX", "^VVIX", "^SKEW", "^VIX1D", "^VIX9D", "^VIX3M", "^VIX6M", "^VVIX", "^VIX1Y", "SPY", "QQQ",
+    "AAPL", "ADBE", "AFRM", "AMD", "AMZN",
     "ASST", "AVGO", "BAC", "BBAI", "BRK-B", "CLF", "COST", "CRM", "DBRG", "GOOGL",
     "GOOG", "HD", "HIMS", "HOOD", "INTC", "JPM", "LLY", "MA", "META", "MSFT",
-    "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT", "RKT",
+    "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT", "RKT", "RSP",
     "SOFI", "TSLA", "TSM", "UUUU", "U", "V", "WMT"
 ]
 
@@ -56,3 +58,8 @@ os.makedirs(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST, exist_ok=True)
 
 OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST = os.path.join(BASE_FORECAST_DIR, r"Wavlet_based_stock_forecast")
 os.makedirs(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, exist_ok=True)
+
+# Optional: Load FRED_API_KEY from environment for security
+# import os
+# FRED_API_KEY = os.getenv('FRED_API_KEY')
+FRED_API_KEY = '213742dc08592772cb9502214cdc4397'

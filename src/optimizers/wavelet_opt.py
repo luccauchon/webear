@@ -400,6 +400,42 @@ def main(args):
                 # Light gray lines for individual forecasts
                 plt.plot(future_indices, pred, color='lightgray', alpha=0.6, linewidth=1)
 
+        # Plot the forecast that starts with the lowest value and the one that starts with the highest value
+        if plot_graph and len(all_forecasts) > 1:
+            # Assuming all_forecasts is a list of lists/arrays of forecasted values
+            # Find indices of forecasts with min and max first values
+            first_values = [f[0] for f in all_forecasts]
+            idx_min_start = first_values.index(min(first_values))
+            idx_max_start = first_values.index(max(first_values))
+
+            min_forecast = all_forecasts[idx_min_start]
+            max_forecast = all_forecasts[idx_max_start]
+
+            # Plot them
+            plt.plot(future_indices, min_forecast, color='black', linewidth=3)
+            plt.plot(future_indices, max_forecast, color='black', linewidth=3)
+
+            # Annotate first and last points for Lowest Start
+            plt.text(future_indices[0], min_forecast[0], f'{min_forecast[0]:.2f}', color='black', fontsize=9,
+                     verticalalignment='bottom', horizontalalignment='right')
+            plt.text(future_indices[-1], min_forecast[-1], f'{min_forecast[-1]:.2f}', color='black', fontsize=9,
+                     verticalalignment='bottom', horizontalalignment='left')
+
+            # Annotate first and last points for Highest Start
+            plt.text(future_indices[0], max_forecast[0], f'{max_forecast[0]:.2f}', color='black', fontsize=9,
+                     verticalalignment='top', horizontalalignment='right')
+            plt.text(future_indices[-1], max_forecast[-1], f'{max_forecast[-1]:.2f}', color='black', fontsize=9,
+                     verticalalignment='top', horizontalalignment='left')
+
+        elif plot_graph and len(all_forecasts) == 1:
+            # Only one forecast: just make it stand out
+            plt.plot(future_indices, all_forecasts[0], color='black', linewidth=3, label='Only Forecast')
+            # Optional: annotate its endpoints too
+            plt.text(future_indices[0], only_forecast[0], f'{only_forecast[0]:.2f}', color='black', fontsize=9,
+                     verticalalignment='center', horizontalalignment='right')
+            plt.text(future_indices[-1], only_forecast[-1], f'{only_forecast[-1]:.2f}', color='black', fontsize=9,
+                     verticalalignment='center', horizontalalignment='left')
+
         # Compute and plot mean forecast
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)
         mean_forecast = np.mean(all_forecasts, axis=0)
@@ -722,7 +758,7 @@ def main(args):
             plt.title(f'{ticker} Forecast ({args.dataset_id}) — '
                       f'Mean RMSE: {mean_rmse:.2f}{da_str} | '
                       f'Shape Sim: {shape_similarity:.2f} | Robust: {robustness_score:.2f} |\n'
-                      f'{top_n} Models Shown   Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
+                      f'{top_n} Models (N train={n_train_length}) Step Back:{step_back}   {time_str}  {algo_name}', fontsize=12)
             plt.xlabel('Time Index')
             plt.ylabel('Price')
             plt.legend()

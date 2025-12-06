@@ -38,11 +38,13 @@ def main(args):
     thresholds_ep = args.thresholds_ep
     n_models_to_keep = args.n_models_to_keep
     number_of_step_back = args.step_back_range
+    start_of_back_range = args.start_of_back_range
     exit_strategy = args.strategy_for_exit
     threshold_for_shape_similarity = args.threshold_for_shape_similarity
     verbose = args.verbose
     use_last_week_only=args.use_last_week_only
     floor_and_ceil = 5.0
+    assert start_of_back_range>0 and start_of_back_range<number_of_step_back
     if dataset_id == 'day':
         df_filename = FYAHOO__OUTPUTFILENAME_DAY
     elif dataset_id == 'week':
@@ -64,37 +66,37 @@ def main(args):
     print(f"T Shape Similarity   : {threshold_for_shape_similarity}")
     print(f"Thresholds (EP)      : {thresholds_ep}")
     print(f"Step-Back Range      : {number_of_step_back}")
+    print(f"Start Step-Back Range: {start_of_back_range}")
     print(f"Data File            : {df_filename}")
     print(f"Exit strategy        : {exit_strategy}")
     print(f"Last week of month   : {use_last_week_only}")
+    print(f"Verbose              : {verbose}")
     print("="*50)
     suive_performance = {}
     tt1 = time.time()
     for __n_forecast_length_in_training in all__n_forecast_length_in_training:
         tt2 = time.time()
         performance = {'rmse':[], 'slope':[], 'slope_success':[]}
-        for step_back in range(1, number_of_step_back + 1) if verbose else (range(1, number_of_step_back + 1)):
+        for step_back in range(start_of_back_range, number_of_step_back + 1) if verbose else (range(start_of_back_range, number_of_step_back + 1)):
             t1 = time.time()
             # Create the "Now" dataframe
             df = master_data_cache.iloc[:-step_back].copy()
-            #print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
-            if use_last_week_only:
-                assert 'week' == dataset_id
-                last_date = df.index[-1]
-                month_end = last_date + pd.offsets.MonthEnd(0)
-                #print("Month end:", month_end)
+            # print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
 
-                # Check if last_date is in the last week of the month
-                last_week_start = month_end - pd.Timedelta(days=5)
-                is_in_last_week = last_date >= last_week_start
-                #print("Is in last week of month:", is_in_last_week)
-                if not is_in_last_week:
-                    continue
             # All data except the last `step_back` rows → for parameter extraction
             data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
+
+            if use_last_week_only:
+                last_date = data_cache_for_parameter_extraction.index[-1]
+                month_end = last_date + pd.offsets.MonthEnd(0)
+                is_in_last_week = last_date >= (month_end - pd.Timedelta(days=6))
+
+                if not is_in_last_week:
+                    continue
+
             # Rows at position `-step_back` → for forecasting
             data_cache_for_forecasting = df.iloc[-n_forecast_length: ].copy()
-            #print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
+            # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
             day_of_the_trade = data_cache_for_parameter_extraction.index[-1]
             price_paid_for_the_trade = data_cache_for_parameter_extraction[col_name].values[-1]
             #print(price_paid_for_the_trade)
@@ -120,7 +122,7 @@ def main(args):
                 strategy_for_exit=args.strategy_for_exit,
                 n_models_to_keep=n_models_to_keep,
                 threshold_for_shape_similarity=threshold_for_shape_similarity,
-                verbose=verbose,
+                verbose=False,
             )
             user_instruction, misc_returned = wavelet_realtime_entry_point(args)
             mean_forecast = misc_returned['mean_forecast']
@@ -151,7 +153,7 @@ def main(args):
                     if 0 == np.count_nonzero(gt[1:]>lower_line):
                         success = False
             performance['slope_success'].append(success)
-            if not success:
+            if not success or verbose:
                 print(f'{ddslope}  RMSE:{rmse.astype(int)}  {errors.astype(int)} -> {errors_pct}      {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {the_dates}', flush=True)
         print(f"Mean RMSE: {np.mean(performance['rmse']):0.1f}")
         print(f"STD RMSE: {np.std(performance['rmse']):0.1f}")
@@ -208,8 +210,9 @@ if __name__ == "__main__":
     parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)",
                         help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
-    parser.add_argument('--step-back-range', type=int, default=5,
+    parser.add_argument('--step_back_range', type=int, default=5,
                         help="Number of past steps to backtest (default: 5)")
+    parser.add_argument('--start_of_back_range', type=int, default=1)
     parser.add_argument('--strategy_for_exit', type=str, default="hold_until_the_end_with_roll",
                         choices=['hold_until_the_end', 'hold_until_the_end_with_roll'],
                         help="")
