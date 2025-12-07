@@ -18,6 +18,10 @@ def main(args):
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
 
+    # Extract close_value early so it's available in the delta loop
+    close_col = ('Close', ticker_name)
+    close_value = data_cache[ticker_name][close_col].iloc[-1]
+
     # Group results by NN: {NN: [(delta, prob, count, total_streaks), ...]}
     grouped_results = defaultdict(list)
 
@@ -40,12 +44,11 @@ def main(args):
             prob = v['prob']
             count = v['count']
             total_streaks = v['total_streaks']
-            grouped_results[NN].append((delta, prob, count, total_streaks))
+            vl_dl = close_value * (1 - delta / 100.0) if direction == 'neg' else close_value * (1 + delta / 100.0)
+            grouped_results[NN].append((delta, prob, count, total_streaks, vl_dl))
 
     # Sort NN values
     sorted_NNs = sorted(grouped_results.keys())
-    close_col = ('Close', ticker_name)
-    close_value = data_cache[ticker_name][close_col].iloc[-1]
 
     # Pretty header
     direction_label = "Negative" if direction == "neg" else "Positive"
@@ -60,16 +63,15 @@ def main(args):
             continue
         print(f"\n🔹 Streaks ≥ {NN} ({frequency}-frequency):")
         entries = sorted(grouped_results[NN], key=lambda x: x[0])  # sort by delta
-        for delta, prob, count, total_streaks in entries:
+        for delta, prob, count, total_streaks, vl_dl in entries:
             cl_dir = "below" if direction == "neg" else "above"
-            vl_dl = close_value * (1 - delta / 100.0) if direction == 'neg' else close_value * (1 + delta / 100.0)
             print(
                 f"    {prob:>7.2%} ({count:>4d} / {total_streaks:>4d}) → "
                 f"Close {cl_dir} {vl_dl:,.1f} "
                 f"(Δ = {delta:>4.1f}%)"
             )
     print("\n✅ Done.\n")
-    return sorted_NNs
+    return grouped_results
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

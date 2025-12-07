@@ -24,9 +24,41 @@ from runners.wavelet_realtime import main as wavelet_realtime_entry_point
 from utils import format_execution_time
 import pandas as pd
 import time
+import numpy as np
+
+
+def compute_and_print_stats_for_fomo_strategy(data):
+    # Define the multiplier labels in the order they appear
+    multipliers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    keys = [f'last_value_forecasted__m{m:.1f}'.replace('.', '_') for m in multipliers]
+
+    # Collect truth and forecasted values
+    truths = []
+    forecasts = {key: [] for key in keys}
+
+    for step, values in data.items():
+        truths.append(values['last_value_truth'])
+        for key in keys:
+            forecasts[key].append(values[key])
+
+    truths = np.array(truths)
+
+    print(f"{'Multiplier':<12} {'Truth > Forecast (%)':<25} {'Count True / Total'}")
+    print("-" * 50)
+
+    for m, key in zip(multipliers, keys):
+        forecast_vals = np.array(forecasts[key])
+        comparison = truths > forecast_vals
+        count_true = np.sum(comparison)
+        total = len(comparison)
+        percentage = (count_true / total) * 100
+
+        print(f"{m:<12} {percentage:<25.2f} {count_true} / {total}")
+
 
 
 def main(args):
+    backtest_strategy = args.backtest_strategy
     ticker = args.ticker
     col = args.col
     col_name = (col, ticker)
@@ -64,6 +96,7 @@ def main(args):
     print(f"Data File            : {df_filename}")
     print(f"Exit strategy        : {exit_strategy}")
     print(f"Last week of month   : {use_last_week_only}")
+    print(f"Backtest strategy    : {backtest_strategy}")
     print("="*50)
     # input("Press Enter to start backtesting...")
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
@@ -102,6 +135,8 @@ def main(args):
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty, "Indices must be disjoint"
         output_dir = rf"../../stubs/wavelet_backtesting_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/__{step_back}/"
         os.makedirs(output_dir, exist_ok=True)
+        the_ground_truth = data_cache_for_forecasting[col_name].values
+        assert len(the_ground_truth) == n_forecast_length
         args = Namespace(
             master_data_cache=data_cache_for_parameter_extraction.copy(),
             ticker=ticker, col=col,
@@ -111,7 +146,7 @@ def main(args):
             n_forecast_length_in_training=n_forecast_length_in_training,
             thresholds_ep=thresholds_ep,
             plot_graph=False,
-            use_given_gt_truth=data_cache_for_forecasting[col_name].values,
+            use_given_gt_truth=the_ground_truth,
             display_tqdm=False,
             strategy_for_exit=args.strategy_for_exit,
             n_models_to_keep=n_models_to_keep,
@@ -119,146 +154,162 @@ def main(args):
             verbose=verbose,
         )
         user_instruction, misc_returned = wavelet_realtime_entry_point(args)
-        operation_data = user_instruction['op']
-        operation_request, operation_success, operation_missed_threshold = operation_data['action'], False, 0
-        operation_aborted = False
-        if operation_request == 'iron_condor':
-            if 1 == n_forecast_length:
-                assert 1 == len(data_cache_for_forecasting[col_name].values)
-                real_value = data_cache_for_forecasting[col_name].values[0]
-                low, high = operation_data['sell1'], operation_data['sell2']
-                if low < real_value < high:
-                    operation_success = True
+        if backtest_strategy == 'stratego':
+            operation_data = user_instruction['op']
+            operation_request, operation_success, operation_missed_threshold = operation_data['action'], False, 0
+            operation_aborted = False
+            if operation_request == 'iron_condor':
+                if 1 == n_forecast_length:
+                    assert 1 == len(data_cache_for_forecasting[col_name].values)
+                    real_value = data_cache_for_forecasting[col_name].values[0]
+                    low, high = operation_data['sell1'], operation_data['sell2']
+                    if low < real_value < high:
+                        operation_success = True
+                    else:
+                        operation_missed_threshold = low - real_value if real_value < low else real_value - high
                 else:
-                    operation_missed_threshold = low - real_value if real_value < low else real_value - high
-            else:
-                assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
-                real_values = data_cache_for_forecasting[col_name].values
-                last_real_value = real_values[-1]
-                low, high = operation_data['sell1'], operation_data['sell2']
-                if low < last_real_value < high:
-                    operation_success = True
+                    assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
+                    real_values = data_cache_for_forecasting[col_name].values
+                    last_real_value = real_values[-1]
+                    low, high = operation_data['sell1'], operation_data['sell2']
+                    if low < last_real_value < high:
+                        operation_success = True
+                    else:
+                        operation_missed_threshold = low - last_real_value if last_real_value < low else last_real_value - high
+            if operation_request == 'vertical_put':
+                if 1 == n_forecast_length:
+                    assert 1 == len(data_cache_for_forecasting[col_name].values)
+                    real_value = data_cache_for_forecasting[col_name].values[0]
+                    low = operation_data['sell1']
+                    if real_value > low:
+                        operation_success = True
+                    else:
+                        operation_missed_threshold = low - real_value
                 else:
-                    operation_missed_threshold = low - last_real_value if last_real_value < low else last_real_value - high
-        if operation_request == 'vertical_put':
-            if 1 == n_forecast_length:
-                assert 1 == len(data_cache_for_forecasting[col_name].values)
-                real_value = data_cache_for_forecasting[col_name].values[0]
-                low = operation_data['sell1']
-                if real_value > low:
-                    operation_success = True
+                    assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
+                    real_values = data_cache_for_forecasting[col_name].values
+                    last_real_value = real_values[-1]
+                    low = operation_data['sell1']
+                    if last_real_value > low:
+                        operation_success = True
+                    else:
+                        operation_missed_threshold = low - last_real_value
+            if operation_request == 'vertical_call':
+                if 1 == n_forecast_length:
+                    assert 1 == len(data_cache_for_forecasting[col_name].values)
+                    real_value = data_cache_for_forecasting[col_name].values[0]
+                    high = operation_data['sell1']
+                    if real_value < high:
+                        operation_success = True
+                    else:
+                        operation_missed_threshold = real_value - high
                 else:
-                    operation_missed_threshold = low - real_value
-            else:
-                assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
-                real_values = data_cache_for_forecasting[col_name].values
-                last_real_value = real_values[-1]
-                low = operation_data['sell1']
-                if last_real_value > low:
-                    operation_success = True
+                    assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
+                    real_values = data_cache_for_forecasting[col_name].values
+                    last_real_value = real_values[-1]
+                    high = operation_data['sell1']
+                    if last_real_value < high:
+                        operation_success = True
+                    else:
+                        operation_missed_threshold = last_real_value - high
+            if operation_request == 'do_nothing':
+                operation_aborted = True
+            performance.update({step_back: {}})
+            performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                           'operation_request': operation_request,
+                                           'operation_success': operation_success,
+                                           'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+            if operation_request == 'iron_condor':
+                iron_condor_performance.update({step_back: {}})
+                iron_condor_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                                            'operation_request': operation_request,
+                                                            'operation_success': operation_success,
+                                                            'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+            if operation_request == 'vertical_put':
+                put_credit_spread_performance.update({step_back: {}})
+                put_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                                                 'operation_request': operation_request,
+                                                                 'operation_success': operation_success,
+                                                                 'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+            if operation_request == 'vertical_call':
+                call_credit_spread_performance.update({step_back: {}})
+                call_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
+                                                                  'operation_request': operation_request,
+                                                                  'operation_success': operation_success,
+                                                                  'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
+            t2 = time.time()
+            if verbose:
+                print(f"[{step_back}/{number_of_step_back}] used {format_execution_time(t2-t1)}")
+                if operation_aborted:
+                    print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
                 else:
-                    operation_missed_threshold = low - last_real_value
-        if operation_request == 'vertical_call':
-            if 1 == n_forecast_length:
-                assert 1 == len(data_cache_for_forecasting[col_name].values)
-                real_value = data_cache_for_forecasting[col_name].values[0]
-                high = operation_data['sell1']
-                if real_value < high:
-                    operation_success = True
-                else:
-                    operation_missed_threshold = real_value - high
-            else:
-                assert n_forecast_length == len(data_cache_for_forecasting[col_name].values)
-                real_values = data_cache_for_forecasting[col_name].values
-                last_real_value = real_values[-1]
-                high = operation_data['sell1']
-                if last_real_value < high:
-                    operation_success = True
-                else:
-                    operation_missed_threshold = last_real_value - high
-        if operation_request == 'do_nothing':
-            operation_aborted = True
-        performance.update({step_back: {}})
-        performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
-                                       'operation_request': operation_request,
-                                       'operation_success': operation_success,
-                                       'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
-        if operation_request == 'iron_condor':
-            iron_condor_performance.update({step_back: {}})
-            iron_condor_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
-                                                        'operation_request': operation_request,
-                                                        'operation_success': operation_success,
-                                                        'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
-        if operation_request == 'vertical_put':
-            put_credit_spread_performance.update({step_back: {}})
-            put_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
-                                                             'operation_request': operation_request,
-                                                             'operation_success': operation_success,
-                                                             'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
-        if operation_request == 'vertical_call':
-            call_credit_spread_performance.update({step_back: {}})
-            call_credit_spread_performance[step_back].update({'data_cache_for_forecasting': data_cache_for_forecasting,
-                                                              'operation_request': operation_request,
-                                                              'operation_success': operation_success,
-                                                              'operation_aborted': operation_aborted, 'operation_missed_threshold': operation_missed_threshold})
-        t2 = time.time()
-        if verbose:
-            print(f"[{step_back}/{number_of_step_back}] used {format_execution_time(t2-t1)}")
-            if operation_aborted:
-                print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , no operation was taken")
-            else:
-                if operation_success:
-                    print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was successful")
-                else:
-                    print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
-            print(f"\t\t{user_instruction['description']}")
+                    if operation_success:
+                        print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was successful")
+                    else:
+                        print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
+                print(f"\t\t{user_instruction['description']}")
+        if backtest_strategy == 'fomo':
+            forecast = misc_returned['mean_forecast']
+            assert len(forecast) == n_forecast_length and len(forecast) == len(the_ground_truth)
+            last_value_forecasted = forecast[-1]
+            last_value_truth = the_ground_truth[-1]
+            performance.update({step_back: {'last_value_truth': last_value_truth, 'last_value_forecasted': last_value_forecasted,
+                                            'last_value_forecasted__m0_5': last_value_forecasted*0.995,
+                                            'last_value_forecasted__m1_0': last_value_forecasted*0.990,
+                                            'last_value_forecasted__m1_5': last_value_forecasted*0.985,
+                                            'last_value_forecasted__m2_0': last_value_forecasted*0.980,
+                                            'last_value_forecasted__m2_5': last_value_forecasted*0.975,
+                                            'last_value_forecasted__m3_0': last_value_forecasted*0.970},})
     # --- Summary Report ---
-    total_runs = len(performance)
-    successes = sum(1 for v in performance.values() if v['operation_success'])
-    failures  = sum(1 for v in performance.values() if not v['operation_success'] and not v['operation_aborted'])
-    skipped   = sum(1 for v in performance.values() if v['operation_aborted'])
+    if backtest_strategy == 'stratego':
+        total_runs = len(performance)
+        successes = sum(1 for v in performance.values() if v['operation_success'])
+        failures  = sum(1 for v in performance.values() if not v['operation_success'] and not v['operation_aborted'])
+        skipped   = sum(1 for v in performance.values() if v['operation_aborted'])
 
-    print("\n" + "="*50)
-    print("BACKTESTING PERFORMANCE SUMMARY".center(50))
-    print("="*50)
-    print(f"Total Backtest Windows     : {total_runs}")
-    print(f"Successful Trades          : {successes} ({successes/(successes+failures)*100:.1f}%)")
-    print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
-    print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
-    print("="*50)
+        print("\n" + "="*50)
+        print("BACKTESTING PERFORMANCE SUMMARY".center(50))
+        print("="*50)
+        print(f"Total Backtest Windows     : {total_runs}")
+        print(f"Successful Trades          : {successes} ({successes/(successes+failures)*100:.1f}%)")
+        print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
+        print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
+        print("="*50)
 
-    # --- Iron Condor Summary ---
-    iron_condor_runs = len(iron_condor_performance)
-    if iron_condor_runs > 0:
-        iron_condor_successes = sum(1 for v in iron_condor_performance.values() if v['operation_success'])
-        iron_condor_failures = iron_condor_runs - iron_condor_successes
-        print(f"\nIron Condor ({iron_condor_runs} trades):")
-        print(f"  Successes: {iron_condor_successes} ({iron_condor_successes / iron_condor_runs * 100:.1f}%)")
-        print(f"  Failures : {iron_condor_failures} ({iron_condor_failures / iron_condor_runs * 100:.1f}%)")
+        # --- Iron Condor Summary ---
+        iron_condor_runs = len(iron_condor_performance)
+        if iron_condor_runs > 0:
+            iron_condor_successes = sum(1 for v in iron_condor_performance.values() if v['operation_success'])
+            iron_condor_failures = iron_condor_runs - iron_condor_successes
+            print(f"\nIron Condor ({iron_condor_runs} trades):")
+            print(f"  Successes: {iron_condor_successes} ({iron_condor_successes / iron_condor_runs * 100:.1f}%)")
+            print(f"  Failures : {iron_condor_failures} ({iron_condor_failures / iron_condor_runs * 100:.1f}%)")
 
-    # --- Put Credit Spread Summary ---
-    put_runs = len(put_credit_spread_performance)
-    if put_runs > 0:
-        put_successes = sum(1 for v in put_credit_spread_performance.values() if v['operation_success'])
-        put_failures = put_runs - put_successes
-        print(f"\nPut Credit Spreads ({put_runs} trades):")
-        print(f"  Successes: {put_successes} ({put_successes/put_runs*100:.1f}%)")
-        print(f"  Failures : {put_failures} ({put_failures/put_runs*100:.1f}%)")
+        # --- Put Credit Spread Summary ---
+        put_runs = len(put_credit_spread_performance)
+        if put_runs > 0:
+            put_successes = sum(1 for v in put_credit_spread_performance.values() if v['operation_success'])
+            put_failures = put_runs - put_successes
+            print(f"\nPut Credit Spreads ({put_runs} trades):")
+            print(f"  Successes: {put_successes} ({put_successes/put_runs*100:.1f}%)")
+            print(f"  Failures : {put_failures} ({put_failures/put_runs*100:.1f}%)")
 
-    # --- Call Credit Spread Summary ---
-    call_runs = len(call_credit_spread_performance)
-    if call_runs > 0:
-        call_successes = sum(1 for v in call_credit_spread_performance.values() if v['operation_success'])
-        call_failures = call_runs - call_successes
-        print(f"\nCall Credit Spreads ({call_runs} trades):")
-        print(f"  Successes: {call_successes} ({call_successes/call_runs*100:.1f}%)")
-        print(f"  Failures : {call_failures} ({call_failures/call_runs*100:.1f}%)")
-
+        # --- Call Credit Spread Summary ---
+        call_runs = len(call_credit_spread_performance)
+        if call_runs > 0:
+            call_successes = sum(1 for v in call_credit_spread_performance.values() if v['operation_success'])
+            call_failures = call_runs - call_successes
+            print(f"\nCall Credit Spreads ({call_runs} trades):")
+            print(f"  Successes: {call_successes} ({call_successes/call_runs*100:.1f}%)")
+            print(f"  Failures : {call_failures} ({call_failures/call_runs*100:.1f}%)")
+    if backtest_strategy == 'fomo':
+        compute_and_print_stats_for_fomo_strategy(performance)
 
 if __name__ == "__main__":
     freeze_support()
     parser = argparse.ArgumentParser(description="Run Wavelet-based stock backtesting.")
-
+    parser.add_argument('--backtest_strategy', type=str, default='stratego', choices=['stratego', 'fomo'],
+                        help="Backtest strategy to use")
     parser.add_argument('--ticker', type=str, default='^GSPC',
                         help="Yahoo Finance ticker symbol (default: ^GSPC)")
     parser.add_argument('--col', type=str, default='Close',

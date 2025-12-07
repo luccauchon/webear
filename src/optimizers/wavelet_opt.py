@@ -430,11 +430,11 @@ def main(args):
         elif plot_graph and len(all_forecasts) == 1:
             # Only one forecast: just make it stand out
             plt.plot(future_indices, all_forecasts[0], color='black', linewidth=3, label='Only Forecast')
-            # Optional: annotate its endpoints too
-            plt.text(future_indices[0], only_forecast[0], f'{only_forecast[0]:.2f}', color='black', fontsize=9,
-                     verticalalignment='center', horizontalalignment='right')
-            plt.text(future_indices[-1], only_forecast[-1], f'{only_forecast[-1]:.2f}', color='black', fontsize=9,
-                     verticalalignment='center', horizontalalignment='left')
+            # # Optional: annotate its endpoints too
+            # plt.text(future_indices[0], only_forecast[0], f'{only_forecast[0]:.2f}', color='black', fontsize=9,
+            #          verticalalignment='center', horizontalalignment='right')
+            # plt.text(future_indices[-1], only_forecast[-1], f'{only_forecast[-1]:.2f}', color='black', fontsize=9,
+            #          verticalalignment='center', horizontalalignment='left')
 
         # Compute and plot mean forecast
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)

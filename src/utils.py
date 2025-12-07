@@ -659,7 +659,7 @@ def transform_path(line, date_str):
     Transforms a path assignment line by inserting a date folder before the filename.
 
     Args:
-        line (str): Original line like 'FYAHOO__OUTPUTFILENAME_WEEK = r"D:\Finance\...\snapshot_week.pkl"'
+        line (str): Original line like 'FYAHOO__OUTPUTFILENAME_WEEK = r"D:...snapshot_week.pkl"'
         date_str (str or None): Date string in format YYYY.MM.DD (e.g., "2025.10.31")
 
     Returns:
