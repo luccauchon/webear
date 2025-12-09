@@ -8,7 +8,9 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+
 import matplotlib.pyplot as plt
+import mplcursors
 from runners.streak_probability_lot import main as streak_probability_lot
 from argparse import Namespace
 import argparse
@@ -17,15 +19,22 @@ import pickle
 
 
 def main(args):
-    direction = args.direction
+    direction_day = args.direction_day
+    direction_week = args.direction_week
+    direction_month = args.direction_month
     ticker_name = args.ticker
     nn_day = args.nn_day
     nn_week = args.nn_week
     nn_month = args.nn_month
-    ticker_streak_data = {'month': {'probabilities': [], 'price_levels': []},
-                          'day': {'probabilities': [], 'price_levels': []},
-                          'week': {'probabilities': [], 'price_levels': []}}
 
+    # Store full point metadata per frequency
+    ticker_streak_data = {
+        'day': [],
+        'week': [],
+        'month': []
+    }
+
+    # Load data to get last close
     one_dataset_filename = get_filename_for_dataset('day', older_dataset=None)
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
@@ -37,7 +46,7 @@ def main(args):
     # --- Step 1: Organize the data into a structured dictionary ---
     # Day
     configuration = Namespace(
-        direction=direction,
+        direction=direction_day,
         method="prev_close",
         frequency='day',
         ticker=ticker_name,
@@ -46,12 +55,17 @@ def main(args):
     )
     day_results = streak_probability_lot(configuration)
     for delta, prob, count, total_streaks, close_value in day_results[nn_day]:
-        ticker_streak_data['day']['probabilities'].append(prob*100.)
-        ticker_streak_data['day']['price_levels'].append(close_value)
+        ticker_streak_data['day'].append({
+            'delta': delta,
+            'prob': prob * 100.0,
+            'count': count,
+            'total': total_streaks,
+            'price': close_value
+        })
 
-    # Week
+    # --- Week ---
     configuration = Namespace(
-        direction=direction,
+        direction=direction_week,
         method="prev_close",
         frequency='week',
         ticker=ticker_name,
@@ -60,12 +74,17 @@ def main(args):
     )
     week_results = streak_probability_lot(configuration)
     for delta, prob, count, total_streaks, close_value in week_results[nn_week]:
-        ticker_streak_data['week']['probabilities'].append(prob*100.)
-        ticker_streak_data['week']['price_levels'].append(close_value)
+        ticker_streak_data['week'].append({
+            'delta': delta,
+            'prob': prob * 100.0,
+            'count': count,
+            'total': total_streaks,
+            'price': close_value
+        })
 
-    # Month
+    # --- Month ---
     configuration = Namespace(
-        direction=direction,
+        direction=direction_month,
         method="prev_close",
         frequency='month',
         ticker=ticker_name,
@@ -74,39 +93,40 @@ def main(args):
     )
     month_results = streak_probability_lot(configuration)
     for delta, prob, count, total_streaks, close_value in month_results[nn_month]:
-        ticker_streak_data['month']['probabilities'].append(prob*100.)
-        ticker_streak_data['month']['price_levels'].append(close_value)
+        ticker_streak_data['month'].append({
+            'delta': delta,
+            'prob': prob * 100.0,
+            'count': count,
+            'total': total_streaks,
+            'price': close_value
+        })
 
-    # --- Step 2: Find the point closest to 5% for each frequency ---
+    # --- Find closest to 5% for annotation (optional) ---
     def find_closest_to_q(freq_data, q=5.0):
-        probs = freq_data["probabilities"]
-        prices = freq_data["price_levels"]
-        # Find index where |prob - 5| is minimized
-        diffs = [abs(p - q) for p in probs]
-        idx = diffs.index(min(diffs))
-        return prices[idx], probs[idx]
+        best = min(freq_data, key=lambda p: abs(p['prob'] - q))
+        return best['price'], best['prob']
 
     month_q = find_closest_to_q(ticker_streak_data["month"], q=5.0)
-    week_q  = find_closest_to_q(ticker_streak_data["week"], q=5.0)
-    day_q   = find_closest_to_q(ticker_streak_data["day"], q=5.0)
+    week_q = find_closest_to_q(ticker_streak_data["week"], q=5.0)
+    day_q = find_closest_to_q(ticker_streak_data["day"], q=5.0)
 
     # --- Step 3: Plotting ---
     plt.figure(figsize=(12, 7))
 
-    # Plot each series
-    plt.plot(
-        ticker_streak_data["month"]["price_levels"],
-        ticker_streak_data["month"]["probabilities"],
+    # Plot lines and keep references
+    line_month, = plt.plot(
+        [p['price'] for p in ticker_streak_data["month"]],
+        [p['prob'] for p in ticker_streak_data["month"]],
         marker='o', linestyle='-', color='red', label=f'Month (≥{nn_month} streaks)'
     )
-    plt.plot(
-        ticker_streak_data["week"]["price_levels"],
-        ticker_streak_data["week"]["probabilities"],
+    line_week, = plt.plot(
+        [p['price'] for p in ticker_streak_data["week"]],
+        [p['prob'] for p in ticker_streak_data["week"]],
         marker='s', linestyle='-', color='green', label=f'Week (≥{nn_week} streaks)'
     )
-    plt.plot(
-        ticker_streak_data["day"]["price_levels"],
-        ticker_streak_data["day"]["probabilities"],
+    line_day, = plt.plot(
+        [p['price'] for p in ticker_streak_data["day"]],
+        [p['prob'] for p in ticker_streak_data["day"]],
         marker='^', linestyle='-', color='blue', label=f'Day (≥{nn_day} streaks)'
     )
 
@@ -124,22 +144,14 @@ def main(args):
                  textcoords='offset points', color='blue', fontweight='bold')
 
     # Labels and title
-    plt.xlabel('SPX Price Level')
+    plt.xlabel(f'{ticker_name} Price Level')
     plt.ylabel('Probability of Streak ≥ N (%)')
-    plt.title('SPX Positive Streak Probabilities by Time Frequency\n(Superimposed: Month, Week, Day)')
+    plt.title(f'{ticker_name} Positive Streak Probabilities by Time Frequency\n(Superimposed: Month, Week, Day)')
     plt.grid(True, linestyle='--', alpha=0.6)
-    plt.legend()
-    plt.tight_layout()
+    plt.axhline(y=5.0, color='gray', linestyle='--', linewidth=1)
 
-    # Optional: Add horizontal line at q%
-    plt.axhline(y=5.0, color='gray', linestyle='--', linewidth=1, label=f'{5}% Reference')
-    plt.legend()
-
-    # --- Add last close reference line and date label ---
-    plt.axvline(x=last_close_value, color='black', linestyle='-', linewidth=2,
-                label=f'Last Close: {last_close_date.strftime("%Y-%m-%d")}')
-
-    # Annotate the date near the top of the plot
+    # Last close line
+    plt.axvline(x=last_close_value, color='black', linestyle='-', linewidth=2)
     ylims = plt.ylim()
     plt.text(last_close_value, ylims[1] * 0.95,
              last_close_date.strftime("%Y-%m-%d"),
@@ -150,15 +162,60 @@ def main(args):
              rotation=90, verticalalignment='top', horizontalalignment='right',
              color='black', fontweight='bold', fontsize=9)
 
+    plt.legend()
+
+    # --- Tooltip with mplcursors ---
+    def format_tooltip(sel):
+        # Map artist to data
+        mapping = {
+            line_month: ('Month', nn_month, ticker_streak_data['month']),
+            line_week: ('Week', nn_week, ticker_streak_data['week']),
+            line_day: ('Day', nn_day, ticker_streak_data['day']),
+        }
+        if sel.artist not in mapping:
+            return
+
+        freq_name, n_streak, data_list = mapping[sel.artist]
+
+        # Build full table for this frequency group
+        lines = [f"Streaks ≥ {n_streak} ({freq_name.lower()}-frequency):"]
+        for p in data_list:
+            prob_str = f"{p['prob']:.2f}%"
+            count_str = f"{int(p['count']):>3}"
+            total_str = f"{int(p['total']):>4}"
+            delta_str = f"{p['delta']:>4.1f}%"
+            price_str = f"{p['price']:>9,.1f}"
+            line = f"     {prob_str} ({count_str} / {total_str}) → Close above {price_str} (Δ = {delta_str})"
+            lines.append(line)
+
+        tooltip_text = "\n".join(lines)
+        sel.annotation.set_text(tooltip_text)
+        sel.annotation.get_bbox_patch().set(fc="white", alpha=0.95, boxstyle="round,pad=0.6")
+        sel.annotation.set_fontsize(9)
+
+    # Enable hover tooltips
+    cursor = mplcursors.cursor([line_month, line_week, line_day], hover=True)
+    cursor.connect("add", format_tooltip)
+
+    plt.tight_layout()
     # Show plot
     plt.show()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="📊 Compute streak probabilities multi timeframe for financial time series."
     )
     parser.add_argument(
-        "--direction", choices=["pos", "neg"], default="pos",
+        "--direction_day", choices=["pos", "neg"], default="pos",
+        help="Direction of streak: 'pos' (positive) or 'neg' (negative)"
+    )
+    parser.add_argument(
+        "--direction_week", choices=["pos", "neg"], default="pos",
+        help="Direction of streak: 'pos' (positive) or 'neg' (negative)"
+    )
+    parser.add_argument(
+        "--direction_month", choices=["pos", "neg"], default="pos",
         help="Direction of streak: 'pos' (positive) or 'neg' (negative)"
     )
     parser.add_argument(
@@ -166,16 +223,16 @@ if __name__ == "__main__":
         help="Ticker symbol (e.g., '^GSPC' for S&P 500)"
     )
     parser.add_argument(
-        "--nn_day", type=int, default=2,
-        help=""
+        "--nn_day", type=int, default=5,
+        help="Minimum streak length for daily data"
     )
     parser.add_argument(
-        "--nn_week", type=int, default=2,
-        help=""
+        "--nn_week", type=int, default=3,
+        help="Minimum streak length for weekly data"
     )
     parser.add_argument(
-        "--nn_month", type=int, default=2,
-        help=""
+        "--nn_month", type=int, default=7,
+        help="Minimum streak length for monthly data"
     )
 
     args = parser.parse_args()
