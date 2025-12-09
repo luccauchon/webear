@@ -29,7 +29,7 @@ import numpy as np
 
 def compute_and_print_stats_for_fomo_strategy(data):
     # Define the multiplier labels in the order they appear
-    multipliers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    multipliers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
     keys_m = [f'last_value_forecasted__m{m:.1f}'.replace('.', '_') for m in multipliers]
     keys_p = [f'last_value_forecasted__p{m:.1f}'.replace('.', '_') for m in multipliers]
 
@@ -276,12 +276,18 @@ def main(args):
                                             'last_value_forecasted__p2_0': last_value_forecasted * 1.020,
                                             'last_value_forecasted__p2_5': last_value_forecasted * 1.025,
                                             'last_value_forecasted__p3_0': last_value_forecasted * 1.030,
+                                            'last_value_forecasted__p3_5': last_value_forecasted * 1.035,
+                                            'last_value_forecasted__p4_0': last_value_forecasted * 1.040,
+                                            'last_value_forecasted__p5_0': last_value_forecasted * 1.050,
                                             'last_value_forecasted__m0_5': last_value_forecasted*0.995,
                                             'last_value_forecasted__m1_0': last_value_forecasted*0.990,
                                             'last_value_forecasted__m1_5': last_value_forecasted*0.985,
                                             'last_value_forecasted__m2_0': last_value_forecasted*0.980,
                                             'last_value_forecasted__m2_5': last_value_forecasted*0.975,
-                                            'last_value_forecasted__m3_0': last_value_forecasted*0.970},})
+                                            'last_value_forecasted__m3_0': last_value_forecasted*0.970,
+                                            'last_value_forecasted__m3_5': last_value_forecasted*0.965,
+                                            'last_value_forecasted__m4_0': last_value_forecasted*0.960,
+                                            'last_value_forecasted__m5_0': last_value_forecasted*0.950,},})
     # --- Summary Report ---
     if backtest_strategy == 'stratego':
         total_runs = len(performance)
