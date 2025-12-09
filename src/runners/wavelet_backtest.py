@@ -30,30 +30,46 @@ import numpy as np
 def compute_and_print_stats_for_fomo_strategy(data):
     # Define the multiplier labels in the order they appear
     multipliers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
-    keys = [f'last_value_forecasted__m{m:.1f}'.replace('.', '_') for m in multipliers]
+    keys_m = [f'last_value_forecasted__m{m:.1f}'.replace('.', '_') for m in multipliers]
+    keys_p = [f'last_value_forecasted__p{m:.1f}'.replace('.', '_') for m in multipliers]
 
     # Collect truth and forecasted values
     truths = []
-    forecasts = {key: [] for key in keys}
+    forecasts_m = {key: [] for key in keys_m}
+    forecasts_p = {key: [] for key in keys_p}
 
     for step, values in data.items():
         truths.append(values['last_value_truth'])
-        for key in keys:
-            forecasts[key].append(values[key])
+        for key in keys_m:
+            forecasts_m[key].append(values[key])
+        for key in keys_p:
+            forecasts_p[key].append(values[key])
 
     truths = np.array(truths)
 
-    print(f"{'Multiplier':<12} {'Truth > Forecast (%)':<25} {'Count True / Total'}")
-    print("-" * 50)
+    print(f"{'Multiplier':<12} {'Truth > Forecast_m (%)':<25} {'Truth < Forecast_p (%)':<25} {'Truth in [m, p] (%)':<25} {'Count in / Total'}")
+    print("-" * 110)
 
-    for m, key in zip(multipliers, keys):
-        forecast_vals = np.array(forecasts[key])
-        comparison = truths > forecast_vals
-        count_true = np.sum(comparison)
-        total = len(comparison)
-        percentage = (count_true / total) * 100
+    for m, key_m, key_p in zip(multipliers, keys_m, keys_p):
+        forecast_m = np.array(forecasts_m[key_m])
+        forecast_p = np.array(forecasts_p[key_p])
 
-        print(f"{m:<12} {percentage:<25.2f} {count_true} / {total}")
+        # Truth > lower band (your original metric)
+        comparison_gt = truths > forecast_m
+        count_gt = np.sum(comparison_gt)
+        pct_gt = (count_gt / len(truths)) * 100
+
+        # Truth < upper band (new metric you asked for)
+        comparison_lt = truths < forecast_p
+        count_lt = np.sum(comparison_lt)
+        pct_lt = (count_lt / len(truths)) * 100
+
+        # Truth between lower and upper band (new metric)
+        in_band = (truths > forecast_m) & (truths < forecast_p)
+        count_in = np.sum(in_band)
+        pct_in = (count_in / len(truths)) * 100
+
+        print(f"{m:<12} {pct_gt:<25.2f} {pct_lt:<25.2f} {pct_in:<25.2f} {count_in} / {len(truths)}")
 
 
 
