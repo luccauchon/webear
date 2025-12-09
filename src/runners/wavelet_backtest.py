@@ -254,6 +254,12 @@ def main(args):
             last_value_forecasted = forecast[-1]
             last_value_truth = the_ground_truth[-1]
             performance.update({step_back: {'last_value_truth': last_value_truth, 'last_value_forecasted': last_value_forecasted,
+                                            'last_value_forecasted__p0_5': last_value_forecasted * 1.005,
+                                            'last_value_forecasted__p1_0': last_value_forecasted * 1.010,
+                                            'last_value_forecasted__p1_5': last_value_forecasted * 1.015,
+                                            'last_value_forecasted__p2_0': last_value_forecasted * 1.020,
+                                            'last_value_forecasted__p2_5': last_value_forecasted * 1.025,
+                                            'last_value_forecasted__p3_0': last_value_forecasted * 1.030,
                                             'last_value_forecasted__m0_5': last_value_forecasted*0.995,
                                             'last_value_forecasted__m1_0': last_value_forecasted*0.990,
                                             'last_value_forecasted__m1_5': last_value_forecasted*0.985,
@@ -304,6 +310,7 @@ def main(args):
             print(f"  Failures : {call_failures} ({call_failures/call_runs*100:.1f}%)")
     if backtest_strategy == 'fomo':
         compute_and_print_stats_for_fomo_strategy(performance)
+
 
 if __name__ == "__main__":
     freeze_support()

@@ -27,6 +27,13 @@ def main(args):
     nn_week = args.nn_week
     nn_month = args.nn_month
 
+    # Store direction mapping for tooltip use
+    directions = {
+        'day': direction_day,
+        'week': direction_week,
+        'month': direction_month
+    }
+
     # Store full point metadata per frequency
     ticker_streak_data = {
         'day': [],
@@ -166,18 +173,20 @@ def main(args):
 
     # --- Tooltip with mplcursors ---
     def format_tooltip(sel):
-        # Map artist to data
+        # Map artist to data + direction
         mapping = {
-            line_month: ('Month', nn_month, ticker_streak_data['month']),
-            line_week: ('Week', nn_week, ticker_streak_data['week']),
-            line_day: ('Day', nn_day, ticker_streak_data['day']),
+            line_month: ('Month', nn_month, ticker_streak_data['month'], directions['month']),
+            line_week: ('Week', nn_week, ticker_streak_data['week'], directions['week']),
+            line_day: ('Day', nn_day, ticker_streak_data['day'], directions['day']),
         }
         if sel.artist not in mapping:
             return
 
-        freq_name, n_streak, data_list = mapping[sel.artist]
+        freq_name, n_streak, data_list, direction = mapping[sel.artist]
 
-        # Build full table for this frequency group
+        # Determine "above" or "below" based on direction
+        close_text = "below" if direction == "neg" else "above"
+
         lines = [f"Streaks ≥ {n_streak} ({freq_name.lower()}-frequency):"]
         for p in data_list:
             prob_str = f"{p['prob']:.2f}%"
@@ -185,7 +194,7 @@ def main(args):
             total_str = f"{int(p['total']):>4}"
             delta_str = f"{p['delta']:>4.1f}%"
             price_str = f"{p['price']:>9,.1f}"
-            line = f"     {prob_str} ({count_str} / {total_str}) → Close above {price_str} (Δ = {delta_str})"
+            line = f"     {prob_str} ({count_str} / {total_str}) → Close {close_text} {price_str} (Δ = {delta_str})"
             lines.append(line)
 
         tooltip_text = "\n".join(lines)
