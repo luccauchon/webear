@@ -15,6 +15,7 @@ import numpy as np
 from datetime import datetime, timedelta, date
 import random
 from pathlib import Path
+import copy
 
 
 os_name = platform.system()
@@ -112,7 +113,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
         agg_dict = {(col, symbol): agg_funcs[col] for symbol in symbols for col in agg_funcs}
         df_1jil = None
         if interval == '1wk':
-            df_1jil = merged_df.resample('W-FRI').agg(agg_dict).copy()
+            df_1jil = copy.deepcopy(merged_df.resample('W-FRI').agg(agg_dict))
             # Resample the volume data into 5-minute mean volumes
             volume_candles = merged_df['Volume'].resample('W-FRI').mean()
             # Add the volume column to the candles DataFrame
@@ -120,7 +121,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
             if merged_df.index[-1].weekday() < 5:  # 5 represents Saturday
                 df_1jil = df_1jil.drop(df_1jil.index[-1])
         if interval == '1mo':
-            df_1jil = merged_df.resample('ME').agg(agg_dict).copy()
+            df_1jil = copy.deepcopy(merged_df.resample('ME').agg(agg_dict))
             # Resample the volume data into monthly mean volumes
             volume_candles = merged_df['Volume'].resample('ME').mean()
             # Add the volume column to the candles DataFrame
@@ -128,7 +129,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
             if merged_df.index[-1].day < 28:
                 df_1jil = df_1jil.drop(df_1jil.index[-1])
         assert 0 == np.sum(df_1jil.isna().sum().values)
-        merged_df = df_1jil.copy()
+        merged_df = copy.deepcopy(df_1jil)
     merged_df['day_of_week']  = merged_df.index.dayofweek + 1
     merged_df['week_of_year'] = merged_df.index.isocalendar().week + 1
     merged_df['unique_week']  = merged_df.index.year * 1000 + merged_df['week_of_year']
@@ -162,7 +163,7 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
     # float_cols = merged_df.select_dtypes(include=['float64']).columns
     # merged_df[float_cols] = merged_df[float_cols].astype(int)
 
-    return merged_df.copy(), f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
+    return copy.deepcopy(merged_df), f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
 
 
 def _get_root_dir():
@@ -256,7 +257,7 @@ def generate_indices_basic_style(df, dates, x_seq_length, y_seq_length, jump_ahe
                 continue
             assert idx4 > idx3 >= idx2 > idx1
             indices.append((idx1, idx2, idx3, idx4))
-    return indices, df.copy()
+    return indices, copy.deepcopy(df)
 
 
 def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_date=None):
@@ -297,9 +298,9 @@ def generate_indices_naked_monday_style(df, seq_length, ignore_data_before_this_
 def generate_indices_with_multiple_cutoff_day(_df, _dates, x_seq_length, y_seq_length, cutoff_days, split_ratio=-1., shuffle=False):
     _indices = []
     for cutoff_day in cutoff_days:
-        train_indices, train_df = generate_indices_with_cutoff_day(cutoff_day=cutoff_day, _df=_df.copy(), _dates=_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
+        train_indices, train_df = generate_indices_with_cutoff_day(cutoff_day=cutoff_day, _df=copy.deepcopy(_df), _dates=_dates, x_seq_length=x_seq_length, y_seq_length=y_seq_length)
         _indices.extend(train_indices)
-    return _indices, _df.copy()
+    return _indices, copy.deepcopy(_df)
 
 
 def generate_indices_with_cutoff_day(_df, _dates, x_seq_length, y_seq_length, cutoff_day=1, split_ratio=-1., shuffle=False):

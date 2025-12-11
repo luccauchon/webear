@@ -26,6 +26,7 @@ import numpy as np
 from tabulate import tabulate
 import pickle
 import argparse
+import copy
 from utils import get_filename_for_dataset, DATASET_AVAILABLE
 
 
@@ -58,13 +59,13 @@ def main(P, Q, older_dataset, frequency, detailed, quiet):
     # ----------------------------
     # Prepare DataFrame
     # ----------------------------
-    df = data.copy()
+    df = copy.deepcopy(data)
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("Expected DatetimeIndex")
 
-    df[positive_col] = df[close_col] > df[open_col]
+    df[positive_col]      = df[close_col] > df[open_col]
     df[monthlyreturn_col] = (df[close_col] - df[open_col]) / df[open_col]
-    df[groupid_col] = (df[positive_col] != df[positive_col].shift(1)).cumsum()
+    df[groupid_col]       = (df[positive_col] != df[positive_col].shift(1)).cumsum()
 
     # ----------------------------
     # Pattern Analysis: P↑ → Q↓ → Next Month?
@@ -139,10 +140,10 @@ def main(P, Q, older_dataset, frequency, detailed, quiet):
         print("\n\n" + "=" * 60)
         print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction (using Open/Close values)")
 
-    open_monthly = data[open_col].dropna()
+    open_monthly  = data[open_col].dropna()
     close_monthly = data[close_col].dropna()
-    common_index = open_monthly.index.intersection(close_monthly.index)
-    open_monthly = open_monthly.loc[common_index]
+    common_index  = open_monthly.index.intersection(close_monthly.index)
+    open_monthly  = open_monthly.loc[common_index]
     close_monthly = close_monthly.loc[common_index]
 
     if len(close_monthly) < P + Q + 1:

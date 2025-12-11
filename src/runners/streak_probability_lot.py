@@ -1,9 +1,20 @@
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    import sys
+    import pathlib
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
 from runners.streak_probability import main as streak_probability
 from tqdm import tqdm
 from collections import defaultdict
 from utils import get_filename_for_dataset
 import pickle
 import argparse
+import copy
+
 
 def main(args):
     direction = args.direction
@@ -35,7 +46,7 @@ def main(args):
             delta=delta / 100.0,
             ticker_name=ticker_name,
             verbose=False,
-            bring_my_own_df=data_cache.copy()
+            bring_my_own_df=copy.deepcopy(data_cache)
         )
         for k, v in result.items():
             NN = v['NN']
@@ -73,6 +84,7 @@ def main(args):
     print("\n✅ Done.\n")
     return grouped_results
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="📊 Compute streak probabilities for financial time series."
@@ -96,7 +108,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--deltas", nargs="+", type=float,
         default=[0, 0.1, 0.25, 0.50, 0.75, 0.9, 1.0, 1.25, 1.33, 1.5, 1.75, 2.0, 2.25, 2.5],
-        help="List of delta percentages (e.g., 0.5 = 0.5%)"
+        help="List of delta percentages"
     )
     parser.add_argument(
         "--display-only-nn", type=int, default=None,

@@ -11,6 +11,7 @@ except ImportError:
 import os
 import json
 import random
+import copy
 import argparse
 from datetime import datetime
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
@@ -27,7 +28,7 @@ def main(args):
     # Extraction des bons paramètres pour le forecasting
     #######################################################################
     configuration = Namespace(
-        master_data_cache=args.master_data_cache.copy(),
+        master_data_cache=copy.deepcopy(args.master_data_cache),
         ticker=args.ticker,
         col= args.col,
         output_dir = args.output_dir,
@@ -131,12 +132,12 @@ if __name__ == "__main__":
     one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None if args.older_dataset == "None" else args.older_dataset)
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
-    master_data_cache = master_data_cache[args.ticker].copy()
+    master_data_cache = copy.deepcopy(master_data_cache[args.ticker])
     master_data_cache = master_data_cache.sort_index()
     if args.remove_last_n_steps > 0:
-        master_data_cache = master_data_cache[:-args.remove_last_n_steps].copy()
+        master_data_cache = copy.deepcopy(master_data_cache[:-args.remove_last_n_steps])
     args = Namespace(
-        master_data_cache=master_data_cache.copy(),
+        master_data_cache=copy.deepcopy(master_data_cache),
         ticker=args.ticker,
         col=args.col,
         output_dir=output_dir,

@@ -14,6 +14,7 @@ except:
     from version import sys__name, sys__version
 from colorama import init, Fore, Style
 import pandas as pd
+import copy
 import pickle
 import yfinance as yf
 import time
@@ -77,13 +78,13 @@ def entry():
         daily_data_cache = pickle.load(f)
     data_cache = {}
     for ticker in tqdm(tickers):
-        data_cache[ticker] = daily_data_cache[ticker].resample('W-FRI').agg({
+        data_cache[ticker] = copy.deepcopy(daily_data_cache[ticker].resample('W-FRI').agg({
             ('Open', ticker): 'first',
             ('High', ticker): 'max',
             ('Low', ticker): 'min',
             ('Close', ticker): 'last',
             ('Volume', ticker): 'sum'
-        }).copy()
+        }))
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME_WEEK, 'wb') as f:
         pickle.dump(data_cache, f)
@@ -103,13 +104,13 @@ def entry():
         daily_data_cache = pickle.load(f)
     data_cache = {}
     for ticker in tqdm(tickers):
-        data_cache[ticker] = daily_data_cache[ticker].resample('ME').agg({
+        data_cache[ticker] = copy.deepcopy(daily_data_cache[ticker].resample('ME').agg({
             ('Open', ticker): 'first',
             ('High', ticker): 'max',
             ('Low', ticker): 'min',
             ('Close', ticker): 'last',
             ('Volume', ticker): 'sum'
-        }).copy()
+        }))
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME_MONTH, 'wb') as f:
         pickle.dump(data_cache, f)
@@ -122,13 +123,13 @@ def entry():
         daily_data_cache = pickle.load(f)
     data_cache = {}
     for ticker in tqdm(tickers):
-        data_cache[ticker] = daily_data_cache[ticker].resample('QE').agg({
+        data_cache[ticker] = copy.deepcopy(daily_data_cache[ticker].resample('QE').agg({
             ('Open', ticker): 'first',
             ('High', ticker): 'max',
             ('Low', ticker): 'min',
             ('Close', ticker): 'last',
             ('Volume', ticker): 'sum'
-        }).copy()
+        }))
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME_QUARTER, 'wb') as f:
         pickle.dump(data_cache, f)
@@ -141,13 +142,13 @@ def entry():
         daily_data_cache = pickle.load(f)
     data_cache = {}
     for ticker in tqdm(tickers):
-        data_cache[ticker] = daily_data_cache[ticker].resample('YE').agg({
+        data_cache[ticker] = copy.deepcopy(daily_data_cache[ticker].resample('YE').agg({
             ('Open', ticker): 'first',
             ('High', ticker): 'max',
             ('Low', ticker): 'min',
             ('Close', ticker): 'last',
             ('Volume', ticker): 'sum'
-        }).copy()
+        }))
     # Serialize
     with open(FYAHOO__OUTPUTFILENAME_YEAR, 'wb') as f:
         pickle.dump(data_cache, f)

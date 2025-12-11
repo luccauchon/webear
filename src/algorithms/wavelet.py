@@ -2,6 +2,7 @@ import numpy as np
 import pywt
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
+import copy
 
 
 def forecast_coeff_series(coeff, forecast_len, lag=10):
@@ -26,7 +27,7 @@ def forecast_coeff_series(coeff, forecast_len, lag=10):
 
     # Recursive prediction
     forecast = []
-    current = coeff[-lag:].copy()
+    current = copy.deepcopy(coeff[-lag:])
     for _ in range(forecast_len):
         next_val = model.predict(current.reshape(1, -1))[0]
         forecast.append(next_val)
@@ -142,7 +143,7 @@ def wavelet_forecast__version_1(
                 model.fit(X, y)
 
                 # Recursive forecasting
-                current_input = coeff[-lag:].copy()
+                current_input = copy.deepcopy(coeff[-lag:])
                 forecast = []
                 for _ in range(approx_extension):
                     next_val = model.predict(current_input.reshape(1, -1))[0]

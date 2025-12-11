@@ -16,6 +16,7 @@ import os
 import argparse
 import pathlib
 import json
+import copy
 import pickle
 import pprint
 from tqdm import tqdm
@@ -143,7 +144,7 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configura
 
         for buy_setup in [True, False]:
             kwargs = deepcopy(configuration_setup)
-            data_df = data_cache[stock].copy()
+            data_df = copy.deepcopy(data_cache[stock])
             data_df = data_df.sort_index()
             df = trade_prime_half_trend_strategy(ticker_df=data_df, ticker_name=stock, buy_setup=buy_setup, **kwargs)
             recent_signals = df[df[('custom_signal', stock)]]

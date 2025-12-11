@@ -22,6 +22,7 @@ import numpy as np
 from tqdm import tqdm
 from utils import transform_path
 import os
+import copy
 
 import warnings
 
@@ -84,11 +85,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             'error': error,
             'length_train_data': length_train_data,
             'energy_threshold': round(energy_threshold, 2),
-            'y_true': y_true.copy(),
-            'y_pred': y_pred.copy(),
-            'x_series': x_series.copy(),
+            'y_true': copy.deepcopy(y_true),
+            'y_pred': copy.deepcopy(y_pred),
+            'x_series': copy.deepcopy(x_series),
             'n_predict': length_prediction,
-            'forecast': forecast.copy(),
+            'forecast': copy.deepcopy(forecast),
             'lower': lower,
             'upper': upper,
             'diag': diag,
@@ -99,11 +100,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             'error': error,
             'length_train_data': length_train_data,
             'energy_threshold': round(energy_threshold, 2),
-            'y_true': y_true.copy(),
-            'y_pred': y_pred.copy(),
-            'x_series': x_series.copy(),
+            'y_true': copy.deepcopy(y_true),
+            'y_pred': copy.deepcopy(y_pred),
+            'x_series': copy.deepcopy(x_series),
             'n_predict': length_prediction,
-            'forecast': forecast.copy(),
+            'forecast': copy.deepcopy(forecast),
             'lower': lower,
             'upper': upper,
             'diag': diag,
@@ -126,11 +127,11 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         assert one_dataset_filename is not None
         with open(one_dataset_filename, 'rb') as f:
             data_cache = pickle.load(f)
-        prices_2 = data_cache[ticker][colname].values.astype(np.float64).copy()
+        prices_2 = copy.deepcopy(data_cache[ticker][colname].values.astype(np.float64))
     else:
         data_cache = None
         one_dataset_filename = None
-        prices_2 = use_this_df.copy()
+        prices_2 = copy.deepcopy(use_this_df)
     # Precompute energy thresholds to avoid repeated np.arange calls
     energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
     max_train = range(min_train, min_train + 10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction_in_training)
@@ -146,7 +147,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
             for one_length_train_data in max_train:
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
-                    prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
+                    prices = copy.deepcopy(prices_2)  # Avoid reloading from disk in inner loop if possible!
                     assert len(prices) > one_length_train_data + length_step_back + length_prediction_in_training
                     xi1, xi2 = len(prices) - one_length_train_data - length_step_back, -length_step_back
                     yi1, yi2 = len(prices) - length_step_back, len(prices) - length_step_back + length_prediction_in_training
@@ -207,7 +208,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
             for one_length_train_data in tqdm(max_train,desc=f"Training length ({one_dataset_id})",leave=True):
                 for energy_threshold in energy_thresholds:
                     # Reload data (or better: reuse prices_2 sliced appropriately)
-                    prices = prices_2.copy()  # Avoid reloading from disk in inner loop if possible!
+                    prices = copy.deepcopy(prices_2)  # Avoid reloading from disk in inner loop if possible!
                     assert len(prices) > one_length_train_data + length_step_back + length_prediction_in_training
                     xi1, xi2 = len(prices) - one_length_train_data - length_step_back, -length_step_back
                     yi1, yi2 = len(prices) - length_step_back, len(prices) - length_step_back + length_prediction_in_training
@@ -231,11 +232,11 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
                             'error': error,
                             'length_train_data': one_length_train_data,
                             'energy_threshold': round(energy_threshold, 2),
-                            'y_true': y_true.copy(),
-                            'y_pred': y_pred.copy(),
-                            'x_series': x_series.copy(),
+                            'y_true': copy.deepcopy(y_true),
+                            'y_pred': copy.deepcopy(y_pred),
+                            'x_series': copy.deepcopy(x_series),
                             'n_predict': length_prediction_in_training,
-                            'forecast': forecast.copy(),
+                            'forecast': copy.deepcopy(forecast),
                             'lower': lower,
                             'upper': upper,
                             'diag': diag,
@@ -247,11 +248,11 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
                             'error': error,
                             'length_train_data': one_length_train_data,
                             'energy_threshold': round(energy_threshold, 2),
-                            'y_true': y_true.copy(),
-                            'y_pred': y_pred.copy(),
-                            'x_series': x_series.copy(),
+                            'y_true': copy.deepcopy(y_true),
+                            'y_pred': copy.deepcopy(y_pred),
+                            'x_series': copy.deepcopy(x_series),
                             'n_predict': length_prediction_in_training,
-                            'forecast': forecast.copy(),
+                            'forecast': copy.deepcopy(forecast),
                             'lower': lower,
                             'upper': upper,
                             'diag': diag,
@@ -327,7 +328,7 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
         # with open(one_dataset_filename, 'rb') as f:
         #     data_cache = pickle.load(f)
-        prices = prices_2.copy()
+        prices = copy.deepcopy(prices_2)
         assert len(prices) > length_train_data + length_step_back + length_prediction_for_forecast
         x_series = prices[len(prices) - length_train_data - length_step_back:]
         assert len(x_series) == length_train_data
@@ -371,4 +372,4 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
     if show_plots:
         plt.show()  # This will display all open figures simultaneously (backend-dependent)
     all_results_collected = dict(sorted(all_results_collected.items()))
-    return best_result, data_cache.copy() if data_cache is not None else None, all_results_collected
+    return best_result, copy.deepcopy(data_cache) if data_cache is not None else None, all_results_collected

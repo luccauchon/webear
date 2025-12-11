@@ -11,6 +11,7 @@ except ImportError:
 import os
 from datetime import datetime
 import json
+import copy
 import random
 import argparse
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
@@ -94,8 +95,8 @@ def main(args):
         df_filename = FYAHOO__OUTPUTFILENAME_WEEK
     with open(df_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
-    master_data_cache = master_data_cache[ticker].copy()
-    master_data_cache = master_data_cache.sort_index()
+    master_data_cache = copy.deepcopy(master_data_cache[ticker])
+    master_data_cache = copy.deepcopy(master_data_cache.sort_index())
     # --- Parameter Summary ---
     print("\n" + "="*50)
     print("BACKTESTING PARAMETERS SUMMARY".center(50))
@@ -120,15 +121,15 @@ def main(args):
         t1 = time.time()
         # Sanity check
         try:
-            df = master_data_cache.iloc[:-step_back].copy()
-            data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
-            data_cache_for_forecasting = df.iloc[-n_forecast_length:].copy()
+            df                                  = copy.deepcopy(master_data_cache.iloc[:-step_back])
+            data_cache_for_parameter_extraction = copy.deepcopy(df.iloc[:-n_forecast_length])
+            data_cache_for_forecasting          = copy.deepcopy(df.iloc[-n_forecast_length:])
             assert n_forecast_length == len(data_cache_for_forecasting)
             assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
         except:
             continue
         # Create the "Now" dataframe
-        df = master_data_cache.iloc[:-step_back].copy()
+        df = copy.deepcopy(master_data_cache.iloc[:-step_back])
         #print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
         if use_last_week_only:
             assert 'week' == dataset_id
@@ -143,9 +144,9 @@ def main(args):
             if not is_in_last_week:
                 continue
         # All data except the last `step_back` rows → for parameter extraction
-        data_cache_for_parameter_extraction = df.iloc[:-n_forecast_length].copy()
+        data_cache_for_parameter_extraction = copy.deepcopy(df.iloc[:-n_forecast_length])
         # Rows at position `-step_back` → for forecasting
-        data_cache_for_forecasting = df.iloc[-n_forecast_length: ].copy()
+        data_cache_for_forecasting = copy.deepcopy(df.iloc[-n_forecast_length: ])
         # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
         assert n_forecast_length == len(data_cache_for_forecasting), f"{len(data_cache_for_forecasting)}"
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty, "Indices must be disjoint"
@@ -154,7 +155,7 @@ def main(args):
         the_ground_truth = data_cache_for_forecasting[col_name].values
         assert len(the_ground_truth) == n_forecast_length
         args = Namespace(
-            master_data_cache=data_cache_for_parameter_extraction.copy(),
+            master_data_cache=copy.deepcopy(data_cache_for_parameter_extraction),
             ticker=ticker, col=col,
             output_dir=output_dir,
             dataset_id=dataset_id,

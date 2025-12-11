@@ -27,6 +27,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 import pandas as pd
 import numpy as np
 import pywt
+import copy
 from utils import next_weekday, transform_path
 
 
@@ -75,17 +76,17 @@ def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__sh
             step_back         = use_case['step_back']
             index_of_algo     = use_case['index_of_algo']
             if 0 == step_back:
-                df = data[close_col].copy()
+                df = copy.deepcopy(data[close_col])
             else:
-                df = data[close_col][:-step_back].copy()
+                df = copy.deepcopy(data[close_col][:-step_back])
             assert len(df) == len(data[close_col]) - step_back, f"{len(df)=}  {len(data[close_col])=}  {step_back=}"
             train_prices = df[-n_train_length - n_forecast_length:-n_forecast_length]
             gt_prices    = df[-n_forecast_length:]
             assert train_prices.index.is_unique and gt_prices.index.is_unique, "Indices must be unique"
             assert train_prices.index.intersection(gt_prices.index).empty, "Indices must be disjoint"
             t1, t2, t3, t4 = train_prices.index[0], train_prices.index[-1], gt_prices.index[0], gt_prices.index[-1]
-            train_prices = train_prices.values.astype(np.float64).copy()
-            gt_prices    = gt_prices.values.astype(np.float64).copy()
+            train_prices = copy.deepcopy(train_prices.values.astype(np.float64))
+            gt_prices    = copy.deepcopy(gt_prices.values.astype(np.float64))
             try:
                 algo = WAVELET_ALGO_REGISTRY[index_of_algo]
                 forecast_values = algo(
@@ -132,9 +133,9 @@ def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__sh
                 best_rmse['level'] = level
                 best_rmse['wavlet_type'] = wavlet_type
                 best_rmse['n_train_length'] = n_train_length
-                best_rmse['prices'] = train_prices.copy()
-                best_rmse['gt_prices'] = gt_prices.copy()
-                best_rmse['pred_values'] = pred_values.copy()
+                best_rmse['prices'] = copy.deepcopy(train_prices)
+                best_rmse['gt_prices'] = copy.deepcopy(gt_prices)
+                best_rmse['pred_values'] = copy.deepcopy(pred_values)
                 best_rmse['n_forecast_length'] = n_forecast_length
                 best_rmse['times'] = (t1, t2, t3, t4)
                 best_rmse['index_of_algo'] = index_of_algo
@@ -144,9 +145,9 @@ def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__sh
             tmp['level'] = level
             tmp['wavlet_type'] = wavlet_type
             tmp['n_train_length'] = n_train_length
-            tmp['prices'] = train_prices.copy()
-            tmp['gt_prices'] = gt_prices.copy()
-            tmp['pred_values'] = pred_values.copy()
+            tmp['prices'] = copy.deepcopy(train_prices)
+            tmp['gt_prices'] = copy.deepcopy(gt_prices)
+            tmp['pred_values'] = copy.deepcopy(pred_values)
             tmp['n_forecast_length'] = n_forecast_length
             tmp['times'] = (t1, t2, t3, t4)
             tmp['index_of_algo'] = index_of_algo
@@ -190,7 +191,7 @@ def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__share
             index_of_algo     = use_case['index_of_algo']
             dataset_id        = use_case['dataset_id']
 
-            df = data[close_col].copy()
+            df = copy.deepcopy(data[close_col])
             train_prices = df[-n_train_length:]
 
             assert train_prices.index.is_unique
@@ -226,7 +227,7 @@ def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__share
                 t3 = t2 + pd.DateOffset(**{offset_key: 1})
                 t4 = t2 + pd.DateOffset(**{offset_key: n})
             # print(f"[{t1.strftime('%Y%m%d')}-{t2.strftime('%m%d')}→{t3.strftime('%Y%m%d')}-{t4.strftime('%m%d')}]")
-            train_prices = train_prices.values.astype(np.float64).copy()
+            train_prices = copy.deepcopy(train_prices.values.astype(np.float64))
 
             try:
                 algo = WAVELET_ALGO_REGISTRY[index_of_algo]
@@ -250,9 +251,9 @@ def _worker_processor_realtime(use_cases__shared, master_cmd__shared, out__share
             tmp['level'] = level
             tmp['wavlet_type'] = wavlet_type
             tmp['n_train_length'] = n_train_length
-            tmp['prices'] = train_prices.copy()
+            tmp['prices'] = copy.deepcopy(train_prices)
             tmp['gt_prices'] = None
-            tmp['pred_values'] = pred_values.copy()
+            tmp['pred_values'] = copy.deepcopy(pred_values)
             tmp['n_forecast_length'] = n_forecast_length
             tmp['times'] = (t1, t2, t3, t4)
             tmp['index_of_algo'] = index_of_algo
@@ -328,7 +329,7 @@ def main(args):
             for a_use_case in use_cases:
                 a_use_case.update({'n_forecast_length': n_forecast_length, 'close_col': close_col, 'index_of_algo': index_of_algo, 'dataset_id': args.dataset_id})
         else:
-            data = args.master_data_cache.copy()
+            data = copy.deepcopy(args.master_data_cache)
             this_year = data[:-(step_back+1)].index[-1].year
             typical_price = data[data.index.year==this_year][close_col].mean()
             RMSE_TOL = max(0.5, 0.0001 * typical_price)
@@ -441,10 +442,10 @@ def main(args):
         mean_forecast = np.mean(all_forecasts, axis=0)
         if real_time:
             if use_given_gt_truth is None:
-                gt_prices = mean_forecast.copy()
+                gt_prices = copy.deepcopy(mean_forecast)
             else:
                 gt_prices = use_given_gt_truth
-            misc_returned[step_back]['mean_forecast'] = mean_forecast.copy()
+            misc_returned[step_back]['mean_forecast'] = copy.deepcopy(mean_forecast)
         # Plot actual future values
         future_indices = np.arange(n_train_length, n_train_length + n_forecast_length)
         if plot_graph:
@@ -949,6 +950,6 @@ if __name__ == "__main__":
         one_dataset_filename = df_filename if older_dataset is None else transform_path(df_filename, older_dataset)
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
-    args.master_data_cache = master_data_cache.copy()
+    args.master_data_cache = copy.deepcopy(master_data_cache)
 
     main(args)

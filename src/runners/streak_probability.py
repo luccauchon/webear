@@ -12,7 +12,9 @@ except ImportError:
 from constants import FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_YEAR
 import pandas as pd
 import pickle
+import copy
 from utils import get_filename_for_dataset, DATASET_AVAILABLE
+
 
 def main(direction: str, method: str, older_dataset: str, bold: int, frequency: str, delta: float, ticker_name: str, verbose: bool, bring_my_own_df=None):
     if delta != 0.0 and method != "prev_close":
@@ -50,7 +52,7 @@ def main(direction: str, method: str, older_dataset: str, bold: int, frequency: 
 
     # Define condition column
     condition_col = ('positive', ticker_name) if direction == "pos" else ('negative', ticker_name)
-    df_base = df_full.copy()
+    df_base = copy.deepcopy(df_full)
 
     if method == "open_close":
         if direction == "pos":

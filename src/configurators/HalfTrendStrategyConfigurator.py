@@ -13,6 +13,7 @@ except:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import tkinter as tk
+import copy
 from tkinter import ttk, messagebox, filedialog
 import json
 import argparse
@@ -83,7 +84,7 @@ def parse_args_into_config(default_config):
     # Parse known args to avoid tkinter interference
     args, unknown = parser.parse_known_args()
 
-    config = default_config.copy()
+    config = copy.deepcopy(default_config)
 
     # Load from file if specified
     if args.config:

@@ -9,6 +9,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import pickle
+import copy
 import plotly.graph_objects as go
 import pandas as pd
 from utils import get_filename_for_dataset, DATASET_AVAILABLE
@@ -30,21 +31,21 @@ def main(args):
     data = data_cache[TICKER]
 
     # Extract and rename OHLC columns
-    df = data[[('Open', TICKER), ('High', TICKER), ('Low', TICKER), ('Close', TICKER)]].copy()
+    df = copy.deepcopy(data[[('Open', TICKER), ('High', TICKER), ('Low', TICKER), ('Close', TICKER)]])
     df.columns = ['Open', 'High', 'Low', 'Close']
     df.index.name = 'Date'
     df.sort_index(inplace=True)  # Ensure chronological order
 
     # Limit to last N points
-    df = df.iloc[-LIMIT:].copy()
+    df = copy.deepcopy(df.iloc[-LIMIT:])
 
     # Compute direction: compare close with previous close
     df['PrevClose'] = df['Close'].shift(1)
     df['UpDay'] = df['Close'] > df['PrevClose']
 
     # Split into up and down days
-    df_up = df[df['UpDay']].copy()
-    df_down = df[~df['UpDay']].copy()
+    df_up   = copy.deepcopy(df[df['UpDay']])
+    df_down = copy.deepcopy(df[~df['UpDay']])
 
     # Create figure
     fig = go.Figure()

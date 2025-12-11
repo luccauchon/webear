@@ -14,6 +14,7 @@ except:
     from version import sys__name, sys__version
 from optimizers.fourier_decomposition import entry as entry_of__fourier_decomposition
 import pickle
+import copy
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST
 import numpy as np
 import matplotlib.pyplot as plt
@@ -64,7 +65,7 @@ def main(args):
 
         _, base_close_values, _, _ = get_prediction_for_the_future_with_fourier_algo(
             _best_setup=first_best,
-            _data_cache=data_cache.copy(),
+            _data_cache=copy.deepcopy(data_cache),
             _col=args.col,
             _length_prediction=args.length_prediction_for_the_future,
             _ticker=args.ticker
@@ -85,7 +86,7 @@ def main(args):
         if args.use_this_df is None or 0 == len(args.use_this_df):
             pred, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
                 _best_setup=setup,
-                _data_cache=data_cache.copy(),
+                _data_cache=copy.deepcopy(data_cache),
                 _col=args.col,
                 _length_prediction=args.length_prediction_for_the_future,
                 _ticker=args.ticker
