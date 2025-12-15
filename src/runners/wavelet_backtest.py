@@ -119,18 +119,17 @@ def main(args):
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
     for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
-        # Sanity check
-        try:
-            df                                  = copy.deepcopy(master_data_cache.iloc[:-step_back])
-            data_cache_for_parameter_extraction = copy.deepcopy(df.iloc[:-n_forecast_length])
-            data_cache_for_forecasting          = copy.deepcopy(df.iloc[-n_forecast_length:])
-            assert n_forecast_length == len(data_cache_for_forecasting)
-            assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
-        except:
+        if len(master_data_cache) < step_back + n_forecast_length:
             continue
         # Create the "Now" dataframe
-        df = copy.deepcopy(master_data_cache.iloc[:-step_back])
+        df                                  = copy.deepcopy(master_data_cache.iloc[:-step_back])
+        data_cache_for_parameter_extraction = copy.deepcopy(df.iloc[:-n_forecast_length])
+        data_cache_for_forecasting          = copy.deepcopy(df.iloc[-n_forecast_length:])
+        # Sanity check
+        assert n_forecast_length == len(data_cache_for_forecasting)
+        assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
         #print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
+        continue
         if use_last_week_only:
             assert 'week' == dataset_id
             last_date = df.index[-1]
@@ -299,10 +298,11 @@ def main(args):
         print("\n" + "="*50)
         print("BACKTESTING PERFORMANCE SUMMARY".center(50))
         print("="*50)
-        print(f"Total Backtest Windows     : {total_runs}")
-        print(f"Successful Trades          : {successes} ({successes/(successes+failures)*100:.1f}%)")
-        print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
-        print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
+        if total_runs > 0:
+            print(f"Total Backtest Windows     : {total_runs}")
+            print(f"Successful Trades          : {successes} ({successes/(successes+failures)*100:.1f}%)")
+            print(f"Failed Trades              : {failures} ({failures/(successes+failures)*100:.1f}%)")
+            print(f"Skipped / No Action        : {skipped} ({skipped/total_runs*100:.1f}%)")
         print("="*50)
 
         # --- Iron Condor Summary ---
