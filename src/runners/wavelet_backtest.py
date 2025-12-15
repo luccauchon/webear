@@ -129,7 +129,6 @@ def main(args):
         assert n_forecast_length == len(data_cache_for_forecasting)
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
         #print(f'{df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
-        continue
         if use_last_week_only:
             assert 'week' == dataset_id
             last_date = df.index[-1]
