@@ -49,6 +49,10 @@ MY_TICKERS = [
     "SOFI", "TSLA", "TSM", "UUUU", "U", "V", "WMT"
 ]
 
+MY_TICKERS_SMALL_SET = [
+    "^XSP", "^GSPC", "^VIX", "^VVIX", "^SKEW", "^VIX1D", "^VIX9D", "^VIX3M", "^VIX6M", "^VVIX", "^VIX1Y", "SPY", "QQQ",
+]
+
 # Top 10 S&P 500 tickers as of 2025-10-29
 TOP10_SP500_TICKERS = ["AMZN", "AAPL", "AVGO", "BRK-B", "GOOG", "GOOGL", "META", "MSFT", "NVDA", "TSLA"]
 

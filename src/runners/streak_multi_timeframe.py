@@ -14,18 +14,21 @@ import mplcursors
 from runners.streak_probability_lot import main as streak_probability_lot
 from argparse import Namespace
 import argparse
-from utils import get_filename_for_dataset
+from utils import get_filename_for_dataset, str2bool
 import pickle
 
 
 def main(args):
-    direction_day = args.direction_day
-    direction_week = args.direction_week
+    direction_day   = args.direction_day
+    direction_week  = args.direction_week
     direction_month = args.direction_month
     ticker_name = args.ticker
-    nn_day = args.nn_day
-    nn_week = args.nn_week
+    nn_day   = args.nn_day
+    nn_week  = args.nn_week
     nn_month = args.nn_month
+    skip_last_day   = args.skip_last_day
+    skip_last_week  = args.skip_last_week
+    skip_last_month = args.skip_last_month
 
     # Store direction mapping for tooltip use
     directions = {
@@ -47,8 +50,8 @@ def main(args):
         data_cache = pickle.load(f)
     # Extract close_value early so it's available in the delta loop
     close_col = ('Close', ticker_name)
-    last_close_value = data_cache[ticker_name][close_col].iloc[-1]
-    last_close_date  = data_cache[ticker_name][close_col].index[-1]
+    local_last_close_value = data_cache[ticker_name][close_col].iloc[-1]
+    local_last_close_date  = data_cache[ticker_name][close_col].index[-1]
 
     # --- Step 1: Organize the data into a structured dictionary ---
     # Day
@@ -59,15 +62,19 @@ def main(args):
         ticker=ticker_name,
         deltas=[0, 0.1, 0.25, 0.50, 0.75, 0.9, 1.0, 1.25, 1.33, 1.5, 1.75, 2.0, 2.25, 2.5],
         display_only_nn=None,
+        remove_last_element=skip_last_day,
+        verbose=False,
     )
     day_results = streak_probability_lot(configuration)
-    for delta, prob, count, total_streaks, close_value in day_results[nn_day]:
+    for delta, prob, count, total_streaks, close_value, last_close_value, last_date in day_results[nn_day]:
         ticker_streak_data['day'].append({
             'delta': delta,
             'prob': prob * 100.0,
             'count': count,
             'total': total_streaks,
-            'price': close_value
+            'price': close_value,
+            'last_price': last_close_value,
+            'last_date': last_date,
         })
 
     # --- Week ---
@@ -78,15 +85,19 @@ def main(args):
         ticker=ticker_name,
         deltas=[0, 1., 2., 3., 4.],
         display_only_nn=None,
+        remove_last_element=skip_last_week,
+        verbose=False,
     )
     week_results = streak_probability_lot(configuration)
-    for delta, prob, count, total_streaks, close_value in week_results[nn_week]:
+    for delta, prob, count, total_streaks, close_value, last_close_value, last_date in week_results[nn_week]:
         ticker_streak_data['week'].append({
             'delta': delta,
             'prob': prob * 100.0,
             'count': count,
             'total': total_streaks,
-            'price': close_value
+            'price': close_value,
+            'last_price': last_close_value,
+            'last_date': last_date,
         })
 
     # --- Month ---
@@ -97,45 +108,64 @@ def main(args):
         ticker=ticker_name,
         deltas=[0.00, 1.00, 2.00, 3.00, 4.00, 5.00, 6.00, 7.00, 8.00],
         display_only_nn=None,
+        remove_last_element=skip_last_month,
+        verbose=False,
     )
     month_results = streak_probability_lot(configuration)
-    for delta, prob, count, total_streaks, close_value in month_results[nn_month]:
+    for delta, prob, count, total_streaks, close_value, last_close_value, last_date in month_results[nn_month]:
         ticker_streak_data['month'].append({
             'delta': delta,
             'prob': prob * 100.0,
             'count': count,
             'total': total_streaks,
-            'price': close_value
+            'price': close_value,
+            'last_price': last_close_value,
+            'last_date': last_date,
         })
 
-    # --- Find closest to 5% for annotation (optional) ---
-    def find_closest_to_q(freq_data, q=5.0):
-        best = min(freq_data, key=lambda p: abs(p['prob'] - q))
-        return best['price'], best['prob']
+    the_col = 'price'
 
-    month_q = find_closest_to_q(ticker_streak_data["month"], q=5.0)
-    week_q = find_closest_to_q(ticker_streak_data["week"], q=5.0)
-    day_q = find_closest_to_q(ticker_streak_data["day"], q=5.0)
+    # --- Find closest to 5% for annotation (optional) ---
+    def find_closest_to_q(freq_data, q=5.0, col=the_col):
+        best = min(freq_data, key=lambda p: abs(p['prob'] - q))
+        return best[col], best['prob']
+
+    month_q = find_closest_to_q(ticker_streak_data["month"], q=5.0, col=the_col)
+    week_q  = find_closest_to_q(ticker_streak_data["week"], q=5.0, col=the_col)
+    day_q   = find_closest_to_q(ticker_streak_data["day"], q=5.0, col=the_col)
 
     # --- Step 3: Plotting ---
     plt.figure(figsize=(12, 7))
 
     # Plot lines and keep references
     line_month, = plt.plot(
-        [p['price'] for p in ticker_streak_data["month"]],
+        [p[the_col] for p in ticker_streak_data["month"]],
         [p['prob'] for p in ticker_streak_data["month"]],
-        marker='o', linestyle='-', color='red', label=f'Month (≥{nn_month} streaks)'
+        marker='o', linestyle='-', color='red', label=f'Month (≥{nn_month+1} streaks)'
     )
     line_week, = plt.plot(
-        [p['price'] for p in ticker_streak_data["week"]],
+        [p[the_col] for p in ticker_streak_data["week"]],
         [p['prob'] for p in ticker_streak_data["week"]],
-        marker='s', linestyle='-', color='green', label=f'Week (≥{nn_week} streaks)'
+        marker='s', linestyle='-', color='green', label=f'Week (≥{nn_week+1} streaks)'
     )
     line_day, = plt.plot(
-        [p['price'] for p in ticker_streak_data["day"]],
+        [p[the_col] for p in ticker_streak_data["day"]],
         [p['prob'] for p in ticker_streak_data["day"]],
-        marker='^', linestyle='-', color='blue', label=f'Day (≥{nn_day} streaks)'
+        marker='^', linestyle='-', color='blue', label=f'Day (≥{nn_day+1} streaks)'
     )
+    # --- Add semi-transparent lines for 'last_price' ---
+    if not skip_last_month:
+        plt.plot(
+            [p['last_price'] for p in ticker_streak_data["month"]],
+            [p['prob'] for p in ticker_streak_data["month"]],
+            marker='o', linestyle='-', color='red', alpha=0.5
+        )
+    if not skip_last_week:
+        plt.plot(
+            [p['last_price'] for p in ticker_streak_data["week"]],
+            [p['prob'] for p in ticker_streak_data["week"]],
+            marker='s', linestyle='-', color='green', alpha=0.5
+        )
 
     # Highlight ~q% points
     plt.scatter(*month_q, color='red', s=150, zorder=5, edgecolor='black')
@@ -151,21 +181,27 @@ def main(args):
                  textcoords='offset points', color='blue', fontweight='bold')
 
     # Labels and title
+    ending_day   = ticker_streak_data["day"][0]['last_date']
+    ending_week  = ticker_streak_data["week"][0]['last_date']
+    ending_month = ticker_streak_data["month"][0]['last_date']
     plt.xlabel(f'{ticker_name} Price Level')
     plt.ylabel('Probability of Streak ≥ N (%)')
-    plt.title(f'{ticker_name} Positive Streak Probabilities by Time Frequency\n(Superimposed: Month, Week, Day)')
+    plt.title(f'{ticker_name} Streak Probabilities by Time Frequency\n'
+              f'(Superimposed: Month {"POS" if direction_month=="pos" else "NEG"} ({ending_month.strftime("%Y-%m-%d")}), '
+              f'Week {"POS" if direction_week=="pos" else "NEG"} ({ending_week.strftime("%Y-%m-%d")}), '
+              f'Day {"POS" if direction_day=="pos" else "NEG"} ({ending_day.strftime("%Y-%m-%d")}))')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.axhline(y=5.0, color='gray', linestyle='--', linewidth=1)
 
     # Last close line
-    plt.axvline(x=last_close_value, color='black', linestyle='-', linewidth=2)
+    plt.axvline(x=local_last_close_value, color='black', linestyle='-', linewidth=2)
     ylims = plt.ylim()
-    plt.text(last_close_value, ylims[1] * 0.95,
-             last_close_date.strftime("%Y-%m-%d"),
+    plt.text(local_last_close_value, ylims[1] * 0.95,
+             local_last_close_date.strftime("%Y-%m-%d"),
              rotation=90, verticalalignment='top', horizontalalignment='right',
              color='black', fontweight='bold', fontsize=9)
-    plt.text(last_close_value, ylims[1] * 0.75,
-             f'{last_close_value:.1f}',
+    plt.text(local_last_close_value, ylims[1] * 0.75,
+             f'{local_last_close_value:.1f}',
              rotation=90, verticalalignment='top', horizontalalignment='right',
              color='black', fontweight='bold', fontsize=9)
 
@@ -187,7 +223,7 @@ def main(args):
         # Determine "above" or "below" based on direction
         close_text = "below" if direction == "neg" else "above"
 
-        lines = [f"Streaks ≥ {n_streak} ({freq_name.lower()}-frequency):"]
+        lines = [f"Streaks ≥ {n_streak+1} ({freq_name.lower()}-frequency):"]
         for p in data_list:
             prob_str = f"{p['prob']:.2f}%"
             count_str = f"{int(p['count']):>3}"
@@ -242,6 +278,24 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nn_month", type=int, default=7,
         help="Minimum streak length for monthly data"
+    )
+    parser.add_argument(
+        "--skip_last_month", type=str2bool, default=True,
+        help="Remove last month of dataframe"
+    )
+    parser.add_argument(
+        "--skip_last_week", type=str2bool, default=True,
+        help="Remove last week of dataframe"
+    )
+    parser.add_argument(
+        "--skip_last_day", type=str2bool, default=True,
+        help="Remove last day of dataframe"
+    )
+    parser.add_argument(
+        "--verbose",
+        type=str2bool,
+        default=True,
+        help="Display verbose output"
     )
 
     args = parser.parse_args()

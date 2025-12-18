@@ -10,10 +10,12 @@ except ImportError:
 from runners.streak_probability import main as streak_probability
 from tqdm import tqdm
 from collections import defaultdict
-from utils import get_filename_for_dataset
+from utils import get_filename_for_dataset, str2bool
 import pickle
 import argparse
 import copy
+from datetime import datetime
+import time
 
 
 def main(args):
@@ -23,20 +25,27 @@ def main(args):
     ticker_name = args.ticker
     deltas = args.deltas
     display_only_nn = args.display_only_nn
-
+    remove_last_element = args.remove_last_element
+    verbose = args.verbose
     one_dataset_filename = get_filename_for_dataset(frequency, older_dataset=None)
-    print(f"📁 Using dataset: {one_dataset_filename}")
+    if verbose:
+        print(f"📁 Using dataset: {one_dataset_filename}")
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
 
     # Extract close_value early so it's available in the delta loop
+    df        = data_cache[ticker_name]
+    df        = df.sort_index()
+    if remove_last_element:
+        df = df.iloc[:-1]
+    df        = copy.deepcopy(df)
     close_col = ('Close', ticker_name)
-    close_value = data_cache[ticker_name][close_col].iloc[-1]
-
+    close_value        = df[close_col].iloc[-1]
+    before_close_value = df[close_col].iloc[-2]
+    last_date          = df[close_col].index[-1]
     # Group results by NN: {NN: [(delta, prob, count, total_streaks), ...]}
     grouped_results = defaultdict(list)
-
-    for delta in tqdm(deltas, desc="🌀 Processing deltas"):
+    for delta in tqdm(deltas, desc="🌀 Processing deltas") if verbose else deltas:
         result = streak_probability(
             direction=direction,
             method=method,
@@ -46,42 +55,46 @@ def main(args):
             delta=delta / 100.0,
             ticker_name=ticker_name,
             verbose=False,
-            bring_my_own_df=copy.deepcopy(data_cache)
+            bring_my_own_df=df,
         )
         for k, v in result.items():
             NN = v['NN']
-            if NN < 2:
-                continue  # Only consider streaks >= 2
             prob = v['prob']
             count = v['count']
             total_streaks = v['total_streaks']
-            vl_dl = close_value * (1 - delta / 100.0) if direction == 'neg' else close_value * (1 + delta / 100.0)
-            grouped_results[NN].append((delta, prob, count, total_streaks, vl_dl))
+            vl_dl        = close_value * (1 - delta / 100.0)        if direction == 'neg' else close_value * (1 + delta / 100.0)
+            before_vl_dl = before_close_value * (1 - delta / 100.0) if direction == 'neg' else before_close_value * (1 + delta / 100.0)
+            grouped_results[NN].append((delta, prob, count, total_streaks, vl_dl, before_vl_dl, last_date))
 
     # Sort NN values
     sorted_NNs = sorted(grouped_results.keys())
-
+    now = datetime.now()
     # Pretty header
     direction_label = "Negative" if direction == "neg" else "Positive"
     emoji = "📉" if direction == "neg" else "📈"
-    print("\n" + "="*70)
-    print(f"{emoji}  Streak Probability Analysis — {direction_label} Price Moves")
-    print(f"📊 Ticker: {ticker_name} | Last Close: {close_value:,.2f}")
-    print("="*70)
+    if verbose:
+        print("\n" + "="*70)
+        print(f"{emoji}  Streak Probability Analysis — {direction_label} Price Moves")
+        print(f"📊 Ticker: {ticker_name} | Last Close: {close_value:,.2f} | Last Date in {frequency} DF: {last_date.strftime("%Y-%m-%d")} | Now: {now.strftime('%Y-%m-%d')}")
+        print("="*70)
 
     for NN in sorted_NNs:
         if display_only_nn is not None and display_only_nn != NN:
             continue
-        print(f"\n🔹 Streaks ≥ {NN} ({frequency}-frequency):")
+        if verbose:
+            tmp = 'First occurence' if 0 == NN else f'Already {NN} occurences'
+            print(f"\n🔹 Streaks ≥ {NN+1} ({frequency}-frequency) ({tmp}):")
         entries = sorted(grouped_results[NN], key=lambda x: x[0])  # sort by delta
-        for delta, prob, count, total_streaks, vl_dl in entries:
+        for delta, prob, count, total_streaks, vl_dl, before_vl_dl, last_date in entries:
             cl_dir = "below" if direction == "neg" else "above"
-            print(
-                f"    {prob:>7.2%} ({count:>4d} / {total_streaks:>4d}) → "
-                f"Close {cl_dir} {vl_dl:,.1f} "
-                f"(Δ = {delta:>4.1f}%)"
-            )
-    print("\n✅ Done.\n")
+            if verbose:
+                print(
+                    f"    {prob:>7.2%} ({count:>4d} / {total_streaks:>4d}) → "
+                    f"Close {cl_dir} {vl_dl:,.1f} "
+                    f"(Δ = {delta:>4.1f}%)"
+                )
+    if verbose:
+        print("\n✅ Done.\n")
     return grouped_results
 
 
@@ -113,6 +126,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--display-only-nn", type=int, default=None,
         help="Only display results for streaks of this exact length NN (e.g., 5)"
+    )
+    parser.add_argument(
+        "--remove_last_element", type=str2bool, default=False,
+        help="Remove last element in df since it is incomplete"
+    )
+    parser.add_argument(
+        "--verbose",
+        type=str2bool,
+        default=True,
+        help="Display verbose output"
     )
 
     args = parser.parse_args()
