@@ -30,7 +30,7 @@ import numpy as np
 
 def compute_and_print_stats_for_fomo_strategy(data):
     # Define the multiplier labels in the order they appear
-    multipliers = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
+    multipliers = [0., 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
     keys_m = [f'last_value_forecasted__m{m:.1f}'.replace('.', '_') for m in multipliers]
     keys_p = [f'last_value_forecasted__p{m:.1f}'.replace('.', '_') for m in multipliers]
 
@@ -268,7 +268,8 @@ def main(args):
             assert len(forecast) == n_forecast_length and len(forecast) == len(the_ground_truth)
             last_value_forecasted = forecast[-1]
             last_value_truth = the_ground_truth[-1]
-            performance.update({step_back: {'last_value_truth': last_value_truth, 'last_value_forecasted': last_value_forecasted,
+            performance.update({step_back: {'last_value_truth': last_value_truth,
+                                            'last_value_forecasted__p0_0': last_value_forecasted,
                                             'last_value_forecasted__p0_5': last_value_forecasted * 1.005,
                                             'last_value_forecasted__p1_0': last_value_forecasted * 1.010,
                                             'last_value_forecasted__p1_5': last_value_forecasted * 1.015,
@@ -278,6 +279,7 @@ def main(args):
                                             'last_value_forecasted__p3_5': last_value_forecasted * 1.035,
                                             'last_value_forecasted__p4_0': last_value_forecasted * 1.040,
                                             'last_value_forecasted__p5_0': last_value_forecasted * 1.050,
+                                            'last_value_forecasted__m0_0': last_value_forecasted,
                                             'last_value_forecasted__m0_5': last_value_forecasted*0.995,
                                             'last_value_forecasted__m1_0': last_value_forecasted*0.990,
                                             'last_value_forecasted__m1_5': last_value_forecasted*0.985,
