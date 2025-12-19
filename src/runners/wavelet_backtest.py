@@ -89,7 +89,7 @@ def main(args):
     threshold_for_shape_similarity = args.threshold_for_shape_similarity
     verbose = args.verbose
     use_last_week_only=args.use_last_week_only
-    one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None if args.older_dataset == "None" else args.older_dataset)
+    one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = copy.deepcopy(master_data_cache[ticker])
