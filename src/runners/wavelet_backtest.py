@@ -22,7 +22,7 @@ import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 from tqdm import tqdm
 from runners.wavelet_realtime import main as wavelet_realtime_entry_point
-from utils import format_execution_time
+from utils import format_execution_time, DATASET_AVAILABLE
 import pandas as pd
 import time
 import numpy as np
@@ -347,7 +347,7 @@ if __name__ == "__main__":
                         choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'],
                         help="Price column to use (default: Close)")
     parser.add_argument('--dataset_id', type=str, default='day',
-                        choices=['day', 'week'],
+                        choices=DATASET_AVAILABLE,
                         help="Dataset frequency: 'day' or 'week' (default: day)")
     parser.add_argument('--n_forecast_length', type=int, default=2,
                         help="Number of future steps to forecast (default: 2)")
