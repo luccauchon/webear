@@ -22,7 +22,7 @@ import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
 from tqdm import tqdm
 from runners.wavelet_realtime import main as wavelet_realtime_entry_point
-from utils import format_execution_time, DATASET_AVAILABLE
+from utils import format_execution_time, DATASET_AVAILABLE, get_filename_for_dataset
 import pandas as pd
 import time
 import numpy as np
@@ -89,11 +89,8 @@ def main(args):
     threshold_for_shape_similarity = args.threshold_for_shape_similarity
     verbose = args.verbose
     use_last_week_only=args.use_last_week_only
-    if dataset_id == 'day':
-        df_filename = FYAHOO__OUTPUTFILENAME_DAY
-    elif dataset_id == 'week':
-        df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    with open(df_filename, 'rb') as f:
+    one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None if args.older_dataset == "None" else args.older_dataset)
+    with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = copy.deepcopy(master_data_cache[ticker])
     master_data_cache = copy.deepcopy(master_data_cache.sort_index())
