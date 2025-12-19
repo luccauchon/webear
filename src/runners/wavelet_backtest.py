@@ -107,7 +107,7 @@ def main(args):
     print(f"T Shape Similarity   : {threshold_for_shape_similarity}")
     print(f"Thresholds (EP)      : {thresholds_ep}")
     print(f"Step-Back Range      : {number_of_step_back}")
-    print(f"Data File            : {df_filename}")
+    print(f"Data File            : {one_dataset_filename}")
     print(f"Exit strategy        : {exit_strategy}")
     print(f"Last week of month   : {use_last_week_only}")
     print(f"Backtest strategy    : {backtest_strategy}")
