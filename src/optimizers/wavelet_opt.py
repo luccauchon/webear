@@ -440,12 +440,16 @@ def main(args):
         # Compute and plot mean forecast
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)
         mean_forecast = np.mean(all_forecasts, axis=0)
+        q10_forecast  = np.quantile(all_forecasts, q=.10, axis=0)
+        q90_forecast  = np.quantile(all_forecasts, q=.90, axis=0)
         if real_time:
             if use_given_gt_truth is None:
                 gt_prices = copy.deepcopy(mean_forecast)
             else:
                 gt_prices = use_given_gt_truth
             misc_returned[step_back]['mean_forecast'] = copy.deepcopy(mean_forecast)
+            misc_returned[step_back]['q10_forecast'] = copy.deepcopy(q10_forecast)
+            misc_returned[step_back]['q90_forecast'] = copy.deepcopy(q90_forecast)
         # Plot actual future values
         future_indices = np.arange(n_train_length, n_train_length + n_forecast_length)
         if plot_graph:

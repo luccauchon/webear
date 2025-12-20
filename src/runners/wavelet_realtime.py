@@ -72,7 +72,7 @@ def main(args):
     # Only a step back when we do a real forecast
     assert 1 == len(description_of_what_user_shall_do) and 1 == len(misc_returned)
     if args.verbose:
-        print(f"{misc_returned[0]['mean_forecast'].astype(int)=}")
+        print(f"{misc_returned[0]['mean_forecast'].astype(int)=}   {misc_returned[0]['q10_forecast'].astype(int)=}   {misc_returned[0]['q90_forecast'].astype(int)=}")
     #######################################################################
     # Display
     #######################################################################

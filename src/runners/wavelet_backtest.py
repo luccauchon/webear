@@ -28,7 +28,7 @@ import time
 import numpy as np
 
 
-def compute_and_print_stats_for_fomo_strategy(data):
+def compute_and_print_stats_for_fomo_strategy(data, using_quantized=False):
     # Define the multiplier labels in the order they appear
     multipliers = [0., 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
     keys_m = [f'last_value_forecasted__m{m:.1f}'.replace('.', '_') for m in multipliers]
@@ -47,8 +47,9 @@ def compute_and_print_stats_for_fomo_strategy(data):
             forecasts_p[key].append(values[key])
 
     truths = np.array(truths)
-
-    print(f"{'Multiplier':<12} {'Truth > Forecast_m (%)':<25} {'Truth < Forecast_p (%)':<25} {'Truth in [m, p] (%)':<25} {'Count in / Total'}")
+    tmp1 = f'Truth > Forecast_{"q10" if using_quantized else "m"} (%)'
+    tmp2 = f'Truth < Forecast_{"q90" if using_quantized else "m"} (%)'
+    print(f"{'Multiplier':<12} {tmp1:<25} {tmp2:<25} {'Truth in interval (%)':<25} {'Count in / Total'}")
     print("-" * 110)
 
     for m, key_m, key_p in zip(multipliers, keys_m, keys_p):
@@ -260,32 +261,38 @@ def main(args):
                     else:
                         print(f"\tOn the day {data_cache_for_forecasting.index[0].strftime('%Y-%m-%d')} , the {operation_request} was failed by {operation_missed_threshold:0.1f}")
                 print(f"\t\t{user_instruction['description']}")
-        if backtest_strategy == 'fomo':
-            forecast = misc_returned['mean_forecast']
-            assert len(forecast) == n_forecast_length and len(forecast) == len(the_ground_truth)
-            last_value_forecasted = forecast[-1]
-            last_value_truth = the_ground_truth[-1]
+        if backtest_strategy in ['fomo', 'fomo_quantilized']:
+            mean_forecast, q10_forecast, q90_forecast = misc_returned['mean_forecast'], misc_returned['q10_forecast'], misc_returned['q90_forecast']
+            assert len(mean_forecast) == n_forecast_length and len(mean_forecast) == len(the_ground_truth)
+            assert len(q10_forecast) == n_forecast_length and len(mean_forecast) == len(the_ground_truth)
+            assert len(q90_forecast) == n_forecast_length and len(mean_forecast) == len(the_ground_truth)
+            last_value_forecasted_upper_side = mean_forecast[-1]
+            last_value_forecasted_lower_side = mean_forecast[-1]
+            last_value_truth                 = the_ground_truth[-1]
+            if backtest_strategy == 'fomo_quantilized':
+                last_value_forecasted_upper_side = q90_forecast[-1]
+                last_value_forecasted_lower_side = q10_forecast[-1]
             performance.update({step_back: {'last_value_truth': last_value_truth,
-                                            'last_value_forecasted__p0_0': last_value_forecasted,
-                                            'last_value_forecasted__p0_5': last_value_forecasted * 1.005,
-                                            'last_value_forecasted__p1_0': last_value_forecasted * 1.010,
-                                            'last_value_forecasted__p1_5': last_value_forecasted * 1.015,
-                                            'last_value_forecasted__p2_0': last_value_forecasted * 1.020,
-                                            'last_value_forecasted__p2_5': last_value_forecasted * 1.025,
-                                            'last_value_forecasted__p3_0': last_value_forecasted * 1.030,
-                                            'last_value_forecasted__p3_5': last_value_forecasted * 1.035,
-                                            'last_value_forecasted__p4_0': last_value_forecasted * 1.040,
-                                            'last_value_forecasted__p5_0': last_value_forecasted * 1.050,
-                                            'last_value_forecasted__m0_0': last_value_forecasted,
-                                            'last_value_forecasted__m0_5': last_value_forecasted*0.995,
-                                            'last_value_forecasted__m1_0': last_value_forecasted*0.990,
-                                            'last_value_forecasted__m1_5': last_value_forecasted*0.985,
-                                            'last_value_forecasted__m2_0': last_value_forecasted*0.980,
-                                            'last_value_forecasted__m2_5': last_value_forecasted*0.975,
-                                            'last_value_forecasted__m3_0': last_value_forecasted*0.970,
-                                            'last_value_forecasted__m3_5': last_value_forecasted*0.965,
-                                            'last_value_forecasted__m4_0': last_value_forecasted*0.960,
-                                            'last_value_forecasted__m5_0': last_value_forecasted*0.950,},})
+                                            'last_value_forecasted__p0_0': last_value_forecasted_upper_side,
+                                            'last_value_forecasted__p0_5': last_value_forecasted_upper_side * 1.005,
+                                            'last_value_forecasted__p1_0': last_value_forecasted_upper_side * 1.010,
+                                            'last_value_forecasted__p1_5': last_value_forecasted_upper_side * 1.015,
+                                            'last_value_forecasted__p2_0': last_value_forecasted_upper_side * 1.020,
+                                            'last_value_forecasted__p2_5': last_value_forecasted_upper_side * 1.025,
+                                            'last_value_forecasted__p3_0': last_value_forecasted_upper_side * 1.030,
+                                            'last_value_forecasted__p3_5': last_value_forecasted_upper_side * 1.035,
+                                            'last_value_forecasted__p4_0': last_value_forecasted_upper_side * 1.040,
+                                            'last_value_forecasted__p5_0': last_value_forecasted_upper_side * 1.050,
+                                            'last_value_forecasted__m0_0': last_value_forecasted_lower_side,
+                                            'last_value_forecasted__m0_5': last_value_forecasted_lower_side*0.995,
+                                            'last_value_forecasted__m1_0': last_value_forecasted_lower_side*0.990,
+                                            'last_value_forecasted__m1_5': last_value_forecasted_lower_side*0.985,
+                                            'last_value_forecasted__m2_0': last_value_forecasted_lower_side*0.980,
+                                            'last_value_forecasted__m2_5': last_value_forecasted_lower_side*0.975,
+                                            'last_value_forecasted__m3_0': last_value_forecasted_lower_side*0.970,
+                                            'last_value_forecasted__m3_5': last_value_forecasted_lower_side*0.965,
+                                            'last_value_forecasted__m4_0': last_value_forecasted_lower_side*0.960,
+                                            'last_value_forecasted__m5_0': last_value_forecasted_lower_side*0.950,},})
     # --- Summary Report ---
     if backtest_strategy == 'stratego':
         total_runs = len(performance)
@@ -329,14 +336,14 @@ def main(args):
             print(f"\nCall Credit Spreads ({call_runs} trades):")
             print(f"  Successes: {call_successes} ({call_successes/call_runs*100:.1f}%)")
             print(f"  Failures : {call_failures} ({call_failures/call_runs*100:.1f}%)")
-    if backtest_strategy == 'fomo':
-        compute_and_print_stats_for_fomo_strategy(performance)
+    if backtest_strategy in ['fomo', 'fomo_quantilized']:
+        compute_and_print_stats_for_fomo_strategy(performance, using_quantized=backtest_strategy=='fomo_quantilized')
 
 
 if __name__ == "__main__":
     freeze_support()
     parser = argparse.ArgumentParser(description="Run Wavelet-based stock backtesting.")
-    parser.add_argument('--backtest_strategy', type=str, default='stratego', choices=['stratego', 'fomo'],
+    parser.add_argument('--backtest_strategy', type=str, default='stratego', choices=['stratego', 'fomo', 'fomo_quantilized'],
                         help="Backtest strategy to use")
     parser.add_argument('--ticker', type=str, default='^GSPC',
                         help="Yahoo Finance ticker symbol (default: ^GSPC)")
