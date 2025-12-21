@@ -117,7 +117,7 @@ def main(args):
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
     for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
-        if len(master_data_cache) < step_back + n_forecast_length:
+        if len(master_data_cache) < step_back + n_forecast_length + n_forecast_length_in_training:
             continue
         # Create the "Now" dataframe
         df                                  = copy.deepcopy(master_data_cache.iloc[:-step_back])
