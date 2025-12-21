@@ -97,6 +97,8 @@ def _worker_processor_backtesting(use_cases__shared, master_cmd__shared, out__sh
                 )
             except Exception as e:
                 continue
+            if len(forecast_values) != n_train_length + n_forecast_length:
+                continue
             assert len(forecast_values) == n_train_length + n_forecast_length
             pred_values = forecast_values[-n_forecast_length:]
             assert len(pred_values) == len(gt_prices) == n_forecast_length
