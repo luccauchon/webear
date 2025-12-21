@@ -89,7 +89,6 @@ if __name__ == "__main__":
     # Save combined data to CSV
     if data_dict:
         combined_df = pd.concat(data_dict, names=['Ticker', 'Date'])
-        #combined_df.to_csv("sp500_daily_data.csv")
         # Save DataFrame to Parquet
         combined_df.to_parquet(FYAHOO_SPX500__OUTPUTFILENAME, engine='pyarrow', compression='snappy')
         print(f"\nAll data saved to {FYAHOO_SPX500__OUTPUTFILENAME}")
