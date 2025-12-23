@@ -45,19 +45,19 @@ def main(args):
         master_data_cache = pickle.load(f)
     master_data_cache = copy.deepcopy(master_data_cache[ticker])
     master_data_cache = copy.deepcopy(master_data_cache.sort_index())
-
-    # --- Parameter Summary ---
-    print("\n" + "=" * 50)
-    print("BACKTESTING PARAMETERS SUMMARY".center(50))
-    print("=" * 50)
-    print(f"Ticker               : {ticker}")
-    print(f"Column               : {col}")
-    print(f"Dataset Frequency    : {dataset_id}")
-    print(f"Forecast Length      : {n_forecast_length}")
-    print(f"Forecast Length Train: {n_forecast_length_in_training}")
-    print(f"Step-Back Range      : {number_of_step_back}")
+    if verbose:
+        # --- Parameter Summary ---
+        print("\n" + "=" * 50)
+        print("BACKTESTING PARAMETERS SUMMARY".center(50))
+        print("=" * 50)
+        print(f"Ticker               : {ticker}")
+        print(f"Column               : {col}")
+        print(f"Dataset Frequency    : {dataset_id}")
+        print(f"Forecast Length      : {n_forecast_length}")
+        print(f"Forecast Length Train: {n_forecast_length_in_training}")
+        print(f"Step-Back Range      : {number_of_step_back}")
     results = {}
-    for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
+    for step_back in range(1, number_of_step_back + 1) if not verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
         if len(master_data_cache) < step_back + n_forecast_length + n_forecast_length_in_training:
             continue
@@ -112,19 +112,18 @@ def main(args):
     total_steps = len(results)
     successful_steps = len(step_back_success)
     success_rate = (successful_steps / total_steps * 100) if total_steps > 0 else 0
+    if verbose:
+        print("\n" + "=" * 60)
+        print("BACKTESTING RESULTS SUMMARY".center(60))
+        print("=" * 60)
+        print(f"Total backtest windows evaluated : {total_steps}")
+        print(f"Successful predictions (pred ≤ gt) : {successful_steps}")
+        print(f"Success rate                    : {success_rate:.1f}%")
 
-    print("\n" + "=" * 60)
-    print("BACKTESTING RESULTS SUMMARY".center(60))
-    print("=" * 60)
-    print(f"Total backtest windows evaluated : {total_steps}")
-    print(f"Successful predictions (pred ≤ gt) : {successful_steps}")
-    print(f"Success rate                    : {success_rate:.1f}%")
-
-    if step_back_success:
-        print(f"\nSuccessful step-backs           : {sorted(step_back_success)}")
-    else:
-        print("\nNo successful predictions.")
-
+        if step_back_success:
+            print(f"\nSuccessful step-backs           : {sorted(step_back_success)}")
+        else:
+            print("\nNo successful predictions.")
     if args.save_to_disk:
         output_summary_file = os.path.join(OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST,
                                            f"backtest_summary_{ticker}_{dataset_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
@@ -140,7 +139,10 @@ def main(args):
         with open(output_summary_file, 'w') as f:
             json.dump(serializable_results, f, indent=4)
         print(f"\nFull results saved to: {output_summary_file}")
-    print("=" * 60)
+    if verbose:
+        print("=" * 60)
+    return {'success_rate': success_rate}
+
 
 if __name__ == "__main__":
     freeze_support()
@@ -160,6 +162,6 @@ if __name__ == "__main__":
     parser.add_argument("--save_to_disk", type=str2bool, default=False)
     parser.add_argument('--step-back-range', type=int, default=5,
                         help="Number of past steps to backtest (default: 5)")
-    parser.add_argument('--verbose', type=bool, default=False)
+    parser.add_argument('--verbose', type=bool, default=True)
     args = parser.parse_args()
     main(args)
