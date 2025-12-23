@@ -32,6 +32,16 @@ from skopt import gp_minimize
 from skopt.space import Integer
 from skopt.utils import use_named_args
 import numpy as np
+import time
+from skopt import gp_minimize
+from skopt.space import Integer
+from skopt.utils import use_named_args
+import signal
+import sys
+
+# Custom exception for timeout
+class TimeExceededError(Exception):
+    pass
 
 
 def main(args):
@@ -48,12 +58,22 @@ def main(args):
         Integer(1, 99, name='n_forecast_length_in_training'),
         Integer(1, 99, name='n_forecasts')  # adjust upper bound as needed
     ]
-
+    n_calls = int(0.1 * 99*99)  # 10% of the space ?
     # Keep track of results
     results = []
 
+    # Set time limit (e.g., 600 seconds = 10 minutes)
+    time_limit_seconds = 86400
+    start_time = time.time()
+
     @use_named_args(space)
     def objective(n_forecast_length_in_training, n_forecasts):
+        # Check if time limit exceeded
+        elapsed = time.time() - start_time
+        if elapsed > time_limit_seconds:
+            print(f"\n⏰ Time limit ({time_limit_seconds}s) exceeded. Stopping optimization.")
+            raise TimeExceededError()
+
         configuration = Namespace(
             col=col,
             dataset_id=dataset_id,
@@ -78,16 +98,24 @@ def main(args):
         # skopt *minimizes*, so return negative success rate
         return -success_rate
 
-    # Run Bayesian optimization
-    print("🚀 Starting Bayesian optimization with scikit-optimize...")
-    n_calls = 30  # number of evaluations (adjust as needed)
-    res2 = gp_minimize(
-        func=objective,
-        dimensions=space,
-        n_calls=n_calls,
-        random_state=42,
-        verbose=False
-    )
+    print(f"🚀 Starting Bayesian optimization (time limit: {time_limit_seconds}s)...")
+
+    try:
+        res2 = gp_minimize(
+            func=objective,
+            dimensions=space,
+            n_calls=n_calls,
+            random_state=42,
+            verbose=False
+        )
+    except TimeExceededError:
+        # Optimization stopped due to time limit — that's OK
+        pass
+
+    # Proceed to report results even if time-limited
+    if not results:
+        print("❌ No evaluations completed within time limit.")
+        return
 
     # Sort top results by success rate (descending)
     top_results = sorted(results, key=lambda x: x['success_rate'], reverse=True)[:show_n_top_configurations]
