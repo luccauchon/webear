@@ -41,8 +41,8 @@ def main(args):
     verbose = args.verbose
 
     experiences, results = [], []
-    for n_forecast_length_in_training in (1,):#2,3,4,5,6,7,8,9,10,15,20):
-        for n_forecasts in (19,):#29,39,59,111,211,322):  # Nombre de modèles à conserver
+    for n_forecast_length_in_training in (1,2,3,4,5,6,7,8,9,10,15,20,30):
+        for n_forecasts in (19,29,39,59,111,211,322):  # Nombre de modèles à conserver
             experiences.append({'n_forecast_length_in_training': n_forecast_length_in_training,
                                 'n_forecasts': n_forecasts})
     for one_experience in tqdm(experiences):
@@ -73,10 +73,11 @@ def main(args):
     print("=" * 60)
     for i, res in enumerate(top_results, 1):
         cfg = res['config']
-        sr = res['success_rate']
+        sr = res['success_rate'] / 100.
         print(f"{i}. Success Rate: {sr:.2%}")
         print(f"   • Forecast Length (training): {cfg.n_forecast_length_in_training}")
-        print(f"   • Number of Forecasts: {cfg.n_forecasts}")
+        print(f"   • Forecast Length : {n_forecast_length}")
+        print(f"   • Number of Forecasts (# models used to aggregate): {cfg.n_forecasts}")
         print("-" * 60)
 
 
