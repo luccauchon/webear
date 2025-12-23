@@ -150,7 +150,7 @@ def main(args):
         os.makedirs(output_dir, exist_ok=True)
         the_ground_truth = data_cache_for_forecasting[col_name].values
         assert len(the_ground_truth) == n_forecast_length
-        args = Namespace(
+        configuration = Namespace(
             master_data_cache=copy.deepcopy(data_cache_for_parameter_extraction),
             ticker=ticker, col=col,
             output_dir=output_dir,
@@ -161,12 +161,12 @@ def main(args):
             plot_graph=False,
             use_given_gt_truth=the_ground_truth,
             display_tqdm=False,
-            strategy_for_exit=args.strategy_for_exit,
+            strategy_for_exit=exit_strategy,
             n_models_to_keep=n_models_to_keep,
             threshold_for_shape_similarity=threshold_for_shape_similarity,
             verbose=verbose,
         )
-        user_instruction, misc_returned = wavelet_realtime_entry_point(args)
+        user_instruction, misc_returned = wavelet_realtime_entry_point(configuration)
         if backtest_strategy == 'stratego':
             operation_data = user_instruction['op']
             operation_request, operation_success, operation_missed_threshold = operation_data['action'], False, 0
@@ -352,7 +352,7 @@ if __name__ == "__main__":
                         help="Price column to use (default: Close)")
     parser.add_argument('--dataset_id', type=str, default='day',
                         choices=DATASET_AVAILABLE,
-                        help="Dataset frequency: 'day' or 'week' (default: day)")
+                        help="Dataset frequency: 'day', 'week', ... (default: day)")
     parser.add_argument('--n_forecast_length', type=int, default=2,
                         help="Number of future steps to forecast (default: 2)")
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)

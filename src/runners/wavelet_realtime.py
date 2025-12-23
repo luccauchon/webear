@@ -35,10 +35,12 @@ def main(args):
         temp_filename=os.path.join(args.output_dir, 'real_time.pkl'),
         older_dataset=None,  # Don't modify
         dataset_id=args.dataset_id,
-        number_of_step_back=1,  # FIXME TODO permettre plusieurs steps , même dans le real time
-        n_forecast_length=args.n_forecast_length,  # FIXME TODO un length pour ici et un autre pour le forecast voulu? si !=, alors, boucle de retroaction
+        number_of_step_back=1,
+        n_forecast_length=args.n_forecast_length,
         n_forecast_length_in_training=args.n_forecast_length_in_training,
         n_models_to_keep=args.n_models_to_keep,
+        q_min_filter=args.q_min_filter,
+        q_max_filter=args.q_max_filter,
         maxmin_sequence_for_train_length="(4,64)",
         plot_graph=False,
         show_graph=False,
@@ -121,6 +123,8 @@ if __name__ == "__main__":
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
+    parser.add_argument("--q_min_filter", type=int, default=3)
+    parser.add_argument("--q_max_filter", type=int, default=97)
     parser.add_argument("--remove_last_n_steps", type=int, default=-1)
     parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
@@ -147,6 +151,8 @@ if __name__ == "__main__":
         n_forecast_length=args.n_forecast_length,
         n_forecast_length_in_training=args.n_forecast_length_in_training,
         n_models_to_keep=args.n_models_to_keep,
+        q_min_filter=args.q_min_filter,
+        q_max_filter=args.q_max_filter,
         thresholds_ep=args.thresholds_ep,
         threshold_for_shape_similarity=args.threshold_for_shape_similarity,
         plot_graph = True,

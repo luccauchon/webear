@@ -1,1 +1,0 @@
-print(f"Use 'fourier_realtime.py'")

@@ -28,7 +28,7 @@ import pandas as pd
 import numpy as np
 import pywt
 import copy
-from utils import next_weekday, transform_path
+from utils import next_weekday, transform_path, get_filename_for_dataset
 
 
 ###############################################################################
@@ -284,6 +284,7 @@ def main(args):
     real_time = args.real_time
     if not real_time:
         assert use_given_gt_truth is None
+    q_min_filter, q_max_filter = args.q_min_filter, args.q_max_filter
     _nb_workers = _nb_workers = 8 if real_time else NB_WORKERS
     performance_tracking     = {'put':[], 'call': [], '?': []}
     performance_tracking_xtm = {'put':  {'success': [], 'failure': []},
@@ -441,9 +442,18 @@ def main(args):
 
         # Compute and plot mean forecast
         all_forecasts = np.array(all_forecasts)  # shape: (top_n, n_forecast_length)
-        mean_forecast = np.mean(all_forecasts, axis=0)
-        q10_forecast  = np.quantile(all_forecasts, q=.10, axis=0)
-        q90_forecast  = np.quantile(all_forecasts, q=.90, axis=0)
+        old__mean_forecast = np.mean(all_forecasts, axis=0)
+        # Compute q_min_filter and q_max_filter% percentiles for each time step (along axis=0)
+        lower = np.percentile(all_forecasts, q_min_filter, axis=0, keepdims=True)  # Shape: (1, n_pred)
+        upper = np.percentile(all_forecasts, q_max_filter, axis=0, keepdims=True)  # Shape: (1, n_pred)
+        # Mask values outside the [q_min_filter, q_max_filter] range
+        masked_forecasts = np.where((all_forecasts >= lower) & (all_forecasts <= upper), all_forecasts, np.nan)
+        assert masked_forecasts.shape == all_forecasts.shape
+        # Compute mean ignoring NaNs
+        mean_forecast = np.nanmean(masked_forecasts, axis=0)
+        assert old__mean_forecast.shape == mean_forecast.shape
+        q10_forecast = np.quantile(all_forecasts, q=.10, axis=0)
+        q90_forecast = np.quantile(all_forecasts, q=.90, axis=0)
         if real_time:
             if use_given_gt_truth is None:
                 gt_prices = copy.deepcopy(mean_forecast)
@@ -929,6 +939,8 @@ if __name__ == "__main__":
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
+    parser.add_argument("--q_min_filter", type=int, default=3)
+    parser.add_argument("--q_max_filter", type=int, default=97)
     parser.add_argument("--use_this_df", type=json.loads, default={})
     parser.add_argument("--plot_graph", type=bool, default=False)
     parser.add_argument("--show_graph", type=bool, default=True)
@@ -943,17 +955,8 @@ if __name__ == "__main__":
     parser.add_argument("--strategy_for_exit", type=str, default=r"hold_until_the_end_with_roll")
     args = parser.parse_args()
 
-    from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH
-    if args.dataset_id == 'day':
-        df_filename = FYAHOO__OUTPUTFILENAME_DAY
-    elif args.dataset_id == 'week':
-        df_filename = FYAHOO__OUTPUTFILENAME_WEEK
-    elif args.dataset_id == 'month':
-        df_filename = FYAHOO__OUTPUTFILENAME_MONTH
     older_dataset = None if args.older_dataset == "None" else args.older_dataset
-    one_dataset_filename = None
-    if args.use_this_df is None or 0 == len(args.use_this_df):
-        one_dataset_filename = df_filename if older_dataset is None else transform_path(df_filename, older_dataset)
+    one_dataset_filename = get_filename_for_dataset(dataset_choice=args.dataset_id, older_dataset=older_dataset)
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     args.master_data_cache = copy.deepcopy(master_data_cache)

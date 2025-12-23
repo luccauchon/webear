@@ -18,22 +18,54 @@ import copy
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST
 import numpy as np
 import matplotlib.pyplot as plt
-from utils import transform_path
 from multiprocessing import freeze_support
 from datetime import datetime
 import argparse
 import json
 import os
-from utils import str2bool
-from runners.fourier_realtime_beta import get_prediction_for_the_future_with_fourier_algo
+from utils import str2bool, transform_path, get_filename_for_dataset
+import copy
+
+
+def get_prediction_for_the_future_with_fourier_algo(_best_setup, _length_prediction, _data_cache=None, _col=None, _ticker=None, prices=None):
+    if prices is None:
+        assert _data_cache is not None and _col is not None and _ticker is not None
+        tmp_df = _data_cache[_ticker]
+        tmp_df = tmp_df.sort_index()
+        prices = copy.deepcopy(tmp_df[(_col, _ticker)].values.astype(np.float64))
+    else:
+        assert _data_cache is None and _col is None and _ticker is None
+        prices = copy.deepcopy(prices)
+    length_train_data = _best_setup['length_train_data']
+    length_step_back = 0
+    n_pred = _length_prediction
+    energy_threshold = _best_setup['energy_threshold']
+    the_algo = _best_setup['the_algo']
+
+    import algorithms.fourier
+    the_function = getattr(algorithms.fourier, the_algo)
+
+    assert len(prices) > length_train_data + length_step_back + n_pred
+    x_series = prices[len(prices) - length_train_data - length_step_back:]
+    assert len(x_series) == length_train_data
+    y_series = prices[len(prices) - length_step_back:len(prices) - length_step_back + n_pred]
+    assert len(y_series) == 0  # because length_step_back=0
+
+    forecast, lower, upper, diag = the_function(x_series, n_predict=n_pred, energy_threshold=energy_threshold, conf_level=0.95)
+
+    prediction = forecast[-n_pred:].copy()
+    assert len(prediction) == n_pred
+    if lower is not None:
+        assert len(upper) == n_pred
+        assert len(lower) == n_pred
+    x = forecast[:-n_pred].copy()
+    assert len(x) == length_train_data
+    return prediction, x, lower, upper
 
 
 def main(args):
     older_dataset = None if args.older_dataset == "None" else args.older_dataset
-    one_dataset_filename = None
-    if args.use_this_df is None or 0 == len(args.use_this_df):
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset is None else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
-
+    one_dataset_filename = get_filename_for_dataset(dataset_choice=args.dataset_id, older_dataset=older_dataset)
     close_results, _, all_results = entry_of__fourier_decomposition(
         multi_threaded=True,
         ticker=args.ticker,
@@ -74,7 +106,7 @@ def main(args):
         _, base_close_values, _, _ = get_prediction_for_the_future_with_fourier_algo(
             _best_setup=first_best,
             _length_prediction=args.length_prediction_for_the_future,
-            prices = args.use_this_df
+            prices = args.use_this_df[(args.col, args.ticker)].values.astype(np.float64)
         )
 
     # Generate N forecasts
@@ -95,14 +127,27 @@ def main(args):
             pred, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
                 _best_setup=setup,
                 _length_prediction=args.length_prediction_for_the_future,
-                prices=args.use_this_df
+                prices=args.use_this_df[(args.col, args.ticker)].values.astype(np.float64)
             )
         forecasts.append(pred)
         if pred_indices is None:
             pred_indices = np.arange(len(base_close_values), len(base_close_values) + len(pred))
 
     forecasts = np.array(forecasts)  # Shape: (n_forecasts, n_pred)
-    mean_forecast = np.mean(forecasts, axis=0)
+
+    # Compute args.q_min_filter and args.q_max_filter% percentiles for each time step (along axis=0)
+    lower = np.percentile(forecasts, args.q_min_filter, axis=0, keepdims=True)  # Shape: (1, n_pred)
+    upper = np.percentile(forecasts, args.q_max_filter, axis=0, keepdims=True)  # Shape: (1, n_pred)
+
+    # Mask values outside the [args.q_min_filter, args.q_max_filter] range
+    masked_forecasts = np.where((forecasts >= lower) & (forecasts <= upper), forecasts, np.nan)
+    assert masked_forecasts.shape == forecasts.shape
+    # Compute mean ignoring NaNs
+    mean_forecast = np.nanmean(masked_forecasts, axis=0)
+
+    assert len(mean_forecast) == args.length_prediction_for_the_future
+    # forecasts = np.array(forecasts)  # Shape: (n_forecasts, n_pred)
+    # mean_forecast = np.mean(forecasts, axis=0)
     assert len(mean_forecast) == args.length_prediction_for_the_future
     if not args.quiet:
         print(f"{mean_forecast.astype(int)=}")
@@ -151,7 +196,7 @@ def main(args):
                 f"Slope per step: {slope:+.4f}\n"
                 f"Total Δ over {len(mean_forecast)} steps: {total_change:+.4f}"
             )
-            print(f"\n{slope_text}")
+            # print(f"\n{slope_text}")
             # Place nicely on the plot (bottom-left, inside a box)
             ax.text(
                 0.02, 0.02, slope_text,
@@ -162,7 +207,7 @@ def main(args):
             )
         else:
             msg = "Prediction horizon = 1 → slope undefined"
-            print(f"\n{msg}")
+            # print(f"\n{msg}")
             ax.text(
                 0.02, 0.02, msg,
                 transform=fig.transFigure,
@@ -189,11 +234,13 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="")
-    parser.add_argument("--dataset_id", type=str, default='week')
+    parser.add_argument("--dataset_id", type=str, default='month')
     parser.add_argument("--length_step_back", type=int, default=4)
     parser.add_argument("--length_prediction_for_the_future", type=int, default=4)
     parser.add_argument("--algorithms_to_run", type=str, default="0,1,2")
     parser.add_argument("--n_forecasts", type=int, default=19)
+    parser.add_argument("--q_min_filter", type=int, default=3)
+    parser.add_argument("--q_max_filter", type=int, default=97)
     parser.add_argument("--use_this_df", type=json.loads, default={})
     parser.add_argument("--plot_graph", type=str2bool, default=True)
     parser.add_argument("--quiet", type=str2bool, default=False)

@@ -55,6 +55,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             if 0 != master_cmd__shared.value:
                 break
         time.sleep(0.333)
+    # print(f"[{os.getpid()}] Hello world!", flush=True)
     best_result, all_results_from_worker, NNN = {}, {}, 500
     while True:
         try:
@@ -71,12 +72,13 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
         length_train_data = use_case['length_train_data']
         t1 = time.time()
         assert length_train_data == len(x_series)
+        # print(f"[{os.getpid()}] {x_series}", flush=True)
         forecast, lower, upper, diag = algo_func(prices=x_series, n_predict=length_prediction, energy_threshold=round(energy_threshold, 2), conf_level=0.95)
         y_pred = forecast[-length_prediction:]
         y_true = y_series
         assert len(y_pred) == len(y_true) == length_prediction
         error = np.sqrt(np.mean((y_true - y_pred) ** 2))
-        # print(f"[{os.getpid()}] <<{the_algo_name}>>  {length_train_data}  {time.time()-t1:.2f} seconds")
+        # print(f"[{os.getpid()}] <<{the_algo_name}>>  {length_train_data}  {int(error):.0f}  {time.time()-t1:.2f} seconds")
         # Update best result
         if the_algo_name not in best_result:
             best_result.update({the_algo_name: {'error': 9999999}})
@@ -110,6 +112,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             'diag': diag,
             'the_algo': the_algo_name,
         }})
+    # print(f"[{os.getpid()}] Hello world!", flush=True)
     all_results_from_worker = dict(sorted(all_results_from_worker.items()))
     all_results_from_worker = {k: v for i, (k, v) in enumerate(all_results_from_worker.items()) if i < NNN}
     out__shared.put((best_result, all_results_from_worker))
@@ -131,10 +134,15 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
     else:
         data_cache = None
         one_dataset_filename = None
-        prices_2 = copy.deepcopy(use_this_df)
+        prices_2 = copy.deepcopy(use_this_df[colname].values)
     # Precompute energy thresholds to avoid repeated np.arange calls
     energy_thresholds = np.arange(0.95, 1.0, 0.1) if fast_result else np.arange(0.5, 1.0, 0.01)
-    max_train = range(min_train, min_train + 10) if fast_result else range(min_train, len(prices_2) - length_step_back - length_prediction_in_training)
+    max_train = len(prices_2) - length_step_back - length_prediction_in_training
+    if max_train > 4000:
+        print(f"*****************************  Setting max_train to 4000")
+        max_train = 4000
+    # print(f"{max_train=}")
+    max_train = range(min_train, min_train + 10) if fast_result else range(min_train, max_train)
     # print(f"Computing {len(algorithms_to_run)*len(max_train)*len(energy_thresholds)} configuration")
     all_results_collected = {}
     if multi_threaded:
@@ -159,6 +167,9 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
                     use_cases.append({'the_algo_name': the_algo.__name__, 'the_algo_index': the_algo_index,
                                       'prices': x_series, 'y_series': y_series, 'n_predict': length_prediction_in_training,
                                       'energy_threshold': round(energy_threshold, 2), 'length_train_data': one_length_train_data})
+        # use_cases = use_cases[:999]
+        # print(f"Got {len(use_cases)} use_cases")
+        # _nb_workers =1
         # Search
         use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
         out__shared = [Queue(1) for k in range(0, _nb_workers)]
@@ -326,8 +337,6 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
         the_algo = FOURIER_ALGO_REGISTRY[the_algo_index]
         energy_threshold  = best_result[f'{the_algo.__name__}']['energy_threshold']
         length_train_data = best_result[f'{the_algo.__name__}']['length_train_data']
-        # with open(one_dataset_filename, 'rb') as f:
-        #     data_cache = pickle.load(f)
         prices = copy.deepcopy(prices_2)
         assert len(prices) > length_train_data + length_step_back + length_prediction_for_forecast
         x_series = prices[len(prices) - length_train_data - length_step_back:]
