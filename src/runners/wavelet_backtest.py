@@ -163,6 +163,8 @@ def main(args):
             display_tqdm=False,
             strategy_for_exit=exit_strategy,
             n_models_to_keep=n_models_to_keep,
+            q_min_filter=3,
+            q_max_filter=97,
             threshold_for_shape_similarity=threshold_for_shape_similarity,
             verbose=verbose,
         )
