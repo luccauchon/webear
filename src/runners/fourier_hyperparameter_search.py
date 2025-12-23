@@ -28,42 +28,68 @@ from utils import str2bool, transform_path, get_filename_for_dataset, DATASET_AV
 from runners.fourier_backtest import main as fourier_backtest
 from tqdm import tqdm
 import time
+from skopt import gp_minimize
+from skopt.space import Integer
+from skopt.utils import use_named_args
+import numpy as np
 
 
 def main(args):
-    ticker   = args.ticker
-    col      = args.col
-    col_name = (col, ticker)
+    ticker = args.ticker
+    col = args.col
     dataset_id = args.dataset_id
     n_forecast_length = args.n_forecast_length
     number_of_step_back = args.step_back_range
     show_n_top_configurations = 5
     verbose = args.verbose
 
-    experiences, results = [], []
-    for n_forecast_length_in_training in (1,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,):
-        for n_forecasts in (19,):  # Nombre de modèles à conserver
-            experiences.append({'n_forecast_length_in_training': n_forecast_length_in_training,
-                                'n_forecasts': n_forecasts})
-    for one_experience in tqdm(experiences):
+    # Define search space
+    space = [
+        Integer(1, 99, name='n_forecast_length_in_training'),
+        Integer(1, 99, name='n_forecasts')  # adjust upper bound as needed
+    ]
+
+    # Keep track of results
+    results = []
+
+    @use_named_args(space)
+    def objective(n_forecast_length_in_training, n_forecasts):
         configuration = Namespace(
             col=col,
             dataset_id=dataset_id,
             n_forecast_length=n_forecast_length,
-            n_forecast_length_in_training=one_experience['n_forecast_length_in_training'],
-            n_forecasts=one_experience['n_forecasts'],
+            n_forecast_length_in_training=n_forecast_length_in_training,
+            n_forecasts=n_forecasts,
             step_back_range=number_of_step_back,
             save_to_disk=False,
             ticker=ticker,
-            verbose=verbose)
+            verbose=verbose
+        )
         result = fourier_backtest(configuration)
-        # Save config + result
+        success_rate = result['success_rate']
+
+        # Store full result for later analysis
         results.append({
-            'config': configuration,
+            'config': copy.deepcopy(configuration),
             'result': result,
-            'success_rate': result['success_rate']
+            'success_rate': success_rate
         })
-    # Sort by success_rate descending
+
+        # skopt *minimizes*, so return negative success rate
+        return -success_rate
+
+    # Run Bayesian optimization
+    print("🚀 Starting Bayesian optimization with scikit-optimize...")
+    n_calls = 30  # number of evaluations (adjust as needed)
+    res2 = gp_minimize(
+        func=objective,
+        dimensions=space,
+        n_calls=n_calls,
+        random_state=42,
+        verbose=False
+    )
+
+    # Sort top results by success rate (descending)
     top_results = sorted(results, key=lambda x: x['success_rate'], reverse=True)[:show_n_top_configurations]
 
     # Nice output
@@ -72,11 +98,11 @@ def main(args):
     print("=" * 60)
     for i, res in enumerate(top_results, 1):
         cfg = res['config']
-        sr = res['success_rate'] / 100.
+        sr = res['success_rate'] / 100.0
         print(f"{i}. Success Rate: {sr:.2%}")
         print(f"   • Forecast Length (training): {cfg.n_forecast_length_in_training}")
-        print(f"   • Forecast Length : {n_forecast_length}")
-        print(f"   • Number of Forecasts (# models used to aggregate): {cfg.n_forecasts}")
+        print(f"   • Forecast Length: {n_forecast_length}")
+        print(f"   • Number of Forecasts: {cfg.n_forecasts}")
         print("-" * 60)
 
 
