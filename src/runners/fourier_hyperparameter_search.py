@@ -41,8 +41,8 @@ def main(args):
     verbose = args.verbose
 
     experiences, results = [], []
-    for n_forecast_length_in_training in (1,2,3,4,5,6,7,8,9,10,15,20,30):
-        for n_forecasts in (19,29,39,59,69,77,88,111,211,322):  # Nombre de modèles à conserver
+    for n_forecast_length_in_training in (1,3,5,8,9,10,20,30):
+        for n_forecasts in (19,39,69,77,88,111,211,322):  # Nombre de modèles à conserver
             experiences.append({'n_forecast_length_in_training': n_forecast_length_in_training,
                                 'n_forecasts': n_forecasts})
     for one_experience in tqdm(experiences):
