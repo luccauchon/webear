@@ -55,9 +55,8 @@ def main(args):
             step_back_range=number_of_step_back,
             save_to_disk=False,
             ticker=ticker,
-            verbose=False)
+            verbose=verbose)
         result = fourier_backtest(configuration)
-        print(result)
         # Save config + result
         results.append({
             'config': configuration,
