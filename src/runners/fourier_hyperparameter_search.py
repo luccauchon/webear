@@ -37,12 +37,12 @@ def main(args):
     dataset_id = args.dataset_id
     n_forecast_length = args.n_forecast_length
     number_of_step_back = args.step_back_range
-    show_n_top_configurations = 15
+    show_n_top_configurations = 5
     verbose = args.verbose
 
     experiences, results = [], []
-    for n_forecast_length_in_training in (1,3,5,9,10,30):
-        for n_forecasts in (19,77):  # Nombre de modèles à conserver
+    for n_forecast_length_in_training in (1,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,):
+        for n_forecasts in (19,):  # Nombre de modèles à conserver
             experiences.append({'n_forecast_length_in_training': n_forecast_length_in_training,
                                 'n_forecasts': n_forecasts})
     for one_experience in tqdm(experiences):
@@ -93,8 +93,8 @@ if __name__ == "__main__":
                         help="Dataset frequency: 'week', ... (default: month)")
     parser.add_argument('--n_forecast_length', type=int, default=1,
                         help="Number of future steps to forecast (default: 1)")
-    parser.add_argument('--step-back-range', type=int, default=999,
-                        help="Number of past steps to backtest (default: 999)")
+    parser.add_argument('--step-back-range', type=int, default=300,
+                        help="Number of past steps to backtest (default: 300)")
     parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
     main(args)
