@@ -116,9 +116,9 @@ def main(args):
         print("\n" + "=" * 60)
         print("BACKTESTING RESULTS SUMMARY".center(60))
         print("=" * 60)
-        print(f"Total backtest windows evaluated : {total_steps}")
-        print(f"Successful predictions (pred ≤ gt) : {successful_steps}")
-        print(f"Success rate                    : {success_rate:.1f}%")
+        print(f"Total backtest windows evaluated   : {total_steps}")
+        print(f"Successful predictions (pred < gt) : {successful_steps}")
+        print(f"Success rate                       : {success_rate:.1f}%")
 
         if step_back_success:
             print(f"\nSuccessful step-backs           : {sorted(step_back_success)}")
