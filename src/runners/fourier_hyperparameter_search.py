@@ -95,6 +95,6 @@ if __name__ == "__main__":
                         help="Number of future steps to forecast (default: 1)")
     parser.add_argument('--step-back-range', type=int, default=999,
                         help="Number of past steps to backtest (default: 999)")
-    parser.add_argument('--verbose', type=bool, default=False)
+    parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
     main(args)
