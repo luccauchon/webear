@@ -55,6 +55,7 @@ def main(args):
     sell_call_credit_spread = args.sell_call_credit_spread
     sell_put_credit_spread = args.sell_put_credit_spread
     assert (sell_call_credit_spread and not sell_put_credit_spread) or (not sell_call_credit_spread and sell_put_credit_spread)
+    assert 0 <= args.error_margin <= 0.99
     error_margin = 1. + args.error_margin if sell_call_credit_spread else 1. - args.error_margin
 
     # Define search space
