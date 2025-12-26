@@ -24,7 +24,7 @@ import argparse
 from argparse import Namespace
 import json
 import os
-from utils import str2bool, transform_path, get_filename_for_dataset, DATASET_AVAILABLE
+from utils import str2bool, transform_path, get_filename_for_dataset, DATASET_AVAILABLE, IS_RUNNING_ON_CASIR
 from runners.fourier_backtest import main as fourier_backtest
 from tqdm import tqdm
 import time
@@ -63,14 +63,14 @@ def main(args):
     results = []
 
     # Set time limit (e.g., 600 seconds = 10 minutes)
-    time_limit_seconds = 86400
+    time_limit_seconds = 84600
     start_time = time.time()
 
     @use_named_args(space)
     def objective(n_forecast_length_in_training, n_forecasts):
         # Check if time limit exceeded
         elapsed = time.time() - start_time
-        if elapsed > time_limit_seconds:
+        if elapsed > time_limit_seconds and IS_RUNNING_ON_CASIR:
             print(f"\n⏰ Time limit ({time_limit_seconds}s) exceeded. Stopping optimization.")
             raise TimeExceededError()
 
