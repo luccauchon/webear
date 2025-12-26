@@ -284,6 +284,8 @@ def entry(one_dataset_filename=None, one_dataset_id=None, length_prediction_for_
             print(f"  Energy threshold: {best_result[f'{the_algo.__name__}']['energy_threshold']:.2f}")
             print(f"  True: {best_result[f'{the_algo.__name__}']['y_true']}")
             print(f"  Pred: {best_result[f'{the_algo.__name__}']['y_pred']}")
+        if f'{the_algo.__name__}' not in best_result:
+            continue
         l_train  = best_result[f'{the_algo.__name__}']['length_train_data']
         prices   = best_result[f'{the_algo.__name__}']['x_series']
         n_pred   = best_result[f'{the_algo.__name__}']['n_predict']
