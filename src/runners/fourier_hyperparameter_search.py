@@ -55,10 +55,10 @@ def main(args):
 
     # Define search space
     space = [
-        Integer(1, 199, name='n_forecast_length_in_training'),
-        Integer(1, 199, name='n_forecasts')  # adjust upper bound as needed
+        Integer(1, 299, name='n_forecast_length_in_training'),
+        Integer(1, 299, name='n_forecasts')  # adjust upper bound as needed
     ]
-    n_calls = int(0.1 * 199*199)  # 10% of the space ?
+    n_calls = int(0.1 * 299*299)  # 10% of the space ?
     # Keep track of results
     results = []
 
@@ -82,6 +82,9 @@ def main(args):
             n_forecasts=n_forecasts,
             step_back_range=number_of_step_back,
             save_to_disk=False,
+            scale_forecast=0.98,
+            success_if_pred_lt_gt=True,
+            success_if_pred_gt_gt=False,
             ticker=ticker,
             verbose=verbose
         )
@@ -97,8 +100,8 @@ def main(args):
 
         # skopt *minimizes*, so return negative success rate
         return -success_rate
-
-    print(f"🚀 Starting Bayesian optimization (time limit: {time_limit_seconds}s)...")
+    if IS_RUNNING_ON_CASIR:
+        print(f"🚀 Starting Bayesian optimization (time limit: {time_limit_seconds}s)...")
 
     try:
         res2 = gp_minimize(
@@ -149,6 +152,9 @@ if __name__ == "__main__":
                         help="Number of future steps to forecast (default: 1)")
     parser.add_argument('--step-back-range', type=int, default=300,
                         help="Number of past steps to backtest (default: 300)")
+    parser.add_argument("--scale_forecast", type=float, default=0.98)
+    parser.add_argument("--success_if_pred_lt_gt", type=str2bool, default=True)
+    parser.add_argument("--success_if_pred_gt_gt", type=str2bool, default=False)
     parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
     main(args)
