@@ -52,6 +52,10 @@ def main(args):
     number_of_step_back = args.step_back_range
     show_n_top_configurations = 5
     verbose = args.verbose
+    sell_call_credit_spread = args.sell_call_credit_spread
+    sell_put_credit_spread = args.sell_put_credit_spread
+    assert (sell_call_credit_spread and not sell_put_credit_spread) or (not sell_call_credit_spread and sell_put_credit_spread)
+    error_margin = 1. + args.error_margin if sell_call_credit_spread else 1. - args.error_margin
 
     # Define search space
     space = [
@@ -82,9 +86,9 @@ def main(args):
             n_forecasts=n_forecasts,
             step_back_range=number_of_step_back,
             save_to_disk=False,
-            scale_forecast=0.98,
-            success_if_pred_lt_gt=True,
-            success_if_pred_gt_gt=False,
+            scale_forecast=error_margin,
+            success_if_pred_lt_gt=sell_put_credit_spread,
+            success_if_pred_gt_gt=sell_call_credit_spread,
             ticker=ticker,
             verbose=verbose
         )
@@ -152,9 +156,9 @@ if __name__ == "__main__":
                         help="Number of future steps to forecast (default: 1)")
     parser.add_argument('--step-back-range', type=int, default=300,
                         help="Number of past steps to backtest (default: 300)")
-    parser.add_argument("--scale_forecast", type=float, default=0.98)
-    parser.add_argument("--success_if_pred_lt_gt", type=str2bool, default=True)
-    parser.add_argument("--success_if_pred_gt_gt", type=str2bool, default=False)
+    parser.add_argument("--error_margin", type=float, default=0.)
+    parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
+    parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
     main(args)
