@@ -67,14 +67,14 @@ def main(args):
     results = []
 
     # Set time limit (e.g., 600 seconds = 10 minutes)
-    time_limit_seconds = 84600
+    time_limit_seconds = args.time_limit_seconds
     start_time = time.time()
 
     @use_named_args(space)
     def objective(n_forecast_length_in_training, n_forecasts):
         # Check if time limit exceeded
         elapsed = time.time() - start_time
-        if elapsed > time_limit_seconds and IS_RUNNING_ON_CASIR:
+        if elapsed > time_limit_seconds != -1:
             print(f"\n⏰ Time limit ({time_limit_seconds}s) exceeded. Stopping optimization.")
             raise TimeExceededError()
 
@@ -104,9 +104,10 @@ def main(args):
 
         # skopt *minimizes*, so return negative success rate
         return -success_rate
-    if IS_RUNNING_ON_CASIR:
+    if time_limit_seconds != -1:
         print(f"🚀 Starting Bayesian optimization (time limit: {time_limit_seconds}s)...")
-
+    else:
+        print(f"🚀 Starting Bayesian optimization...")
     try:
         res2 = gp_minimize(
             func=objective,
@@ -159,6 +160,8 @@ if __name__ == "__main__":
     parser.add_argument("--error_margin", type=float, default=0.)
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
+    parser.add_argument('--time_limit_seconds', type=int, default=-1,
+                        help="Number of seconds before stopping optimization (default: -1)")
     parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
     main(args)
