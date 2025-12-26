@@ -38,7 +38,9 @@ def main(args):
     n_forecast_length = args.n_forecast_length
     n_forecast_length_in_training = args.n_forecast_length_in_training
     number_of_step_back = args.step_back_range
-    scale_forcast = args.scale_forecast
+    scale_forecast = args.scale_forecast
+    scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
+    assert scale_factor_for_ground_truth >= 0.
     success_for_put_credit_spread = args.success_if_pred_lt_gt
     success_for_call_credit_spread = args.success_if_pred_gt_gt
     verbose = args.verbose
@@ -107,13 +109,15 @@ def main(args):
                                     'mean_forecast': mean_forecast, 'forecasts': forecasts}})
     step_back_success = []
     for the_step_back, one_result in results.items():
-        gt   = one_result['gt'][-1]
-        pred = one_result['mean_forecast'][-1]*scale_forcast
+        gt       = one_result['gt'][-1]
+        gt_lower = gt * (1 - scale_factor_for_ground_truth)
+        gt_upper = gt * (1 + scale_factor_for_ground_truth)
+        pred = one_result['mean_forecast'][-1]*scale_forecast
         if success_for_put_credit_spread:
-            if pred <= gt:
+            if gt_lower <= pred < gt:
                 step_back_success.append(the_step_back)
         if success_for_call_credit_spread:
-            if pred >= gt:
+            if gt < pred <= gt_upper:
                 step_back_success.append(the_step_back)
 
     # --- Final Results Summary ---
@@ -169,6 +173,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--save_to_disk", type=str2bool, default=False)
     parser.add_argument("--scale_forecast", type=float, default=0.98)
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.04)
     parser.add_argument("--success_if_pred_lt_gt", type=str2bool, default=True)
     parser.add_argument("--success_if_pred_gt_gt", type=str2bool, default=False)
     parser.add_argument('--step-back-range', type=int, default=5,
