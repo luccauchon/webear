@@ -76,10 +76,6 @@ def main(args):
            (not sell_call_credit_spread and sell_put_credit_spread), \
            "Exactly one of sell_call_credit_spread or sell_put_credit_spread must be True."
 
-    # Validate and compute error margin scaling factor
-    assert 0 <= args.error_margin <= 0.99, "Error margin must be between 0 and 0.99."
-    error_margin = 1. + args.error_margin if sell_call_credit_spread else 1. - args.error_margin
-
     # Define Bayesian optimization search space:
     # - n_forecast_length_in_training: how many steps the model uses during training
     # - n_forecasts: number of forecast attempts per backtest window
@@ -208,11 +204,6 @@ if __name__ == "__main__":
                         help="Number of historical windows to backtest over (default: 300)")
 
     # Options strategy parameters
-    parser.add_argument("--error_margin", type=float, default=0.0,
-                        help="Relative buffer (0.0 to 0.99) to widen the success condition. "
-                             "For calls: success if pred > actual * (1 + margin). "
-                             "For puts: success if pred < actual * (1 - margin).")
-
     parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.04,
                         help="Defines the zone where the prediction becomes a success.")
 
