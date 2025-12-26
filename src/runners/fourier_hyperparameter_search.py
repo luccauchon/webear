@@ -11,7 +11,7 @@ from multiprocessing import freeze_support
 from argparse import Namespace
 import numpy as np
 import matplotlib.pyplot as plt
-
+import argparse
 # Third-party optimization library
 from skopt import gp_minimize
 from skopt.space import Integer, Real
