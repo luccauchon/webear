@@ -55,10 +55,10 @@ def main(args):
 
     # Define search space
     space = [
-        Integer(1, 99, name='n_forecast_length_in_training'),
-        Integer(1, 99, name='n_forecasts')  # adjust upper bound as needed
+        Integer(1, 199, name='n_forecast_length_in_training'),
+        Integer(1, 199, name='n_forecasts')  # adjust upper bound as needed
     ]
-    n_calls = int(0.1 * 99*99)  # 10% of the space ?
+    n_calls = int(0.1 * 199*199)  # 10% of the space ?
     # Keep track of results
     results = []
 

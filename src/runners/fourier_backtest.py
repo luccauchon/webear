@@ -104,7 +104,7 @@ def main(args):
                                     'mean_forecast': mean_forecast, 'forecasts': forecasts}})
     step_back_success = []
     for the_step_back, one_result in results.items():
-        gt = one_result['gt'][-1]
+        gt   = one_result['gt'][-1]
         pred = one_result['mean_forecast'][-1]*.98
         if pred <= gt:
             step_back_success.append(the_step_back)
