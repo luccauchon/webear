@@ -84,8 +84,8 @@ def main(args):
     # - n_forecast_length_in_training: how many steps the model uses during training
     # - n_forecasts: number of forecast attempts per backtest window
     space = [
-        Integer(1, 299, name='n_forecast_length_in_training'),
-        Integer(1, 299, name='n_forecasts'),
+        Integer(1, 99, name='n_forecast_length_in_training'),
+        Integer(1, 99, name='n_forecasts'),
         Real(-2., 2., name='scale_factor'),
     ]
 
