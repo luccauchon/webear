@@ -90,7 +90,7 @@ def main(args):
             success_if_pred_lt_gt=sell_put_credit_spread,
             success_if_pred_gt_gt=sell_call_credit_spread,
             ticker=ticker,
-            verbose=False
+            verbose=verbose,
         )
 
         # Run backtest
@@ -113,13 +113,11 @@ def main(args):
 
     # Set timeout (None if no limit)
     timeout = args.time_limit_seconds if args.time_limit_seconds != -1 else None
-    if verbose:
-        print(f"🚀 Starting Bayesian optimization with Optuna (timeout: {timeout}s)...")
+    print(f"🚀 Starting Bayesian optimization with Optuna (timeout: {timeout}s)...")
     try:
         study.optimize(objective, timeout=timeout)
     except KeyboardInterrupt:
-        if verbose:
-            print("\n⏹️ Optimization interrupted by user.")
+        print("\n⏹️ Optimization interrupted by user.")
 
     # Map trial number to trial state
     trial_state_map = {t.number: t.state for t in study.trials}
@@ -130,19 +128,19 @@ def main(args):
     ]
 
     top_results = sorted(filtered_results, key=lambda x: x['success_rate'], reverse=True)[:show_n_top_configurations]
-    if verbose:
-        print("\n" + "=" * 60)
-        print(f"🏆 TOP {show_n_top_configurations} CONFIGURATIONS BY SUCCESS RATE")
-        print("=" * 60)
-        for i, res in enumerate(top_results, 1):
-            cfg = res['config']
-            sr = res['success_rate'] / 100.0  # convert from percentage
-            print(f"{i}. Success Rate: {sr:.2%}")
-            print(f"   • Forecast Length (training): {cfg.n_forecast_length_in_training}")
-            print(f"   • Forecast Length (evaluation): {n_forecast_length}")
-            print(f"   • Number of Forecasts: {cfg.n_forecasts}")
-            print(f"   • Scale Factor: {cfg.scale_forecast:.4f}")
-            print("-" * 60)
+
+    print("\n" + "=" * 60)
+    print(f"🏆 TOP {show_n_top_configurations} CONFIGURATIONS BY SUCCESS RATE")
+    print("=" * 60)
+    for i, res in enumerate(top_results, 1):
+        cfg = res['config']
+        sr = res['success_rate'] / 100.0  # convert from percentage
+        print(f"{i}. Success Rate: {sr:.2%}")
+        print(f"   • Forecast Length (training): {cfg.n_forecast_length_in_training}")
+        print(f"   • Forecast Length (evaluation): {n_forecast_length}")
+        print(f"   • Number of Forecasts: {cfg.n_forecasts}")
+        print(f"   • Scale Factor: {cfg.scale_forecast:.4f}")
+        print("-" * 60)
 
     sys.exit(0)
 
