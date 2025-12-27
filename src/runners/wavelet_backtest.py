@@ -132,12 +132,13 @@ def main(args):
         print(f"Backtest strategy    : {backtest_strategy}")
         if backtest_strategy in ['warrior']:
             print(f"Warrior spread       : {warrior_spread}")
-            print(f"Warrior GT scale     : {warrior_gt_scale_factor}")
+            print(f"Warrior GT range     : {warrior_gt_range_for_success}")
+            print(f"Warrior Pred X       : {warrior_pred_scale_factor}")
         print("="*50)
 
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
     results_for_warrior = {}
-    for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
+    for step_back in range(1, number_of_step_back + 1) if not verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
         if len(master_data_cache) < step_back + n_forecast_length + n_forecast_length_in_training:
             continue
@@ -450,7 +451,7 @@ if __name__ == "__main__":
                         help="Tolerance band around ground truth (determine the upper/lower bound).")
 
     parser.add_argument('--warrior_pred_scale_factor', type=float, default=0.,
-                        help="Multiply againts the prediction.")
+                        help="Multiply the prediction with this factor.")
 
     parser.add_argument('--use_last_week_only', action='store_true',
                         help="Only run backtests during the last week of each month (requires weekly data).")
