@@ -74,8 +74,20 @@ def compute_and_print_stats_for_fomo_strategy(data, using_quantized=False):
         print(f"{m:<12} {pct_gt:<25.2f} {pct_lt:<25.2f} {pct_in:<25.2f} {count_in} / {len(truths)}")
 
 
-
+# --- Main Backtesting Function ---
 def main(args):
+    """
+    Execute the main backtesting loop based on the selected strategy.
+
+    Loads historical data, iteratively simulates trading decisions over a rolling window,
+    and aggregates performance metrics (success rates, coverage, etc.).
+
+    Parameters:
+    -----------
+    args : argparse.Namespace
+        Parsed command-line arguments.
+    """
+    # Unpack arguments for clarity
     backtest_strategy = args.backtest_strategy
     ticker = args.ticker
     col = args.col
@@ -89,6 +101,11 @@ def main(args):
     exit_strategy = args.strategy_for_exit
     threshold_for_shape_similarity = args.threshold_for_shape_similarity
     verbose = args.verbose
+    warrior_spread = args.warrior_spread
+    warrior_gt_range_for_success = args.warrior_gt_range_for_success
+    assert 0 <= warrior_gt_range_for_success <= 0.1
+    warrior_pred_scale_factor = args.warrior_pred_scale_factor
+    assert -0.1 <= warrior_pred_scale_factor <= 0.1
     use_last_week_only=args.use_last_week_only
     one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
     with open(one_dataset_filename, 'rb') as f:
@@ -96,25 +113,30 @@ def main(args):
     master_data_cache = copy.deepcopy(master_data_cache[ticker])
     master_data_cache = copy.deepcopy(master_data_cache.sort_index())
     # --- Parameter Summary ---
-    print("\n" + "="*50)
-    print("BACKTESTING PARAMETERS SUMMARY".center(50))
-    print("="*50)
-    print(f"Ticker               : {ticker}")
-    print(f"Column               : {col}")
-    print(f"Dataset Frequency    : {dataset_id}")
-    print(f"Forecast Length      : {n_forecast_length}")
-    print(f"Forecast Length Train: {n_forecast_length_in_training}")
-    print(f"N models to keep     : {n_models_to_keep}")
-    print(f"T Shape Similarity   : {threshold_for_shape_similarity}")
-    print(f"Thresholds (EP)      : {thresholds_ep}")
-    print(f"Step-Back Range      : {number_of_step_back}")
-    print(f"Data File            : {one_dataset_filename}")
-    print(f"Exit strategy        : {exit_strategy}")
-    print(f"Last week of month   : {use_last_week_only}")
-    print(f"Backtest strategy    : {backtest_strategy}")
-    print("="*50)
-    # input("Press Enter to start backtesting...")
+    if verbose:
+        print("\n" + "="*50)
+        print("BACKTESTING PARAMETERS SUMMARY".center(50))
+        print("="*50)
+        print(f"Ticker               : {ticker}")
+        print(f"Column               : {col}")
+        print(f"Dataset Frequency    : {dataset_id}")
+        print(f"Forecast Length      : {n_forecast_length}")
+        print(f"Forecast Length Train: {n_forecast_length_in_training}")
+        print(f"N models to keep     : {n_models_to_keep}")
+        print(f"T Shape Similarity   : {threshold_for_shape_similarity}")
+        print(f"Thresholds (EP)      : {thresholds_ep}")
+        print(f"Step-Back Range      : {number_of_step_back}")
+        print(f"Data File            : {one_dataset_filename}")
+        print(f"Exit strategy        : {exit_strategy}")
+        print(f"Last week of month   : {use_last_week_only}")
+        print(f"Backtest strategy    : {backtest_strategy}")
+        if backtest_strategy in ['warrior']:
+            print(f"Warrior spread       : {warrior_spread}")
+            print(f"Warrior GT scale     : {warrior_gt_scale_factor}")
+        print("="*50)
+
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
+    results_for_warrior = {}
     for step_back in range(1, number_of_step_back + 1) if verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
         if len(master_data_cache) < step_back + n_forecast_length + n_forecast_length_in_training:
@@ -168,8 +190,13 @@ def main(args):
             threshold_for_shape_similarity=threshold_for_shape_similarity,
             verbose=verbose,
         )
+
+        # Run wavelet forecasting and get trading instruction
         user_instruction, misc_returned = wavelet_realtime_entry_point(configuration)
+
+        # --- Strategy-Specific Evaluation ---
         if backtest_strategy == 'stratego':
+            # Parse operation from wavelet model
             operation_data = user_instruction['op']
             operation_request, operation_success, operation_missed_threshold = operation_data['action'], False, 0
             operation_aborted = False
@@ -295,6 +322,24 @@ def main(args):
                                             'last_value_forecasted__m3_5': last_value_forecasted_lower_side*0.965,
                                             'last_value_forecasted__m4_0': last_value_forecasted_lower_side*0.960,
                                             'last_value_forecasted__m5_0': last_value_forecasted_lower_side*0.950,},})
+        if backtest_strategy in ['warrior']:
+            mean_forecast, q10_forecast, q90_forecast = misc_returned['mean_forecast'], misc_returned['q10_forecast'], misc_returned['q90_forecast']
+            assert len(mean_forecast) == n_forecast_length and len(mean_forecast) == len(the_ground_truth)
+            assert len(q10_forecast) == n_forecast_length and len(mean_forecast) == len(the_ground_truth)
+            assert len(q90_forecast) == n_forecast_length and len(mean_forecast) == len(the_ground_truth)
+            win = False
+            pred     = mean_forecast[-1] * (1 + warrior_pred_scale_factor)
+            gt       = the_ground_truth[-1]
+            gt_lower = gt * (1 - warrior_gt_range_for_success)
+            gt_upper = gt * (1 + warrior_gt_range_for_success)
+            if warrior_spread == 'call':  # Call Credit Spread
+                if gt < pred <= gt_upper:
+                    win = True
+            if warrior_spread == 'put':  # Put Credit Spread
+                if  gt_lower <= pred < gt:
+                    win = True
+            results_for_warrior.update({step_back: win})
+
     # --- Summary Report ---
     if backtest_strategy == 'stratego':
         total_runs = len(performance)
@@ -340,36 +385,75 @@ def main(args):
             print(f"  Failures : {call_failures} ({call_failures/call_runs*100:.1f}%)")
     if backtest_strategy in ['fomo', 'fomo_quantilized']:
         compute_and_print_stats_for_fomo_strategy(performance, using_quantized=backtest_strategy=='fomo_quantilized')
+    if backtest_strategy in ['warrior']:
+        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v]), len(results_for_warrior)
+        success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
+        if verbose:
+            print(f"\nWarrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+        return {'success_rate': success_rate}
+
+    return None
 
 
+# --- CLI Entry Point ---
 if __name__ == "__main__":
-    freeze_support()
-    parser = argparse.ArgumentParser(description="Run Wavelet-based stock backtesting.")
-    parser.add_argument('--backtest_strategy', type=str, default='stratego', choices=['stratego', 'fomo', 'fomo_quantilized'],
-                        help="Backtest strategy to use")
+    freeze_support()  # Required for multiprocessing on Windows
+
+    parser = argparse.ArgumentParser(description="Run Wavelet-based Stock Backtesting.")
+
+    parser.add_argument('--backtest_strategy', type=str, default='stratego',
+                        choices=['stratego', 'fomo', 'fomo_quantilized', 'warrior'],
+                        help="Strategy to backtest: 'stratego' (options trading), "
+                             "'fomo' (point forecast), 'fomo_quantilized' (quantile-based), "
+                             "or 'warrior' (tolerance-band trading).")
+
     parser.add_argument('--ticker', type=str, default='^GSPC',
-                        help="Yahoo Finance ticker symbol (default: ^GSPC)")
+                        help="Yahoo Finance ticker symbol (e.g., '^GSPC' for S&P 500).")
+
     parser.add_argument('--col', type=str, default='Close',
                         choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'],
-                        help="Price column to use (default: Close)")
+                        help="Price/volume column to forecast.")
+
     parser.add_argument('--dataset_id', type=str, default='day',
                         choices=DATASET_AVAILABLE,
-                        help="Dataset frequency: 'day', 'week', ... (default: day)")
+                        help="Data frequency: e.g., 'day' for daily, 'week' for weekly.")
+
     parser.add_argument('--n_forecast_length', type=int, default=2,
-                        help="Number of future steps to forecast (default: 2)")
-    parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
-    parser.add_argument("--n_models_to_keep", type=int, default=60)
-    parser.add_argument("--threshold_for_shape_similarity", type=float, default=0)
+                        help="Number of future time steps to predict (e.g., 2 days ahead).")
+
+    parser.add_argument("--n_forecast_length_in_training", type=int, default=4,
+                        help="Number of recent steps used during model training.")
+
+    parser.add_argument("--n_models_to_keep", type=int, default=60,
+                        help="Maximum number of wavelet models to retain during optimization.")
+
+    parser.add_argument("--threshold_for_shape_similarity", type=float, default=0.0,
+                        help="Minimum similarity threshold to select historical patterns (0 = no filter).")
+
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)",
-                        help="Thresholds for entry/exit as a string tuple (default: '(0.0125, 0.0125)')")
+                        help="Entry/exit sensitivity thresholds as a tuple string, e.g., '(0.01, 0.02)'.")
+
     parser.add_argument('--step-back-range', type=int, default=5,
-                        help="Number of past steps to backtest (default: 5)")
+                        help="Number of historical time windows to simulate (rolling backtest depth).")
+
     parser.add_argument('--strategy_for_exit', type=str, default="hold_until_the_end_with_roll",
                         choices=['hold_until_the_end', 'hold_until_the_end_with_roll'],
-                        help="")
-    parser.add_argument('--verbose', type=bool, default=False)
-    parser.add_argument('--use_last_week_only', type=bool, default=False)
+                        help="How to manage position exit: with or without re-rolling.")
+
+    parser.add_argument('--verbose', action='store_true',
+                        help="Enable detailed per-step logging (disables progress bar).")
+
+    parser.add_argument('--warrior_spread', type=str, default='call', choices=['call', 'put'],
+                        help="For 'warrior' strategy: type of credit spread to simulate.")
+
+    parser.add_argument('--warrior_gt_range_for_success', type=float, default=0.04,
+                        help="Tolerance band around ground truth (determine the upper/lower bound).")
+
+    parser.add_argument('--warrior_pred_scale_factor', type=float, default=0.,
+                        help="Multiply againts the prediction.")
+
+    parser.add_argument('--use_last_week_only', action='store_true',
+                        help="Only run backtests during the last week of each month (requires weekly data).")
 
     args = parser.parse_args()
-
     main(args)

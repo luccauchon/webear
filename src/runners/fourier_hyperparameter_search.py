@@ -175,6 +175,8 @@ def main(args):
         print(f"   • Number of Forecasts: {cfg.n_forecasts}")
         print("-" * 60)
 
+    sys.exit(0)
+
 
 # ==============================
 # CLI Argument Parsing

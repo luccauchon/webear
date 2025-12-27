@@ -1,22 +1,3 @@
-# Standard imports
-import pickle
-import copy
-import json
-import os
-import sys
-import time
-import signal
-from datetime import datetime
-from multiprocessing import freeze_support
-from argparse import Namespace
-import numpy as np
-import matplotlib.pyplot as plt
-import argparse
-
-# Third-party optimization library
-import optuna
-from optuna.trial import TrialState
-
 # Local custom modules
 try:
     from version import sys__name, sys__version
@@ -28,29 +9,19 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
-# Import domain-specific components
-from optimizers.fourier_decomposition import entry as entry_of__fourier_decomposition
-from constants import FYAHOO__OUTPUTFILENAME_WEEK, OUTPUT_DIR_FOURIER_BASED_STOCK_FORECAST
-from utils import (
-    str2bool,
-    transform_path,
-    get_filename_for_dataset,
-    DATASET_AVAILABLE,
-    IS_RUNNING_ON_CASIR
-)
-from runners.fourier_backtest import main as fourier_backtest
-from tqdm import tqdm
+from multiprocessing import freeze_support
+from argparse import Namespace
+import numpy as np
+import argparse
+from utils import DATASET_AVAILABLE, str2bool
+import copy
+from runners.wavelet_backtest import main as wavelet_backtest
+# Third-party optimization library
+import optuna
+from optuna.trial import TrialState
 
 
-# ==============================
-# Main Optimization Routine
-# ==============================
 def main(args):
-    """
-    Runs Bayesian optimization with Optuna over Fourier-based stock forecasting configurations
-    to maximize the success rate of options-like strategies (credit spreads).
-    """
     ticker = args.ticker
     col = args.col
     dataset_id = args.dataset_id
@@ -59,12 +30,12 @@ def main(args):
     show_n_top_configurations = 5
     verbose = args.verbose
     scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
-
+    assert  0 <= scale_factor_for_ground_truth <= 0.25
     sell_call_credit_spread = args.sell_call_credit_spread
     sell_put_credit_spread = args.sell_put_credit_spread
     assert (sell_call_credit_spread and not sell_put_credit_spread) or \
            (not sell_call_credit_spread and sell_put_credit_spread), \
-           "Exactly one of sell_call_credit_spread or sell_put_credit_spread must be True."
+        "Exactly one of sell_call_credit_spread or sell_put_credit_spread must be True."
 
     # Storage for all evaluated configurations and results
     results = []
@@ -74,27 +45,35 @@ def main(args):
         # Sample hyperparameters
         n_forecast_length_in_training = trial.suggest_int('n_forecast_length_in_training', 1, 99)
         n_forecasts = trial.suggest_int('n_forecasts', 1, 99)
-        scale_factor = trial.suggest_float('scale_factor', -2.0, 2.0)
+        scale_factor = trial.suggest_float('scale_factor', -0.02, 0.02)
+        warrior_spread = 'call'
 
         # Build configuration namespace
         configuration = Namespace(
+            backtest_strategy='warrior',
             col=col,
             dataset_id=dataset_id,
+            exit_strategy=None,
             n_forecast_length=n_forecast_length,
             n_forecast_length_in_training=n_forecast_length_in_training,
-            n_forecasts=n_forecasts,
+            n_models_to_keep=n_forecasts,
             step_back_range=number_of_step_back,
             save_to_disk=False,
-            scale_forecast=scale_factor,
-            scale_factor_for_ground_truth=scale_factor_for_ground_truth,
+            strategy_for_exit='hold_until_the_end_with_roll',
             success_if_pred_lt_gt=sell_put_credit_spread,
             success_if_pred_gt_gt=sell_call_credit_spread,
+            thresholds_ep='(0.0125, 0.0125)',
+            threshold_for_shape_similarity=0,
             ticker=ticker,
-            verbose=False
+            use_last_week_only=False,
+            verbose=False,
+            warrior_gt_range_for_success=scale_factor_for_ground_truth,
+            warrior_pred_scale_factor=scale_factor,
+            warrior_spread=warrior_spread,
         )
 
         # Run backtest
-        result = fourier_backtest(configuration)
+        result = wavelet_backtest(configuration)
         success_rate = result['success_rate']
 
         # Store full result for post-analysis
@@ -139,20 +118,17 @@ def main(args):
             sr = res['success_rate'] / 100.0  # convert from percentage
             print(f"{i}. Success Rate: {sr:.2%}")
             print(f"   • Forecast Length (training): {cfg.n_forecast_length_in_training}")
-            print(f"   • Forecast Length (evaluation): {n_forecast_length}")
-            print(f"   • Number of Forecasts: {cfg.n_forecasts}")
-            print(f"   • Scale Factor: {cfg.scale_forecast:.4f}")
+            print(f"   • Number of Forecasts: {cfg.n_models_to_keep}")
+            print(f"   • Scale Factor: {cfg.warrior_pred_scale_factor:.4f}")
             print("-" * 60)
 
     sys.exit(0)
 
-# ==============================
-# CLI Argument Parsing
-# ==============================
+
 if __name__ == "__main__":
     freeze_support()
 
-    parser = argparse.ArgumentParser(description="Run Bayesian optimization on Fourier-based stock backtest using Optuna.")
+    parser = argparse.ArgumentParser(description="Run Bayesian optimization on Wavelet-based stock backtest using Optuna.")
 
     parser.add_argument('--ticker', type=str, default='^GSPC')
     parser.add_argument('--col', type=str, default='Close',
