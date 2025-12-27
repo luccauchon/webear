@@ -140,7 +140,7 @@ if __name__ == "__main__":
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,
                         help="Max time in seconds; -1 = no limit")
-    parser.add_argument('--verbose', type=str2bool, default=True)
+    parser.add_argument('--verbose', type=str2bool, default=False)
 
     args = parser.parse_args()
     main(args)
