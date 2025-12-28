@@ -74,7 +74,7 @@ def main(args):
         # Sample hyperparameters
         n_forecast_length_in_training = trial.suggest_int('n_forecast_length_in_training', 1, 99)
         n_forecasts = trial.suggest_int('n_forecasts', 1, 99)
-        scale_factor = 1.01 # trial.suggest_float('scale_factor', -2.0, 2.0)
+        scale_factor = trial.suggest_float('scale_factor', 1., 1.05) if sell_call_credit_spread else trial.suggest_float('scale_factor', 0.95, 1.)
 
         # Build configuration namespace
         configuration = Namespace(
