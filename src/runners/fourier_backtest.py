@@ -41,7 +41,7 @@ def main(args):
     scale_forecast = args.scale_forecast
     assert 0.95 <= scale_forecast <= 1.05
     scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
-    assert scale_factor_for_ground_truth >= 0.
+    assert 0. <= scale_factor_for_ground_truth <= 0.2
     success_for_put_credit_spread = args.success_if_pred_lt_gt
     success_for_call_credit_spread = args.success_if_pred_gt_gt
     verbose = args.verbose
