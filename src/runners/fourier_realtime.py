@@ -60,7 +60,11 @@ def get_prediction_for_the_future_with_fourier_algo(_best_setup, _length_predict
         assert len(lower) == n_pred
     x = forecast[:-n_pred].copy()
     assert len(x) == length_train_data
-    return prediction, x, lower, upper
+    # prediction: prediction
+    # x_series: ground truth data
+    # x: prediction on "x_series"
+    assert x.shape == x_series.shape
+    return prediction, x_series, lower, upper, x
 
 
 def main(args):
@@ -95,7 +99,7 @@ def main(args):
         with open(one_dataset_filename, 'rb') as f:
             data_cache = pickle.load(f)
 
-        _, base_close_values, _, _ = get_prediction_for_the_future_with_fourier_algo(
+        _, base_close_values, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
             _best_setup=first_best,
             _data_cache=copy.deepcopy(data_cache),
             _col=args.col,
@@ -103,7 +107,7 @@ def main(args):
             _ticker=args.ticker
         )
     else:
-        _, base_close_values, _, _ = get_prediction_for_the_future_with_fourier_algo(
+        _, base_close_values, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
             _best_setup=first_best,
             _length_prediction=args.length_prediction_for_the_future,
             prices = args.use_this_df[(args.col, args.ticker)].values.astype(np.float64)
@@ -116,7 +120,7 @@ def main(args):
     for i in range(args.n_forecasts):
         setup = all_sorted[i]
         if args.use_this_df is None or 0 == len(args.use_this_df):
-            pred, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
+            pred, _, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
                 _best_setup=setup,
                 _data_cache=copy.deepcopy(data_cache),
                 _col=args.col,
@@ -124,7 +128,7 @@ def main(args):
                 _ticker=args.ticker
             )
         else:
-            pred, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
+            pred, _, _, _, _ = get_prediction_for_the_future_with_fourier_algo(
                 _best_setup=setup,
                 _length_prediction=args.length_prediction_for_the_future,
                 prices=args.use_this_df[(args.col, args.ticker)].values.astype(np.float64)

@@ -19,6 +19,8 @@ from runners.wavelet_backtest import main as wavelet_backtest
 # Third-party optimization library
 import optuna
 from optuna.trial import TrialState
+import warnings
+warnings.filterwarnings("ignore", message="overflow encountered in matmul")
 
 
 def main(args):
