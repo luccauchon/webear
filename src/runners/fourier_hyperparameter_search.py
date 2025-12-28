@@ -82,7 +82,7 @@ def main(args):
     space = [
         Integer(1, 99, name='n_forecast_length_in_training'),
         Integer(1, 99, name='n_forecasts'),
-        Real(-2., 2., name='scale_factor'),
+        Real(1., 1.05, name='scale_factor') if sell_call_credit_spread else Real(0.95, 1., name='scale_factor'),
     ]
 
     # Number of evaluations: ~10% of full grid (299x299 ≈ 89k → ~8.9k calls → too high!)
