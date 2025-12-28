@@ -39,7 +39,7 @@ def main(args):
     n_forecast_length_in_training = args.n_forecast_length_in_training
     number_of_step_back = args.step_back_range
     scale_forecast = args.scale_forecast
-    assert 0.95 <= scale_forecast <= 1.05
+    assert 0.95 <= scale_forecast <= 1.05, f"{scale_forecast}"
     scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
     assert 0. <= scale_factor_for_ground_truth <= 0.2
     success_for_put_credit_spread = args.success_if_pred_lt_gt
