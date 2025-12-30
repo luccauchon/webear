@@ -16,6 +16,7 @@ import argparse
 # Third-party optimization library
 import optuna
 from optuna.trial import TrialState
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Local custom modules
 try:
@@ -141,7 +142,6 @@ def main(args):
         print(f"   • Number of Forecasts: {cfg.n_forecasts}")
         print(f"   • Scale Factor: {cfg.scale_forecast:.4f}")
         print("-" * 60)
-
     sys.exit(0)
 
 # ==============================

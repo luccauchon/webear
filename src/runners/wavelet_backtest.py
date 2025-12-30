@@ -103,7 +103,7 @@ def main(args):
     verbose = args.verbose
     warrior_spread = args.warrior_spread
     warrior_gt_range_for_success = args.warrior_gt_range_for_success
-    assert 0 <= warrior_gt_range_for_success <= 0.1
+    assert 0 <= warrior_gt_range_for_success <= 0.2
     warrior_pred_scale_factor = args.warrior_pred_scale_factor
     assert -0.1 <= warrior_pred_scale_factor <= 0.1
     use_last_week_only=args.use_last_week_only

@@ -32,7 +32,7 @@ def main(args):
     show_n_top_configurations = 5
     verbose = args.verbose
     scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
-    assert  0 <= scale_factor_for_ground_truth <= 0.25
+    assert  0 <= scale_factor_for_ground_truth <= 0.2
     sell_call_credit_spread = args.sell_call_credit_spread
     sell_put_credit_spread = args.sell_put_credit_spread
     assert (sell_call_credit_spread and not sell_put_credit_spread) or \
@@ -47,7 +47,6 @@ def main(args):
         # Sample hyperparameters
         n_forecast_length_in_training = trial.suggest_int('n_forecast_length_in_training', 1, 99)
         n_forecasts = trial.suggest_int('n_forecasts', 1, 99)
-        scale_factor = trial.suggest_float('scale_factor', -0.02, 0.02)
         warrior_spread = 'call'
 
         # Build configuration namespace
@@ -70,7 +69,7 @@ def main(args):
             use_last_week_only=False,
             verbose=verbose,
             warrior_gt_range_for_success=scale_factor_for_ground_truth,
-            warrior_pred_scale_factor=scale_factor,
+            warrior_pred_scale_factor=0.,
             warrior_spread=warrior_spread,
         )
 
@@ -137,7 +136,7 @@ if __name__ == "__main__":
                         choices=DATASET_AVAILABLE[1:])
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument('--step-back-range', type=int, default=300)
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.04)
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,
