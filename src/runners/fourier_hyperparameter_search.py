@@ -82,12 +82,12 @@ def main(args):
     space = [
         Integer(1, 99, name='n_forecast_length_in_training'),
         Integer(1, 99, name='n_forecasts'),
-        Real(1., 1.05, name='scale_factor') if sell_call_credit_spread else Real(0.95, 1., name='scale_factor'),
+        # Real(1., 1.05, name='scale_factor') if sell_call_credit_spread else Real(0.95, 1., name='scale_factor'),
     ]
 
     # Number of evaluations: ~10% of full grid (299x299 ≈ 89k → ~8.9k calls → too high!)
     # ⚠️ Consider reducing this or using a smarter n_calls strategy
-    n_calls = int(0.1 * 299 * 299)
+    n_calls = int(0.1 * 99 * 99)
 
     # Storage for all evaluated configurations and results
     results = []
@@ -98,7 +98,7 @@ def main(args):
 
     # Objective function for Bayesian optimization (to be minimized)
     @use_named_args(space)
-    def objective(n_forecast_length_in_training, n_forecasts, scale_factor):
+    def objective(n_forecast_length_in_training, n_forecasts): #,scale_factor):
         """Evaluates a configuration by running a Fourier backtest and returning -success_rate."""
         # Enforce time limit
         elapsed = time.time() - start_time
@@ -115,7 +115,7 @@ def main(args):
             n_forecasts=n_forecasts,
             step_back_range=number_of_step_back,
             save_to_disk=False,
-            scale_forecast=scale_factor,  # adjusts prediction thresholds
+            scale_forecast=1.,  # scale_factor # --> adjusts prediction thresholds
             scale_factor_for_ground_truth=scale_factor_for_ground_truth,
             success_if_pred_lt_gt=sell_put_credit_spread,   # success if pred < actual (for puts)
             success_if_pred_gt_gt=sell_call_credit_spread,  # success if pred > actual (for calls)
@@ -206,7 +206,7 @@ if __name__ == "__main__":
                         help="Number of historical windows to backtest over (default: 300)")
 
     # Options strategy parameters
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.04,
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1,
                         help="Defines the zone where the prediction becomes a success.")
 
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True,
