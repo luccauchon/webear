@@ -46,7 +46,7 @@ def main(args):
         """Optuna objective: returns -success_rate (to be minimized)."""
         # Sample hyperparameters
         n_forecast_length_in_training = trial.suggest_int('n_forecast_length_in_training', 1, 99)
-        n_forecasts = trial.suggest_int('n_forecasts', 1, 99)
+        n_forecasts = trial.suggest_int('n_forecasts', 19, 99)  # To avoid "D:\PyCharmProjects\webear\src\optimizers\wavelet_opt.py:453: RuntimeWarning: Mean of empty slice"
         warrior_spread = 'call'
 
         # Build configuration namespace

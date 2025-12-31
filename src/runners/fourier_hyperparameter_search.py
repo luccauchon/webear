@@ -81,7 +81,7 @@ def main(args):
     # - n_forecasts: number of forecast attempts per backtest window
     space = [
         Integer(1, 99, name='n_forecast_length_in_training'),
-        Integer(1, 99, name='n_forecasts'),
+        Integer(9, 99, name='n_forecasts'),
         # Real(1., 1.05, name='scale_factor') if sell_call_credit_spread else Real(0.95, 1., name='scale_factor'),
     ]
 
