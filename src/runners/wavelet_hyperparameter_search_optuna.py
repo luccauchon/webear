@@ -39,7 +39,8 @@ def main(args):
     assert (sell_call_credit_spread and not sell_put_credit_spread) or \
            (not sell_call_credit_spread and sell_put_credit_spread), \
         "Exactly one of sell_call_credit_spread or sell_put_credit_spread must be True."
-
+    if dataset_id == 'day':
+        assert number_of_step_back <= 4000
     # Storage for all evaluated configurations and results
     results = []
 
@@ -134,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument('--col', type=str, default='Close',
                         choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
     parser.add_argument('--dataset_id', type=str, default='month',
-                        choices=DATASET_AVAILABLE[1:])
+                        choices=DATASET_AVAILABLE)
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument('--step-back-range', type=int, default=300)
     parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.2)
