@@ -159,7 +159,7 @@ if __name__ == "__main__":
                         choices=DATASET_AVAILABLE[1:])
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument('--step-back-range', type=int, default=300)
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.04)
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,

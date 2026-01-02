@@ -41,6 +41,8 @@ def main(args):
         "Exactly one of sell_call_credit_spread or sell_put_credit_spread must be True."
     if dataset_id == 'day':
         assert number_of_step_back <= 4000
+    warrior_pred_scale_factor = args.prediction_scale_factor
+    assert (sell_call_credit_spread and warrior_pred_scale_factor <= 0) or (sell_put_credit_spread and warrior_pred_scale_factor >= 0)
     # Storage for all evaluated configurations and results
     results = []
 
@@ -71,7 +73,7 @@ def main(args):
             use_last_week_only=False,
             verbose=verbose,
             warrior_gt_range_for_success=scale_factor_for_ground_truth,
-            warrior_pred_scale_factor=0.,
+            warrior_pred_scale_factor=warrior_pred_scale_factor,
             warrior_spread=warrior_spread,
         )
 
@@ -137,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_id', type=str, default='month',
                         choices=DATASET_AVAILABLE)
     parser.add_argument('--n_forecast_length', type=int, default=1)
+    parser.add_argument("--prediction_scale_factor", type=float, default=0.)
     parser.add_argument('--step-back-range', type=int, default=300)
     parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.2)
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
