@@ -46,7 +46,7 @@ MY_TICKERS = [
     "ASST", "AVGO", "BAC", "BBAI", "BRK-B", "CLF", "COST", "CRM", "DBRG", "GOOGL",
     "GOOG", "HD", "HIMS", "HOOD", "HYG", "INTC", "JPM", "LLY", "MA", "META", "MSFT",
     "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT", "RKT", "RSP",
-    "SOFI", "TSLA", "TSM", "UUUU", "U", "V", "WMT"
+    "SOFI", "SNDK", "TSLA", "TSM", "UUUU", "U", "V", "WMT"
 ]
 
 MY_TICKERS_SMALL_SET = [
