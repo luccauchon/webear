@@ -42,7 +42,7 @@ def main(args):
     if dataset_id == 'day':
         assert number_of_step_back <= 4000
     warrior_pred_scale_factor = args.prediction_scale_factor
-    assert (sell_call_credit_spread and warrior_pred_scale_factor <= 0) or (sell_put_credit_spread and warrior_pred_scale_factor >= 0)
+
     # Storage for all evaluated configurations and results
     results = []
 
