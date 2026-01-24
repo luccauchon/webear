@@ -334,9 +334,11 @@ def main(args):
             gt_lower = gt * (1 - warrior_gt_range_for_success)
             gt_upper = gt * (1 + warrior_gt_range_for_success)
             if warrior_spread == 'call':  # Call Credit Spread
+                assert warrior_pred_scale_factor >= 0
                 if gt < pred <= gt_upper:
                     win = True
             if warrior_spread == 'put':  # Put Credit Spread
+                assert warrior_pred_scale_factor <= 0
                 if  gt_lower <= pred < gt:
                     win = True
             results_for_warrior.update({step_back: win})
