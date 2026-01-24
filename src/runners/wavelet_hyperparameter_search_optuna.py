@@ -25,8 +25,15 @@ warnings.filterwarnings("ignore", message="invalid value encountered in matmul")
 
 
 def main(args):
+    # --- Nicely print the arguments ---
+    print("🔧 Arguments:")
+    for arg, value in vars(args).items():
+        print(f"    {arg:.<40} {value}")
+    print("-" * 80, flush=True)
+
     ticker = args.ticker
     col = args.col
+    backtest_strategy = args.backtest_strategy
     dataset_id = args.dataset_id
     n_forecast_length = args.n_forecast_length
     number_of_step_back = args.step_back_range
@@ -51,11 +58,14 @@ def main(args):
         # Sample hyperparameters
         n_forecast_length_in_training = trial.suggest_int('n_forecast_length_in_training', 1, 99)
         n_forecasts = trial.suggest_int('n_forecasts', 19, 99)  # To avoid "D:\PyCharmProjects\webear\src\optimizers\wavelet_opt.py:453: RuntimeWarning: Mean of empty slice"
-        warrior_spread = 'call'
+        if sell_put_credit_spread:
+            warrior_spread = 'put'
+        else:
+            warrior_spread = 'call'
 
         # Build configuration namespace
         configuration = Namespace(
-            backtest_strategy='warrior',
+            backtest_strategy=backtest_strategy,
             col=col,
             dataset_id=dataset_id,
             exit_strategy=None,
@@ -65,8 +75,6 @@ def main(args):
             step_back_range=number_of_step_back,
             save_to_disk=False,
             strategy_for_exit='hold_until_the_end_with_roll',
-            success_if_pred_lt_gt=sell_put_credit_spread,
-            success_if_pred_gt_gt=sell_call_credit_spread,
             thresholds_ep='(0.0125, 0.0125)',
             threshold_for_shape_similarity=0,
             ticker=ticker,
@@ -141,7 +149,8 @@ if __name__ == "__main__":
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument("--prediction_scale_factor", type=float, default=0.)
     parser.add_argument('--step-back-range', type=int, default=300)
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.2)
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
+    parser.add_argument("--backtest_strategy", type=str, default="warrior")
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,
