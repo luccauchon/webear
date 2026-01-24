@@ -39,8 +39,8 @@ def main(args):
     number_of_step_back = args.step_back_range
     show_n_top_configurations = 5
     verbose = args.verbose
-    scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
-    assert  0 <= scale_factor_for_ground_truth <= 0.2
+    range_factor_for_ground_truth = args.range_factor_for_ground_truth
+    assert  0 <= range_factor_for_ground_truth <= 0.2
     sell_call_credit_spread = args.sell_call_credit_spread
     sell_put_credit_spread = args.sell_put_credit_spread
     assert (sell_call_credit_spread and not sell_put_credit_spread) or \
@@ -80,7 +80,7 @@ def main(args):
             ticker=ticker,
             use_last_week_only=False,
             verbose=verbose,
-            warrior_gt_range_for_success=scale_factor_for_ground_truth,
+            warrior_gt_range_for_success=range_factor_for_ground_truth,
             warrior_pred_scale_factor=warrior_pred_scale_factor,
             warrior_spread=warrior_spread,
         )
@@ -150,7 +150,8 @@ if __name__ == "__main__":
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument("--prediction_scale_factor", type=float, default=0.)
     parser.add_argument('--step-back-range', type=int, default=300)
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
+    parser.add_argument("--range_factor_for_ground_truth", type=float, default=0.1,
+                        help="Zone where we consider the prediction a success. For Put: [gt*(1-v) ,gt] and for Call: [gt, gt*(1+v)]")
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,
