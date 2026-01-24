@@ -144,13 +144,13 @@ if __name__ == "__main__":
     parser.add_argument('--ticker', type=str, default='^GSPC')
     parser.add_argument('--col', type=str, default='Close',
                         choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
+    parser.add_argument("--backtest_strategy", type=str, default="warrior")
     parser.add_argument('--dataset_id', type=str, default='month',
                         choices=DATASET_AVAILABLE)
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument("--prediction_scale_factor", type=float, default=0.)
     parser.add_argument('--step-back-range', type=int, default=300)
     parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
-    parser.add_argument("--backtest_strategy", type=str, default="warrior")
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,
