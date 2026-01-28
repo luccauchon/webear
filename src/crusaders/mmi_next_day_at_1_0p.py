@@ -54,7 +54,7 @@ CONFIGURATION_FOR_MMI_NEXT_DAY = Namespace(
 def main(args):
     if args.verbose:
         print("\n" + "=" * 80)
-        print(f"Historical performance of 74.42%")
+        print(f"Historical performance of 74.42% (overall accuracy)")
         print("=" * 80)
     config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_DAY)
     config_dict.update({'ticker': args.ticker,'col': args.col,'verbose': args.verbose,})

@@ -11,6 +11,7 @@ except ImportError:
 
 from datetime import datetime, timedelta
 from runners.MMI_realtime import main as MMI_realtime
+from utils import get_weekday_name
 
 
 def main(configuration):
@@ -21,6 +22,7 @@ def main(configuration):
     if result['signal'] == "Choppy":
         lower, upper = result['prices_threshold'][0], result['prices_threshold'][1]
         if configuration.verbose:
+            print(f"Last price in data frame: {result['date'].strftime('%Y-%m-%d')}  ({get_weekday_name(result['date'])})")
             print(f"[{result['signal']}] For the closing price on {prediction_date}, price should be between {lower:0.0f} and {upper:0.0f}. Actual price: {result['prices']:0.0f}.")
     return result
 
