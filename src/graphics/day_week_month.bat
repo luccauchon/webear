@@ -1,0 +1,5 @@
+call conda activate PY312_HT
+python plotly_close_oriented.py --dataset=day   --limit=10
+python plotly_close_oriented.py --dataset=week  --limit=10
+python plotly_close_oriented.py --dataset=month --limit=10
+pause

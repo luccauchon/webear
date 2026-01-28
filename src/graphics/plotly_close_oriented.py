@@ -35,6 +35,8 @@ def main(args):
     df.columns = ['Open', 'High', 'Low', 'Close']
     df.index.name = 'Date'
     df.sort_index(inplace=True)  # Ensure chronological order
+    assert df.index.is_monotonic_increasing
+    assert df.index[-1] > df.index[0]
 
     # Limit to last N points
     df = copy.deepcopy(df.iloc[-LIMIT:])
