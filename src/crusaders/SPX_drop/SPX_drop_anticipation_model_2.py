@@ -291,7 +291,12 @@ def entry():
     score += Category_B_Technical_Conditions()
     print("\n" + "="*60 + "\n")
     score += category_C_Macro_Liquidity()
-
+    str_response = (("\n" + "=" * 60) + f"FINAL REGIME SCORE: {score}/6"+
+                    "| Score    | Meaning                                          | Action for credit put spreads |"+
+                    "| -------- | ------------------------------------------------ | ----------------------------- |"+
+                    "| **0–3**  | Low drop probability                             | Enter normal position         |"+
+                    "| **4–6**  | Medium risk                                      | Reduce size 30–50%            |"+
+                    "| **7–10** | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
     print("\n" + "="*60)
     print(f"FINAL REGIME SCORE: {score}/6")
     print("| Score    | Meaning                                          | Action for credit put spreads |")
@@ -301,6 +306,7 @@ def entry():
     print("| **7–10** | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
     # Note: max possible is 6 (2+3+1? Actually A=3, B=3, C=2 → max=8)
     # But your table says up to 10. Clarify if needed.
+    return score, str_response
 
 
 if __name__ == "__main__":

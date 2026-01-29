@@ -130,12 +130,12 @@ def compute_signals_for_date(my_df, asof, spx_series, rsp_series, dfii10_series,
     # ---- Category A ----
     A_pts = 0
     # 50d breadth
-    pct50, _ = compute_percent_above_mas_from_parquet(copy.deepcopy(my_df), window=config['ma_windows']['short'], asof=asof)
+    pct50, _ = compute_percent_above_mas_from_parquet(my_df, window=config['ma_windows']['short'], asof=asof)
     if pct50 is not None and pct50 < config['category_a_threshold_pct']:
         A_pts += 1
 
     # 200d breadth
-    pct200, _ = compute_percent_above_mas_from_parquet(copy.deepcopy(my_df), window=config['ma_windows']['long'], asof=asof)
+    pct200, _ = compute_percent_above_mas_from_parquet(my_df, window=config['ma_windows']['long'], asof=asof)
     if pct200 is not None and pct200 < 60.0:
         A_pts += 1
 
