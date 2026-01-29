@@ -3,6 +3,24 @@ import pywt
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 import copy
+import warnings
+
+# Ignore specifically the overflow warning from sklearn's matmul
+warnings.filterwarnings(
+    action='ignore',
+    category=RuntimeWarning,
+    message='overflow encountered in matmul'
+)
+warnings.filterwarnings(
+    action='ignore',
+    category=RuntimeWarning,
+    message='invalid value encountered in matmul'
+)
+warnings.filterwarnings(
+    action='ignore',
+    category=RuntimeWarning,
+    message='overflow encountered in square'
+)
 
 
 def forecast_coeff_series(coeff, forecast_len, lag=10):
@@ -19,8 +37,8 @@ def forecast_coeff_series(coeff, forecast_len, lag=10):
         return np.concatenate([coeff, np.full(forecast_len, coeff[-1])])
 
     # Build lagged features
-    X = np.array([coeff[j - lag:j] for j in range(lag, n)])
-    y = coeff[lag:]
+    X = np.array([coeff[j - lag:j] for j in range(lag, n)]).astype('float64')
+    y = coeff[lag:].astype('float64')
 
     model = LinearRegression()
     model.fit(X, y)
@@ -43,7 +61,7 @@ def wavelet_multi_forecast__version_2(
         level=3,
         forecast_detail_levels=(3, 2)  # which detail levels to forecast: cD3, cD2
 ):
-    prices = np.asarray(prices)
+    prices = np.asarray(prices).astype('float64')
     n = len(prices)
 
     # Normalize
