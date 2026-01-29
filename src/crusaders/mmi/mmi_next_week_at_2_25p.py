@@ -5,7 +5,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent
+    parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
@@ -14,38 +14,39 @@ from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 import copy
 import numpy as np
 from datetime import datetime, timedelta
-from crusaders.mmi_next import main as MMI_next
+from crusaders.mmi.mmi_next import main as MMI_next
 
 
-# PY312_HT) D:\PyCharmProjects\webear\src\runners>python MMI_hyperparameter_search_optuna.py --n_trials=1000 --step_back_range=10000 --return_threshold_min=0.01 --return_threshold_max=0.01 --lookahead_min=1 --lookahead_max=1
+# PY312_HT) D:\PyCharmProjects\webear\src\runners>python MMI_hyperparameter_search_optuna.py --dataset_id=week --step_back_range=10000 --n_trials=30000 --return_threshold_min=0.02 --return_threshold_max=0.02 --lookahead_min=1 --lookahead_max=1
 # 🔧 Arguments:
 #     ticker.................................. ^GSPC
 #     col..................................... Close
-#     dataset_id.............................. day
+#     dataset_id.............................. week
 #     step_back_range......................... 10000
-#     n_trials................................ 1000
-#     return_threshold_min.................... 0.01
-#     return_threshold_max.................... 0.01
+#     n_trials................................ 30000
+#     return_threshold_min.................... 0.02
+#     return_threshold_max.................... 0.02
 #     mmi_trend_max_min....................... 1
 #     mmi_trend_max_max....................... 500
 #     mmi_period_min.......................... 1
 #     mmi_period_max.......................... 500
 #     sma_period_min.......................... 1
 #     sma_period_max.......................... 500
+#     metric.................................. overall_accuracy
 #     lookahead_min........................... 1
 #     lookahead_max........................... 1
 # --------------------------------------------------------------------------------
-# Best trial: 14. Best value: 0.7442: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [22:02:37<00:00, 79.36s/it]
+# Best trial: 136. Best value: 0.724608: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 30000/30000 [92:36:07<00:00, 11.11s/it]
 #
 # ===== BEST PARAMETERS =====
-# {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.01, 'MMI_TREND_MAX': 28, 'MMI_PERIOD': 346, 'SMA_PERIOD': 4}
-# Best Score: 0.74420000
-CONFIGURATION_FOR_MMI_NEXT_DAY = Namespace(
-        dataset_id="day", older_dataset=None,
-        mmi_period=346,
-        mmi_trend_max=28,
-        sma_period=4,
-        return_threshold=0.010,
+# {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.02, 'MMI_TREND_MAX': 26, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
+# Best Score: 0.72460824
+CONFIGURATION_FOR_MMI_NEXT_WEEEK = Namespace(
+        dataset_id="week", older_dataset=None,
+        mmi_period=2,
+        mmi_trend_max=26,
+        sma_period=1,
+        return_threshold=0.02,
         use_ema=False,
         verbose=False,
     )
@@ -54,10 +55,10 @@ CONFIGURATION_FOR_MMI_NEXT_DAY = Namespace(
 def main(args):
     if args.verbose:
         print("\n" + "=" * 80)
-        print(f"Historical performance of 74.42% (overall accuracy)")
+        print(f"Historical performance of 72.4608% (overall accuracy)")
         print("=" * 80)
-    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_DAY)
-    config_dict.update({'ticker': args.ticker,'col': args.col,'verbose': args.verbose,})
+    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_WEEEK)
+    config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, })
     configuration = Namespace(**config_dict)
     return MMI_next(configuration)
 

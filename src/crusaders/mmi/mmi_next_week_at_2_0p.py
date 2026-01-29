@@ -5,7 +5,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent
+    parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
@@ -14,7 +14,7 @@ from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 import copy
 import numpy as np
 from datetime import datetime, timedelta
-from crusaders.mmi_next import main as MMI_next
+from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # ===== BEST PARAMETERS =====

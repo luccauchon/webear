@@ -5,7 +5,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent
+    parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
@@ -14,7 +14,7 @@ from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 import copy
 import numpy as np
 from datetime import datetime, timedelta
-from crusaders.mmi_next import main as MMI_next
+from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # (PY312_HT) D:\PyCharmProjects\webear\src\runners>python MMI_hyperparameter_search_optuna.py --n_trials=5000 --step_back_range=10000 --return_threshold_min=0.015 --return_threshold_max=0.015 --lookahead_min=1 --lookahead_max=1 --dataset_id=day
