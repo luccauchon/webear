@@ -37,7 +37,7 @@ def main(args):
         print(f"Historical performance of 81.5148% (overall accuracy)")
         print("=" * 80)
     config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_WEEEK)
-    config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, })
+    config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, 'older_dataset': args.older_dataset})
     configuration = Namespace(**config_dict)
     return MMI_next(configuration)
 
@@ -46,6 +46,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
+    parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument('--verbose', type=str2bool, default=True)
     args = parser.parse_args()
     main(args)
