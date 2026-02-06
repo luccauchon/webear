@@ -16,13 +16,22 @@ from utils import get_weekday_name
 
 def main(configuration):
     result = MMI_realtime(configuration)
-    prediction_date = (result['date'] + timedelta(days=1)).strftime('%Y-%m-%d')
-    if configuration.dataset_id == "week":
+    prediction_date = None
+    if configuration.dataset_id == "day":
+        prediction_date = (result['date'] + timedelta(days=1)).strftime('%Y-%m-%d')
+    elif configuration.dataset_id == "week":
         prediction_date = (result['date'] + timedelta(weeks=1)).strftime('%Y-%m-%d')
+    elif configuration.dataset_id == "month":
+        prediction_date = (result['date'] + timedelta(weeks=4)).strftime('%Y-%m-%d')
+    else:
+        assert False
     if result['signal'] == "Choppy":
         lower, upper = result['prices_threshold'][0], result['prices_threshold'][1]
         if configuration.verbose:
-            print(f"Last price in data frame: {result['date'].strftime('%Y-%m-%d')}  ({get_weekday_name(result['date'])})")
+            if configuration.dataset_id == "day":
+                print(f"Last price in data frame: {result['date'].strftime('%Y-%m-%d')}  ({get_weekday_name(result['date'])})")
+            else:
+                print(f"Last price in data frame: {result['date'].strftime('%Y-%m-%d')}")
             print(f"[{result['signal']}] For the closing price on {prediction_date}, price should be between {lower:0.0f} and {upper:0.0f}. Actual price: {result['prices']:0.0f}.")
     return result
 
