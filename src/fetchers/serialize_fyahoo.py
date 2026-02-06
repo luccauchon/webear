@@ -53,7 +53,7 @@ def entry(
         end_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
     if start_date is None:
         # Default to 1 year ago for hourly data, but overridden per section if needed
-        start_date = (today - timedelta(days=365)).strftime('%Y-%m-%d')
+        start_date = (today - timedelta(days=512)).strftime('%Y-%m-%d')
 
     tickers = sorted(list(set(MY_TICKERS if use_all_tickers else MY_TICKERS_SMALL_SET)), reverse=True)
 
