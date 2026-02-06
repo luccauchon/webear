@@ -39,7 +39,7 @@ def main(args):
     n_forecast_length_in_training = args.n_forecast_length_in_training
     number_of_step_back = args.step_back_range
     scale_forecast = args.scale_forecast
-    assert 0.95 <= scale_forecast <= 1.05, f"{scale_forecast}"
+    assert 0.90 <= scale_forecast <= 1.1, f"{scale_forecast}"
     scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
     assert 0. <= scale_factor_for_ground_truth <= 0.2
     success_for_put_credit_spread = args.success_if_pred_lt_gt
@@ -62,6 +62,8 @@ def main(args):
         print(f"Forecast Length      : {n_forecast_length}")
         print(f"Forecast Length Train: {n_forecast_length_in_training}")
         print(f"Step-Back Range      : {number_of_step_back}")
+        print(f"Lower/Upper GT bound : {scale_factor_for_ground_truth}")
+        print(f"Scale the prediction : {scale_forecast}")
     results = {}
     for step_back in range(1, number_of_step_back + 1) if not verbose else tqdm(range(1, number_of_step_back + 1)):
         t1 = time.time()
@@ -174,7 +176,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--save_to_disk", type=str2bool, default=False)
     parser.add_argument("--scale_forecast", type=float, default=1.)
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.04)
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
     parser.add_argument("--success_if_pred_lt_gt", type=str2bool, default=True)
     parser.add_argument("--success_if_pred_gt_gt", type=str2bool, default=False)
     parser.add_argument('--step-back-range', type=int, default=5,
