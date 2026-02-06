@@ -13,12 +13,19 @@ import pickle
 from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 import copy
 import numpy as np
+from datetime import datetime, timedelta
 
 
 def sma(prices, window):
     if len(prices) < window:
         return None
     return prices.rolling(window).mean().iloc[-1]
+
+
+def ema(prices, window):
+    if len(prices) < window:
+        return None
+    return prices.ewm(span=window, adjust=False).mean().iloc[-1]
 
 
 def mmi(prices, period):
@@ -62,9 +69,12 @@ def main(args):
     # =========================
     # Indicators
     # =========================
-    mmi_val    = mmi(close_prices, period=args.mmi_period)
-    ma_50      = sma(close_prices, args.sma_period)
-    ma_50_prev = sma(close_prices[:-1], args.sma_period)
+    mmi_val    = mmi(close_prices, period=int(args.mmi_period))
+    ma_50      = sma(close_prices, window=int(args.sma_period))
+    ma_50_prev = sma(close_prices[:-1], window=int(args.sma_period))
+    if args.use_ema:
+        ma_50      = ema(close_prices, window=int(args.sma_period))
+        ma_50_prev = ema(close_prices[:-1], window=int(args.sma_period))
     if mmi_val is None or ma_50 is None or ma_50_prev is None or 0 == len(close_prices):
         return {
         "date": close_prices.index[-1],
@@ -86,9 +96,10 @@ def main(args):
             signal = "Bull"
         elif close_prices.iloc[-1] < ma_50 and ma_slope < 0:
             signal = "Bear"
-    prices_threshold = (close_prices.iloc[-1] * (1 + -args.return_threshold), close_prices.iloc[-1] * (1 + args.return_threshold))
-    prices_threshold = (None, prices_threshold[1]) if signal == 'Bull' else prices_threshold
-    prices_threshold = (prices_threshold[0], None) if signal == 'Bear' else prices_threshold
+    assert args.return_threshold >= 0
+    prices_threshold = [close_prices.iloc[-1] * (1 + -args.return_threshold), close_prices.iloc[-1] * (1 + args.return_threshold)]
+    prices_threshold = [None, prices_threshold[1]] if signal == 'Bull' else prices_threshold
+    prices_threshold = [prices_threshold[0], None] if signal == 'Bear' else prices_threshold
     return {
         "date": close_prices.index[-1],
         "signal": signal,
@@ -109,8 +120,15 @@ if __name__ == "__main__":
     parser.add_argument("--mmi_trend_max", type=float, default=70)
     parser.add_argument("--return_threshold", type=float, default=0.01)
     parser.add_argument("--sma_period", type=float, default=50)
+    parser.add_argument('--use_ema', type=str2bool, default=False)
     parser.add_argument('--verbose', type=str2bool, default=True)
     args = parser.parse_args()
     result = main(args)
     if args.verbose:
         print(result)
+        prediction_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+        if args.dataset_id == "week":
+            prediction_date = (datetime.today() + timedelta(weeks=1)).strftime('%Y-%m-%d')
+        if result['signal'] == "Choppy":
+            lower, upper = result['prices_threshold'][0], result['prices_threshold'][1]
+            print(f"For {prediction_date}, price should be between {lower:0.2f} and {upper:0.2f}")

@@ -50,13 +50,15 @@ def main(args):
             mmi_trend_max=args.mmi_trend_max,
             sma_period=args.sma_period,
             return_threshold=args.return_threshold,
+            use_ema=args.use_ema,
             verbose=False,
         )
         _result       = MMI_realtime(configuration)
 
         close_col     = (args.col, args.ticker)
         close_prices  = past_df[close_col]
-        # print(f"{past_df.index[-1]} --> {future_df.index[args.look_ahead - 1]}")
+        # assert 1 == args.look_ahead
+        # print(f"\n{past_df.index[-1]} --> {future_df.index[args.look_ahead - 1]}")
         future_price  = future_df[close_col].iloc[args.look_ahead - 1]
         current_price = close_prices.iloc[-1]
         future_return = (future_price / current_price) - 1
@@ -68,29 +70,69 @@ def main(args):
             gt = "Choppy"
         _result.update({"ground_truth": gt,"return": future_return,})
         results.append(_result)
-    results_df = pd.DataFrame(results)
-    if 0 == len(results_df):
-        return 0, results_df
-    accuracy = (results_df.signal == results_df.ground_truth).mean()
-    return accuracy, results_df
+    _results_df = pd.DataFrame(results)
+    if 0 == len(_results_df):
+        return 0, _results_df
+    # Overall accuracy (unchanged)
+    overall_accuracy = (_results_df.signal == _results_df.ground_truth).mean()
+
+    # --- Accuracy when Ground Truth is "Bull" ---
+    bull_mask = _results_df.ground_truth == "Bull"
+    if bull_mask.any():
+        bull_accuracy = (_results_df.loc[bull_mask, 'signal'] == "Bull").mean()
+    else:
+        bull_accuracy = 0.0
+
+    # --- Accuracy when Ground Truth is "Bear" ---
+    bear_mask = _results_df.ground_truth == "Bear"
+    if bear_mask.any():
+        bear_accuracy = (_results_df.loc[bear_mask, 'signal'] == "Bear").mean()
+    else:
+        bear_accuracy = 0.0
+
+    # Optional: print or return detailed metrics
+    if args.verbose:
+        print(f"Overall Accuracy: {overall_accuracy:.4f} ({len(_results_df)}) samples")
+        print(f"Bull Accuracy (when GT=Bull): {bull_accuracy:.4f} ({bull_mask.sum()} samples)")
+        print(f"Bear Accuracy (when GT=Bear): {bear_accuracy:.4f} ({bear_mask.sum()} samples)")
+
+    # Return a dict or tuple with all metrics
+    metrics = {
+        'overall_accuracy': overall_accuracy,
+        'bull_accuracy': bull_accuracy,
+        'bear_accuracy': bear_accuracy,
+        'n_bull': bull_mask.sum(),
+        'n_bear': bear_mask.sum(),
+    }
+
+    return metrics, _results_df
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument("--ticker", type=str, default='^GSPC')
-    parser.add_argument("--col", type=str, default='Close')
-    parser.add_argument("--older_dataset", type=str, default="None")
-    parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
-    parser.add_argument("--look_ahead", type=int, default=1)
-    parser.add_argument("--mmi_period", type=int, default=100)
-    parser.add_argument("--mmi_trend_max", type=int, default=70)
-    parser.add_argument("--sma_period", type=int, default=50)
-    parser.add_argument("--return_threshold", type=float, default=0.01)
-    parser.add_argument('--step-back-range', type=int, default=5,
-                        help="Number of historical time windows to simulate (rolling backtest depth).")
-    parser.add_argument('--verbose', type=str2bool, default=True)
-    args = parser.parse_args()
-    accuracy, results_df = main(args)
-    if args.verbose:
-        print(accuracy)
+    if __name__ == "__main__":
+        parser = argparse.ArgumentParser(description="")
+        parser.add_argument("--ticker", type=str, default='^GSPC')
+        parser.add_argument("--col", type=str, default='Close')
+        parser.add_argument("--older_dataset", type=str, default="None")
+        parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
+        parser.add_argument("--look_ahead", type=int, default=1)
+        parser.add_argument("--mmi_period", type=int, default=100)
+        parser.add_argument("--mmi_trend_max", type=int, default=70)
+        parser.add_argument("--sma_period", type=int, default=50)
+        parser.add_argument('--use_ema', type=str2bool, default=False)
+        parser.add_argument("--return_threshold", type=float, default=0.01)
+        parser.add_argument('--step-back-range', type=int, default=5,
+                            help="Number of historical time windows to simulate (rolling backtest depth).")
+        parser.add_argument('--verbose', type=str2bool, default=True)
+        args = parser.parse_args()
+
+        metrics, results_df = main(args)
+
+        print("\nFinal Metrics:")
+        for k, v in metrics.items():
+            if isinstance(v, float):
+                print(f"  {k}: {v:.4f}")
+            else:
+                print(f"  {k}: {v}")
+        print("\nResults DataFrame:")
         print(results_df)

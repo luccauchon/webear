@@ -76,11 +76,13 @@ def main(args):
             return_threshold=RETURN_THRESHOLD,
             sma_period=SMA_PERIOD,
             step_back_range=step_back_range,
+            use_ema=False,
             verbose=False,
         )
 
         # Run backtest and return accuracy (to be maximized)
-        accuracy, results_df = MMI_backtest(configuration)
+        metrics, results_df = MMI_backtest(configuration)
+        accuracy = metrics[args.metric]
         return accuracy
 
     # Create and run the Optuna study
@@ -139,6 +141,10 @@ if __name__ == "__main__":
                         help="Minimum SMA period")
     parser.add_argument('--sma_period_max', type=int, default=500,
                         help="Maximum SMA period")
+
+    parser.add_argument('--metric', type=str, default='overall_accuracy',
+                        choices=['overall_accuracy', 'bull_accuracy', 'bear_accuracy'],
+                        help="Metric to optimize during Bayesian optimization")
 
     # LOOKAHEAD
     parser.add_argument('--lookahead_min', type=int, default=5, help="Min look-ahead steps")
