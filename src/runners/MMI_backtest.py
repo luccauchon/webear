@@ -51,6 +51,7 @@ def main(args):
             sma_period=args.sma_period,
             return_threshold=args.return_threshold,
             use_ema=args.use_ema,
+            keep_last_step=True,
             verbose=False,
         )
         _result       = MMI_realtime(configuration)
