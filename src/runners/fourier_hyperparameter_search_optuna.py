@@ -113,6 +113,15 @@ def main(args):
         # Optuna minimizes → return negative success rate
         return -success_rate
 
+    def early_stop_on_perfect_success(study, trial):
+        """
+        Callback to stop optimization when 100% success rate is achieved.
+        Objective returns -success_rate, so -100.0 = 100% success.
+        """
+        if study.best_value is not None and study.best_value <= -100.0 + 1e-6:
+            print(f"\n🎯 100% success rate achieved at trial #{trial.number}! Stopping optimization early...")
+            study.stop()
+
     # Create Optuna study
     study = optuna.create_study(direction='minimize', sampler=optuna.samplers.TPESampler(seed=42))
 
@@ -120,7 +129,7 @@ def main(args):
     timeout = args.time_limit_seconds if args.time_limit_seconds != -1 else None
     print(f"🚀 Starting Bayesian optimization with Optuna (timeout: {timeout}s)...")
     try:
-        study.optimize(objective, timeout=timeout)
+        study.optimize(objective, timeout=timeout, callbacks=[early_stop_on_perfect_success])
     except KeyboardInterrupt:
         print("\n⏹️ Optimization interrupted by user.")
 
@@ -163,7 +172,7 @@ if __name__ == "__main__":
                         choices=DATASET_AVAILABLE[1:])
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument('--step-back-range', type=int, default=300)
-    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
+    parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.06)
     parser.add_argument("--scale_factor_for_prediction", type=float, default=1.)
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
