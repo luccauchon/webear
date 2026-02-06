@@ -15,15 +15,16 @@ except:
 import pandas as pd
 import argparse
 import pickle
-from constants import FYAHOO__OUTPUTFILENAME_MONTH
+from utils import get_filename_for_dataset
 
-def main(ticker: str, year_threshold: int):
+
+def main(ticker: str, year_threshold: int, older_dataset: str):
     col = "Close"
     colname = (col, ticker)
-    filepath = FYAHOO__OUTPUTFILENAME_MONTH
 
     # Load data
-    with open(filepath, 'rb') as f:
+    one_dataset_filename = get_filename_for_dataset('month', older_dataset=None if str(args.older_dataset) == "None" else args.older_dataset)
+    with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
     df = data_cache[ticker].copy()
     df = df.sort_index()
@@ -112,5 +113,6 @@ if __name__ == "__main__":
         default="1950",
         help="Keep only the years equals and above"
     )
+    parser.add_argument("--older_dataset", type=str, default="None")
     args = parser.parse_args()
-    main(args.ticker, year_threshold=int(args.year))
+    main(ticker=args.ticker, year_threshold=int(args.year), older_dataset=args.older_dataset)

@@ -49,6 +49,7 @@ def conditional_next_return_stats_fast(
     direction="pos",
     delta_for_n_1_pct_change=0.0,
     delta_for_last_pct_change=0.0,
+    epsilon=0.,
 ):
     r = returns.astype(float)
 
@@ -56,9 +57,9 @@ def conditional_next_return_stats_fast(
         mask_pre = pd.Series(True, index=r.index)
     else:
         if direction == "pos":
-            sign_mask = r >= 0
+            sign_mask = r >= epsilon
         else:
-            sign_mask = r <= 0
+            sign_mask = r <= -epsilon
 
         # All previous n_consecutive satisfy sign
         mask_pre = (
@@ -115,6 +116,7 @@ def restricted_conditional_next_return_stats_fast(
     direction='pos',
     delta_for_n_1_pct_change=0.0,
     delta_for_last_pct_change=0.0,
+    epsilon=0.0,
 ):
     """
     Fast vectorized version. Avoids Python loops.
@@ -128,9 +130,9 @@ def restricted_conditional_next_return_stats_fast(
     else:
         # Sign condition
         if direction == "pos":
-            sign_ok = r >= 0
+            sign_ok = r >= epsilon
         else:
-            sign_ok = r <= 0
+            sign_ok = r <= -epsilon
 
         # Rolling window: all n_consecutive signs correct?
         mask_pre = sign_ok.rolling(n_consecutive).sum() == n_consecutive
@@ -168,7 +170,7 @@ def restricted_conditional_next_return_stats_fast(
 
 
 def restricted_conditional_next_return_stats(returns_series, n_consecutive=3, direction='pos',
-                                             delta_for_n_1_pct_change=0., delta_for_last_pct_change=0.):
+                                             delta_for_n_1_pct_change=0., delta_for_last_pct_change=0., epsilon=0.):
     """
     Analyze returns following N+1 consecutive positive/negative returns, given the realization of N consecutive positive/negative returns
     """
@@ -180,11 +182,11 @@ def restricted_conditional_next_return_stats(returns_series, n_consecutive=3, di
         window = returns_series.iloc[i - n_consecutive: i]
         assert len(window) == n_consecutive
         if direction == 'pos':
-            if (window >= 0).all():
+            if (window >= epsilon).all():
                 number_of_n_consecutive_step += 1
                 indexes.append((i - n_consecutive, i))
         else:
-            if (window <= 0).all():
+            if (window <= -epsilon).all():
                 number_of_n_consecutive_step += 1
                 indexes.append((i - n_consecutive, i))
 
@@ -222,7 +224,7 @@ def restricted_conditional_next_return_stats(returns_series, n_consecutive=3, di
 
 
 def conditional_next_return_stats(returns_series, n_consecutive=3, direction='pos',
-                                 delta_for_n_1_pct_change=0., delta_for_last_pct_change=0.):
+                                 delta_for_n_1_pct_change=0., delta_for_last_pct_change=0., epsilon=0):
     """
     Analyze returns following N consecutive positive/negative returns.
     """
@@ -231,14 +233,14 @@ def conditional_next_return_stats(returns_series, n_consecutive=3, direction='po
         window = returns_series.iloc[i - n_consecutive: i+1]
         assert len(window) == n_consecutive + 1
         if direction == 'pos':
-            if (window.iloc[:-1] >= 0).all():
+            if (window.iloc[:-1] >= epsilon).all():
                 if window.iloc[-1] >= delta_for_last_pct_change:
                     if np.prod(1 + window.iloc[:-1]) >= (1 + delta_for_n_1_pct_change) or n_consecutive == 0:
                         next_returns.append(window.iloc[-1])
                         pre_returns.append(window.iloc[:-1] if len(window.iloc[:-1]) > 0 else pd.Series([0]))
                         windows_accumulator.append(window)
         else:
-            if (window.iloc[:-1] <= 0).all():
+            if (window.iloc[:-1] <= -epsilon).all():
                 if window.iloc[-1] <= delta_for_last_pct_change:
                     if np.prod(1 + window.iloc[:-1]) <= (1 + delta_for_n_1_pct_change) or n_consecutive == 0:
                         next_returns.append(window.iloc[-1])
@@ -326,6 +328,7 @@ def new_main(args, bring_my_own_df=None):
             n_consecutive=NN,
             delta_for_n_1_pct_change=0.,
             delta_for_last_pct_change=delta,
+            epsilon=args.epsilon,
         )
         if debug_speeding:
             stats2 = conditional_next_return_stats(
@@ -334,6 +337,7 @@ def new_main(args, bring_my_own_df=None):
                 n_consecutive=NN,
                 delta_for_n_1_pct_change=0.,
                 delta_for_last_pct_change=delta,
+                epsilon=args.epsilon,
             )
             assert np.allclose(stats['count'], stats2['count'], atol=1)
             assert np.allclose(stats['total'], stats2['total'], atol=1)
@@ -346,12 +350,12 @@ def new_main(args, bring_my_own_df=None):
                                                                   direction=direction,
                                                                   n_consecutive=NN,
                                                                   delta_for_n_1_pct_change=0.,
-                                                                  delta_for_last_pct_change=small_delta, )
+                                                                  delta_for_last_pct_change=small_delta, epsilon=args.epsilon,)
                 stats4 = restricted_conditional_next_return_stats(_returns,
                                                                   direction=direction,
                                                                   n_consecutive=NN,
                                                                   delta_for_n_1_pct_change=0.,
-                                                                  delta_for_last_pct_change=small_delta, )
+                                                                  delta_for_last_pct_change=small_delta, epsilon=args.epsilon,)
                 if stats4['number_of_n_plus_one_consecutive_step'] == 0:
                     assert np.allclose(stats3['number_of_n_plus_one_consecutive_step'], stats4['number_of_n_plus_one_consecutive_step'], atol=1)
                     break
@@ -371,21 +375,21 @@ def new_main(args, bring_my_own_df=None):
                                                                                      direction=direction,
                                                                                      n_consecutive=NN,
                                                                                      delta_for_n_1_pct_change=0.,
-                                                                                     delta_for_last_pct_change=cond_delta, )
+                                                                                     delta_for_last_pct_change=cond_delta, epsilon=args.epsilon,)
                     cond_prob = restricted_stats['number_of_n_plus_one_consecutive_step'] / restricted_stats['number_of_n_consecutive_step'] if 0 != restricted_stats['number_of_n_plus_one_consecutive_step'] else 0
                     print(f"\tConditional Next {direction_label} is {cond_prob * 100:.1f}% with @delta of {cond_delta*100:.1f}%  "
                           f"({restricted_stats['number_of_n_plus_one_consecutive_step']}/{restricted_stats['number_of_n_consecutive_step']})")
                     if cond_prob*100. < 10:  # Below 10%, we stop
                         break
-            if stats['count'] > 0:
-                print(f"{'Next Return μ:':<20} {stats['mean']*100:+8.2f}%")
-                print(f"{'Next Return σ:':<20} {stats['std']*100:8.2f}%")
-                if 'pre_window_mean' in stats:
-                    print(f"{'Pre-Window μ:':<20} {stats['pre_window_mean']*100:+8.2f}%")
-                    print(f"{'Pre-Window σ:':<20} {stats['pre_window_std']*100:8.2f}%")
-            else:
-                print(f"{'Next Return μ:':<20} {'N/A':>8}")
-                print(f"{'Next Return σ:':<20} {'N/A':>8}")
+            # if stats['count'] > 0:
+            #     print(f"{'Next Return μ:':<20} {stats['mean']*100:+8.2f}%")
+            #     print(f"{'Next Return σ:':<20} {stats['std']*100:8.2f}%")
+            #     if 'pre_window_mean' in stats:
+            #         print(f"{'Pre-Window μ:':<20} {stats['pre_window_mean']*100:+8.2f}%")
+            #         print(f"{'Pre-Window σ:':<20} {stats['pre_window_std']*100:8.2f}%")
+            # else:
+            #     print(f"{'Next Return μ:':<20} {'N/A':>8}")
+            #     print(f"{'Next Return σ:':<20} {'N/A':>8}")
         returned_results.update({NN: {'NN': NN, 'frequency': data_frequency, 'prob': pct, 'count': stats['count'], 'total_streaks': stats['total'], 'delta': delta}})
         if stats['count'] == 0:
             if verbose:
@@ -406,6 +410,7 @@ def main(direction: str, method: str, older_dataset: str, bold: int, frequency: 
         delta=delta,
         verbose=verbose,
         debug_verify_speeding=False,
+        epsilon=0.,
     )
     return new_main(args, bring_my_own_df=bring_my_own_df,)
 
@@ -456,6 +461,12 @@ if __name__ == "__main__":
         type=str2bool,
         default=False,
         help=""
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=0.00005,
+        help="Threshold for neutral returns (|return| < epsilon breaks streaks). Default=0.00005 (0.005%%)"
     )
 
     args = parser.parse_args()

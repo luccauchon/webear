@@ -210,7 +210,7 @@ if __name__ == "__main__":
     parser.add_argument('--P', type=int, default=6, help='Number of consecutive positive months (default: 6)')
     parser.add_argument('--Q', type=int, default=1, help='Number of consecutive negative months after P positives (default: 1)')
     parser.add_argument("--older_dataset", type=str, default="")
-    parser.add_argument("--frequency", type=str, default="monthly", choices=DATASET_AVAILABLE)
+    parser.add_argument("--frequency", type=str, default="day", choices=DATASET_AVAILABLE)
     parser.add_argument("--detailed", type=bool, default=False)
     parser.add_argument("--quiet", type=bool, default=False)
     args = parser.parse_args()

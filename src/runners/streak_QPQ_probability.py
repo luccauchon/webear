@@ -29,7 +29,7 @@ import numpy as np
 from tabulate import tabulate
 import pickle
 import argparse
-from utils import transform_path
+from utils import transform_path, DATASET_AVAILABLE, get_filename_for_dataset
 
 
 def _find_patterns(monthly_up, monthly_down, close_series, Q1, P, Q2, mode_name, detailed):
@@ -95,14 +95,7 @@ def _find_patterns(monthly_up, monthly_down, close_series, Q1, P, Q2, mode_name,
 
 def main(Q1, P, Q2, older_dataset, frequency, detailed):
     TICKER = "^GSPC"
-    if frequency == 'monthly':
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_MONTH if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_MONTH, older_dataset)
-    elif frequency == 'weekly':
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_WEEK if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_WEEK, older_dataset)
-    elif frequency == 'daily':
-        one_dataset_filename = FYAHOO__OUTPUTFILENAME_DAY if older_dataset == "" else transform_path(FYAHOO__OUTPUTFILENAME_DAY, older_dataset)
-    else:
-        assert False
+    one_dataset_filename = get_filename_for_dataset(frequency, older_dataset)
     print(f"Using {one_dataset_filename}")
     with open(one_dataset_filename, 'rb') as f:
         data_cache = pickle.load(f)
@@ -159,7 +152,7 @@ if __name__ == "__main__":
     parser.add_argument('--Q2', type=int, default=1, help='Trailing negative (default: 2)')
     parser.add_argument("--older_dataset", type=str, default="")
     parser.add_argument("--detailed", type=bool, default=False)
-    parser.add_argument("--frequency", type=str, default="monthly")
+    parser.add_argument("--frequency", type=str, default="day", choices=DATASET_AVAILABLE)
     args = parser.parse_args()
 
     main(Q1=args.Q1, P=args.P, Q2=args.Q2, older_dataset=args.older_dataset, frequency=args.frequency, detailed=args.detailed)
