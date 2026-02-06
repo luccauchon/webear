@@ -150,10 +150,15 @@ def main(args):
         cfg = res['config']
         sr = res['success_rate'] / 100.0  # convert from percentage
         print(f"{i}. Success Rate: {sr:.2%}")
+        print(f"   • Dataset id: {cfg.dataset_id}")
         print(f"   • Forecast Length (training): {cfg.n_forecast_length_in_training}")
-        print(f"   • Forecast Length (evaluation): {n_forecast_length}")
+        print(f"   • Forecast Length (evaluation): {cfg.n_forecast_length}")
         print(f"   • Number of Forecasts: {cfg.n_forecasts}")
         print(f"   • Scale Factor: {cfg.scale_forecast:.4f}")
+        print(f"   • Number of step back: {cfg.step_back_range}")
+        print(f"   • Scale factor for GT: {cfg.scale_factor_for_ground_truth:.4f}")
+        print(f"   • Put credit spread: {bool(cfg.success_if_pred_lt_gt)}")
+        print(f"   • Call credit spread: {bool(cfg.success_if_pred_gt_gt)}")
         print("-" * 60)
     sys.exit(0)
 
