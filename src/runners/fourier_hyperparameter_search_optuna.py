@@ -60,12 +60,16 @@ def main(args):
     show_n_top_configurations = 5
     verbose = args.verbose
     scale_factor_for_ground_truth = args.scale_factor_for_ground_truth
-
+    scale_factor_for_prediction = args.scale_factor_for_prediction
     sell_call_credit_spread = args.sell_call_credit_spread
     sell_put_credit_spread = args.sell_put_credit_spread
     assert (sell_call_credit_spread and not sell_put_credit_spread) or \
            (not sell_call_credit_spread and sell_put_credit_spread), \
            "Exactly one of sell_call_credit_spread or sell_put_credit_spread must be True."
+    if sell_put_credit_spread:
+        assert scale_factor_for_prediction <= 1.
+    if sell_call_credit_spread:
+        assert scale_factor_for_prediction >= 1.
 
     # Storage for all evaluated configurations and results
     results = []
@@ -75,7 +79,7 @@ def main(args):
         # Sample hyperparameters
         n_forecast_length_in_training = trial.suggest_int('n_forecast_length_in_training', 1, 99)
         n_forecasts = trial.suggest_int('n_forecasts', 9, 99)
-        scale_factor = 1.0 # trial.suggest_float('scale_factor', 1., 1.05) if sell_call_credit_spread else trial.suggest_float('scale_factor', 0.95, 1.)
+        scale_factor = scale_factor_for_prediction # trial.suggest_float('scale_factor', 1., 1.05) if sell_call_credit_spread else trial.suggest_float('scale_factor', 0.95, 1.)
 
         # Build configuration namespace
         configuration = Namespace(
@@ -160,6 +164,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_forecast_length', type=int, default=1)
     parser.add_argument('--step-back-range', type=int, default=300)
     parser.add_argument("--scale_factor_for_ground_truth", type=float, default=0.1)
+    parser.add_argument("--scale_factor_for_prediction", type=float, default=1.)
     parser.add_argument("--sell_call_credit_spread", type=str2bool, default=True)
     parser.add_argument("--sell_put_credit_spread", type=str2bool, default=False)
     parser.add_argument('--time_limit_seconds', type=int, default=-1,
