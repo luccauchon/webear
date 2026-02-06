@@ -10,8 +10,8 @@ except ImportError:
     from version import sys__name, sys__version
 import argparse
 from argparse import Namespace
-from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool, next_week, next_day, get_next_week_range
-from  crusaders.wavelet._wavelet_next_week import main as wavelet_main
+from utils import str2bool
+from  crusaders.wavelet._wavelet_next_step import main as wavelet_main
 
 
 def main(args):
@@ -27,6 +27,7 @@ def main(args):
         n_models_to_keep=60,
         upper_multiplier=(1.01,1.02,1.03,1.04),
         lower_multiplier=(0.99,0.98,0.97,0.96),
+        step_type="month",
         verbose=args.verbose,
     )
     wavelet_main(configuration)

@@ -10,7 +10,7 @@ except ImportError:
     from version import sys__name, sys__version
 import argparse
 from argparse import Namespace
-from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool, next_week, next_day, get_next_week_range
+from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool, next_week, next_day, get_next_week_range, get_next_month_range, next_month
 import copy
 import numpy as np
 import os
@@ -21,10 +21,21 @@ import pickle
 
 def main(args):
     now = datetime.now()
-    output_dir = rf"../../../stubs/wavelet_next_week_at_Xp_{now.strftime('%Y_%m_%d__%H_%M_%S')}/"
+    if args.step_type == "week":
+        step__name = "week"
+        step__next_step_fct = next_week
+        step__next_step_range_fct = get_next_week_range
+    elif args.step_type == "month":
+        step__name = "month"
+        step__next_step_fct = next_month
+        step__next_step_range_fct = get_next_month_range
+    else:
+        assert False
+
+    output_dir = rf"../../../stubs/wavelet_next_{step__name}_at_Xp_{now.strftime('%Y_%m_%d__%H_%M_%S')}/"
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
-    one_dataset_filename = get_filename_for_dataset("week", older_dataset=None if args.older_dataset == "None" else args.older_dataset)
+    one_dataset_filename = get_filename_for_dataset(step__name, older_dataset=None if args.older_dataset == "None" else args.older_dataset)
     if args.verbose:
         print(f"Using data from {one_dataset_filename}")
         # --- Nicely print the arguments ---
@@ -43,15 +54,15 @@ def main(args):
     master_data_cache = master_data_cache.sort_index()
     if not args.keep_last_step:
         master_data_cache = master_data_cache.iloc[:-1]
-    _next_week = next_week(master_data_cache[("Close", "^GSPC")].index[-1])
-    _str, friday_next_week = get_next_week_range(master_data_cache[("Close", "^GSPC")].index[-1])
-    assert _next_week == friday_next_week
+    _next_step = step__next_step_fct(master_data_cache[("Close", "^GSPC")].index[-1])
+    _str, __next_step = step__next_step_range_fct(master_data_cache[("Close", "^GSPC")].index[-1])
+    assert _next_step == __next_step
     print(_str)
     configuration = Namespace(
         master_data_cache=copy.deepcopy(master_data_cache),
         ticker=args.ticker, col=args.col,
         output_dir=output_dir,
-        dataset_id="week",
+        dataset_id=step__name,
         n_forecast_length=args.n_forecast_length,
         n_forecast_length_in_training=int(args.n_forecast_length_in_training),
         thresholds_ep="(0.0125,0.0125)",
@@ -77,5 +88,5 @@ def main(args):
     for ppp, lower_multiplier, upper_multiplier, lower_performance, upper_performance in zip(args.percentage, args.lower_multiplier, args.upper_multiplier, args.lower_performance,args.upper_performance):
         last_value_forecasted__px_0 = last_value_forecasted_upper_side * float(upper_multiplier)
         last_value_forecasted__mx_0 = last_value_forecasted_lower_side * float(lower_multiplier)
-        print(f"[@{ppp}%] For week ending {_next_week.strftime('%Y_%m_%d')} , lower value shall be {last_value_forecasted__mx_0:.0f} ({lower_performance * 100:.2f}%)  "
+        print(f"[@{ppp}%] For {step__name} ending {_next_step.strftime('%Y_%m_%d')} , lower value shall be {last_value_forecasted__mx_0:.0f} ({lower_performance * 100:.2f}%)  "
               f"and upper value {last_value_forecasted__px_0:.0f} ({upper_performance * 100:.2f}%)")
