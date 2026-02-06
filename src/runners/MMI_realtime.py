@@ -66,6 +66,8 @@ def main(args):
         master_data_cache = master_data_cache.sort_index()
     close_col = (args.col, args.ticker)
     close_prices = master_data_cache[close_col]
+    if not args.keep_last_step:
+        close_prices = close_prices.iloc[:-1]
     # =========================
     # Indicators
     # =========================
@@ -122,6 +124,7 @@ if __name__ == "__main__":
     parser.add_argument("--sma_period", type=float, default=50)
     parser.add_argument('--use_ema', type=str2bool, default=False)
     parser.add_argument('--verbose', type=str2bool, default=True)
+    parser.add_argument('--keep_last_step', type=str2bool, default=True)
     args = parser.parse_args()
     result = main(args)
     if args.verbose:
