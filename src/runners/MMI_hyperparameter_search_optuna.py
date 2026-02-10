@@ -76,7 +76,7 @@ def main(args):
             return_threshold=RETURN_THRESHOLD,
             sma_period=SMA_PERIOD,
             step_back_range=step_back_range,
-            use_ema=False,
+            use_ema=args.use_ema,
             verbose=False,
         )
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     parser.add_argument('--metric', type=str, default='overall_accuracy',
                         choices=['overall_accuracy', 'bull_accuracy', 'bear_accuracy'],
                         help="Metric to optimize during Bayesian optimization")
-
+    parser.add_argument('--use_ema', type=str2bool, default=False)
     # LOOKAHEAD
     parser.add_argument('--lookahead_min', type=int, default=5, help="Min look-ahead steps")
     parser.add_argument('--lookahead_max', type=int, default=5, help="Max look-ahead steps")
