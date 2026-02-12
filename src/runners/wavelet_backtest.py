@@ -107,9 +107,12 @@ def main(args):
     warrior_pred_scale_factor = args.warrior_pred_scale_factor
     assert -0.15 <= warrior_pred_scale_factor <= 0.15
     use_last_week_only=args.use_last_week_only
+    use_vix = args.use_vix
     one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
+    vix__master_data_cache = master_data_cache['^VIX']
+    vix__master_data_cache = copy.deepcopy(vix__master_data_cache.sort_index()[('Close', '^VIX')])
     master_data_cache = copy.deepcopy(master_data_cache[ticker])
     master_data_cache = copy.deepcopy(master_data_cache.sort_index())
     # --- Parameter Summary ---
@@ -135,7 +138,6 @@ def main(args):
             print(f"Warrior GT range     : {warrior_gt_range_for_success}")
             print(f"Warrior Pred X       : {warrior_pred_scale_factor}")
         print("="*50)
-
     performance, put_credit_spread_performance, call_credit_spread_performance, iron_condor_performance = {}, {}, {}, {}
     results_for_warrior = {}
     for step_back in range(1, number_of_step_back + 1) if not verbose else tqdm(range(1, number_of_step_back + 1)):
@@ -146,10 +148,21 @@ def main(args):
         df                                  = copy.deepcopy(master_data_cache.iloc[:-step_back])
         data_cache_for_parameter_extraction = copy.deepcopy(df.iloc[:-n_forecast_length])
         data_cache_for_forecasting          = copy.deepcopy(df.iloc[-n_forecast_length:])
-        # Sanity check
         assert n_forecast_length == len(data_cache_for_forecasting)
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
-        # print(f'[{step_back}] {df.index[0].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")}')
+        df_vix                              = copy.deepcopy(vix__master_data_cache.iloc[:-step_back])
+        vix_for_prediction                  = copy.deepcopy(df_vix[:-n_forecast_length])
+        vix_future                          = copy.deepcopy(df_vix[-n_forecast_length:])
+        if use_vix:
+            assert n_forecast_length > 0
+            if len(vix_for_prediction) < 1:
+                continue
+            assert n_forecast_length == len(vix_future)
+            assert vix_future.index.intersection(vix_for_prediction.index).empty, "Indices must be disjoint"
+            assert len(vix_future) == len(data_cache_for_forecasting)
+            # print(f'[{step_back}] VIX {vix_for_prediction.index[0].strftime("%Y-%m-%d")}:{vix_for_prediction.index[-1].strftime("%Y-%m-%d")}')
+            assert vix_future.index[0]  == data_cache_for_forecasting.index[0]
+            assert vix_future.index[-1] == data_cache_for_forecasting.index[-1]
         if use_last_week_only:
             assert 'week' == dataset_id
             last_date = df.index[-1]
@@ -162,11 +175,7 @@ def main(args):
             #print("Is in last week of month:", is_in_last_week)
             if not is_in_last_week:
                 continue
-        # All data except the last `step_back` rows → for parameter extraction
-        data_cache_for_parameter_extraction = copy.deepcopy(df.iloc[:-n_forecast_length])
-        # Rows at position `-step_back` → for forecasting
-        data_cache_for_forecasting = copy.deepcopy(df.iloc[-n_forecast_length: ])
-        # print(f'{data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
+        # print(f'[{step_back}] {col_name} {data_cache_for_parameter_extraction.index[0].strftime("%Y-%m-%d")}:{data_cache_for_parameter_extraction.index[-1].strftime("%Y-%m-%d")} --> {data_cache_for_forecasting.index}')
         assert n_forecast_length == len(data_cache_for_forecasting), f"{len(data_cache_for_forecasting)}"
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty, "Indices must be disjoint"
         output_dir = rf"../../stubs/wavelet_backtesting_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/__{step_back}/"
@@ -341,7 +350,10 @@ def main(args):
                 assert warrior_pred_scale_factor <= 0
                 if  gt_lower <= pred < gt:
                     win = True
-            results_for_warrior.update({step_back: win})
+            results_for_warrior.update({step_back: {'status': win}})
+            if use_vix:
+                vix_value = vix_for_prediction[-1]
+                results_for_warrior[step_back].update({'vix': vix_value})
 
     # --- Summary Report ---
     if backtest_strategy == 'stratego':
@@ -389,10 +401,15 @@ def main(args):
     if backtest_strategy in ['fomo', 'fomo_quantilized']:
         compute_and_print_stats_for_fomo_strategy(performance, using_quantized=backtest_strategy=='fomo_quantilized')
     if backtest_strategy in ['warrior']:
-        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v]), len(results_for_warrior)
+        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status']]), len(results_for_warrior)
         success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
         if verbose:
             print(f"\nWarrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+            if use_vix:
+                vix_threshold=30.1
+                nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and v['vix'] < vix_threshold]), len([k for k, v in results_for_warrior.items() if v['vix'] < vix_threshold])
+                success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
+                print(f"\n[VIX < {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
         return {'success_rate': success_rate}
 
     return None
@@ -457,6 +474,9 @@ if __name__ == "__main__":
 
     parser.add_argument('--use_last_week_only', action='store_true',
                         help="Only run backtests during the last week of each month (requires weekly data).")
+
+    parser.add_argument('--use_vix', action='store_true',
+                        help="Save the vix value per run in backtest")
 
     args = parser.parse_args()
     main(args)
