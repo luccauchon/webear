@@ -406,10 +406,13 @@ def main(args):
         if verbose:
             print(f"\nWarrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
             if use_vix:
-                vix_threshold=30.1
-                nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and v['vix'] < vix_threshold]), len([k for k, v in results_for_warrior.items() if v['vix'] < vix_threshold])
-                success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
-                print(f"\n[VIX < {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+                for vix_threshold in [10, 12, 15, 18, 20, 22, 25, 28, 30, 32, 35, 38, 40, 42, 45, 48, 50, 52, 55, 58, 60]:
+                    try:
+                        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and v['vix'] < vix_threshold]), len([k for k, v in results_for_warrior.items() if v['vix'] < vix_threshold])
+                        success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
+                        print(f"\n[VIX < {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+                    except:
+                        pass
         return {'success_rate': success_rate}
 
     return None
