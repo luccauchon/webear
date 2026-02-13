@@ -410,7 +410,7 @@ def main(args):
                     try:
                         nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and v['vix'] < vix_threshold]), len([k for k, v in results_for_warrior.items() if v['vix'] < vix_threshold])
                         success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
-                        print(f"\n[VIX < {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+                        print(f"[VIX < {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
                     except:
                         pass
         return {'success_rate': success_rate}
