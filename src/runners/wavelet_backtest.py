@@ -352,7 +352,7 @@ def main(args):
                     win = True
             results_for_warrior.update({step_back: {'status': win}})
             if use_vix:
-                vix_value = vix_for_prediction[-1]
+                vix_value = vix_for_prediction.iloc[-1]
                 results_for_warrior[step_back].update({'vix': vix_value})
 
     # --- Summary Report ---
