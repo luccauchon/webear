@@ -11,14 +11,14 @@ except ImportError:
 
 from datetime import datetime, timedelta
 from runners.MMI_realtime import main as MMI_realtime
-from utils import get_weekday_name
+from utils import get_weekday_name, next_weekday
 
 
 def main(configuration):
     result = MMI_realtime(configuration)
     prediction_date = None
     if configuration.dataset_id == "day":
-        prediction_date = (result['date'] + timedelta(days=1)).strftime('%Y-%m-%d')
+        prediction_date = next_weekday(result['date']).strftime('%Y-%m-%d')
     elif configuration.dataset_id == "week":
         prediction_date = (result['date'] + timedelta(weeks=1)).strftime('%Y-%m-%d')
     elif configuration.dataset_id == "month":
