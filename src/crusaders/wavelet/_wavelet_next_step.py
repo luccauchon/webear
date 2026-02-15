@@ -48,16 +48,17 @@ def main(args):
         for ppp, lower_performance, upper_performance in zip(args.percentage, args.lower_performance, args.upper_performance):
             print(f"[@{ppp}%] Historical performance of {lower_performance * 100:.2f}% (lower:GroundTruth>Forecast) and {upper_performance * 100:0.2f}% (upper:GroundTruth<Forecast)")
         print("=" * 80)
+    col_name = ("Close", "^GSPC")
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     master_data_cache = copy.deepcopy(master_data_cache[args.ticker])
     master_data_cache = master_data_cache.sort_index()
     if not args.keep_last_step:
         master_data_cache = master_data_cache.iloc[:-1]
-    _next_step = step__next_step_fct(master_data_cache[("Close", "^GSPC")].index[-1])
-    _str, __next_step = step__next_step_range_fct(master_data_cache[("Close", "^GSPC")].index[-1])
+    _next_step = step__next_step_fct(master_data_cache[col_name].index[-1])
+    _str, __next_step = step__next_step_range_fct(master_data_cache[col_name].index[-1])
     assert _next_step == __next_step
-    print(_str)
+    print(f"{_str} , actual price of {col_name} is {master_data_cache[col_name].iloc[-1]:.0f} ({master_data_cache[col_name].index[-1].strftime('%Y-%m-%d')})")
     configuration = Namespace(
         master_data_cache=copy.deepcopy(master_data_cache),
         ticker=args.ticker, col=args.col,
