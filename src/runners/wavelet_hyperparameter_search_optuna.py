@@ -83,6 +83,7 @@ def main(args):
             warrior_gt_range_for_success=range_factor_for_ground_truth,
             warrior_pred_scale_factor=warrior_pred_scale_factor,
             warrior_spread=warrior_spread,
+            use_vix=False,
         )
 
         # Run backtest
