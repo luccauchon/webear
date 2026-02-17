@@ -29,9 +29,9 @@ def main(configuration):
         lower, upper = result['prices_threshold'][0], result['prices_threshold'][1]
         if configuration.verbose:
             if configuration.dataset_id == "day":
-                print(f"Last price in data frame: {result['date'].strftime('%Y-%m-%d')}  ({get_weekday_name(result['date'])})")
+                print(f"Last date in data frame: {result['date'].strftime('%Y-%m-%d')}  ({get_weekday_name(result['date'])})")
             else:
-                print(f"Last price in data frame: {result['date'].strftime('%Y-%m-%d')}")
+                print(f"Last date in data frame: {result['date'].strftime('%Y-%m-%d')}")
             print(f"[{result['signal']}] For the closing price on {prediction_date}, price should be between {lower:0.0f} and {upper:0.0f}. Actual price: {result['prices']:0.0f}.")
     return result
 
