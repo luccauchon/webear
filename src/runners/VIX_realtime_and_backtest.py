@@ -38,6 +38,7 @@ def main(args):
     close_col = (args.col, args.ticker)
     vix__master_data_cache = copy.deepcopy(master_data_cache['^VIX'].sort_index()[('Close', '^VIX')])
     vix1d__master_data_cache = copy.deepcopy(master_data_cache['^VIX1D'].sort_index()[('Close', '^VIX1D')])
+    vix3m__master_data_cache = copy.deepcopy(master_data_cache['^VIX3M'].sort_index()[('Close', '^VIX3M')])
     master_data_cache = copy.deepcopy(master_data_cache[args.ticker].sort_index())[close_col]
     put_credit = args.put
     call_credit = args.call
@@ -48,24 +49,30 @@ def main(args):
         vix__master_data_cache = vix__master_data_cache.iloc[:-1]
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix__master_data_cache.index[-1].strftime('%Y-%m-%d')
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix1d__master_data_cache.index[-1].strftime('%Y-%m-%d')
+    assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix3m__master_data_cache.index[-1].strftime('%Y-%m-%d')
     lower_side_scale_factor, upper_side_scale_factor = args.lower_side_scale_factor, args.upper_side_scale_factor
     results_realtime, results_backtest, _str_tmp_put_credit, _str_tmp_call_credit, _str_tmp_iron_condor_credit = [], [], '', '', ''
     step_back_range = args.step_back_range if args.step_back_range <len(master_data_cache) else len(master_data_cache)
     used_past_point = 0
-    for step_back in range(0, step_back_range + 1):
+    for step_back in tqdm(range(0, step_back_range + 1)) if args.verbose else range(0, step_back_range + 1):
         if 0 == step_back:
             past_df = master_data_cache
             future_df = master_data_cache
             vix_df = vix__master_data_cache
+            vix3m_df = vix3m__master_data_cache
         else:
             past_df = master_data_cache.iloc[:-step_back]
             future_df = master_data_cache.iloc[-step_back:]
             vix_df = vix__master_data_cache.iloc[:-step_back]
+            vix3m_df = vix3m__master_data_cache.iloc[:-step_back]
 
         if args.look_ahead > len(future_df) or 0 == len(past_df):
             continue
         if 0 == len(vix_df):
             continue
+        if args.use_directional_var:
+            if 0 == len(vix3m_df):
+                continue
 
         # print(f"")
         # print(f"MASTER:{past_df.index[0].strftime('%Y-%m-%d')}/{past_df.index[-1].strftime('%Y-%m-%d')} --> {future_df.index[0].strftime('%Y-%m-%d')}/{future_df.index[-1].strftime('%Y-%m-%d')}")
@@ -75,9 +82,45 @@ def main(args):
         # print(f"\n\n")
 
         assert vix_df.index[-1].strftime('%Y-%m-%d') == past_df.index[-1].strftime('%Y-%m-%d')
+        if args.use_directional_var:
+            assert vix3m_df.index[-1].strftime('%Y-%m-%d') == past_df.index[-1].strftime('%Y-%m-%d')
         used_past_point += 1
         current_price = past_df.iloc[-1]
         vix           = vix_df.iloc[-1]
+        contango, backwardation = None, None
+        trend_bias, momentum_bias, vol_structure = '', '', ''
+        # --- DIRECTIONAL VARIABLES ---
+        if args.use_directional_var:
+            # The Signal:
+            # Contango (VIX < VIX3M): Normal market. Usually bullish or neutral.
+            # Backwardation (VIX > VIX3M): Fear is immediate. This is a strong Bearish signal. When short-term volatility spikes above long-term, the SPX often drops.
+            vix3m         = vix3m_df.iloc[-1]
+            contango      = vix <= vix3m
+            backwardation = vix > vix3m
+
+            # 1. Trend Filter: 50-Day Simple Moving Average
+            sma_50 = past_df.rolling(window=50).mean().iloc[-1]
+            trend_bias = 'BULLISH' if current_price > sma_50 else 'BEARISH'
+
+            # 2. Momentum Filter: 14-Day RSI
+            delta = past_df.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            rsi_val = rsi.iloc[-1]
+
+            momentum_bias = 'NEUTRAL'
+            if rsi_val > 70:
+                momentum_bias = 'OVERBOUGHT (Bearish Risk)'
+            elif rsi_val < 30:
+                momentum_bias = 'OVERSOLD (Bullish Opportunity)'
+
+            # 3. VIX Term Structure (Requires ^VIX3M in your cache)
+            # Assuming you load vix3m_df similar to vix_df
+            if args.use_directional_var:
+                vix_ratio = vix / vix3m_df.iloc[-1]
+                vol_structure = 'BACKWARDATION (Fear)' if vix_ratio > 1.0 else 'CONTANGO (Normal)'
 
         # VIX indices are annualized standard deviations.
         # To get 1-day expected move: (Index / 100) * sqrt(1 / 252)
@@ -97,6 +140,10 @@ def main(args):
                 'vix': vix,
                 'upper_limit': upper_limit,
                 'lower_limit': lower_limit,
+                'vix_3m': {'contango': contango, 'backwardation': backwardation},
+                'directional_var__trend_bias': trend_bias,
+                'directional_var__momentum_bias': momentum_bias,
+                'directional_var__vol_structure': vol_structure,
             })
         else:
             # Backtest
@@ -106,6 +153,13 @@ def main(args):
             succes_put_credit = True if lower_limit <= target_price else False
             succes_call_credit = True if target_price <= upper_limit else False
             actual_return = (target_price - current_price) / current_price
+
+            # if args.use_directional_var:
+            #     if trend_bias == 'BEARISH':
+            #         succes_put_credit = True  # Don't sell put credit in a downtrend
+            #     if momentum_bias == 'OVERBOUGHT':
+            #         succes_call_credit = True  # Don't sell call credit when market is extended up
+
             results_backtest.append({
                 'date': past_df.index[-1],
                 'current_price': current_price,
@@ -116,15 +170,19 @@ def main(args):
                 'delta_upper_side': upper_limit - target_price,
                 'success_iron_condor': success_iron_condor,
                 'success_put_credit':  succes_put_credit,
-                'success_call_credit':  succes_call_credit
+                'success_call_credit':  succes_call_credit,
+                'vix_3m': {'contango': contango, 'backwardation': backwardation},
             })
     if len(results_realtime) > 0:
         assert 1 == len(results_realtime)
         if args.verbose:
             current_date = results_realtime[0]['date']
             prediction_date = results_realtime[0]['target_date']
+            _str_directional_var = (f'Trend bias:{results_realtime[0]["directional_var__trend_bias"]}  '
+                                    f'Momentum bias:{results_realtime[0]["directional_var__momentum_bias"]}  '
+                                    f'Vol structure:{results_realtime[0]["directional_var__vol_structure"]}')
             print(f"[{current_date.strftime('%Y-%m-%d')}], the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
-                  f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}]")
+                  f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}] , {_str_directional_var}")
     if len(results_backtest) > 0:
         print(f"Backtested on {used_past_point} steps.")
         df_results = pd.DataFrame(results_backtest)
@@ -170,6 +228,7 @@ if __name__ == "__main__":
     parser.add_argument('--iron_condor', type=str2bool, default=True)
     parser.add_argument('--step-back-range', type=int, default=5,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
+    parser.add_argument('--use_directional_var', type=str2bool, default=False)
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument('--verbose_lower_vix', type=str2bool, default=False)
     args = parser.parse_args()
