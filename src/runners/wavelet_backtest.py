@@ -155,7 +155,7 @@ def main(args):
         assert n_forecast_length == len(data_cache_for_forecasting)
         assert data_cache_for_parameter_extraction.index.intersection(data_cache_for_forecasting.index).empty
         if 0 == step_back:
-            df_vix                          = copy.deepcopy(vix__master_data_cache.iloc)
+            df_vix                          = copy.deepcopy(vix__master_data_cache)
         else:
             df_vix                          = copy.deepcopy(vix__master_data_cache.iloc[:-step_back])
         vix_for_prediction                  = copy.deepcopy(df_vix[:-n_forecast_length])
