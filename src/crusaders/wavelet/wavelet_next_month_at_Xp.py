@@ -20,6 +20,7 @@ def main(args):
         older_dataset=args.older_dataset,
         keep_last_step=args.keep_last_step,
         percentage=(1,2,3,4,5),
+        vix_modulation=None,
         lower_performance=(0.6767,0.7583,0.8350,0.8717,0.8950),
         upper_performance=(0.5033,0.6300,0.7233,0.8117,0.8717),
         n_forecast_length=1,
@@ -29,6 +30,9 @@ def main(args):
         lower_multiplier=(0.99,0.98,0.97,0.96,0.95),
         step_type="month",
         verbose=args.verbose,
+        put_side=True,
+        call_side=True,
+        which_output_to_use="last_of_mean_forecast",
     )
     wavelet_main(configuration)
 

@@ -11,7 +11,7 @@ except ImportError:
 import argparse
 from argparse import Namespace
 from utils import str2bool
-from  crusaders.wavelet._wavelet_next_step import main as wavelet_main
+from  crusaders.wavelet._wavelet_next_step import main as wavelet_next_step_main
 
 
 def main(args):
@@ -19,22 +19,22 @@ def main(args):
         ticker=args.ticker, col=args.col,
         older_dataset=args.older_dataset,
         keep_last_step=args.keep_last_step,
-        percentage=(1,2,3,4,5),
-        vix_modulation=None,
-        lower_performance=(0.7392,0.8483,0.9150,0.9492,0.9692),
-        upper_performance=(0.6333,0.8150,0.9067,0.9533,0.9733),
-        n_forecast_length=1,
+        percentage=None,
+        vix_modulation=({10: 1., 12: 0.9388, 15: 0.9002, 18: 0.8665, 20: 0.8509, 22: 0.8375, 25: 0.8223, 28: 0.8099, 30: 0.8057, 9999: 0.7923}),
+        lower_performance=None,
+        upper_performance=None,
+        n_forecast_length=2,
         n_forecast_length_in_training=4,
         n_models_to_keep=60,
-        upper_multiplier=(1.01,1.02,1.03,1.04,1.05),
-        lower_multiplier=(0.99,0.98,0.97,0.96,0.95),
-        step_type="week",
+        upper_multiplier=None,
+        lower_multiplier=(0.99,),
+        step_type="day",
         verbose=args.verbose,
         put_side=True,
-        call_side=True,
+        call_side=False,
         which_output_to_use="last_of_mean_forecast",
     )
-    wavelet_main(configuration)
+    wavelet_next_step_main(configuration)
 
 
 if __name__ == "__main__":
