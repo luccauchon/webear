@@ -421,9 +421,17 @@ def main(args):
             if use_vix:
                 for vix_threshold in [10, 12, 15, 18, 20, 22, 25, 28, 30, 32, 35, 38, 40, 42, 45, 48, 50, 52, 55, 58, 60, 200]:
                     try:
-                        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and v['vix'] < vix_threshold]), len([k for k, v in results_for_warrior.items() if v['vix'] < vix_threshold])
+                        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and v['vix'] <= vix_threshold]), len([k for k, v in results_for_warrior.items() if v['vix'] <= vix_threshold])
                         success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
-                        print(f"[VIX < {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+                        print(f"[VIX <= {vix_threshold}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
+                    except:
+                        pass
+
+                for vix_t1, vix_t2 in zip([0, 10, 20, 30, 40, 50, 100], [10, 20, 30, 40, 50, 100, 1000]):
+                    try:
+                        nb_success, nb_total = len([k for k, v in results_for_warrior.items() if v['status'] and vix_t1 <= v['vix'] < vix_t2]), len([k for k, v in results_for_warrior.items() if vix_t1 <= v['vix'] < vix_t2])
+                        success_rate = round(nb_success / nb_total * 100, 2) if nb_total > 0 else 0
+                        print(f"[{vix_t1} <= VIX < {vix_t2}] Warrior Strategy Success Rate: {success_rate}% ({nb_success}/{nb_total})")
                     except:
                         pass
         return {'success_rate': success_rate}
