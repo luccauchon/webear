@@ -287,7 +287,7 @@ if __name__ == "__main__":
     parser.add_argument('--call', type=str2bool, default=True)
     parser.add_argument('--iron_condor', type=str2bool, default=False)
 
-    parser.add_argument('--step-back-range', type=int, default=5,
+    parser.add_argument('--step-back-range', type=int, default=99999,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
     #
     parser.add_argument('--use_directional_var', type=str2bool, default=True)
