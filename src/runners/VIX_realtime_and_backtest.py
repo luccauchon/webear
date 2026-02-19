@@ -52,26 +52,26 @@ def main(args):
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix3m__master_data_cache.index[-1].strftime('%Y-%m-%d')
     results_realtime, results_backtest, _str_tmp_put_credit, _str_tmp_call_credit, _str_tmp_iron_condor_credit = [], [], '', '', ''
     step_back_range = args.step_back_range if args.step_back_range <len(master_data_cache) else len(master_data_cache)
-    used_past_point = 0
+    used_past_point, real_time_date, backstep_t1, backstep_t2 = 0, None, None, None
     for step_back in tqdm(range(0, step_back_range + 1)) if args.verbose else range(0, step_back_range + 1):
         if 0 == step_back:
             past_df = master_data_cache
             future_df = master_data_cache
             vix_df = vix__master_data_cache
-            if args.use_directional_var__vix3m:
+            if args.use_directional_var__vix3m and args.use_directional_var:
                 vix3m_df = vix3m__master_data_cache
         else:
             past_df = master_data_cache.iloc[:-step_back]
             future_df = master_data_cache.iloc[-step_back:]
             vix_df = vix__master_data_cache.iloc[:-step_back]
-            if args.use_directional_var__vix3m:
+            if args.use_directional_var__vix3m and args.use_directional_var:
                 vix3m_df = vix3m__master_data_cache.iloc[:-step_back]
 
         if args.look_ahead > len(future_df) or 0 == len(past_df):
             continue
         if 0 == len(vix_df):
             continue
-        if args.use_directional_var__vix3m:
+        if args.use_directional_var__vix3m and args.use_directional_var:
             if 0 == len(vix3m_df):
                 continue
 
@@ -83,7 +83,7 @@ def main(args):
         # print(f"\n\n")
 
         assert vix_df.index[-1].strftime('%Y-%m-%d') == past_df.index[-1].strftime('%Y-%m-%d')
-        if args.use_directional_var__vix3m:
+        if args.use_directional_var__vix3m and args.use_directional_var:
             assert vix3m_df.index[-1].strftime('%Y-%m-%d') == past_df.index[-1].strftime('%Y-%m-%d')
         used_past_point += 1 if 0 != step_back else 0
         current_price = past_df.iloc[-1]
@@ -192,6 +192,7 @@ def main(args):
         if 0 == step_back:
             # Real time
             assert np.all(past_df.index == future_df.index)
+            real_time_date = past_df.index[-1]
             results_realtime.append({
                 'date': past_df.index[-1],
                 'target_date': next_weekday(input_date=past_df.index[-1], nn=args.look_ahead),
@@ -213,8 +214,9 @@ def main(args):
             succes_put_credit = True if lower_limit <= target_price else False
             succes_call_credit = True if target_price <= upper_limit else False
             actual_return = (target_price - current_price) / current_price
-
-            #if momentum_bias == 'OVERBOUGHT (Bearish Risk)'
+            if 1 == step_back:
+                backstep_t1 = past_df.index[-1]
+            backstep_t2 = past_df.index[-1]
             results_backtest.append({
                 'date': past_df.index[-1],
                 'current_price': current_price,
@@ -242,7 +244,8 @@ def main(args):
                   f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}] , {_str_directional_var}")
     if len(results_backtest) > 0:
         if args.verbose:
-            print(f"Backtested on {used_past_point} steps, collecting {len(results_backtest)} results.")
+            print(f"Backtested on {used_past_point} steps (from {backstep_t1.strftime('%Y-%m-%d')} to {backstep_t2.strftime('%Y-%m-%d')}), collecting {len(results_backtest)} results. "
+                  f"Realtime is {real_time_date.strftime('%Y-%m-%d')}")
         df_results = pd.DataFrame(results_backtest)
         vixes = [999]
         if args.verbose_lower_vix:
