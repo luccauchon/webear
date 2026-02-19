@@ -475,10 +475,10 @@ def next_weekday_with_check(date, df, max_look_ahead=999):
     return next_day
 
 
-def next_weekday(date):
-    next_day = date + pd.Timedelta(1, unit='days')
+def next_weekday(input_date, nn=1):
+    next_day = input_date + pd.Timedelta(nn, unit='days')
     while next_day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-        next_day += pd.Timedelta(1, unit='days')
+        next_day += pd.Timedelta(nn, unit='days')
     return next_day
 
 
@@ -898,6 +898,49 @@ def next_month(input_date, day=None, preserve_month_end=True):
 
 from datetime import date, datetime, timedelta
 
+from datetime import date, datetime, timedelta
+
+def get_next_day_range(input_date=None):
+    """
+    Returns a formatted string showing the next week-calendar day and the date object of that day.
+
+    Args:
+        input_date (str | date | datetime | None):
+            - If None: uses today's date
+            - If str: expects "YYYY-MM-DD" format
+            - If datetime/date: uses the given date
+
+    Returns:
+        tuple: (str, date)
+            - str: "Next day is YYYY-MM-DD"
+            - date: date object representing the next calendar day
+
+    Examples:
+        >>> get_next_day_range("2025-02-05")  # Wednesday
+        ('Next day is 2025-02-06', datetime.date(2025, 2, 6))
+
+        >>> get_next_day_range("2025-02-28")  # Non-leap year end of February
+        ('Next day is 2025-03-01', datetime.date(2025, 3, 1))
+
+        >>> get_next_day_range("2024-12-31")
+        ('Next day is 2025-01-01', datetime.date(2025, 1, 1))
+
+        >>> get_next_day_range(datetime(2025, 2, 16, 14, 30))  # Sunday with time
+        ('Next day is 2025-02-17', datetime.date(2025, 2, 17))
+    """
+    # Normalize input to date object
+    if input_date is None:
+        dt = date.today()
+    elif isinstance(input_date, str):
+        dt = datetime.strptime(input_date, "%Y-%m-%d").date()
+    elif isinstance(input_date, datetime):
+        dt = input_date.date()
+    else:  # date object
+        dt = input_date
+
+    next_day = next_weekday(dt)
+    return f"Returned day is {next_day.strftime('%Y-%m-%d')}", next_day
+
 
 def get_next_week_range(input_date=None):
     """
@@ -939,7 +982,7 @@ def get_next_week_range(input_date=None):
     monday_next_week = monday_this_week + timedelta(days=7)
     friday_next_week = monday_next_week + timedelta(days=4)  # Monday + 4 days = Friday
 
-    return (f"Next week is from {monday_next_week.strftime('%Y-%m-%d')} "
+    return (f"Returned week is from {monday_next_week.strftime('%Y-%m-%d')} "
             f"to {friday_next_week.strftime('%Y-%m-%d')}"), friday_next_week
 
 
@@ -1000,7 +1043,7 @@ def get_next_month_range(input_date=None):
     _, days_in_month = calendar.monthrange(next_year, next_month)
     last_day = date(next_year, next_month, days_in_month)
 
-    formatted_string = (f"Next month is from {first_day.strftime('%Y-%m-%d')} "
+    formatted_string = (f"Returned month is from {first_day.strftime('%Y-%m-%d')} "
                         f"to {last_day.strftime('%Y-%m-%d')}")
 
     return formatted_string, last_day
