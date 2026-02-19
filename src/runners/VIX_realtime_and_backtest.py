@@ -192,7 +192,7 @@ def main(args):
         if 0 == step_back:
             # Real time
             assert np.all(past_df.index == future_df.index)
-            real_time_date = past_df.index[-1]
+            real_time_date = next_weekday(input_date=past_df.index[-1], nn=args.look_ahead)
             results_realtime.append({
                 'date': past_df.index[-1],
                 'target_date': next_weekday(input_date=past_df.index[-1], nn=args.look_ahead),
@@ -245,7 +245,7 @@ def main(args):
     if len(results_backtest) > 0:
         if args.verbose:
             print(f"Backtested on {used_past_point} steps (from {backstep_t1.strftime('%Y-%m-%d')} to {backstep_t2.strftime('%Y-%m-%d')}), collecting {len(results_backtest)} results. "
-                  f"Realtime is {real_time_date.strftime('%Y-%m-%d')}")
+                  f"Prediction is for {real_time_date.strftime('%Y-%m-%d')}.")
         df_results = pd.DataFrame(results_backtest)
         vixes = [999]
         if args.verbose_lower_vix:
@@ -293,7 +293,7 @@ if __name__ == "__main__":
     parser.add_argument('--step-back-range', type=int, default=99999,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
     #
-    parser.add_argument('--use_directional_var', type=str2bool, default=True)
+    parser.add_argument('--use_directional_var', type=str2bool, default=False)
     parser.add_argument('--use_directional_var__vix3m', type=str2bool, default=True)
     # RSI
     parser.add_argument("--rsi_period", type=float, default=14, help="")
