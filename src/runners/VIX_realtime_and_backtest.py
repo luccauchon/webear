@@ -50,7 +50,6 @@ def main(args):
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix__master_data_cache.index[-1].strftime('%Y-%m-%d')
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix1d__master_data_cache.index[-1].strftime('%Y-%m-%d')
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix3m__master_data_cache.index[-1].strftime('%Y-%m-%d')
-    lower_side_scale_factor, upper_side_scale_factor = args.lower_side_scale_factor, args.upper_side_scale_factor
     results_realtime, results_backtest, _str_tmp_put_credit, _str_tmp_call_credit, _str_tmp_iron_condor_credit = [], [], '', '', ''
     step_back_range = args.step_back_range if args.step_back_range <len(master_data_cache) else len(master_data_cache)
     used_past_point = 0
@@ -59,18 +58,20 @@ def main(args):
             past_df = master_data_cache
             future_df = master_data_cache
             vix_df = vix__master_data_cache
-            vix3m_df = vix3m__master_data_cache
+            if args.use_directional_var__vix3m:
+                vix3m_df = vix3m__master_data_cache
         else:
             past_df = master_data_cache.iloc[:-step_back]
             future_df = master_data_cache.iloc[-step_back:]
             vix_df = vix__master_data_cache.iloc[:-step_back]
-            vix3m_df = vix3m__master_data_cache.iloc[:-step_back]
+            if args.use_directional_var__vix3m:
+                vix3m_df = vix3m__master_data_cache.iloc[:-step_back]
 
         if args.look_ahead > len(future_df) or 0 == len(past_df):
             continue
         if 0 == len(vix_df):
             continue
-        if args.use_directional_var:
+        if args.use_directional_var__vix3m:
             if 0 == len(vix3m_df):
                 continue
 
@@ -82,9 +83,9 @@ def main(args):
         # print(f"\n\n")
 
         assert vix_df.index[-1].strftime('%Y-%m-%d') == past_df.index[-1].strftime('%Y-%m-%d')
-        if args.use_directional_var:
+        if args.use_directional_var__vix3m:
             assert vix3m_df.index[-1].strftime('%Y-%m-%d') == past_df.index[-1].strftime('%Y-%m-%d')
-        used_past_point += 1
+        used_past_point += 1 if 0 != step_back else 0
         current_price = past_df.iloc[-1]
         vix           = vix_df.iloc[-1]
         contango, backwardation = None, None
@@ -94,18 +95,19 @@ def main(args):
             # The Signal:
             # Contango (VIX < VIX3M): Normal market. Usually bullish or neutral.
             # Backwardation (VIX > VIX3M): Fear is immediate. This is a strong Bearish signal. When short-term volatility spikes above long-term, the SPX often drops.
-            vix3m         = vix3m_df.iloc[-1]
-            contango      = vix <= vix3m
-            backwardation = vix > vix3m
+            if args.use_directional_var__vix3m:
+                vix3m         = vix3m_df.iloc[-1]
+                contango      = vix <= vix3m
+                backwardation = vix > vix3m
 
             # 1. Trend Filter: 50-Day Simple Moving Average
-            sma_50 = past_df.rolling(window=50).mean().iloc[-1]
+            sma_50 = past_df.rolling(window=args.sma_period).mean().iloc[-1]
             sma_trend_bias = 'BULLISH' if current_price > sma_50 else 'BEARISH'
 
             # 2. Momentum Filter: 14-Day RSI
             delta = past_df.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            gain = (delta.where(delta > 0, 0)).rolling(window=args.rsi_period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=args.rsi_period).mean()
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             rsi_val = rsi.iloc[-1]
@@ -118,7 +120,7 @@ def main(args):
 
             # 3. VIX Term Structure (Requires ^VIX3M in your cache)
             # Assuming you load vix3m_df similar to vix_df
-            if args.use_directional_var:
+            if args.use_directional_var__vix3m:
                 vix_ratio = vix / vix3m_df.iloc[-1]
                 vol_structure = 'BACKWARDATION (Fear)' if vix_ratio > 1.0 else 'CONTANGO (Normal)'
 
@@ -126,7 +128,7 @@ def main(args):
             # Calculate EMAs on the PAST data only (no look-ahead bias)
             # adjust=False makes it behave like standard trading view EMA
             ema_short_series = past_df.ewm(span=args.ema_short, adjust=False).mean()
-            ema_long_series = past_df.ewm(span=args.ema_long, adjust=False).mean()
+            ema_long_series  = past_df.ewm(span=args.ema_long, adjust=False).mean()
 
             ema_short = ema_short_series.iloc[-1]
             ema_long  = ema_long_series.iloc[-1]
@@ -146,10 +148,46 @@ def main(args):
         # VIX indices are annualized standard deviations.
         # To get 1-day expected move: (Index / 100) * sqrt(1 / 252)
         trading_days_per_year = 252.0
-
         vix_implied_daily = (vix / 100.0) * np.sqrt(1. / trading_days_per_year) * np.sqrt(args.look_ahead)
-        upper_limit = upper_side_scale_factor * current_price * (1 + vix_implied_daily)
-        lower_limit = lower_side_scale_factor * current_price * (1 - vix_implied_daily)
+        upper_limit = args.upper_side_scale_factor * current_price * (1 + vix_implied_daily)
+        lower_limit = args.lower_side_scale_factor * current_price * (1 - vix_implied_daily)
+
+        if args.adj_call__ema:
+            assert args.use_directional_var
+            if ema_trend_bias in ["WEAK BULL 🟢", "BULLISH 🟢"]:
+                assert args.adj_call__ema_factor >= 1.
+                upper_limit = upper_limit*args.adj_call__ema_factor
+        if args.adj_put__ema:
+            assert args.use_directional_var
+            if ema_trend_bias in ["WEAK BEAR 🔴", "BEARISH 🔴"]:
+                assert args.adj_put__ema_factor <= 1.
+                lower_limit = lower_limit*args.adj_put__ema_factor
+        if args.adj_call__sma:
+            assert args.use_directional_var
+            if sma_trend_bias in ["BULLISH"]:
+                assert args.adj_call__sma_factor >= 1.
+                upper_limit = upper_limit*args.adj_call__sma_factor
+        if args.adj_put__sma:
+            assert args.use_directional_var
+            if sma_trend_bias in ["BEARISH"]:
+                assert args.adj_put__sma_factor <= 1.
+                lower_limit = lower_limit*args.adj_put__sma_factor
+        if args.adj_call__rsi:
+            assert args.use_directional_var
+            if momentum_bias in ['OVERSOLD (Bullish Opportunity)']:
+                assert args.adj_call__rsi_factor >= 1.
+                upper_limit = upper_limit*args.adj_call__rsi_factor
+        if args.adj_put__rsi:
+            assert args.use_directional_var
+            if momentum_bias in ['OVERBOUGHT (Bearish Risk)']:
+                assert args.adj_put__rsi_factor <= 1.
+                lower_limit = lower_limit*args.adj_put__rsi_factor
+        if args.adj_call_and_put__contango:
+            assert args.use_directional_var
+            if vol_structure in ['BACKWARDATION (Fear)']:
+                assert 0 <= args.adj_call_and_put__contango_factor <= 0.1
+                upper_limit = upper_limit * (1+args.adj_call_and_put__contango_factor)
+                lower_limit = lower_limit * (1-args.adj_call_and_put__contango_factor)
 
         if 0 == step_back:
             # Real time
@@ -176,22 +214,7 @@ def main(args):
             succes_call_credit = True if target_price <= upper_limit else False
             actual_return = (target_price - current_price) / current_price
 
-            # if args.use_directional_var:
-            #     if trend_bias == 'BEARISH' and vol_structure == 'CONTANGO (Normal)' and momentum_bias in ['NEUTRAL', 'OVERBOUGHT (Bearish Risk)']:
-            #         results_backtest.append({
-            #             'date': past_df.index[-1],
-            #             'current_price': current_price,
-            #             'target_price': target_price,
-            #             'actual_return': actual_return,
-            #             'vix': vix,
-            #             'delta_lower_side': target_price - lower_limit,
-            #             'delta_upper_side': upper_limit - target_price,
-            #             'success_iron_condor': success_iron_condor,
-            #             'success_put_credit': succes_put_credit,
-            #             'success_call_credit': succes_call_credit,
-            #             'vix_3m': {'contango': contango, 'backwardation': backwardation},
-            #         })
-
+            #if momentum_bias == 'OVERBOUGHT (Bearish Risk)'
             results_backtest.append({
                 'date': past_df.index[-1],
                 'current_price': current_price,
@@ -210,10 +233,12 @@ def main(args):
         if args.verbose:
             current_date = results_realtime[0]['date']
             prediction_date = results_realtime[0]['target_date']
-            _str_directional_var = (f'Trend bias:{results_realtime[0]["directional_var__sma_trend_bias"]} / {results_realtime[0]["directional_var__ema_trend_bias"]} '
-                                    f'Momentum bias (14 RSI):{results_realtime[0]["directional_var__momentum_bias"]}  '
-                                    f'Vol structure (VIX / VIX3M):{results_realtime[0]["directional_var__vol_structure"]}')
-            print(f"[{current_date.strftime('%Y-%m-%d')}], the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
+            _ema_trend = f'EMA trend bias: {results_realtime[0]["directional_var__ema_trend_bias"]}' if args.use_directional_var else ''
+            _sma_trend = f'SMA trend bias: {results_realtime[0]["directional_var__sma_trend_bias"]}' if args.use_directional_var else ''
+            _rsi       = f'RSI           : {results_realtime[0]["directional_var__momentum_bias"]}' if args.use_directional_var else ''
+            _vol_struct= f'VIX/VIX3m     : {results_realtime[0]["directional_var__vol_structure"]}' if args.use_directional_var else ''
+            _str_directional_var = f'\n\t{_ema_trend}\n\t{_sma_trend}\n\t{_rsi}\n\t{_vol_struct}\n\n'
+            print(f"Today the {current_date.strftime('%Y-%m-%d')}, the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
                   f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}] , {_str_directional_var}")
     if len(results_backtest) > 0:
         if args.verbose:
@@ -255,19 +280,47 @@ if __name__ == "__main__":
     parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
     parser.add_argument("--look_ahead", type=int, default=1)
-    parser.add_argument("--lower_side_scale_factor", type=float, default=1)
-    parser.add_argument("--upper_side_scale_factor", type=float, default=1)
+    #
+    parser.add_argument("--lower_side_scale_factor", type=float, default=1, help="Gets multiplied againts the current price to obtain the lower side price")
+    parser.add_argument("--upper_side_scale_factor", type=float, default=1, help="Gets multiplied againts the current price to obtain the upper side price")
     parser.add_argument('--put', type=str2bool, default=True)
     parser.add_argument('--call', type=str2bool, default=True)
     parser.add_argument('--iron_condor', type=str2bool, default=False)
+
     parser.add_argument('--step-back-range', type=int, default=5,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
+    #
     parser.add_argument('--use_directional_var', type=str2bool, default=True)
-    parser.add_argument('--verbose', type=str2bool, default=True)
-    parser.add_argument('--verbose_lower_vix', type=str2bool, default=False)
+    parser.add_argument('--use_directional_var__vix3m', type=str2bool, default=True)
+    # RSI
+    parser.add_argument("--rsi_period", type=float, default=14, help="")
+    # SMA
+    parser.add_argument("--sma_period", type=int, default=50, help="Period used to calculate SMA trend")
+    # EMA
     parser.add_argument("--ema_short", type=int, default=21, help="Short EMA span for trend confirmation (default: 21)")
     parser.add_argument("--ema_long", type=int, default=50, help="Long EMA span for trend baseline (default: 50)")
-    parser.add_argument('--filter_by_trend', type=str2bool, default=False, help="If True, disables trades against the EMA trend")
+
+    # Adjust call and put
+    parser.add_argument('--adj_call__ema', type=str2bool, default=False, help="If True, augment the upper limit by a small value if EMA trend is against us")
+    parser.add_argument('--adj_call__ema_factor', type=float, default=1.01, help="Value used to augment the upper limit")
+    parser.add_argument('--adj_put__ema', type=str2bool, default=False, help="If True, reduce the lower limit by a small value if EMA trend is against us")
+    parser.add_argument('--adj_put__ema_factor', type=float, default=0.99, help="Value used to reduce the lower limit")
+
+    parser.add_argument('--adj_call__sma', type=str2bool, default=False, help="If True, augment the upper limit by a small value if SMA trend is against us")
+    parser.add_argument('--adj_call__sma_factor', type=float, default=1.01, help="Value used to augment the upper limit")
+    parser.add_argument('--adj_put__sma', type=str2bool, default=False, help="If True, reduce the lower limit by a small value if SMA trend is against us")
+    parser.add_argument('--adj_put__sma_factor', type=float, default=0.99, help="Value used to reduce the lower limit")
+
+    parser.add_argument('--adj_call__rsi', type=str2bool, default=False, help="If True, augment the upper limit by a small value if RSI value is against us")
+    parser.add_argument('--adj_call__rsi_factor', type=float, default=1.01, help="Value used to augment the upper limit")
+    parser.add_argument('--adj_put__rsi', type=str2bool, default=False, help="If True, reduce the lower limit by a small value if RSI value is against us")
+    parser.add_argument('--adj_put__rsi_factor', type=float, default=0.99, help="Value used to reduce the lower limit")
+
+    parser.add_argument('--adj_call_and_put__contango', type=str2bool, default=False, help="If True, augment the upper and lower limits by a small value if VIX > VIX3m")
+    parser.add_argument('--adj_call_and_put__contango_factor', type=float, default=0.02, help="Value used to change the upper and lower limits")
+
+    parser.add_argument('--verbose', type=str2bool, default=True)
+    parser.add_argument('--verbose_lower_vix', type=str2bool, default=False)
     args = parser.parse_args()
 
     main(args)
