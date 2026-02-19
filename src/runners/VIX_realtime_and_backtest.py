@@ -210,10 +210,14 @@ def main(args):
             # Backtest
             assert 0 == len(past_df.index.intersection(future_df.index))
             target_price = future_df.iloc[args.look_ahead - 1]
-            success_iron_condor = True if lower_limit <= target_price <= upper_limit else False
-            succes_put_credit = True if lower_limit <= target_price else False
-            succes_call_credit = True if target_price <= upper_limit else False
+            success_iron_condor = True if lower_limit   <= target_price <= upper_limit else False
+            succes_put_credit   = True if lower_limit   <= target_price else False
+            succes_call_credit  = True if target_price  <= upper_limit else False
             actual_return = (target_price - current_price) / current_price
+            lower_diff = (current_price - lower_limit) / current_price
+            assert lower_diff > 0
+            upper_diff = (upper_limit - current_price) / current_price
+            assert upper_diff > 0
             if 1 == step_back:
                 backstep_t1 = past_df.index[-1]
             backstep_t2 = past_df.index[-1]
@@ -222,7 +226,7 @@ def main(args):
                 'current_price': current_price,
                 'target_price': target_price,
                 'actual_return': actual_return,
-                'vix': vix,
+                'vix': vix, 'upper_diff': upper_diff, 'lower_diff': lower_diff,
                 'delta_lower_side':target_price - lower_limit,
                 'delta_upper_side': upper_limit - target_price,
                 'success_iron_condor': success_iron_condor,
