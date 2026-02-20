@@ -191,14 +191,15 @@ def main(args):
         print("⚠️  Optuna not available. Running single backtest with default parameters.")
 
     if args.use_optuna:
-        print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials})...")
+        timeout_str = f"{args.timeout}s" if args.timeout else "None"
+        print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
         # Create Study
         study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
 
         # Run Optimization
         # n_jobs=1 is recommended for financial backtests to avoid DB connection issues or race conditions
-        study.optimize(lambda trial: objective(trial, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True)
+        study.optimize(lambda trial: objective(trial, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True,timeout=args.timeout)
 
         # Print Best Results
         print("\n" + "=" * 80)
@@ -255,6 +256,8 @@ if __name__ == "__main__":
     parser.add_argument('--optimize_target', type=str, default='put',
                         choices=['put', 'call', 'average'],
                         help='Which score to maximize')
+    parser.add_argument('--timeout', type=int, default=None,
+                        help='Maximum optimization time in seconds (None = no limit)')
 
     args = parser.parse_args()
     main(args)
