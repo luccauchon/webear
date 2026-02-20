@@ -328,10 +328,12 @@ def main(args):
                 if args.verbose:
                     print(f"\t[VIX<={uuu}] ,     CALL : {tmp_df['success_call_credit'].mean() * 100:.1f}% success")
         if iron_condor:
+            returned_results.update({'iron_condor': {}})
             for uuu in vixes:
                 tmp_df = df_results[df_results['vix'] <= uuu]
                 if 0 == len(tmp_df):
                     continue
+                returned_results['iron_condor'].update({f'success_rate__vix{uuu}': tmp_df['success_iron_condor'].mean()})
                 if args.verbose:
                     print(f"\t[VIX<={uuu}] IRON CONDOR : {tmp_df['success_iron_condor'].mean() * 100:.1f}% success")
     return returned_results

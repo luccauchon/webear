@@ -68,7 +68,7 @@ def create_configuration(args, trial=None):
         look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
         put=True,
         call=True,
-        iron_condor=False,
+        iron_condor=True,
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
@@ -160,9 +160,9 @@ def objective(trial, args):
         return 0.0
 
     # 3. Extract Scores
-    put_score = results['put']['success_rate__vix999']
-    call_score = results['call']['success_rate__vix999']
-
+    put_score         = results['put']['success_rate__vix999']
+    call_score        = results['call']['success_rate__vix999']
+    iron_condor_score = results['iron_condor']['success_rate__vix999']
     # 4. Determine Target Score
     if args.optimize_target == 'put':
         score = put_score
@@ -170,6 +170,8 @@ def objective(trial, args):
         score = call_score
     elif args.optimize_target == 'average':
         score = (put_score + call_score) / 2.0
+    elif args.optimize_target == 'iron_condor':
+        score = iron_condor_score
     else:
         score = put_score  # Fallback
 
@@ -254,7 +256,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna (ignored if use_optuna=False)')
     parser.add_argument('--optimize_target', type=str, default='put',
-                        choices=['put', 'call', 'average'],
+                        choices=['put', 'call', 'average', 'iron_condor'],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds (None = no limit)')
