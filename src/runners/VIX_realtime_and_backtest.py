@@ -51,8 +51,9 @@ def main(args):
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix1d__master_data_cache.index[-1].strftime('%Y-%m-%d')
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix3m__master_data_cache.index[-1].strftime('%Y-%m-%d')
     results_realtime, results_backtest, _str_tmp_put_credit, _str_tmp_call_credit, _str_tmp_iron_condor_credit = [], [], '', '', ''
-    step_back_range = args.step_back_range if args.step_back_range <len(master_data_cache) else len(master_data_cache)
+    step_back_range = args.step_back_range if args.step_back_range < len(master_data_cache) else len(master_data_cache)
     used_past_point, real_time_date, backstep_t1, backstep_t2 = 0, None, None, None
+    returned_results = {}
     for step_back in tqdm(range(0, step_back_range + 1)) if args.verbose else range(0, step_back_range + 1):
         if 0 == step_back:
             past_df = master_data_cache
@@ -90,60 +91,98 @@ def main(args):
         vix           = vix_df.iloc[-1]
         contango, backwardation = None, None
         ema_trend_bias, sma_trend_bias, momentum_bias, vol_structure = '', '', '', ''
+        macd_bias = ''
         # --- DIRECTIONAL VARIABLES ---
         if args.use_directional_var:
-            # The Signal:
-            # Contango (VIX < VIX3M): Normal market. Usually bullish or neutral.
-            # Backwardation (VIX > VIX3M): Fear is immediate. This is a strong Bearish signal. When short-term volatility spikes above long-term, the SPX often drops.
             if args.use_directional_var__vix3m:
+                # The Signal:
+                # Contango (VIX < VIX3M): Normal market. Usually bullish or neutral.
+                # Backwardation (VIX > VIX3M): Fear is immediate. This is a strong Bearish signal. When short-term volatility spikes above long-term, the SPX often drops.
                 vix3m         = vix3m_df.iloc[-1]
                 contango      = vix <= vix3m
                 backwardation = vix > vix3m
 
-            # 1. Trend Filter: 50-Day Simple Moving Average
-            sma_50 = past_df.rolling(window=args.sma_period).mean().iloc[-1]
-            sma_trend_bias = 'BULLISH' if current_price > sma_50 else 'BEARISH'
+            if args.adj_call__sma or args.adj_put__sma:
+                # 1. Trend Filter: 50-Day Simple Moving Average
+                sma_50 = past_df.rolling(window=args.sma_period).mean().iloc[-1]
+                sma_trend_bias = 'BULLISH' if current_price > sma_50 else 'BEARISH'
 
-            # 2. Momentum Filter: 14-Day RSI
-            delta = past_df.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=args.rsi_period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=args.rsi_period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            rsi_val = rsi.iloc[-1]
+            if args.adj_call__rsi or args.adj_put__rsi:
+                # 2. Momentum Filter: 14-Day RSI
+                delta = past_df.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(window=args.rsi_period).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=args.rsi_period).mean()
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+                rsi_val = rsi.iloc[-1]
 
-            momentum_bias = 'NEUTRAL'
-            if rsi_val > 70:
-                momentum_bias = 'OVERBOUGHT (Bearish Risk)'
-            elif rsi_val < 30:
-                momentum_bias = 'OVERSOLD (Bullish Opportunity)'
+                momentum_bias = 'NEUTRAL'
+                if rsi_val > 70:
+                    momentum_bias = 'OVERBOUGHT (Bearish Risk)'
+                elif rsi_val < 30:
+                    momentum_bias = 'OVERSOLD (Bullish Opportunity)'
 
-            # 3. VIX Term Structure (Requires ^VIX3M in your cache)
-            # Assuming you load vix3m_df similar to vix_df
             if args.use_directional_var__vix3m:
+                # 3. VIX Term Structure (Requires ^VIX3M in your cache)
+                # Assuming you load vix3m_df similar to vix_df
                 vix_ratio = vix / vix3m_df.iloc[-1]
                 vol_structure = 'BACKWARDATION (Fear)' if vix_ratio > 1.0 else 'CONTANGO (Normal)'
 
-            # 4. --- 🚀 NEW: EMA DIRECTIONAL LOGIC 🚀 ---
-            # Calculate EMAs on the PAST data only (no look-ahead bias)
-            # adjust=False makes it behave like standard trading view EMA
-            ema_short_series = past_df.ewm(span=args.ema_short, adjust=False).mean()
-            ema_long_series  = past_df.ewm(span=args.ema_long, adjust=False).mean()
+            if args.adj_call__ema or args.adj_put__ema:
+                # 4. --- 🚀 NEW: EMA DIRECTIONAL LOGIC 🚀 ---
+                # Calculate EMAs on the PAST data only (no look-ahead bias)
+                # adjust=False makes it behave like standard trading view EMA
+                ema_short_series = past_df.ewm(span=args.ema_short, adjust=False).mean()
+                ema_long_series  = past_df.ewm(span=args.ema_long, adjust=False).mean()
 
-            ema_short = ema_short_series.iloc[-1]
-            ema_long  = ema_long_series.iloc[-1]
+                ema_short = ema_short_series.iloc[-1]
+                ema_long  = ema_long_series.iloc[-1]
 
-            # Determine Trend Bias
-            ema_trend_bias = "NEUTRAL"
-            if not np.isnan(ema_long):
-                if current_price > ema_long and ema_short > ema_long:
-                    ema_trend_bias = "BULLISH 🟢"
-                elif current_price < ema_long and ema_short < ema_long:
-                    ema_trend_bias = "BEARISH 🔴"
-                elif current_price > ema_long:
-                    ema_trend_bias = "WEAK BULL 🟢"
-                elif current_price < ema_long:
-                    ema_trend_bias = "WEAK BEAR 🔴"
+                # Determine Trend Bias
+                ema_trend_bias = "NEUTRAL"
+                if not np.isnan(ema_long):
+                    if current_price > ema_long and ema_short > ema_long:
+                        ema_trend_bias = "BULLISH 🟢"
+                    elif current_price < ema_long and ema_short < ema_long:
+                        ema_trend_bias = "BEARISH 🔴"
+                    elif current_price > ema_long:
+                        ema_trend_bias = "WEAK BULL 🟢"
+                    elif current_price < ema_long:
+                        ema_trend_bias = "WEAK BEAR 🔴"
+
+            if args.adj_call__macd or args.adj_put__macd:
+                # 5. --- 🚀 NEW: MACD MOMENTUM LOGIC 🚀 ---
+                # Calculate MACD on the PAST data only (no look-ahead bias)
+                ema_fast = past_df.ewm(span=args.macd_fast_period, adjust=False).mean()
+                ema_slow = past_df.ewm(span=args.macd_slow_period, adjust=False).mean()
+
+                macd_line = ema_fast - ema_slow
+                signal_line = macd_line.ewm(span=args.macd_signal_period, adjust=False).mean()
+                macd_histogram = macd_line - signal_line
+
+                macd_line_val = macd_line.iloc[-1]
+                signal_line_val = signal_line.iloc[-1]
+                macd_histogram_val = macd_histogram.iloc[-1]
+
+                # Determine MACD Bias
+                macd_bias = "NEUTRAL"
+                if not np.isnan(macd_line_val) and not np.isnan(signal_line_val):
+                    if macd_line_val > signal_line_val and macd_histogram_val > 0:
+                        macd_bias = "BULLISH 🟢"
+                    elif macd_line_val < signal_line_val and macd_histogram_val < 0:
+                        macd_bias = "BEARISH 🔴"
+                    elif macd_line_val > signal_line_val:
+                        macd_bias = "WEAK BULL 🟢"
+                    elif macd_line_val < signal_line_val:
+                        macd_bias = "WEAK BEAR 🔴"
+                    # Check for crossovers
+                    if len(macd_line) >= 2:
+                        prev_macd = macd_line.iloc[-2]
+                        prev_signal = signal_line.iloc[-2]
+                        if prev_macd <= prev_signal and macd_line_val > signal_line_val:
+                            macd_bias = "BULLISH CROSSOVER 🟢"
+                        elif prev_macd >= prev_signal and macd_line_val < signal_line_val:
+                            macd_bias = "BEARISH CROSSOVER 🔴"
 
         # VIX indices are annualized standard deviations.
         # To get 1-day expected move: (Index / 100) * sqrt(1 / 252)
@@ -156,38 +195,49 @@ def main(args):
             assert args.use_directional_var
             if ema_trend_bias in ["WEAK BULL 🟢", "BULLISH 🟢"]:
                 assert args.adj_call__ema_factor >= 1.
-                upper_limit = upper_limit*args.adj_call__ema_factor
+                upper_limit = upper_limit * args.adj_call__ema_factor
         if args.adj_put__ema:
             assert args.use_directional_var
             if ema_trend_bias in ["WEAK BEAR 🔴", "BEARISH 🔴"]:
                 assert args.adj_put__ema_factor <= 1.
-                lower_limit = lower_limit*args.adj_put__ema_factor
+                lower_limit = lower_limit * args.adj_put__ema_factor
         if args.adj_call__sma:
             assert args.use_directional_var
             if sma_trend_bias in ["BULLISH"]:
                 assert args.adj_call__sma_factor >= 1.
-                upper_limit = upper_limit*args.adj_call__sma_factor
+                upper_limit = upper_limit * args.adj_call__sma_factor
         if args.adj_put__sma:
             assert args.use_directional_var
             if sma_trend_bias in ["BEARISH"]:
                 assert args.adj_put__sma_factor <= 1.
-                lower_limit = lower_limit*args.adj_put__sma_factor
+                lower_limit = lower_limit * args.adj_put__sma_factor
         if args.adj_call__rsi:
             assert args.use_directional_var
             if momentum_bias in ['OVERSOLD (Bullish Opportunity)']:
                 assert args.adj_call__rsi_factor >= 1.
-                upper_limit = upper_limit*args.adj_call__rsi_factor
+                upper_limit = upper_limit * args.adj_call__rsi_factor
         if args.adj_put__rsi:
             assert args.use_directional_var
             if momentum_bias in ['OVERBOUGHT (Bearish Risk)']:
                 assert args.adj_put__rsi_factor <= 1.
-                lower_limit = lower_limit*args.adj_put__rsi_factor
+                lower_limit = lower_limit * args.adj_put__rsi_factor
+        # --- NEW: MACD Adjustments ---
+        if args.adj_call__macd:
+            assert args.use_directional_var
+            if macd_bias in ["BULLISH 🟢", "BULLISH CROSSOVER 🟢", "WEAK BULL 🟢"]:
+                assert args.adj_call__macd_factor >= 1.
+                upper_limit = upper_limit * args.adj_call__macd_factor
+        if args.adj_put__macd:
+            assert args.use_directional_var
+            if macd_bias in ["BEARISH 🔴", "BEARISH CROSSOVER 🔴", "WEAK BEAR 🔴"]:
+                assert args.adj_put__macd_factor <= 1.
+                lower_limit = lower_limit * args.adj_put__macd_factor
         if args.adj_call_and_put__contango:
             assert args.use_directional_var
             if vol_structure in ['BACKWARDATION (Fear)']:
                 assert 0 <= args.adj_call_and_put__contango_factor <= 0.1
-                upper_limit = upper_limit * (1+args.adj_call_and_put__contango_factor)
-                lower_limit = lower_limit * (1-args.adj_call_and_put__contango_factor)
+                upper_limit = upper_limit * (1 + args.adj_call_and_put__contango_factor)
+                lower_limit = lower_limit * (1 - args.adj_call_and_put__contango_factor)
 
         if 0 == step_back:
             # Real time
@@ -205,14 +255,15 @@ def main(args):
                 'directional_var__ema_trend_bias': ema_trend_bias,
                 'directional_var__momentum_bias': momentum_bias,
                 'directional_var__vol_structure': vol_structure,
+                'directional_var__macd_bias': macd_bias,
             })
         else:
             # Backtest
             assert 0 == len(past_df.index.intersection(future_df.index))
             target_price = future_df.iloc[args.look_ahead - 1]
-            success_iron_condor = True if lower_limit   <= target_price <= upper_limit else False
-            succes_put_credit   = True if lower_limit   <= target_price else False
-            succes_call_credit  = True if target_price  <= upper_limit else False
+            success_iron_condor = True if lower_limit  <= target_price <= upper_limit else False
+            succes_put_credit   = True if lower_limit  <= target_price else False
+            succes_call_credit  = True if target_price <= upper_limit else False
             actual_return = (target_price - current_price) / current_price
             lower_diff = (current_price - lower_limit) / current_price
             assert lower_diff > 0
@@ -227,11 +278,11 @@ def main(args):
                 'target_price': target_price,
                 'actual_return': actual_return,
                 'vix': vix, 'upper_diff': upper_diff, 'lower_diff': lower_diff,
-                'delta_lower_side':target_price - lower_limit,
+                'delta_lower_side': target_price - lower_limit,
                 'delta_upper_side': upper_limit - target_price,
                 'success_iron_condor': success_iron_condor,
-                'success_put_credit':  succes_put_credit,
-                'success_call_credit':  succes_call_credit,
+                'success_put_credit': succes_put_credit,
+                'success_call_credit': succes_call_credit,
                 'vix_3m': {'contango': contango, 'backwardation': backwardation},
             })
     if len(results_realtime) > 0:
@@ -242,8 +293,9 @@ def main(args):
             _ema_trend = f'EMA trend bias: {results_realtime[0]["directional_var__ema_trend_bias"]}' if args.use_directional_var else ''
             _sma_trend = f'SMA trend bias: {results_realtime[0]["directional_var__sma_trend_bias"]}' if args.use_directional_var else ''
             _rsi       = f'RSI           : {results_realtime[0]["directional_var__momentum_bias"]}' if args.use_directional_var else ''
-            _vol_struct= f'VIX/VIX3m     : {results_realtime[0]["directional_var__vol_structure"]}' if args.use_directional_var else ''
-            _str_directional_var = f'\n\t{_ema_trend}\n\t{_sma_trend}\n\t{_rsi}\n\t{_vol_struct}\n\n'
+            _macd      = f'MACD          : {results_realtime[0]["directional_var__macd_bias"]}' if args.use_directional_var else ''
+            _vol_struct = f'VIX/VIX3m     : {results_realtime[0]["directional_var__vol_structure"]}' if args.use_directional_var else ''
+            _str_directional_var = f'\n\t{_ema_trend}\n\t{_sma_trend}\n\t{_rsi}\n\t{_macd}\n\t{_vol_struct}\n\n'
             print(f"Today the {current_date.strftime('%Y-%m-%d')}, the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
                   f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}] , {_str_directional_var}")
     if len(results_backtest) > 0:
@@ -255,29 +307,34 @@ def main(args):
         if args.verbose_lower_vix:
             vixes = [10, 12, 15, 18, 20, 30, 40, 50, 999]
         if put_credit:
+            returned_results.update({'put': {}})
             for uuu in vixes:
                 tmp_df = df_results[df_results['vix'] <= uuu]
                 if np.isnan(tmp_df['delta_lower_side'].mean()):
                     continue
                 delta_lower_side = tmp_df[tmp_df['delta_lower_side'] > 0]['delta_lower_side']
                 delta_lower_side = delta_lower_side.mean() / tmp_df['target_price'].mean() * 100
+                returned_results['put'].update({f'success_rate__vix{uuu}': tmp_df['success_put_credit'].mean()})
                 if args.verbose:
-                    print(f"\t[VIX<={uuu}] ,     PUT : {tmp_df['success_put_credit'].mean()*100:.1f}% success")
+                    print(f"\t[VIX<={uuu}] ,     PUT : {tmp_df['success_put_credit'].mean() * 100:.1f}% success")
         if call_credit:
+            returned_results.update({'call': {}})
             for uuu in vixes:
                 tmp_df = df_results[df_results['vix'] <= uuu]
                 delta_upper_side = tmp_df['delta_upper_side'].mean()
                 if np.isnan(delta_upper_side):
                     continue
+                returned_results['call'].update({f'success_rate__vix{uuu}': tmp_df['success_call_credit'].mean()})
                 if args.verbose:
-                    print(f"\t[VIX<={uuu}] ,     CALL : {tmp_df['success_call_credit'].mean()*100:.1f}% success")
+                    print(f"\t[VIX<={uuu}] ,     CALL : {tmp_df['success_call_credit'].mean() * 100:.1f}% success")
         if iron_condor:
             for uuu in vixes:
                 tmp_df = df_results[df_results['vix'] <= uuu]
                 if 0 == len(tmp_df):
                     continue
                 if args.verbose:
-                    print(f"\t[VIX<={uuu}] IRON CONDOR : {tmp_df['success_iron_condor'].mean()*100:.1f}% success")
+                    print(f"\t[VIX<={uuu}] IRON CONDOR : {tmp_df['success_iron_condor'].mean() * 100:.1f}% success")
+    return returned_results
 
 
 if __name__ == "__main__":
@@ -306,6 +363,10 @@ if __name__ == "__main__":
     # EMA
     parser.add_argument("--ema_short", type=int, default=21, help="Short EMA span for trend confirmation (default: 21)")
     parser.add_argument("--ema_long", type=int, default=50, help="Long EMA span for trend baseline (default: 50)")
+    # MACD
+    parser.add_argument("--macd_fast_period", type=int, default=12, help="Fast EMA period for MACD (default: 12)")
+    parser.add_argument("--macd_slow_period", type=int, default=26, help="Slow EMA period for MACD (default: 26)")
+    parser.add_argument("--macd_signal_period", type=int, default=9, help="Signal line EMA period for MACD (default: 9)")
 
     # Adjust call and put
     parser.add_argument('--adj_call__ema', type=str2bool, default=False, help="If True, augment the upper limit by a small value if EMA trend is against us")
@@ -322,6 +383,12 @@ if __name__ == "__main__":
     parser.add_argument('--adj_call__rsi_factor', type=float, default=1.01, help="Value used to augment the upper limit")
     parser.add_argument('--adj_put__rsi', type=str2bool, default=False, help="If True, reduce the lower limit by a small value if RSI value is against us")
     parser.add_argument('--adj_put__rsi_factor', type=float, default=0.99, help="Value used to reduce the lower limit")
+
+    # MACD Adjustments
+    parser.add_argument('--adj_call__macd', type=str2bool, default=False, help="If True, augment the upper limit if MACD is bullish")
+    parser.add_argument('--adj_call__macd_factor', type=float, default=1.01, help="Value used to augment the upper limit based on MACD")
+    parser.add_argument('--adj_put__macd', type=str2bool, default=False, help="If True, reduce the lower limit if MACD is bearish")
+    parser.add_argument('--adj_put__macd_factor', type=float, default=0.99, help="Value used to reduce the lower limit based on MACD")
 
     parser.add_argument('--adj_call_and_put__contango', type=str2bool, default=False, help="If True, augment the upper and lower limits by a small value if VIX > VIX3m")
     parser.add_argument('--adj_call_and_put__contango_factor', type=float, default=0.02, help="Value used to change the upper and lower limits")
