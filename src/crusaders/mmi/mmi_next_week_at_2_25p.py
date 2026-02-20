@@ -34,7 +34,7 @@ CONFIGURATION_FOR_MMI_NEXT_WEEEK = Namespace(
 def main(args):
     if args.verbose:
         print("\n" + "=" * 80)
-        print(f"Historical performance of 81.5148% (overall accuracy)")
+        print(f"Historical performance of 81.5309% (overall accuracy)")
         print("=" * 80)
     config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_WEEEK)
     config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, 'older_dataset': args.older_dataset, 'keep_last_step': args.keep_last_step })
