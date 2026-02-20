@@ -27,9 +27,10 @@ def main(args):
         for arg, value in vars(args).items():
             print(f"    {arg:.<40} {value}")
         print("-" * 80, flush=True)
+
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
         put=True,
         call=True,
         iron_condor=False,
@@ -37,6 +38,7 @@ def main(args):
         ##
         use_directional_var=True,
         use_directional_var__vix3m=False,
+
         ##
         upper_side_scale_factor=1.,
         lower_side_scale_factor=1.,
@@ -64,19 +66,23 @@ def main(args):
         adj_put__rsi_factor=1.,
 
         ## MACD
-        adj_call__macd=True,
-        adj_put__macd=True,
+        adj_call__macd=False,
+        adj_put__macd=False,
         macd_fast_period=12,
         macd_slow_period=26,
         macd_signal_period=9,
         adj_call__macd_factor=1.,
         adj_put__macd_factor=1.,
 
-        ##
-        adj_call_and_put__contango=True,
-        verbose=True, verbose_lower_vix=False)
+        ## Contango
+        adj_call_and_put__contango=False,
+        adj_call_and_put__contango_factor=0.02,
+        )
     results = VVIX_realtime_and_backtest(configuration)
-    print(results)
+    put_score  = results['put']['success_rate__vix999']
+    call_score = results['call']['success_rate__vix999']
+    print(f"Put Score: {put_score:0.4f}  Call Score: {call_score:0.4f}")
+
 
 if __name__ == "__main__":
     freeze_support()
