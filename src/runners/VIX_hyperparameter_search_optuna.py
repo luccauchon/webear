@@ -181,7 +181,7 @@ def objective(trial, configuration_specified, args):
     return score
 
 
-def create_configuration___2026_02_20(args, trial):
+def create_configuration___2026_02_20_iron_condor_1pct(args, trial):
     """
     Creates the configuration Namespace.
     If trial is provided, uses Optuna suggestions.
@@ -256,10 +256,156 @@ def create_configuration___2026_02_20(args, trial):
     return configuration
 
 
+def create_configuration___2026_02_20_iron_condor_2pct(args, trial):
+    """
+    """
+
+    # Helper for Optuna suggestions
+    def suggest_bool(name, default):
+        return trial.suggest_categorical(name, [True, False])
+
+    def suggest_int(name, low, high, default):
+        return trial.suggest_int(name, low, high)
+
+    def suggest_float(name, low, high, default, step=None):
+        return trial.suggest_float(name, low, high, step=step)
+
+    # --- Base Config ---
+    # Note: We always calculate both put and call to allow switching targets without re-running,
+    # but the optimizer will only see the selected score.
+    configuration = Namespace(
+        dataset_id="day", col=args.col, ticker=args.ticker,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        put=True,
+        call=True,
+        iron_condor=True,
+        step_back_range=args.step_back_range,
+        use_directional_var=True,
+        use_directional_var__vix3m=False,
+        upper_side_scale_factor=1.,
+        lower_side_scale_factor=1.,
+    )
+
+    # --- EMA ---
+    configuration.adj_call__ema = True
+    configuration.adj_put__ema = True
+    # Only suggest parameters if at least one EMA is active to save search space,
+    # or always suggest if the underlying function requires the values to exist.
+    # Safest is to always suggest, but conditional is more efficient.
+    # Assuming underlying code checks the boolean flag first.
+    configuration.ema_short = suggest_int("ema_short", 5, 50, 21)
+    configuration.ema_long = suggest_int("ema_long", 50, 200, 50)
+    configuration.adj_call__ema_factor = 1.02
+    configuration.adj_put__ema_factor = 0.98
+
+    # --- SMA ---
+    configuration.adj_call__sma = True
+    configuration.adj_put__sma = True
+    configuration.sma_period = suggest_int("sma_period", 10, 100, 50)
+    configuration.adj_call__sma_factor = 1.02
+    configuration.adj_put__sma_factor = 0.98
+
+    # --- RSI ---
+    configuration.adj_call__rsi = True
+    configuration.adj_put__rsi = True
+    configuration.rsi_period = suggest_int("rsi_period", 5, 30, 14)
+    configuration.adj_call__rsi_factor = 1.02
+    configuration.adj_put__rsi_factor = 0.98
+
+    # --- MACD ---
+    configuration.adj_call__macd = True
+    configuration.adj_put__macd = True
+    configuration.macd_fast_period = suggest_int("macd_fast_period", 5, 20, 12)
+    configuration.macd_slow_period = suggest_int("macd_slow_period", 20, 50, 26)
+    configuration.macd_signal_period = suggest_int("macd_signal_period", 5, 15, 9)
+    configuration.adj_call__macd_factor = 1.02
+    configuration.adj_put__macd_factor = 0.98
+
+    # --- Contango ---
+    configuration.adj_call_and_put__contango = True
+    configuration.adj_call_and_put__contango_factor = 0.02
+
+    return configuration
+
+
+def create_configuration___2026_02_20_iron_condor_0_5pct(args, trial):
+    """
+    """
+
+    # Helper for Optuna suggestions
+    def suggest_bool(name, default):
+        return trial.suggest_categorical(name, [True, False])
+
+    def suggest_int(name, low, high, default):
+        return trial.suggest_int(name, low, high)
+
+    def suggest_float(name, low, high, default, step=None):
+        return trial.suggest_float(name, low, high, step=step)
+
+    # --- Base Config ---
+    # Note: We always calculate both put and call to allow switching targets without re-running,
+    # but the optimizer will only see the selected score.
+    configuration = Namespace(
+        dataset_id="day", col=args.col, ticker=args.ticker,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        put=True,
+        call=True,
+        iron_condor=True,
+        step_back_range=args.step_back_range,
+        use_directional_var=True,
+        use_directional_var__vix3m=False,
+        upper_side_scale_factor=1.,
+        lower_side_scale_factor=1.,
+    )
+
+    # --- EMA ---
+    configuration.adj_call__ema = True
+    configuration.adj_put__ema = True
+    # Only suggest parameters if at least one EMA is active to save search space,
+    # or always suggest if the underlying function requires the values to exist.
+    # Safest is to always suggest, but conditional is more efficient.
+    # Assuming underlying code checks the boolean flag first.
+    configuration.ema_short = suggest_int("ema_short", 5, 50, 21)
+    configuration.ema_long = suggest_int("ema_long", 50, 200, 50)
+    configuration.adj_call__ema_factor = 1.005
+    configuration.adj_put__ema_factor = 0.995
+
+    # --- SMA ---
+    configuration.adj_call__sma = True
+    configuration.adj_put__sma = True
+    configuration.sma_period = suggest_int("sma_period", 10, 100, 50)
+    configuration.adj_call__sma_factor = 1.005
+    configuration.adj_put__sma_factor = 0.995
+
+    # --- RSI ---
+    configuration.adj_call__rsi = True
+    configuration.adj_put__rsi = True
+    configuration.rsi_period = suggest_int("rsi_period", 5, 30, 14)
+    configuration.adj_call__rsi_factor = 1.005
+    configuration.adj_put__rsi_factor = 0.995
+
+    # --- MACD ---
+    configuration.adj_call__macd = True
+    configuration.adj_put__macd = True
+    configuration.macd_fast_period = suggest_int("macd_fast_period", 5, 20, 12)
+    configuration.macd_slow_period = suggest_int("macd_slow_period", 20, 50, 26)
+    configuration.macd_signal_period = suggest_int("macd_signal_period", 5, 15, 9)
+    configuration.adj_call__macd_factor = 1.005
+    configuration.adj_put__macd_factor = 0.995
+
+    # --- Contango ---
+    configuration.adj_call_and_put__contango = True
+    configuration.adj_call_and_put__contango_factor = 0.005
+
+    return configuration
+
+
 # --- Objective Function Registry ---
 CONFIGURATION_FUNCTIONS = {
     "base_configuration": create_configuration,
-    "configuration___2026_02_20": create_configuration___2026_02_20,
+    "2026_02_20_iron_condor_0_5pct": create_configuration___2026_02_20_iron_condor_0_5pct,
+    "2026_02_20_iron_condor_1pct": create_configuration___2026_02_20_iron_condor_1pct,
+    "2026_02_20_iron_condor_2pct": create_configuration___2026_02_20_iron_condor_2pct,
 }
 
 
