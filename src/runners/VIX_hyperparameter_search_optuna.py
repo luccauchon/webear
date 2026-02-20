@@ -251,7 +251,7 @@ if __name__ == "__main__":
     # --- Optuna Args ---
     parser.add_argument('--use_optuna', type=str2bool, default=True,
                         help='Enable Optuna parameter search')
-    parser.add_argument('--n_trials', type=int, default=50,
+    parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna (ignored if use_optuna=False)')
     parser.add_argument('--optimize_target', type=str, default='put',
                         choices=['put', 'call', 'average'],
