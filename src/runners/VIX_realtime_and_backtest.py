@@ -296,7 +296,8 @@ def main(args):
             _macd      = f'MACD          : {results_realtime[0]["directional_var__macd_bias"]}' if args.use_directional_var else ''
             _vol_struct = f'VIX/VIX3m     : {results_realtime[0]["directional_var__vol_structure"]}' if args.use_directional_var else ''
             _str_directional_var = f'\n\t{_ema_trend}\n\t{_sma_trend}\n\t{_rsi}\n\t{_macd}\n\t{_vol_struct}\n\n'
-            print(f"Today the {current_date.strftime('%Y-%m-%d')}, the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
+            print(f"Today the {current_date.strftime('%Y-%m-%d')} (SPX is @{results_realtime[0]['current_price']:.0f}, VIX is @{results_realtime[0]['vix']:.1f}), "
+                  f"the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
                   f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}] , {_str_directional_var}")
     if len(results_backtest) > 0:
         if args.verbose:
