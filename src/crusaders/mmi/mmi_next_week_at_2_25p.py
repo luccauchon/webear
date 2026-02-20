@@ -18,8 +18,8 @@ from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # ===== BEST PARAMETERS =====
-# {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.025, 'MMI_TREND_MAX': 7, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
-# Best Score: 0.81514800
+# {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.025, 'MMI_TREND_MAX': 32, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
+# Best Score: 0.81530879
 CONFIGURATION_FOR_MMI_NEXT_WEEEK = Namespace(
         dataset_id="week", older_dataset=None,
         mmi_period=2,
