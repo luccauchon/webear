@@ -476,10 +476,22 @@ def next_weekday_with_check(date, df, max_look_ahead=999):
 
 
 def next_weekday(input_date, nn=1):
-    next_day = input_date + pd.Timedelta(nn, unit='days')
-    while next_day.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-        next_day += pd.Timedelta(nn, unit='days')
-    return next_day
+    # Also:
+    # import pandas as pd
+    # from pandas.tseries.offsets import BDay
+    #
+    # def next_weekday(input_date, nn=1):
+    #     # BDay(nn) adds 'nn' business days (Mon-Fri)
+    #     return input_date + BDay(nn)
+
+    _next_day = input_date
+    count = 0
+    while count < nn:
+        _next_day += pd.Timedelta(days=1)
+        # Only increment count if Mon(0) to Fri(4)
+        if _next_day.weekday() < 5:
+            count += 1
+    return _next_day
 
 
 def is_weekday(date):
