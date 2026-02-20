@@ -393,7 +393,7 @@ if __name__ == "__main__":
     parser.add_argument('--adj_put__macd_factor', type=float, default=0.99, help="Value used to reduce the lower limit based on MACD")
 
     parser.add_argument('--adj_call_and_put__contango', type=str2bool, default=False, help="If True, augment the upper and lower limits by a small value if VIX > VIX3m")
-    parser.add_argument('--adj_call_and_put__contango_factor', type=float, default=0.02, help="Value used to change the upper and lower limits")
+    parser.add_argument('--adj_call_and_put__contango_factor', type=float, default=0.01, help="Value used to change the upper and lower limits")
 
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument('--verbose_lower_vix', type=str2bool, default=False)

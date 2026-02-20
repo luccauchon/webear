@@ -250,7 +250,8 @@ def create_configuration___2026_02_20(args, trial):
     configuration.adj_put__macd_factor = 0.99
 
     # --- Contango ---
-    configuration.adj_call_and_put__contango = False
+    configuration.adj_call_and_put__contango = True
+    configuration.adj_call_and_put__contango_factor = 0.01
 
     return configuration
 
