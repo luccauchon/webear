@@ -17,8 +17,8 @@ for /l %%i in (1, 1, 20) do (
     REM Start a new window, call conda, change directory, and run python
     start "VIX Search %%i" cmd /k "call "%CONDA_ACTIVATE%" && call conda activate %CONDA_ENV% && cd /D "%WORK_DIR%" && python VIX_hyperparameter_search_optuna.py --optimize_target %OPTIMIZE_TARGET% --objective_name %OBJECTIVE_NAME% --timeout %TIMEOUT% --look_ahead %%i"
 
-    REM Delay for 1 second to prevent race conditions
-    timeout /t 1 /nobreak >nul
+    REM Delay for 5 seconds to prevent race conditions
+    timeout /t 5 /nobreak >nul
 )
 
 echo.
