@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore", message="invalid value encountered in matmul")
 # --- Optuna Integration ---
 try:
     import optuna
-
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -198,7 +198,7 @@ def main(args):
 
         # Run Optimization
         # n_jobs=1 is recommended for financial backtests to avoid DB connection issues or race conditions
-        study.optimize(lambda trial: objective(trial, args), n_trials=args.n_trials, n_jobs=1)
+        study.optimize(lambda trial: objective(trial, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True)
 
         # Print Best Results
         print("\n" + "=" * 80)
