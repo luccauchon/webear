@@ -483,6 +483,7 @@ CONFIGURATION_FUNCTIONS = {
     "2026_02_20_iron_condor_0_5pct": create_configuration___2026_02_20_iron_condor_0_5pct,
     "2026_02_20_iron_condor_1pct": create_configuration___2026_02_20_iron_condor_1pct,
     "2026_02_20_iron_condor_2pct": create_configuration___2026_02_20_iron_condor_2pct,
+    "2026_02_20_iron_condor_1pct_balanced": create_configuration___2026_02_20_iron_condor_1pct_balanced,
 }
 
 
