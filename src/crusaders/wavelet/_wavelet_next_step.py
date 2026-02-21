@@ -113,14 +113,14 @@ def main(args):
         last_value_forecasted_lower_side = mean_forecast[-1]
     else:
         assert False
-    if args.put_side and args.call_side and args.percentage is not None:
+    if (args.put_side and args.call_side) and args.percentage is not None:
         assert len(args.percentage) == len(args.lower_multiplier) == len(args.upper_multiplier)
         for ppp, lower_multiplier, upper_multiplier, lower_performance, upper_performance in zip(args.percentage, args.lower_multiplier, args.upper_multiplier, args.lower_performance,args.upper_performance):
             last_value_forecasted__px_0 = last_value_forecasted_upper_side * float(upper_multiplier)
             last_value_forecasted__mx_0 = last_value_forecasted_lower_side * float(lower_multiplier)
             print(f"[@{ppp}%] For {step__name} ending {_next_step.strftime('%Y_%m_%d')} , lower value shall be {last_value_forecasted__mx_0:.0f} ({lower_performance * 100:.2f}%)  "
                   f"and upper value {last_value_forecasted__px_0:.0f} ({upper_performance * 100:.2f}%)")
-    if args.put_side or args.call_side and args.vix_modulation is not None:
+    if (args.put_side or args.call_side) and args.vix_modulation is not None:
         assert args.put_side or args.call_side
         multiplier = args.upper_multiplier
         if args.put_side:
