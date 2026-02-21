@@ -27,7 +27,7 @@ from tabulate import tabulate
 import pickle
 import argparse
 import copy
-from utils import get_filename_for_dataset, DATASET_AVAILABLE
+from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 
 
 def main(P, Q, older_dataset, frequency, detailed, quiet):
@@ -136,72 +136,73 @@ def main(P, Q, older_dataset, frequency, detailed, quiet):
     # ----------------------------
     # Pattern Analysis: P↑ → Q↓ → Next Month? (Using Open/Close within month)
     # ----------------------------
-    if not quiet:
-        print("\n\n" + "=" * 60)
-        print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction (using Open/Close values)")
+    if args.add_open_close_stats:
+        if not quiet:
+            print("\n\n" + "=" * 60)
+            print(f"🔍 Pattern Analysis: {P} positive → {Q} negative moves → next close direction (using Open/Close values)")
 
-    open_monthly  = data[open_col].dropna()
-    close_monthly = data[close_col].dropna()
-    common_index  = open_monthly.index.intersection(close_monthly.index)
-    open_monthly  = open_monthly.loc[common_index]
-    close_monthly = close_monthly.loc[common_index]
+        open_monthly  = data[open_col].dropna()
+        close_monthly = data[close_col].dropna()
+        common_index  = open_monthly.index.intersection(close_monthly.index)
+        open_monthly  = open_monthly.loc[common_index]
+        close_monthly = close_monthly.loc[common_index]
 
-    if len(close_monthly) < P + Q + 1:
-        print(f"⚠️ Not enough monthly data for pattern (need at least {P + Q + 1} months).")
-    else:
-        monthly_positive = close_monthly > open_monthly
-        monthly_negative = close_monthly < open_monthly
-
-        pattern_results = []
-        n = len(monthly_positive)
-
-        for i in range(n - (P + Q + 1) + 1):
-            pos_seq = monthly_positive.iloc[i: i + P]
-            neg_seq = monthly_negative.iloc[i + P: i + P + Q]
-
-            if pos_seq.all() and neg_seq.all():
-                end_idx = i + P + Q - 1
-                next_idx = end_idx + 1
-                if next_idx >= n:
-                    continue
-
-                end_date = close_monthly.index[end_idx]
-                next_date = close_monthly.index[next_idx]
-                end_close = close_monthly.iloc[end_idx]
-                next_close = close_monthly.iloc[next_idx]
-                next_return = (next_close - end_close) / end_close
-                direction = "↑" if next_return > 0 else "↓" if next_return < 0 else "="
-
-                pattern_results.append({
-                    "pattern_end": end_date.strftime('%Y-%m-%d'),
-                    "next_date": next_date.strftime('%Y-%m-%d'),
-                    "end_close": end_close,
-                    "next_close": next_close,
-                    "next_return_%": next_return * 100,
-                    "direction": direction
-                })
-
-        if pattern_results:
-            results_df = pd.DataFrame(pattern_results)
-            total_patterns = len(results_df)
-            positive_outcomes = (results_df["next_return_%"] > 0).sum()
-            prob = positive_outcomes / total_patterns
-            results_to_return['intra_step'].update({'total_patterns': total_patterns, 'positive_outcomes': positive_outcomes, 'prob': prob})
-            if not quiet:
-                print(f"Total patterns found: {total_patterns}")
-                print(f"Next positive:        {positive_outcomes}")
-                print(f"Probability:          {prob:.2%}\n")
-            if detailed and not quiet:
-                print("📋 Detailed Pattern Outcomes:")
-                print(tabulate(
-                    results_df[["pattern_end", "next_date", "end_close", "next_close", "next_return_%", "direction"]],
-                    headers=["Pattern End", "Next Date", "End Close", "Next Close", "Next Return (%)", "Dir"],
-                    tablefmt="simple",
-                    floatfmt=(".2f", ".2f", ".2f", ".2f", ".2f", "")
-                ))
+        if len(close_monthly) < P + Q + 1:
+            print(f"⚠️ Not enough monthly data for pattern (need at least {P + Q + 1} months).")
         else:
-            if not quiet:
-                print("No occurrences of this pattern in the data.")
+            monthly_positive = close_monthly > open_monthly
+            monthly_negative = close_monthly < open_monthly
+
+            pattern_results = []
+            n = len(monthly_positive)
+
+            for i in range(n - (P + Q + 1) + 1):
+                pos_seq = monthly_positive.iloc[i: i + P]
+                neg_seq = monthly_negative.iloc[i + P: i + P + Q]
+
+                if pos_seq.all() and neg_seq.all():
+                    end_idx = i + P + Q - 1
+                    next_idx = end_idx + 1
+                    if next_idx >= n:
+                        continue
+
+                    end_date = close_monthly.index[end_idx]
+                    next_date = close_monthly.index[next_idx]
+                    end_close = close_monthly.iloc[end_idx]
+                    next_close = close_monthly.iloc[next_idx]
+                    next_return = (next_close - end_close) / end_close
+                    direction = "↑" if next_return > 0 else "↓" if next_return < 0 else "="
+
+                    pattern_results.append({
+                        "pattern_end": end_date.strftime('%Y-%m-%d'),
+                        "next_date": next_date.strftime('%Y-%m-%d'),
+                        "end_close": end_close,
+                        "next_close": next_close,
+                        "next_return_%": next_return * 100,
+                        "direction": direction
+                    })
+
+            if pattern_results:
+                results_df = pd.DataFrame(pattern_results)
+                total_patterns = len(results_df)
+                positive_outcomes = (results_df["next_return_%"] > 0).sum()
+                prob = positive_outcomes / total_patterns
+                results_to_return['intra_step'].update({'total_patterns': total_patterns, 'positive_outcomes': positive_outcomes, 'prob': prob})
+                if not quiet:
+                    print(f"Total patterns found: {total_patterns}")
+                    print(f"Next positive:        {positive_outcomes}")
+                    print(f"Probability:          {prob:.2%}\n")
+                if detailed and not quiet:
+                    print("📋 Detailed Pattern Outcomes:")
+                    print(tabulate(
+                        results_df[["pattern_end", "next_date", "end_close", "next_close", "next_return_%", "direction"]],
+                        headers=["Pattern End", "Next Date", "End Close", "Next Close", "Next Return (%)", "Dir"],
+                        tablefmt="simple",
+                        floatfmt=(".2f", ".2f", ".2f", ".2f", ".2f", "")
+                    ))
+            else:
+                if not quiet:
+                    print("No occurrences of this pattern in the data.")
     return results_to_return
 
 
@@ -211,8 +212,9 @@ if __name__ == "__main__":
     parser.add_argument('--Q', type=int, default=1, help='Number of consecutive negative months after P positives (default: 1)')
     parser.add_argument("--older_dataset", type=str, default="")
     parser.add_argument("--frequency", type=str, default="day", choices=DATASET_AVAILABLE)
-    parser.add_argument("--detailed", type=bool, default=False)
-    parser.add_argument("--quiet", type=bool, default=False)
+    parser.add_argument("--detailed", type=str2bool, default=False)
+    parser.add_argument("--add_open_close_stats", type=str2bool, default=False)
+    parser.add_argument("--quiet", type=str2bool, default=False)
     args = parser.parse_args()
 
     main(P=args.P, Q=args.Q, older_dataset=args.older_dataset, frequency=args.frequency, detailed=args.detailed, quiet=args.quiet)
