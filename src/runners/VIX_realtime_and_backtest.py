@@ -192,62 +192,69 @@ def main(args):
         upper_limit = args.upper_side_scale_factor * current_price * (1 + vix_implied_daily)
         lower_limit = args.lower_side_scale_factor * current_price * (1 - vix_implied_daily)
 
+        def _increase_by_half_of_the_fraction(number):
+            assert number >= 1.
+            return 1 + (number-1)/2
+        def _decrease_by_half_of_the_fraction(number):
+            assert number <= 1.
+            return number + (1-number)/2
+
         if args.adj_call__ema:
             assert args.use_directional_var
             if ema_trend_bias in ["WEAK BULL 🟢", "BULLISH 🟢"]:
                 assert args.adj_call__ema_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__ema_factor
                 if args.adj_balanced:
-                    lower_limit = lower_limit * args.adj_call__ema_factor
+                    lower_limit = lower_limit * _increase_by_half_of_the_fraction(args.adj_call__ema_factor)
         if args.adj_put__ema:
             assert args.use_directional_var
             if ema_trend_bias in ["WEAK BEAR 🔴", "BEARISH 🔴"]:
                 assert args.adj_put__ema_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__ema_factor
                 if args.adj_balanced:
-                    upper_limit = upper_limit * args.adj_put__ema_factor
+                    upper_limit = upper_limit * _decrease_by_half_of_the_fraction(args.adj_put__ema_factor)
         if args.adj_call__sma:
             assert args.use_directional_var
             if sma_trend_bias in ["BULLISH"]:
                 assert args.adj_call__sma_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__sma_factor
                 if args.adj_balanced:
-                    lower_limit = lower_limit * args.adj_call__sma_factor
+                    lower_limit = lower_limit * _increase_by_half_of_the_fraction(args.adj_call__sma_factor)
         if args.adj_put__sma:
             assert args.use_directional_var
             if sma_trend_bias in ["BEARISH"]:
                 assert args.adj_put__sma_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__sma_factor
                 if args.adj_balanced:
-                    upper_limit = upper_limit * args.adj_put__sma_factor
+                    upper_limit = upper_limit * _decrease_by_half_of_the_fraction(args.adj_put__sma_factor)
         if args.adj_call__rsi:
             assert args.use_directional_var
             if momentum_bias in ['OVERSOLD (Bullish Opportunity)']:
                 assert args.adj_call__rsi_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__rsi_factor
                 if args.adj_balanced:
-                    lower_limit = lower_limit * args.adj_call__rsi_factor
+                    lower_limit = lower_limit * _increase_by_half_of_the_fraction(args.adj_call__rsi_factor)
         if args.adj_put__rsi:
             assert args.use_directional_var
             if momentum_bias in ['OVERBOUGHT (Bearish Risk)']:
                 assert args.adj_put__rsi_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__rsi_factor
                 if args.adj_balanced:
-                    upper_limit = upper_limit * args.adj_put__rsi_factor
+                    upper_limit = upper_limit * _decrease_by_half_of_the_fraction(args.adj_put__rsi_factor)
         if args.adj_call__macd:
             assert args.use_directional_var
             if macd_bias in ["BULLISH 🟢", "BULLISH CROSSOVER 🟢", "WEAK BULL 🟢"]:
                 assert args.adj_call__macd_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__macd_factor
                 if args.adj_balanced:
-                    lower_limit = lower_limit * args.adj_call__macd_factor
+                    lower_limit = lower_limit * _increase_by_half_of_the_fraction(args.adj_call__macd_factor)
         if args.adj_put__macd:
             assert args.use_directional_var
             if macd_bias in ["BEARISH 🔴", "BEARISH CROSSOVER 🔴", "WEAK BEAR 🔴"]:
                 assert args.adj_put__macd_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__macd_factor
                 if args.adj_balanced:
-                    upper_limit = upper_limit * args.adj_put__macd_factor
+                    upper_limit = upper_limit * _decrease_by_half_of_the_fraction(args.adj_put__macd_factor)
         if args.adj_call_and_put__contango:
             assert args.use_directional_var
             if vol_structure in ['BACKWARDATION (Fear)']:
