@@ -284,6 +284,7 @@ def main(args):
             # Backtest
             assert 0 == len(past_df.index.intersection(future_df.index))
             target_price = future_df.iloc[args.look_ahead - 1]
+            assert lower_limit < upper_limit
             success_iron_condor = True if lower_limit  <= target_price <= upper_limit else False
             succes_put_credit   = True if lower_limit  <= target_price else False
             succes_call_credit  = True if target_price <= upper_limit else False
