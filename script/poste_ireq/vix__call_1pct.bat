@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: --- Parameters ---
 set "OPTIMIZE_TARGET=call"
-set "OBJECTIVE_NAME=2026_02_20_iron_condor_1pct"
+set "OBJECTIVE_NAME=2026_02_20__1pct"
 set "TIMEOUT=400000"
 set "CONDA_ENV=PY311"
 set "WORK_DIR=C:\PYCHARMPROJECTS\webear\src\runners"

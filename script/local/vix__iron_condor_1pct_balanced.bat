@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: --- Parameters ---
 set "OPTIMIZE_TARGET=iron_condor"
-set "OBJECTIVE_NAME=2026_02_20_iron_condor_1pct_balanced"
+set "OBJECTIVE_NAME=2026_02_20__1pct_balanced"
 set "TIMEOUT=400000"
 set "CONDA_ENV=PY312_HT"
 set "WORK_DIR=D:\PyCharmProjects\webear\src\runners"
