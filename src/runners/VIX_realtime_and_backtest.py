@@ -196,42 +196,57 @@ def main(args):
             if ema_trend_bias in ["WEAK BULL 🟢", "BULLISH 🟢"]:
                 assert args.adj_call__ema_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__ema_factor
+                if args.adj_balanced:
+                    lower_limit = lower_limit * args.adj_call__ema_factor
         if args.adj_put__ema:
             assert args.use_directional_var
             if ema_trend_bias in ["WEAK BEAR 🔴", "BEARISH 🔴"]:
                 assert args.adj_put__ema_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__ema_factor
+                if args.adj_balanced:
+                    upper_limit = upper_limit * args.adj_put__ema_factor
         if args.adj_call__sma:
             assert args.use_directional_var
             if sma_trend_bias in ["BULLISH"]:
                 assert args.adj_call__sma_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__sma_factor
+                if args.adj_balanced:
+                    lower_limit = lower_limit * args.adj_call__sma_factor
         if args.adj_put__sma:
             assert args.use_directional_var
             if sma_trend_bias in ["BEARISH"]:
                 assert args.adj_put__sma_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__sma_factor
+                if args.adj_balanced:
+                    upper_limit = upper_limit * args.adj_put__sma_factor
         if args.adj_call__rsi:
             assert args.use_directional_var
             if momentum_bias in ['OVERSOLD (Bullish Opportunity)']:
                 assert args.adj_call__rsi_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__rsi_factor
+                if args.adj_balanced:
+                    lower_limit = lower_limit * args.adj_call__rsi_factor
         if args.adj_put__rsi:
             assert args.use_directional_var
             if momentum_bias in ['OVERBOUGHT (Bearish Risk)']:
                 assert args.adj_put__rsi_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__rsi_factor
-        # --- NEW: MACD Adjustments ---
+                if args.adj_balanced:
+                    upper_limit = upper_limit * args.adj_put__rsi_factor
         if args.adj_call__macd:
             assert args.use_directional_var
             if macd_bias in ["BULLISH 🟢", "BULLISH CROSSOVER 🟢", "WEAK BULL 🟢"]:
                 assert args.adj_call__macd_factor >= 1.
                 upper_limit = upper_limit * args.adj_call__macd_factor
+                if args.adj_balanced:
+                    lower_limit = lower_limit * args.adj_call__macd_factor
         if args.adj_put__macd:
             assert args.use_directional_var
             if macd_bias in ["BEARISH 🔴", "BEARISH CROSSOVER 🔴", "WEAK BEAR 🔴"]:
                 assert args.adj_put__macd_factor <= 1.
                 lower_limit = lower_limit * args.adj_put__macd_factor
+                if args.adj_balanced:
+                    upper_limit = upper_limit * args.adj_put__macd_factor
         if args.adj_call_and_put__contango:
             assert args.use_directional_var
             if vol_structure in ['BACKWARDATION (Fear)']:
@@ -395,6 +410,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--adj_call_and_put__contango', type=str2bool, default=False, help="If True, augment the upper and lower limits by a small value if VIX > VIX3m")
     parser.add_argument('--adj_call_and_put__contango_factor', type=float, default=0.01, help="Value used to change the upper and lower limits")
+
+    parser.add_argument('--adj_balanced', type=str2bool, default=False, help="If True, augment the counter part in the same direction in order to keep the width equal")
 
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument('--verbose_lower_vix', type=str2bool, default=False)
