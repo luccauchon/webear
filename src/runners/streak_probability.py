@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 
-def add_sequence_columns(df, col_name, epsilon=0.0):
+def add_sequence_columns(df, col_name, ticker_name, epsilon=0.0):
     """
     Add POS_SEQ and NEG_SEQ columns to dataframe representing
     consecutive positive/negative close-to-close sequences.
@@ -69,13 +69,13 @@ def add_sequence_columns(df, col_name, epsilon=0.0):
         else:
             neg_seq[i] = 0
 
-    df['POS_SEQ'] = pos_seq
-    df['NEG_SEQ'] = neg_seq
+    df[('POS_SEQ', ticker_name)] = pos_seq
+    df[('NEG_SEQ', ticker_name)] = neg_seq
 
     return df
 
 
-def add_sequence_columns_vectorized(df, col_name, epsilon=0.0):
+def add_sequence_columns_vectorized(df, col_name, ticker_name, epsilon=0.0):
     """
     Vectorized version of add_sequence_columns for better performance on large datasets.
     """
@@ -97,8 +97,8 @@ def add_sequence_columns_vectorized(df, col_name, epsilon=0.0):
     neg_seq = neg_mask.groupby(neg_groups).cumsum() * neg_mask
 
     # Fill NaN with 0
-    df['POS_SEQ'] = pos_seq.fillna(0).astype(int)
-    df['NEG_SEQ'] = neg_seq.fillna(0).astype(int)
+    df[('POS_SEQ', ticker_name)] = pos_seq.fillna(0).astype(int)
+    df[('NEG_SEQ', ticker_name)] = neg_seq.fillna(0).astype(int)
 
     return df
 
