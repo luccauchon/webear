@@ -294,7 +294,7 @@ def main(args):
             upper_diff = (upper_limit - current_price) / current_price
             if not args.adj_balanced:
                 assert upper_diff > 0
-            if 1 == step_back:
+            if 1 == step_back or backstep_t1 is None:
                 backstep_t1 = past_df.index[-1]
             backstep_t2 = past_df.index[-1]
             results_backtest.append({
