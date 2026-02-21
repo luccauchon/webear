@@ -27,5 +27,5 @@ for /l %%i in (1, 1, 2) do (
 )
 
 echo.
-echo All 20 processes have been dispatched.
+echo All processes have been dispatched.
 pause
