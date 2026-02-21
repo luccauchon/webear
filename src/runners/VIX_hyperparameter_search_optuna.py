@@ -18,7 +18,7 @@ import argparse
 from utils import DATASET_AVAILABLE, str2bool
 from runners.VIX_realtime_and_backtest import main as VVIX_realtime_and_backtest
 import warnings
-
+import traceback
 warnings.filterwarnings("ignore", message="overflow encountered in matmul")
 warnings.filterwarnings("ignore", message="invalid value encountered in matmul")
 
@@ -158,6 +158,7 @@ def objective(trial, configuration_specified, args):
     except Exception as e:
         # If a specific parameter combo crashes the backtest, return a worst score
         print(f"Trial {trial.number} failed: {e}")
+        traceback.print_exc()
         return 0.0
 
     # 3. Extract Scores

@@ -18,6 +18,7 @@ from tqdm import tqdm
 from runners.MMI_realtime import main as MMI_realtime
 from argparse import Namespace
 import pandas as pd
+import traceback
 
 
 def main(args):
@@ -281,9 +282,11 @@ def main(args):
             succes_call_credit  = True if target_price <= upper_limit else False
             actual_return = (target_price - current_price) / current_price
             lower_diff = (current_price - lower_limit) / current_price
-            assert lower_diff > 0
+            if not args.adj_balanced:
+                assert lower_diff > 0
             upper_diff = (upper_limit - current_price) / current_price
-            assert upper_diff > 0
+            if not args.adj_balanced:
+                assert upper_diff > 0
             if 1 == step_back:
                 backstep_t1 = past_df.index[-1]
             backstep_t2 = past_df.index[-1]
