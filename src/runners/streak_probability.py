@@ -21,6 +21,88 @@ import numpy as np
 import pandas as pd
 
 
+def add_sequence_columns(df, col_name, epsilon=0.0):
+    """
+    Add POS_SEQ and NEG_SEQ columns to dataframe representing
+    consecutive positive/negative close-to-close sequences.
+
+    POS_SEQ: Counts consecutive positive returns (>= epsilon)
+    NEG_SEQ: Counts consecutive negative returns (<= -epsilon)
+    Values: 0 = no sequence, 1 = first step, 2 = second step, etc.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Input dataframe with price data
+    col_name : str or tuple
+        Column name for close prices
+    epsilon : float
+        Threshold for neutral returns (default=0.0)
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with added POS_SEQ and NEG_SEQ columns
+    """
+    df = df.copy()
+
+    # Compute returns
+    returns = df[col_name].pct_change()
+
+    # Determine positive/negative masks
+    pos_mask = returns >= epsilon
+    neg_mask = returns <= -epsilon
+
+    # Initialize sequence columns
+    pos_seq = np.zeros(len(df), dtype=int)
+    neg_seq = np.zeros(len(df), dtype=int)
+
+    # Track consecutive sequences
+    for i in range(1, len(df)):
+        if pos_mask.iloc[i]:
+            pos_seq[i] = pos_seq[i - 1] + 1
+        else:
+            pos_seq[i] = 0
+
+        if neg_mask.iloc[i]:
+            neg_seq[i] = neg_seq[i - 1] + 1
+        else:
+            neg_seq[i] = 0
+
+    df['POS_SEQ'] = pos_seq
+    df['NEG_SEQ'] = neg_seq
+
+    return df
+
+
+def add_sequence_columns_vectorized(df, col_name, epsilon=0.0):
+    """
+    Vectorized version of add_sequence_columns for better performance on large datasets.
+    """
+    df = df.copy()
+
+    # Compute returns
+    returns = df[col_name].pct_change()
+
+    # Determine positive/negative masks
+    pos_mask = (returns >= epsilon).astype(int)
+    neg_mask = (returns <= -epsilon).astype(int)
+
+    # Create groups where sequence breaks
+    pos_groups = (pos_mask != pos_mask.shift(1)).cumsum()
+    neg_groups = (neg_mask != neg_mask.shift(1)).cumsum()
+
+    # Count within each group, but only where mask is True
+    pos_seq = pos_mask.groupby(pos_groups).cumsum() * pos_mask
+    neg_seq = neg_mask.groupby(neg_groups).cumsum() * neg_mask
+
+    # Fill NaN with 0
+    df['POS_SEQ'] = pos_seq.fillna(0).astype(int)
+    df['NEG_SEQ'] = neg_seq.fillna(0).astype(int)
+
+    return df
+
+
 def compute_stats_close_to_close(df, close_col, label, verbose):
     """
     Computes close-to-close returns, mean, and std.
