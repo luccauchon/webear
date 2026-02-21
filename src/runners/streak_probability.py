@@ -461,7 +461,7 @@ def new_main(args, bring_my_own_df=None):
                     cond_prob = restricted_stats['number_of_n_plus_one_consecutive_step'] / restricted_stats['number_of_n_consecutive_step'] if 0 != restricted_stats['number_of_n_plus_one_consecutive_step'] else 0
                     print(f"\tConditional Next {direction_label} is {cond_prob * 100:.1f}% with @delta of {cond_delta*100:.1f}%  "
                           f"({restricted_stats['number_of_n_plus_one_consecutive_step']}/{restricted_stats['number_of_n_consecutive_step']})")
-                    if cond_prob*100. < 10:  # Below 10%, we stop
+                    if cond_prob*100. < 5:  # Below 5%, we stop
                         break
             # if stats['count'] > 0:
             #     print(f"{'Next Return μ:':<20} {stats['mean']*100:+8.2f}%")
