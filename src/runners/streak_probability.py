@@ -398,6 +398,8 @@ def new_main(args, bring_my_own_df=None):
         print(f"Direction: {direction_label}")
         print(f"Min streak: {min_n}")
         print(f"Max streak: {max_n}")
+        print(f"Data range: {_spx500.index[0].strftime("%Y-%m-%d")} to {_spx500.index[-1].strftime("%Y-%m-%d")}")
+        print(f"Data size: {len(_spx500)}")
         print(f"{'='*50}")
     assert delta >= 0
     if direction == 'neg':
