@@ -263,8 +263,8 @@ def create_configuration(args, trial):
             selected_shift_str = trial.suggest_categorical("rsi_shifts_tuple", shift_combo_strings)
             shift_rsi_col = list(_str_to_tuple(selected_shift_str))
 
-    print(f"")
-    print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}")
+    # print(f"")
+    # print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}")
 
     configuration = Namespace(
         dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
