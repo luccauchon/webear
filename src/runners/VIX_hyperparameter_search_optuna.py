@@ -583,10 +583,11 @@ def main(args):
         selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
         # Run Optimization
         if IS_RUNNING_ON_CASIR:
+            print(f"Using 4 cores")
             # Create Study
-            study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage="sqlite:///example.db")
+            study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage=f"sqlite:///{args.storage}")
             with parallel_backend("multiprocessing"):
-                study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=-1, show_progress_bar=True, timeout=args.timeout)
+                study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=4, show_progress_bar=True, timeout=args.timeout)
         else:
             # Create Study
             study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
@@ -649,6 +650,8 @@ if __name__ == "__main__":
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds (None = no limit)')
+    parser.add_argument('--storage', type=str, default='example.db',
+                        help='Database storage path (CASIR)')
 
     # --- New Argument: Objective Function Selection ---
     parser.add_argument('--objective_name', type=str, default='base_configuration',
