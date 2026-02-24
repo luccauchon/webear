@@ -16,6 +16,7 @@ from argparse import Namespace
 import numpy as np
 import argparse
 from utils import DATASET_AVAILABLE, str2bool
+from constants import IS_RUNNING_ON_CASIR
 from runners.VIX_realtime_and_backtest import main as VVIX_realtime_and_backtest
 import warnings
 import traceback
@@ -582,8 +583,8 @@ def main(args):
 
         selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
         # Run Optimization
-        # n_jobs=1 is recommended for financial backtests to avoid DB connection issues or race conditions
-        study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
+        n_jobs = -1 if IS_RUNNING_ON_CASIR else 1
+        study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=n_jobs, show_progress_bar=True, timeout=args.timeout)
 
         # Print Best Results
         print("\n" + "=" * 80)
