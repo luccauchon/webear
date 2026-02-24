@@ -216,7 +216,7 @@ def main(args):
     if is_macd_enabled():
         for base_name in macd_base_cols:
             Xs += [(base_name, args.ticker)]
-            for sw in args.shift_sma_col:
+            for sw in args.shift_macd_col:
                 Xs += [(f'SHIFTED_{base_name}_{sw}', args.ticker)]
 
     Xs += [("POS_SEQ", args.ticker), ("NEG_SEQ", args.ticker), close_col]
