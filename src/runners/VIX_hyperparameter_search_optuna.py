@@ -18,6 +18,7 @@ import argparse
 from utils import DATASET_AVAILABLE, str2bool
 from constants import IS_RUNNING_ON_CASIR
 from runners.VIX_realtime_and_backtest import main as VVIX_realtime_and_backtest
+from joblib import parallel_backend
 import warnings
 import traceback
 warnings.filterwarnings("ignore", message="overflow encountered in matmul")
@@ -578,13 +579,18 @@ def main(args):
         timeout_str = f"{args.timeout}s" if args.timeout else "None"
         print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
-        # Create Study
-        study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
 
         selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
         # Run Optimization
-        n_jobs = -1 if IS_RUNNING_ON_CASIR else 1
-        study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=n_jobs, show_progress_bar=True, timeout=args.timeout)
+        if IS_RUNNING_ON_CASIR:
+            # Create Study
+            study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage="sqlite:///example.db")
+            with parallel_backend("multiprocessing"):
+                study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=-1, show_progress_bar=True, timeout=args.timeout)
+        else:
+            # Create Study
+            study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
+            study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
 
         # Print Best Results
         print("\n" + "=" * 80)
