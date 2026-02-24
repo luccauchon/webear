@@ -44,6 +44,7 @@ SMA_COMBINATION_CACHE = {}
 SMA_SHIFT_COMBINATION_CACHE = {}
 RSI_COMBINATION_CACHE = {}
 RSI_SHIFT_COMBINATION_CACHE = {}
+MACD_COMBINATION_CACHE = {}
 
 
 def _tuple_to_str(t):
@@ -142,7 +143,7 @@ def get_unique_combinations_hardcoded(min_val, max_val, max_slots, _cache):
 def objective(trial, configuration_specified, args):
     """Optuna objective function."""
     configuration = configuration_specified(args, trial=trial)
-
+    # return random.random() - random.random() /2 + random.random()/4
     try:
         f1_scores, acc_scores, avg_precision, avg_recall, avg_f1 = roulette_realtime_and_backtest(configuration)
     except Exception as e:
@@ -263,22 +264,61 @@ def create_configuration(args, trial):
             selected_shift_str = trial.suggest_categorical("rsi_shifts_tuple", shift_combo_strings)
             shift_rsi_col = list(_str_to_tuple(selected_shift_str))
 
-    # print(f"")
-    # print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}")
+    # --- MACD Logic ---
+    use_macd, macd_params = False, {}
+    shift_macd_col = []  # MACD typically doesn't use shifts in the same way, keeping empty for compatibility
+    if args.activate_macd_space_search:
+        use_macd = trial.suggest_categorical("use_macd", [True, False])
+        if use_macd:
+            # Define search ranges (uses args if available, else defaults)
+            f_min = getattr(args, 'macd_fast_min', 10)
+            f_max = getattr(args, 'macd_fast_max', 20)
+            s_min = getattr(args, 'macd_slow_min', 20)
+            s_max = getattr(args, 'macd_slow_max', 40)
+            sig_min = getattr(args, 'macd_signal_min', 5)
+            sig_max = getattr(args, 'macd_signal_max', 15)
 
+            # Create cache key
+            cache_key = (f_min, f_max, s_min, s_max, sig_min, sig_max)
+
+            # Generate valid triplets (fast, slow, signal) where fast < slow
+            if cache_key not in MACD_COMBINATION_CACHE:
+                valid_triplets = []
+                for f in range(f_min, f_max + 1):
+                    # Enforce Slow > Fast (Standard MACD definition)
+                    effective_s_min = max(s_min, f + 1)
+                    if effective_s_min > s_max:
+                        continue
+                    for s in range(effective_s_min, s_max + 1):
+                        for sig in range(sig_min, sig_max + 1):
+                            valid_triplets.append((f, s, sig))
+                MACD_COMBINATION_CACHE[cache_key] = valid_triplets
+
+            valid_triplets = MACD_COMBINATION_CACHE[cache_key]
+            assert valid_triplets
+
+            # Convert to strings for Optuna categorical suggestion
+            triplet_strings = [_tuple_to_str(t) for t in valid_triplets]
+            selected_str = trial.suggest_categorical("macd_params_tuple", triplet_strings)
+            f, s, sig = _str_to_tuple(selected_str)
+            macd_params = {"fast": f, "slow": s, "signal": sig}
+    # print(f"")
+    # print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}   {macd_params=} {use_macd}")
+    assert 0 == len(shift_macd_col)
     configuration = Namespace(
         dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
         look_ahead=args.look_ahead, verbose=False,
-        target=args.target,
+        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEQ_SEQ",
         convert_price_level_with_baseline='fraction',
         sma_windows=sma_windows,
         ema_windows=ema_windows,
         shift_sma_col=shift_sma_col,
         shift_ema_col=shift_ema_col,
         shift_rsi_col=shift_rsi_col,
+        shift_macd_col=shift_macd_col,
         rsi_windows=rsi_windows,
-        macd_params={},
-        enable_macd=False,
+        macd_params=macd_params,
+        enable_macd=use_macd,
         enable_sma=use_sma,
         enable_ema=use_ema,
         enable_rsi=use_rsi,
@@ -310,6 +350,7 @@ if __name__ == "__main__":
     parser.add_argument('--activate_sma_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_ema_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_rsi_space_search', type=str2bool, default=True)
+    parser.add_argument('--activate_macd_space_search', type=str2bool, default=True)
 
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
@@ -319,8 +360,6 @@ if __name__ == "__main__":
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds (None = no limit)')
-    parser.add_argument("--target", type=str, default='POS_SEQ', choices=['POS_SEQ', 'NEG_SEQ'],
-                        help="Target column for prediction. Options: POS_SEQ, NEG_SEQ. Default: POS_SEQ.")
 
     # --- New Argument: Objective Function Selection ---
     parser.add_argument('--objective_name', type=str, default='base_configuration',
@@ -365,6 +404,20 @@ if __name__ == "__main__":
                         help='Minimum RSI shift')
     parser.add_argument('--rsi_shift_max', type=int, default=5,
                         help='Maximum RSI shift')
+
+    # --- MACD Optimization Search Space Args ---
+    parser.add_argument('--macd_fast_min', type=int, default=10,
+                        help='Minimum MACD Fast period')
+    parser.add_argument('--macd_fast_max', type=int, default=20,
+                        help='Maximum MACD Fast period')
+    parser.add_argument('--macd_slow_min', type=int, default=20,
+                        help='Minimum MACD Slow period')
+    parser.add_argument('--macd_slow_max', type=int, default=40,
+                        help='Maximum MACD Slow period')
+    parser.add_argument('--macd_signal_min', type=int, default=5,
+                        help='Minimum MACD Signal period')
+    parser.add_argument('--macd_signal_max', type=int, default=15,
+                        help='Maximum MACD Signal period')
 
     args = parser.parse_args()
     main(args)

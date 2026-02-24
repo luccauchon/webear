@@ -58,10 +58,7 @@ def calculate_macd(series, fast=12, slow=26, signal=9):
 def main(args):
     # --- UPDATED: Load parameters from args instead of hardcoding ---
     macd_base_cols = ['MACD_Line', 'MACD_Signal', 'MACD_Hist']
-    try:
-        macd_params = json.loads(args.macd_params)  # Parse JSON string to dict
-    except:
-        macd_params = {}
+    macd_params = json.loads(args.macd_params) if isinstance(args.macd_params, str) else args.macd_params
     def is_ema_enabled():
         return args.enable_ema
     def is_sma_enabled():
@@ -143,7 +140,7 @@ def main(args):
 
     # 4. Add Shifted Versions for MACD
     if is_macd_enabled():
-        for sw in args.shift_sma_col:
+        for sw in args.shift_macd_col:
             for base_name in macd_base_cols:
                 base_col_name = (base_name, args.ticker)
                 shift_macd_col_name = (f'SHIFTED_{base_name}_{sw}', args.ticker)
@@ -480,7 +477,7 @@ if __name__ == "__main__":
                         help="List of window sizes for Moving Average calculation. Default: 2 to 9.")
     parser.add_argument('--enable_sma', type=str2bool, default=False)
     parser.add_argument("--shift-sma-col", type=int, nargs='+', default=[],
-                        help="List of shift periods for SMA, and MACD columns. Default: None.")
+                        help="List of shift periods for SMA. Default: None.")
     parser.add_argument("--rsi-windows", type=int, nargs='+', default=[14],
                         help="List of window sizes for RSI calculation. Default: 14.")
     parser.add_argument("--shift-rsi-col", type=int, nargs='+', default=[],
@@ -489,6 +486,8 @@ if __name__ == "__main__":
     parser.add_argument("--macd-params", type=str, default='{"fast": 12, "slow": 26, "signal": 9}',
                         help="JSON string for MACD parameters (fast, slow, signal). Default: 12, 26, 9.")
     parser.add_argument('--enable_macd', type=str2bool, default=False)
+    parser.add_argument("--shift_macd_col", type=int, nargs='+', default=[],
+                        help="List of shift periods for MACD. Default: None.")
 
     args = parser.parse_args()
 
