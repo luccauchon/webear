@@ -785,13 +785,13 @@ def str2bool(v):
     return string_to_bool(v)
 
 
-DATASET_AVAILABLE = ['day', 'week', 'month', 'fourth', 'year']
+DATASET_AVAILABLE = ['day', 'week', 'month', 'quarter', 'year']
 def get_filename_for_dataset(dataset_choice, older_dataset=None):
     mapping = {
         'day': FYAHOO__OUTPUTFILENAME_DAY,
         'week': FYAHOO__OUTPUTFILENAME_WEEK,
         'month': FYAHOO__OUTPUTFILENAME_MONTH,
-        'fourth': FYAHOO__OUTPUTFILENAME_QUARTER,
+        'quarter': FYAHOO__OUTPUTFILENAME_QUARTER,
         'year': FYAHOO__OUTPUTFILENAME_YEAR,
     }
     if older_dataset is not None and older_dataset != '':
