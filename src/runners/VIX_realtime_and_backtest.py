@@ -46,7 +46,8 @@ def main(args):
     iron_condor = args.iron_condor
     # Adjust VIX
     if vix__master_data_cache.index[-1] != master_data_cache.index[-1]:
-        print(f"Removing last element of VIX DF.")
+        if args.verbose:
+            print(f"Removing last element of VIX DF.")
         vix__master_data_cache = vix__master_data_cache.iloc[:-1]
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix__master_data_cache.index[-1].strftime('%Y-%m-%d')
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix1d__master_data_cache.index[-1].strftime('%Y-%m-%d')
