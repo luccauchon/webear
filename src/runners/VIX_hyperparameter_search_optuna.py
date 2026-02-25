@@ -385,7 +385,7 @@ def create_configuration___2026_02_20__0_0pct(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
@@ -608,56 +608,31 @@ def main(args):
         args.use_optuna = False
         print("⚠️  Optuna not available. Running single backtest with default parameters.")
 
-    if args.use_optuna:
-        timeout_str = f"{args.timeout}s" if args.timeout else "None"
-        print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
+    timeout_str = f"{args.timeout}s" if args.timeout else "None"
+    print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
 
-        selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
-        # Run Optimization
-        if IS_RUNNING_ON_CASIR:
-            print(f"Using 4 cores")
-            # Create Study
-            study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage=f"sqlite:///{args.storage}")
-            with parallel_backend("multiprocessing"):
-                study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=4, show_progress_bar=True, timeout=args.timeout)
-        else:
-            # Create Study
-            study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
-            study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
-
-        # Print Best Results
-        print("\n" + "=" * 80)
-        print("🏆 Optimization Finished!")
-        print(f"Best Score ({args.optimize_target}): {study.best_value:.8f}")
-        print("Best Parameters:")
-        for key, value in study.best_params.items():
-            print(f"    {key:.<40} {value}")
-        print("=" * 80 + "\n")
-
-        # Optionally run one final backtest with best params to show full verbose output
-        if args.verbose:
-            print("Running final backtest with best parameters...")
-            best_config = create_configuration(args, trial=None)
-            # We need to manually set the best params to the config or create a dummy trial
-            # Easier: Just print the params above.
-            # To actually run VVIX with best params, we'd need to map study.best_params back to Namespace.
-            # For now, we rely on the printed parameters.
-
+    selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
+    # Run Optimization
+    if IS_RUNNING_ON_CASIR:
+        print(f"Using 4 cores")
+        # Create Study
+        study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage=f"sqlite:///{args.storage}")
+        with parallel_backend("multiprocessing"):
+            study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=4, show_progress_bar=True, timeout=args.timeout)
     else:
-        # --- Original Single Run Logic ---
-        configuration = create_configuration(args, trial=None)
+        # Create Study
+        study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
+        study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
 
-        if args.verbose:
-            print("⚙️  Configuration:")
-            for arg, value in vars(configuration).items():
-                print(f"    {arg:.<40} {value}")
-            print("-" * 80, flush=True)
-
-        results = VVIX_realtime_and_backtest(configuration)
-        put_score = results['put']['success_rate__vix999']
-        call_score = results['call']['success_rate__vix999']
-        print(f"Put Score: {put_score:0.4f}  Call Score: {call_score:0.4f}")
+    # Print Best Results
+    print("\n" + "=" * 80)
+    print("🏆 Optimization Finished!")
+    print(f"Best Score ({args.optimize_target}): {study.best_value:.8f}")
+    print("Best Parameters:")
+    for key, value in study.best_params.items():
+        print(f"    {key:.<40} {value}")
+    print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
