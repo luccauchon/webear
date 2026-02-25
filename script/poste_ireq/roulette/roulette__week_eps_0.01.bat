@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: --- Parameters ---
-set "RANGE=333"
+set "RANGE=99999"
 set "DATASET_ID=week"
 set "EPSILON=0.01"
 set "TIMEOUT=500000"
