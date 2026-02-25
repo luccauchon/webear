@@ -335,6 +335,7 @@ def create_configuration(args, trial):
         enable_ema=use_ema,
         enable_rsi=use_rsi,
         step_back_range=args.step_back_range,
+        epsilon=args.epsilon,
     )
 
     return configuration
@@ -374,6 +375,8 @@ if __name__ == "__main__":
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds (None = no limit)')
+    parser.add_argument("--epsilon", type=float, default=0.,
+                        help="Threshold for neutral returns. Default: 0.")
 
     # --- New Argument: Objective Function Selection ---
     parser.add_argument('--objective_name', type=str, default='base_configuration',
