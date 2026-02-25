@@ -88,7 +88,8 @@ def main(args):
     vix1d__master_data_cache = copy.deepcopy(master_data_cache['^VIX1D'].sort_index()[('Close', '^VIX1D')])
     vix3m__master_data_cache = copy.deepcopy(master_data_cache['^VIX3M'].sort_index()[('Close', '^VIX3M')])
     #
-    master_data_cache = add_sequence_columns_vectorized(df=master_data_cache[args.ticker].sort_index(), col_name=close_col, ticker_name=args.ticker)
+    assert args.epsilon >= 0.
+    master_data_cache = add_sequence_columns_vectorized(df=master_data_cache[args.ticker].sort_index(), col_name=close_col, ticker_name=args.ticker, epsilon=args.epsilon)
     # ---------------------------------------------------------
     # ADD MOVING AVERAGES
     # ---------------------------------------------------------
@@ -157,14 +158,14 @@ def main(args):
 
     step_back_range = args.step_back_range if args.step_back_range < len(master_data_cache) else len(master_data_cache)
 
-    pos_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='pos', max_n=15, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=0.))
-    neg_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='neg', max_n=13, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=0.))
+    pos_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='pos', max_n=15, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=args.epsilon))
+    neg_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='neg', max_n=13, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=-args.epsilon))
     # 1. Create lookup dictionaries mapping streak length (x) to probability
     # We assume pos_proba/neg_proba are lists where index = streak length
     pos_map, neg_map = {}, {}
     if args.dataset_id == 'day':
-        pos_map = {x: pos_proba[x]['prob'] for x in range(0, 15)}
-        neg_map = {x: neg_proba[x]['prob'] for x in range(0, 13)}
+        pos_map = {x: pos_proba[x]['prob'] for x in range(0, np.max(list(pos_proba.keys()))+1)}
+        neg_map = {x: neg_proba[x]['prob'] for x in range(0, np.max(list(neg_proba.keys()))+1)}
     elif args.dataset_id == 'week':
         pos_map = {x: pos_proba[x]['prob'] for x in range(0, 7)}
         neg_map = {x: neg_proba[x]['prob'] for x in range(0, 4)}
@@ -279,6 +280,7 @@ def main(args):
         print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
     assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
     num_classes = len(np.unique(the_y_data))
+    assert num_classes > 1, f"There shall be more than 1 class"
     if args.verbose:
         print(f"Unique classes found: {np.unique(the_y_data)} ({num_classes})")
     tscv = TimeSeriesSplit(n_splits=5)
@@ -463,7 +465,8 @@ if __name__ == "__main__":
     parser.add_argument('--step-back-range', type=int, default=99999,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
     parser.add_argument('--verbose', type=str2bool, default=True)
-
+    parser.add_argument("--epsilon", type=float, default=0.,
+                        help="Threshold for neutral returns. Default: 0.")
     parser.add_argument("--target", type=str, default='POS_SEQ', choices=['POS_SEQ', 'NEG_SEQ'],
                         help="Target column for prediction. Options: POS_SEQ, NEG_SEQ. Default: POS_SEQ.")
     parser.add_argument("--convert-price-level-with-baseline", type=str, default='fraction', choices=['fraction', 'return'],
