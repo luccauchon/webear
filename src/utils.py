@@ -1059,3 +1059,90 @@ def get_next_month_range(input_date=None):
                         f"to {last_day.strftime('%Y-%m-%d')}")
 
     return formatted_string, last_day
+
+
+def add_vwap_with_bands(
+        df: pd.DataFrame,
+        open_col,
+        high_col,
+        low_col,
+        close_col,
+        volume_col,
+        window,
+        ticker,
+        bands=(1, 2, 3),
+        add_scretch_condition=(True, True, True),
+        prefix: str = "VWAP",
+        use_hlc3=False,
+        add_z_score_feature=False,
+):
+    """
+    Adds VWAP and multi-band levels to dataframe.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe (must contain High, Low, Close, Volume columns)
+    open_col ,high_col, low_col, close_col, volume_col :
+        Column names (supports MultiIndex columns like ('High', 'SPY'))
+    window : int or None
+        None  -> cumulative VWAP
+        int   -> rolling VWAP window
+    bands : tuple
+        Standard deviation multipliers (e.g. (1,2,3))
+    prefix : str
+        Prefix name for generated columns
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with VWAP and bands added
+    """
+
+    df = df.copy()
+
+    # --- Typical Price ---
+    if use_hlc3:
+        tp = (df[high_col] + df[low_col] + df[close_col]) / 3.0
+    else:  # ohlc/4
+        tp = (df[open_col] + df[high_col] + df[low_col] + df[close_col]) / 4.0
+
+    if window is None:
+        # ===== CUMULATIVE VWAP =====
+        cum_vol = df[volume_col].cumsum()
+        cum_tpv = (tp * df[volume_col]).cumsum()
+        cum_tp2v = ((tp ** 2) * df[volume_col]).cumsum()
+
+        vwap = cum_tpv / cum_vol
+        var = (cum_tp2v / cum_vol) - (vwap ** 2)
+
+    else:
+        # ===== ROLLING VWAP =====
+        vol_sum = df[volume_col].rolling(window).sum()
+        tpv_sum = (tp * df[volume_col]).rolling(window).sum()
+        tp2v_sum = ((tp ** 2) * df[volume_col]).rolling(window).sum()
+
+        vwap = tpv_sum / vol_sum
+        var = (tp2v_sum / vol_sum) - (vwap ** 2)
+
+    std = np.sqrt(var.clip(lower=0))  # avoid negative floating noise
+
+    # --- Store Base VWAP ---
+    df[(f"{prefix}", ticker)] = vwap
+    df[(f"{prefix}_std", ticker)] = std
+
+    # --- Multi Bands ---
+    for b in bands:
+        df[(f"{prefix}_upper_{b}", ticker)] = vwap + b * std
+        df[(f"{prefix}_lower_{b}", ticker)] = vwap - b * std
+
+    if add_z_score_feature:
+        df[(f"{prefix}_z", ticker)] = (df[close_col] - df[(f"{prefix}", ticker)]) / df[(f"{prefix}_std", ticker)]
+
+    if add_scretch_condition:
+        assert len(add_scretch_condition) == len(bands)
+        for b in bands:
+            df[(f"{prefix}_Above_{b}sigma", ticker)] = df[close_col] > df[(f"{prefix}_upper_{b}", ticker)]
+            df[(f"{prefix}_Below_{b}sigma", ticker)] = df[close_col] < df[(f"{prefix}_lower_{b}", ticker)]
+
+    return df
