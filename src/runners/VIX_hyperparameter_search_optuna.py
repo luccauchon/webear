@@ -675,6 +675,8 @@ def main(args):
     if args.verbose:
         print("🔧 Arguments:")
         for arg, value in vars(args).items():
+            if arg == 'storage' and not IS_RUNNING_ON_CASIR:
+                continue
             print(f"    {arg:.<40} {value}")
         print("-" * 80, flush=True)
 
