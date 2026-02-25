@@ -34,120 +34,6 @@ except ImportError:
     print("⚠️  Warning: optuna not installed. Run 'pip install optuna' to enable parameter search.")
 
 
-def create_configuration(args, trial=None):
-    """
-    Creates the configuration Namespace.
-    If trial is provided, uses Optuna suggestions.
-    If trial is None, uses args/hardcoded defaults.
-    """
-
-    # Helper for Optuna suggestions
-    if trial:
-        def suggest_bool(name, default):
-            return trial.suggest_categorical(name, [True, False])
-
-        def suggest_int(name, low, high, default):
-            return trial.suggest_int(name, low, high)
-
-        def suggest_float(name, low, high, default, step=None):
-            return trial.suggest_float(name, low, high, step=step)
-    else:
-        # Fallback to hardcoded defaults from original script if not optimizing
-        def suggest_bool(name, default):
-            return default
-
-        def suggest_int(name, low, high, default):
-            return default
-
-        def suggest_float(name, low, high, default, step=None):
-            return default
-
-    # --- Base Config ---
-    # Note: We always calculate both put and call to allow switching targets without re-running,
-    # but the optimizer will only see the selected score.
-    configuration = Namespace(
-        dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
-        put=True,
-        call=True,
-        iron_condor=True,
-        step_back_range=args.step_back_range,
-        use_directional_var=True,
-        use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
-        adj_balanced=False,
-    )
-    call_low_fx, call_high_fx, call_default_fx = 1.01, 1.01, 1.
-    put_low_fx,  put_high_fx,  put_default_fx  = 0.99, 0.99, 1.
-    # --- EMA ---
-    configuration.adj_call__ema = suggest_bool("adj_call__ema", False)
-    configuration.adj_put__ema = suggest_bool("adj_put__ema", False)
-    # Only suggest parameters if at least one EMA is active to save search space,
-    # or always suggest if the underlying function requires the values to exist.
-    # Safest is to always suggest, but conditional is more efficient.
-    # Assuming underlying code checks the boolean flag first.
-    if configuration.adj_call__ema or configuration.adj_put__ema:
-        configuration.ema_short = suggest_int("ema_short", 5, 50, 21)
-        configuration.ema_long = suggest_int("ema_long", 50, 200, 50)
-        configuration.adj_call__ema_factor = suggest_float("adj_call__ema_factor", call_low_fx, call_high_fx, call_default_fx)
-        configuration.adj_put__ema_factor = suggest_float("adj_put__ema_factor", put_low_fx, put_high_fx, put_default_fx)
-    else:
-        configuration.ema_short = 21
-        configuration.ema_long = 50
-        configuration.adj_call__ema_factor = 1.
-        configuration.adj_put__ema_factor = 1.
-
-    # --- SMA ---
-    configuration.adj_call__sma = suggest_bool("adj_call__sma", False)
-    configuration.adj_put__sma = suggest_bool("adj_put__sma", False)
-    if configuration.adj_call__sma or configuration.adj_put__sma:
-        configuration.sma_period = suggest_int("sma_period", 10, 100, 50)
-        configuration.adj_call__sma_factor = suggest_float("adj_call__sma_factor", call_low_fx, call_high_fx, call_default_fx)
-        configuration.adj_put__sma_factor = suggest_float("adj_put__sma_factor", put_low_fx, put_high_fx, put_default_fx)
-    else:
-        configuration.sma_period = 50
-        configuration.adj_call__sma_factor = 1.
-        configuration.adj_put__sma_factor = 1.
-
-    # --- RSI ---
-    configuration.adj_call__rsi = suggest_bool("adj_call__rsi", False)
-    configuration.adj_put__rsi = suggest_bool("adj_put__rsi", False)
-    if configuration.adj_call__rsi or configuration.adj_put__rsi:
-        configuration.rsi_period = suggest_int("rsi_period", 5, 30, 14)
-        configuration.adj_call__rsi_factor = suggest_float("adj_call__rsi_factor", call_low_fx, call_high_fx, call_default_fx)
-        configuration.adj_put__rsi_factor = suggest_float("adj_put__rsi_factor", put_low_fx, put_high_fx, put_default_fx)
-    else:
-        configuration.rsi_period = 14
-        configuration.adj_call__rsi_factor = 1.
-        configuration.adj_put__rsi_factor = 1.
-
-    # --- MACD ---
-    configuration.adj_call__macd = suggest_bool("adj_call__macd", False)
-    configuration.adj_put__macd = suggest_bool("adj_put__macd", False)
-    if configuration.adj_call__macd or configuration.adj_put__macd:
-        configuration.macd_fast_period = suggest_int("macd_fast_period", 5, 20, 12)
-        configuration.macd_slow_period = suggest_int("macd_slow_period", 20, 50, 26)
-        configuration.macd_signal_period = suggest_int("macd_signal_period", 5, 15, 9)
-        configuration.adj_call__macd_factor = suggest_float("adj_call__macd_factor", call_low_fx, call_high_fx, call_default_fx)
-        configuration.adj_put__macd_factor = suggest_float("adj_put__macd_factor", put_low_fx, put_high_fx, put_default_fx)
-    else:
-        configuration.macd_fast_period = 12
-        configuration.macd_slow_period = 26
-        configuration.macd_signal_period = 9
-        configuration.adj_call__macd_factor = 1.
-        configuration.adj_put__macd_factor = 1.
-
-    # --- Contango ---
-    configuration.adj_call_and_put__contango = suggest_bool("adj_call_and_put__contango", False)
-    if configuration.adj_call_and_put__contango:
-        configuration.adj_call_and_put__contango_factor = suggest_float("adj_call_and_put__contango_factor", 0.01, 0.02, 0.02)
-    else:
-        configuration.adj_call_and_put__contango_factor = 0.02
-
-    return configuration
-
-
 def objective(trial, configuration_specified, args):
     """Optuna objective function."""
     # 1. Create configuration based on trial suggestions
@@ -480,6 +366,79 @@ def create_configuration___2026_02_20__0_25pct(args, trial):
     return configuration
 
 
+def create_configuration___2026_02_20__0_0pct(args, trial):
+    """
+    """
+
+    # Helper for Optuna suggestions
+    def suggest_bool(name, default):
+        return trial.suggest_categorical(name, [True, False])
+
+    def suggest_int(name, low, high, default):
+        return trial.suggest_int(name, low, high)
+
+    def suggest_float(name, low, high, default, step=None):
+        return trial.suggest_float(name, low, high, step=step)
+
+    # --- Base Config ---
+    # Note: We always calculate both put and call to allow switching targets without re-running,
+    # but the optimizer will only see the selected score.
+    configuration = Namespace(
+        dataset_id="day", col=args.col, ticker=args.ticker,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        put=True,
+        call=True,
+        iron_condor=True,
+        step_back_range=args.step_back_range,
+        use_directional_var=True,
+        use_directional_var__vix3m=False,
+        upper_side_scale_factor=1.,
+        lower_side_scale_factor=1.,
+        adj_balanced=False,
+    )
+
+    # --- EMA ---
+    configuration.adj_call__ema = False
+    configuration.adj_put__ema = False
+    # Only suggest parameters if at least one EMA is active to save search space,
+    # or always suggest if the underlying function requires the values to exist.
+    # Safest is to always suggest, but conditional is more efficient.
+    # Assuming underlying code checks the boolean flag first.
+    configuration.ema_short = suggest_int("ema_short", 5, 50, 21)
+    configuration.ema_long = suggest_int("ema_long", 50, 200, 50)
+    configuration.adj_call__ema_factor = 1.0
+    configuration.adj_put__ema_factor = 1.0
+
+    # --- SMA ---
+    configuration.adj_call__sma = False
+    configuration.adj_put__sma = False
+    configuration.sma_period = suggest_int("sma_period", 10, 100, 50)
+    configuration.adj_call__sma_factor = 1.
+    configuration.adj_put__sma_factor = 1.
+
+    # --- RSI ---
+    configuration.adj_call__rsi = False
+    configuration.adj_put__rsi = False
+    configuration.rsi_period = suggest_int("rsi_period", 5, 30, 14)
+    configuration.adj_call__rsi_factor = 1.
+    configuration.adj_put__rsi_factor = 1.
+
+    # --- MACD ---
+    configuration.adj_call__macd = False
+    configuration.adj_put__macd = False
+    configuration.macd_fast_period = suggest_int("macd_fast_period", 5, 20, 12)
+    configuration.macd_slow_period = suggest_int("macd_slow_period", 20, 50, 26)
+    configuration.macd_signal_period = suggest_int("macd_signal_period", 5, 15, 9)
+    configuration.adj_call__macd_factor = 1.
+    configuration.adj_put__macd_factor = 1.
+
+    # --- Contango ---
+    configuration.adj_call_and_put__contango = True
+    configuration.adj_call_and_put__contango_factor = 0.005
+
+    return configuration
+
+
 def create_configuration___2026_02_20__0_5pct_balanced(args, trial):
     """
     """
@@ -629,6 +588,8 @@ def create_configuration___2026_02_20__1pct_balanced(args, trial):
 # --- Objective Function Registry ---
 CONFIGURATION_FUNCTIONS = {
     "base_configuration": create_configuration,
+    "2026_02_20__0_0pct": create_configuration___2026_02_20__0_0pct,
+    "2026_02_20__0_25pct": create_configuration___2026_02_20__0_25pct,
     "2026_02_20__0_5pct": create_configuration___2026_02_20__0_5pct,
     "2026_02_20__1pct": create_configuration___2026_02_20__1pct,
     "2026_02_20__2pct": create_configuration___2026_02_20__2pct,
