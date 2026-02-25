@@ -93,7 +93,7 @@ def create_configuration___2026_02_20__1pct(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
@@ -166,7 +166,7 @@ def create_configuration___2026_02_20__2pct(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
@@ -239,7 +239,7 @@ def create_configuration___2026_02_20__0_5pct(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
@@ -312,7 +312,7 @@ def create_configuration___2026_02_20__0_25pct(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
@@ -458,7 +458,7 @@ def create_configuration___2026_02_20__0_5pct_balanced(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
@@ -531,7 +531,7 @@ def create_configuration___2026_02_20__1pct_balanced(args, trial):
     # but the optimizer will only see the selected score.
     configuration = Namespace(
         dataset_id="day", col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False,
+        look_ahead=args.look_ahead, verbose=False, verbose_lower_vix=False, verbose_results=False, verbose_arguments=False,
         put=True,
         call=True,
         iron_condor=True,
