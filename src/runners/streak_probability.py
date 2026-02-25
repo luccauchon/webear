@@ -80,7 +80,7 @@ def add_sequence_columns_vectorized(df, col_name, ticker_name, epsilon=0.0):
     Vectorized version of add_sequence_columns for better performance on large datasets.
     """
     df = df.copy()
-
+    assert epsilon >= 0
     # Compute returns
     returns = df[col_name].pct_change()
 
