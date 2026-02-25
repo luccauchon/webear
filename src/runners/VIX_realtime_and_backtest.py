@@ -22,7 +22,7 @@ import traceback
 
 
 def main(args):
-    if args.verbose:
+    if args.verbose and args.verbose_arguments:
         # --- Nicely print the arguments ---
         print("🔧 Arguments:")
         for arg, value in vars(args).items():
@@ -313,7 +313,7 @@ def main(args):
             })
     if len(results_realtime) > 0:
         assert 1 == len(results_realtime)
-        if args.verbose:
+        if args.verbose or args.verbose_results:
             current_date = results_realtime[0]['date']
             prediction_date = results_realtime[0]['target_date']
             _ema_trend = f'EMA trend bias: {results_realtime[0]["directional_var__ema_trend_bias"]}' if args.use_directional_var else ''
@@ -324,7 +324,7 @@ def main(args):
             _str_directional_var = f'\n\t{_ema_trend}\n\t{_sma_trend}\n\t{_rsi}\n\t{_macd}\n\t{_vol_struct}\n\n'
             print(f"Today the {current_date.strftime('%Y-%m-%d')} (SPX is @{results_realtime[0]['current_price']:.0f}, VIX is @{results_realtime[0]['vix']:.1f}), "
                   f"the prediction for {prediction_date.strftime('%Y-%m-%d')} is "
-                  f"[{results_realtime[0]['lower_limit']:.0f} :: {results_realtime[0]['upper_limit']:.0f}] , {_str_directional_var}")
+                  f"[{results_realtime[0]['lower_limit'] if put_credit or iron_condor else -1:.0f} :: {results_realtime[0]['upper_limit'] if call_credit or iron_condor else -1:.0f}] , {_str_directional_var}")
     if len(results_backtest) > 0:
         if args.verbose:
             print(f"Backtested on {used_past_point} steps (from {backstep_t1.strftime('%Y-%m-%d')} to {backstep_t2.strftime('%Y-%m-%d')}), collecting {len(results_backtest)} results. "
@@ -426,6 +426,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument('--verbose_lower_vix', type=str2bool, default=False)
+    parser.add_argument('--verbose_arguments', type=str2bool, default=True)
+    parser.add_argument('--verbose_results', type=str2bool, default=True)
     args = parser.parse_args()
 
     main(args)
