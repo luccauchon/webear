@@ -587,7 +587,6 @@ def create_configuration___2026_02_20__1pct_balanced(args, trial):
 
 # --- Objective Function Registry ---
 CONFIGURATION_FUNCTIONS = {
-    "base_configuration": create_configuration,
     "2026_02_20__0_0pct": create_configuration___2026_02_20__0_0pct,
     "2026_02_20__0_25pct": create_configuration___2026_02_20__0_25pct,
     "2026_02_20__0_5pct": create_configuration___2026_02_20__0_5pct,
