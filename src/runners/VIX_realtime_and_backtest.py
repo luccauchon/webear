@@ -195,6 +195,7 @@ def main(args):
         def _increase_by_half_of_the_fraction(number):
             assert number >= 1.
             return 1 + (number-1)/2
+
         def _decrease_by_half_of_the_fraction(number):
             assert number <= 1.
             return number + (1-number)/2
