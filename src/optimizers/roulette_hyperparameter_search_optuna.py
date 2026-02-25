@@ -151,8 +151,20 @@ def objective(trial, configuration_specified, args):
         traceback.print_exc()
         return 0.0
 
-    if args.optimize_target == 'pos_seq_1__f1':
+    if args.optimize_target   == 'pos_seq_0__f1':
+        score = avg_f1[0]
+    elif args.optimize_target == 'pos_seq_1__f1':
         score = avg_f1[1]
+    elif args.optimize_target == 'pos_seq_2__f1':
+        score = avg_f1[2]
+    elif args.optimize_target == 'pos_seq_3__f1':
+        score = avg_f1[3]
+    elif args.optimize_target == 'neg_seq_0__f1':
+        score = avg_f1[0]
+    elif args.optimize_target == 'neg_seq_1__f1':
+        score = avg_f1[1]
+    elif args.optimize_target == 'neg_seq_2__f1':
+        score = avg_f1[2]
     else:
         assert False, f""
 
@@ -332,6 +344,7 @@ def create_configuration(args, trial):
 CONFIGURATION_FUNCTIONS = {
     "base_configuration": create_configuration,
 }
+
 
 if __name__ == "__main__":
     freeze_support()
