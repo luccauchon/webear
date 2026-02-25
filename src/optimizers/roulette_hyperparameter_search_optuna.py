@@ -320,7 +320,7 @@ def create_configuration(args, trial):
     configuration = Namespace(
         dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
         look_ahead=args.look_ahead, verbose=False,
-        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEQ_SEQ",
+        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ",
         convert_price_level_with_baseline='fraction',
         sma_windows=sma_windows,
         ema_windows=ema_windows,
