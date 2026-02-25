@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 set "RANGE=99999"
 set "DATASET_ID=week"
 set "EPSILON=0.01"
-set "TIMEOUT=500000"
+set "TIMEOUT=160000"
 set "CONDA_ENV=PY311"
 set "WORK_DIR=C:\PYCHARMPROJECTS\webear\src\optimizers"
 
