@@ -240,8 +240,8 @@ def main(args):
             continue
         if use_vix and 0 == len(vix_df):
             continue
-        if step_back > 66666:
-            break
+        # if step_back > 66666:
+        #     break
         # print(f"")
         # print(f"MASTER:{past_df.index[0].strftime('%Y-%m-%d')}/{past_df.index[-1].strftime('%Y-%m-%d')} --> {future_df.index[0].strftime('%Y-%m-%d')}/{future_df.index[-1].strftime('%Y-%m-%d')}")
         # print(f"MASTER:{past_df.index[0].strftime('%Y-%m-%d')}/{past_df.index[-1].strftime('%Y-%m-%d')} :: {future_df.index[args.look_ahead - 1].strftime('%Y-%m-%d')}")
