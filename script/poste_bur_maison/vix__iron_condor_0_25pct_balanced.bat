@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: --- Parameters ---
 set "OPTIMIZE_TARGET=iron_condor"
-set "OBJECTIVE_NAME=2026_02_20__0_25pct"
+set "OBJECTIVE_NAME=2026_02_20__0_25pct_balanced"
 set "TIMEOUT=500000"
 set "CONDA_ACTIVATE=C:\Users\cj3272\AppData\Local\miniconda3\Scripts\activate.bat"
 set "CONDA_ENV=PY311"
