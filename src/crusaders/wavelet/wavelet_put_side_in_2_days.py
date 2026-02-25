@@ -21,47 +21,26 @@ from  crusaders.wavelet._wavelet_next_step import main as wavelet_next_step_main
 # Warrior Strategy Success Rate: 83.34% (7579/9094)
 #
 # [VIX < 10] Warrior Strategy Success Rate: 100.0% (68/68)
-#
 # [VIX < 12] Warrior Strategy Success Rate: 96.13% (770/801)
-#
 # [VIX < 15] Warrior Strategy Success Rate: 93.42% (2753/2947)
-#
 # [VIX < 18] Warrior Strategy Success Rate: 90.8% (4332/4771)
-#
 # [VIX < 20] Warrior Strategy Success Rate: 89.25% (5088/5701)
-#
 # [VIX < 22] Warrior Strategy Success Rate: 87.78% (5746/6546)
-#
 # [VIX < 25] Warrior Strategy Success Rate: 86.37% (6484/7507)
-#
 # [VIX < 28] Warrior Strategy Success Rate: 85.19% (6891/8089)
-#
 # [VIX < 30] Warrior Strategy Success Rate: 84.8% (7089/8360)
-#
 # [VIX < 32] Warrior Strategy Success Rate: 84.46% (7239/8571)
-#
 # [VIX < 35] Warrior Strategy Success Rate: 84.22% (7362/8741)
-#
 # [VIX < 38] Warrior Strategy Success Rate: 84.06% (7433/8842)
-#
 # [VIX < 40] Warrior Strategy Success Rate: 83.94% (7459/8886)
-#
 # [VIX < 42] Warrior Strategy Success Rate: 83.85% (7485/8927)
-#
 # [VIX < 45] Warrior Strategy Success Rate: 83.75% (7520/8979)
-#
 # [VIX < 48] Warrior Strategy Success Rate: 83.68% (7540/9011)
-#
 # [VIX < 50] Warrior Strategy Success Rate: 83.65% (7544/9019)
-#
 # [VIX < 52] Warrior Strategy Success Rate: 83.63% (7546/9023)
-#
 # [VIX < 55] Warrior Strategy Success Rate: 83.54% (7551/9039)
-#
 # [VIX < 58] Warrior Strategy Success Rate: 83.49% (7556/9050)
-#
 # [VIX < 60] Warrior Strategy Success Rate: 83.48% (7560/9056)
-#
 # [VIX < 200] Warrior Strategy Success Rate: 83.34% (7579/9094)
 
 def main(args):
