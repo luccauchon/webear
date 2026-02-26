@@ -245,7 +245,7 @@ def get_default_namespace(args):
         n_estimators=500,
         max_depth=6,
         learning_rate=0.05,
-        model_overrides={},
+        model_overrides='{}',
     )
 
 
