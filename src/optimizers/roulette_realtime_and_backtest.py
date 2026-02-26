@@ -201,6 +201,9 @@ def main(args):
 
         def is_vwap_enabled():
             return args.enable_vwap
+
+        def is_day_data_enabled():
+            return args.enable_day_data
         assert args.look_ahead == 1.
         one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
         import pickle
@@ -221,7 +224,7 @@ def main(args):
         master_data_cache = add_sequence_columns_vectorized(df=master_data_cache[args.ticker].sort_index(), col_name=close_col, ticker_name=args.ticker, epsilon=args.epsilon)
 
         # ---------------------------------------------------------
-        # <<master_data_cache>> is not the df
+        # <<master_data_cache>> is now the df
         # ---------------------------------------------------------
 
         # ---------------------------------------------------------
@@ -229,22 +232,34 @@ def main(args):
         # ---------------------------------------------------------
         if is_sma_enabled():
             for w in args.sma_windows:
+                if 0 == w:
+                    continue
                 # Create column name tuple to match MultiIndex structure: ('MA_5', '^GSPC')
                 ma_col_name = (f'SMA_{w}', args.ticker)
                 # Calculate rolling mean on the close column
                 master_data_cache[ma_col_name] = master_data_cache[close_col].rolling(window=w).mean()
             #
             for sw in args.shift_sma_col:
+                if 0 == sw:
+                    continue
                 for w in args.sma_windows:
+                    if 0 == w:
+                        continue
                     ma_col_name = (f'SMA_{w}', args.ticker)
                     shift_ma_col_name = (f'SHIFTED_SMA{w}_{sw}', args.ticker)
                     master_data_cache[shift_ma_col_name] = master_data_cache[ma_col_name].shift(sw)
         if is_ema_enabled():
             for w in args.ema_windows:
+                if 0 == w:
+                    continue
                 ma_col_name = (f'EMA_{w}', args.ticker)
                 master_data_cache[ma_col_name] = master_data_cache[close_col].ewm(span=w, adjust=False).mean()
-            for sw in args.shift_sma_col:
+            for sw in args.shift_ema_col:
+                if 0 == sw:
+                    continue
                 for w in args.ema_windows:
+                    if 0 == w:
+                        continue
                     ma_col_name = (f'EMA_{w}', args.ticker)
                     shift_ma_col_name = (f'SHIFTED_EMA{w}_{sw}', args.ticker)
                     master_data_cache[shift_ma_col_name] = master_data_cache[ma_col_name].shift(sw)
@@ -255,6 +270,8 @@ def main(args):
         # 1. Calculate Base RSI
         if is_rsi_enabled():
             for w in args.rsi_windows:
+                if 0 == w:
+                    continue
                 rsi_col_name = (f'RSI_{w}', args.ticker)
                 master_data_cache[rsi_col_name] = calculate_rsi(master_data_cache[close_col], window=w)
 
@@ -268,7 +285,11 @@ def main(args):
         # 3. Add Shifted Versions for RSI
         if is_rsi_enabled():
             for sw in args.shift_rsi_col:  # Reusing shift_ma_col range (1-4)
+                if 0 == sw:
+                    continue
                 for w in args.rsi_windows:
+                    if 0 == w:
+                        continue
                     rsi_col_name = (f'RSI_{w}', args.ticker)
                     shift_rsi_col_name = (f'SHIFTED_RSI{w}_{sw}', args.ticker)
                     master_data_cache[shift_rsi_col_name] = master_data_cache[rsi_col_name].shift(sw)
@@ -313,6 +334,19 @@ def main(args):
                 add_z_score_feature=True,
                 add_scretch_condition=(True, True, True),
             )
+
+        # ---------------------------------------------------------
+        # Add Day data
+        # ---------------------------------------------------------
+        if is_day_data_enabled() and args.dataset_id == 'day':
+            assert isinstance(master_data_cache.index, pd.DatetimeIndex)
+            master_data_cache[('day_of_week', args.ticker)] = master_data_cache.index.dayofweek + 1  # Mon=1, Sun=7
+            # 2. Cyclical Encoding (Sine/Cosine)
+            # This helps models understand that day 7 is next to day 1
+            days_in_week = 7
+            master_data_cache[('day_sin', args.ticker)] = np.sin(2 * np.pi * master_data_cache[('day_of_week', args.ticker)] / days_in_week)
+            master_data_cache[('day_cos', args.ticker)] = np.cos(2 * np.pi * master_data_cache[('day_of_week', args.ticker)] / days_in_week)
+
         step_back_range = args.step_back_range if args.step_back_range < len(master_data_cache) else len(master_data_cache)
 
         pos_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='pos', max_n=15, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=args.epsilon))
@@ -350,24 +384,32 @@ def main(args):
         Xs = []
         if is_sma_enabled():
             if 0 != len(args.sma_windows):
-                Xs = [(f'SMA_{w}', args.ticker) for w in args.sma_windows]
+                Xs = [(f'SMA_{w}', args.ticker) for w in args.sma_windows if w != 0]
             if 0 != len(args.shift_sma_col):
                 for w in args.sma_windows:
-                    Xs += [(f'SHIFTED_SMA{w}_{sw}', args.ticker) for sw in args.shift_sma_col]
+                    if 0 == w:
+                        continue
+                    Xs += [(f'SHIFTED_SMA{w}_{sw}', args.ticker) for sw in args.shift_sma_col if sw != 0]
 
         if is_ema_enabled():
             if 0 != len(args.ema_windows):
-                Xs = [(f'EMA_{w}', args.ticker) for w in args.ema_windows]
+                Xs = [(f'EMA_{w}', args.ticker) for w in args.ema_windows if w != 0]
             if 0 != len(args.shift_ema_col):
                 for w in args.ema_windows:
-                    Xs += [(f'SHIFTED_EMA{w}_{sw}', args.ticker) for sw in args.shift_sma_col]
+                    if 0 == w:
+                        continue
+                    Xs += [(f'SHIFTED_EMA{w}_{sw}', args.ticker) for sw in args.shift_ema_col if sw != 0]
 
         # Add RSI Features
         if is_rsi_enabled():
             for w in args.rsi_windows:
+                if 0 == w:
+                    continue
                 Xs += [(f'RSI_{w}', args.ticker)]
                 if 0 != len(args.shift_rsi_col):
                     for sw in args.shift_rsi_col:
+                        if 0 == sw:
+                            continue
                         Xs += [(f'SHIFTED_RSI{w}_{sw}', args.ticker)]
 
         # Add MACD Features
@@ -388,8 +430,11 @@ def main(args):
                 vwap_cols_added += [vwap_cols[f'vwap_above_sigma_{bb}']]
                 vwap_cols_added += [vwap_cols[f'vwap_below_sigma_{bb}']]
                 vwap_cols_added_as_price += [vwap_cols[f'vwap_uband_{bb}'], vwap_cols[f'vwap_lband_{bb}']]
-
         Xs += vwap_cols_added
+
+        if is_day_data_enabled() and args.dataset_id == 'day':
+            Xs += [('day_sin', args.ticker), ('day_cos', args.ticker)]
+
         Xs += [("POS_SEQ", args.ticker), ("NEG_SEQ", args.ticker), close_col]
         Ys = [(args.target, args.ticker)]
 
@@ -800,6 +845,7 @@ def main(args):
                 'enable_rsi': args.enable_rsi,
                 'enable_macd': args.enable_macd,
                 'enable_vwap': args.enable_vwap,
+                'enable_day_data': args.enable_day_data,
                 'ema_windows': args.ema_windows,
                 'sma_windows': args.sma_windows,
                 'rsi_windows': args.rsi_windows,
@@ -877,6 +923,8 @@ if __name__ == "__main__":
                         help="List of shift periods for MACD. Default: None.")
     parser.add_argument('--enable_vwap', type=str2bool, default=False)
     parser.add_argument('--vwap_window', type=int, default=20)
+    parser.add_argument('--enable_day_data', type=str2bool, default=False,
+                        help="Add column for the day , 1=Monday and so forth")
     parser.add_argument('--compiled_dataset_filename', type=str, default=None,
                         help="Skip the dataframe build process and use the one provided.")
     parser.add_argument('--save_dataset_to_file_and_exit', type=str, default=None,

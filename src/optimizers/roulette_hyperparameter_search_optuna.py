@@ -49,11 +49,15 @@ MACD_COMBINATION_CACHE = {}
 
 def _tuple_to_str(t):
     """Convert tuple to string for Optuna storage (e.g., (2, 5) -> '2,5')"""
+    if 0 == len(t):
+        return ''
     return ','.join(map(str, t))
 
 
 def _str_to_tuple(s):
     """Convert string back to tuple of ints (e.g., '2,5' -> (2, 5))"""
+    if s == '':
+        return ()
     return tuple(map(int, s.split(',')))
 
 
@@ -66,7 +70,7 @@ def select_distinct(n, a, b):
 def get_unique_combinations(min_val, max_val, max_slots, _cache):
     """
     Generates all unique, strictly increasing combinations of numbers
-    from min_val to max_val with lengths from 1 up to max_slots.
+    from min_val to max_val with lengths from 0 up to max_slots.
 
     Args:
         min_val (int): Minimum value in the range (inclusive).
@@ -91,7 +95,7 @@ def get_unique_combinations(min_val, max_val, max_slots, _cache):
 
     # Generate combinations for each length from 1 to max_slots
     # Note: We use max_slots + 1 to make the limit inclusive (fixing the original off-by-one)
-    for r in range(1, max_slots + 1):
+    for r in range(0, max_slots + 1):
         # Optimization: If requested length > available numbers, stop
         if r > total_available:
             break
@@ -111,8 +115,10 @@ def get_unique_combinations_hardcoded(min_val, max_val, max_slots, _cache):
 
     """
     all_combos = []
-    for depth in range(1, max_slots + 1):
-        if 1 == depth:
+    for depth in range(0, max_slots + 1):
+        if 0 == depth:
+            all_combos.append(())
+        elif 1 == depth:
             for a in range(min_val, max_val+1):
                 all_combos.append((a, ))
         elif 2 == depth:
@@ -166,7 +172,7 @@ def objective(trial, configuration_specified, args):
     elif args.optimize_target == 'neg_seq_2__f1':
         score = avg_f1[2]
     else:
-        assert False, f""
+        assert False, f"{args.optimize_target}"
 
     return score
 
@@ -198,13 +204,13 @@ def main(args):
         assert len(combos) == len(combos_2)
         for a_tuple in combos:
             assert 1 == len([aaa for aaa in combos_2 if a_tuple == aaa])
-        combos = get_unique_combinations(args.ema_shift_min, args.ema_shift_max, args.max_ema_shift_slots, EMA_SHIFT_COMBINATION_CACHE)
+        get_unique_combinations(args.ema_shift_min, args.ema_shift_max, args.max_ema_shift_slots, EMA_SHIFT_COMBINATION_CACHE)
     if args.activate_sma_space_search:
-        combos = get_unique_combinations(args.sma_min, args.sma_max, args.max_sma_slots, SMA_COMBINATION_CACHE)
-        combos = get_unique_combinations(args.sma_shift_min, args.sma_shift_max, args.max_sma_shift_slots, SMA_SHIFT_COMBINATION_CACHE)
+        get_unique_combinations(args.sma_min, args.sma_max, args.max_sma_slots, SMA_COMBINATION_CACHE)
+        get_unique_combinations(args.sma_shift_min, args.sma_shift_max, args.max_sma_shift_slots, SMA_SHIFT_COMBINATION_CACHE)
     if args.activate_rsi_space_search:
-        combos = get_unique_combinations(args.rsi_min, args.rsi_max, args.max_rsi_slots, RSI_COMBINATION_CACHE)
-        combos = get_unique_combinations(args.rsi_shift_min, args.rsi_shift_max, args.max_rsi_shift_slots, RSI_SHIFT_COMBINATION_CACHE)
+        get_unique_combinations(args.rsi_min, args.rsi_max, args.max_rsi_slots, RSI_COMBINATION_CACHE)
+        get_unique_combinations(args.rsi_shift_min, args.rsi_shift_max, args.max_rsi_shift_slots, RSI_SHIFT_COMBINATION_CACHE)
     study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
 
     print("\n" + "=" * 80)
@@ -235,6 +241,7 @@ def get_default_namespace(args):
         enable_ema=False,
         enable_vwap=False,
         enable_rsi=False,
+        enable_day_data=False,
         step_back_range=args.step_back_range,
         epsilon=args.epsilon,
         compiled_dataset_filename=None,
@@ -256,103 +263,96 @@ def create_configuration(args, trial):
     """
 
     # --- EMA Logic ---
-    use_ema, ema_windows, shift_ema_col = False, [], []
+    ema_windows, shift_ema_col = [], []
     if args.activate_ema_space_search:
-        use_ema = trial.suggest_categorical("use_ema", [True, False])
-        if use_ema:
-            valid_combos = get_unique_combinations(args.ema_min, args.ema_max, args.max_ema_slots, EMA_COMBINATION_CACHE)
-            # Convert tuples to strings for Optuna compatibility
-            combo_strings = [_tuple_to_str(c) for c in valid_combos]
-            selected_str = trial.suggest_categorical("ema_windows_tuple", combo_strings)
-            ema_windows = list(_str_to_tuple(selected_str))
+        valid_combos = get_unique_combinations(args.ema_min, args.ema_max, args.max_ema_slots, EMA_COMBINATION_CACHE)
+        # Convert tuples to strings for Optuna compatibility
+        combo_strings = [_tuple_to_str(c) for c in valid_combos]
+        selected_str = trial.suggest_categorical("ema_windows_tuple", combo_strings)
+        ema_windows = list(_str_to_tuple(selected_str))
 
-            valid_shift_combos = get_unique_combinations(args.ema_shift_min, args.ema_shift_max, args.max_ema_shift_slots, EMA_SHIFT_COMBINATION_CACHE)
-            shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
-            selected_shift_str = trial.suggest_categorical("ema_shifts_tuple", shift_combo_strings)
-            shift_ema_col = list(_str_to_tuple(selected_shift_str))
+        valid_shift_combos = get_unique_combinations(args.ema_shift_min, args.ema_shift_max, args.max_ema_shift_slots, EMA_SHIFT_COMBINATION_CACHE)
+        shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
+        selected_shift_str = trial.suggest_categorical("ema_shifts_tuple", shift_combo_strings)
+        shift_ema_col = list(_str_to_tuple(selected_shift_str))
 
     # --- SMA Logic ---
-    use_sma, sma_windows, shift_sma_col = False, [], []
+    sma_windows, shift_sma_col = [], []
     if args.activate_sma_space_search:
-        use_sma = trial.suggest_categorical("use_sma", [True, False])
-        if use_sma:
-            valid_combos = get_unique_combinations(args.sma_min, args.sma_max, args.max_sma_slots, SMA_COMBINATION_CACHE)
-            assert valid_combos
-            # if valid_combos:
-            combo_strings = [_tuple_to_str(c) for c in valid_combos]
-            selected_str = trial.suggest_categorical("sma_windows_tuple", combo_strings)
-            sma_windows = list(_str_to_tuple(selected_str))
+        valid_combos = get_unique_combinations(args.sma_min, args.sma_max, args.max_sma_slots, SMA_COMBINATION_CACHE)
+        assert valid_combos
+        # if valid_combos:
+        combo_strings = [_tuple_to_str(c) for c in valid_combos]
+        selected_str = trial.suggest_categorical("sma_windows_tuple", combo_strings)
+        sma_windows = list(_str_to_tuple(selected_str))
 
-            valid_shift_combos = get_unique_combinations(args.sma_shift_min, args.sma_shift_max, args.max_sma_shift_slots, SMA_SHIFT_COMBINATION_CACHE)
-            assert valid_shift_combos
-            # if valid_shift_combos:
-            shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
-            selected_shift_str = trial.suggest_categorical("sma_shifts_tuple", shift_combo_strings)
-            shift_sma_col = list(_str_to_tuple(selected_shift_str))
+        valid_shift_combos = get_unique_combinations(args.sma_shift_min, args.sma_shift_max, args.max_sma_shift_slots, SMA_SHIFT_COMBINATION_CACHE)
+        assert valid_shift_combos
+        # if valid_shift_combos:
+        shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
+        selected_shift_str = trial.suggest_categorical("sma_shifts_tuple", shift_combo_strings)
+        shift_sma_col = list(_str_to_tuple(selected_shift_str))
 
     # --- RSI Logic ---
-    use_rsi, rsi_windows, shift_rsi_col = False, [], []
+    rsi_windows, shift_rsi_col = [], []
     if args.activate_rsi_space_search:
-        use_rsi = trial.suggest_categorical("use_rsi", [True, False])
-        if use_rsi:
-            valid_combos = get_unique_combinations(args.rsi_min, args.rsi_max, args.max_rsi_slots, RSI_COMBINATION_CACHE)
-            assert valid_combos
-            # if valid_combos:
-            combo_strings = [_tuple_to_str(c) for c in valid_combos]
-            selected_str = trial.suggest_categorical("rsi_windows_tuple", combo_strings)
-            rsi_windows = list(_str_to_tuple(selected_str))
+        valid_combos = get_unique_combinations(args.rsi_min, args.rsi_max, args.max_rsi_slots, RSI_COMBINATION_CACHE)
+        assert valid_combos
+        # if valid_combos:
+        combo_strings = [_tuple_to_str(c) for c in valid_combos]
+        selected_str = trial.suggest_categorical("rsi_windows_tuple", combo_strings)
+        rsi_windows = list(_str_to_tuple(selected_str))
 
-            valid_shift_combos = get_unique_combinations(args.rsi_shift_min, args.rsi_shift_max, args.max_rsi_shift_slots, RSI_SHIFT_COMBINATION_CACHE)
-            assert valid_shift_combos
-            # if valid_shift_combos:
-            shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
-            selected_shift_str = trial.suggest_categorical("rsi_shifts_tuple", shift_combo_strings)
-            shift_rsi_col = list(_str_to_tuple(selected_shift_str))
+        valid_shift_combos = get_unique_combinations(args.rsi_shift_min, args.rsi_shift_max, args.max_rsi_shift_slots, RSI_SHIFT_COMBINATION_CACHE)
+        assert valid_shift_combos
+        # if valid_shift_combos:
+        shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
+        selected_shift_str = trial.suggest_categorical("rsi_shifts_tuple", shift_combo_strings)
+        shift_rsi_col = list(_str_to_tuple(selected_shift_str))
 
     # --- MACD Logic ---
-    use_macd, macd_params = False, {}
+    macd_params = {}
     shift_macd_col = []  # MACD typically doesn't use shifts in the same way, keeping empty for compatibility
     if args.activate_macd_space_search:
-        use_macd = trial.suggest_categorical("use_macd", [True, False])
-        if use_macd:
-            # Define search ranges (uses args if available, else defaults)
-            f_min = getattr(args, 'macd_fast_min', 10)
-            f_max = getattr(args, 'macd_fast_max', 20)
-            s_min = getattr(args, 'macd_slow_min', 20)
-            s_max = getattr(args, 'macd_slow_max', 40)
-            sig_min = getattr(args, 'macd_signal_min', 5)
-            sig_max = getattr(args, 'macd_signal_max', 15)
+        # Define search ranges (uses args if available, else defaults)
+        f_min = getattr(args, 'macd_fast_min', 10)
+        f_max = getattr(args, 'macd_fast_max', 20)
+        s_min = getattr(args, 'macd_slow_min', 20)
+        s_max = getattr(args, 'macd_slow_max', 40)
+        sig_min = getattr(args, 'macd_signal_min', 5)
+        sig_max = getattr(args, 'macd_signal_max', 15)
 
-            # Create cache key
-            cache_key = (f_min, f_max, s_min, s_max, sig_min, sig_max)
+        # Create cache key
+        cache_key = (f_min, f_max, s_min, s_max, sig_min, sig_max)
 
-            # Generate valid triplets (fast, slow, signal) where fast < slow
-            if cache_key not in MACD_COMBINATION_CACHE:
-                valid_triplets = []
-                for f in range(f_min, f_max + 1):
-                    # Enforce Slow > Fast (Standard MACD definition)
-                    effective_s_min = max(s_min, f + 1)
-                    if effective_s_min > s_max:
-                        continue
-                    for s in range(effective_s_min, s_max + 1):
-                        for sig in range(sig_min, sig_max + 1):
-                            valid_triplets.append((f, s, sig))
-                MACD_COMBINATION_CACHE[cache_key] = valid_triplets
+        # Generate valid triplets (fast, slow, signal) where fast < slow
+        if cache_key not in MACD_COMBINATION_CACHE:
+            valid_triplets = []
+            for f in range(f_min, f_max + 1):
+                # Enforce Slow > Fast (Standard MACD definition)
+                effective_s_min = max(s_min, f + 1)
+                if effective_s_min > s_max:
+                    continue
+                for s in range(effective_s_min, s_max + 1):
+                    for sig in range(sig_min, sig_max + 1):
+                        valid_triplets.append((f, s, sig))
+            MACD_COMBINATION_CACHE[cache_key] = valid_triplets
 
-            valid_triplets = MACD_COMBINATION_CACHE[cache_key]
-            assert valid_triplets
+        valid_triplets = MACD_COMBINATION_CACHE[cache_key]
+        assert valid_triplets
 
-            # Convert to strings for Optuna categorical suggestion
-            triplet_strings = [_tuple_to_str(t) for t in valid_triplets]
-            selected_str = trial.suggest_categorical("macd_params_tuple", triplet_strings)
-            f, s, sig = _str_to_tuple(selected_str)
-            macd_params = {"fast": f, "slow": s, "signal": sig}
+        # Convert to strings for Optuna categorical suggestion
+        triplet_strings = [_tuple_to_str(t) for t in valid_triplets]
+        selected_str = trial.suggest_categorical("macd_params_tuple", triplet_strings)
+        f, s, sig = _str_to_tuple(selected_str)
+        macd_params = {"fast": f, "slow": s, "signal": sig}
 
     # --- VWAP Logic ---
     use_vwap = False
 
+    enable_day_data = False
     # print(f"")
-    # print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}   {macd_params=} {use_macd}")
+    # print(f"{sma_windows=} {shift_sma_col=}    {ema_windows=} {shift_ema_col=}    {rsi_windows=} {shift_rsi_col=}    {macd_params=} ")
     assert 0 == len(shift_macd_col)
     configuration = get_default_namespace(args)
     configuration.convert_price_level_with_baseline = 'fraction'
@@ -363,13 +363,13 @@ def create_configuration(args, trial):
     configuration.shift_macd_col = shift_macd_col
     configuration.rsi_windows = rsi_windows
     configuration.macd_params = macd_params
-    configuration.enable_macd = use_macd
-    configuration.enable_sma = use_sma
-    configuration.enable_ema = use_ema
+    configuration.enable_macd = args.activate_macd_space_search
+    configuration.enable_sma = args.activate_sma_space_search
+    configuration.enable_ema = args.activate_ema_space_search
     configuration.enable_vwap = use_vwap
-    configuration.enable_rsi = use_rsi
-    configuration.enable_rsi = use_rsi
-
+    configuration.enable_rsi = args.activate_rsi_space_search
+    configuration.enable_macd = args.activate_macd_space_search
+    configuration.enable_day_data = enable_day_data
     return configuration
 
 
@@ -437,7 +437,7 @@ if __name__ == "__main__":
                         help='Minimum SMA window size')
     parser.add_argument('--sma_max', type=int, default=10,
                         help='Maximum SMA window size')
-    parser.add_argument('--max_sma_shift_slots', type=int, default=5,
+    parser.add_argument('--max_sma_shift_slots', type=int, default=2,
                         help='')
     parser.add_argument('--sma_shift_min', type=int, default=1,
                         help='Minimum SMA shift')
@@ -450,7 +450,7 @@ if __name__ == "__main__":
                         help='Minimum RSI window size')
     parser.add_argument('--rsi_max', type=int, default=21,
                         help='Maximum RSI window size')
-    parser.add_argument('--max_rsi_shift_slots', type=int, default=5,
+    parser.add_argument('--max_rsi_shift_slots', type=int, default=2,
                         help='')
     parser.add_argument('--rsi_shift_min', type=int, default=1,
                         help='Minimum RSI shift')
