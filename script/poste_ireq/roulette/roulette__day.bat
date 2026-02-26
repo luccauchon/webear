@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: --- Parameters ---
-set "RANGE=99999"
+set "RANGE=3333"
 set "DATASET_ID=day"
 set "TIMEOUT=400000"
 set "CONDA_ENV=PY311"
