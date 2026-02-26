@@ -17,7 +17,7 @@ from argparse import Namespace
 import numpy as np
 import argparse
 from utils import DATASET_AVAILABLE, str2bool
-from optimizers.roulette_realtime_and_backtest_OLD_TOBEDELETED import main as roulette_realtime_and_backtest
+from optimizers.roulette_realtime_and_backtest import main as roulette_realtime_and_backtest
 import warnings
 import traceback
 import itertools
