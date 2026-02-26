@@ -17,7 +17,7 @@ from argparse import Namespace
 import numpy as np
 import argparse
 from utils import DATASET_AVAILABLE, str2bool
-from optimizers.roulette_realtime_and_backtest import main as roulette_realtime_and_backtest
+from optimizers.roulette_realtime_and_backtest_OLD_TOBEDELETED import main as roulette_realtime_and_backtest
 import warnings
 import traceback
 import itertools
@@ -314,6 +314,10 @@ def create_configuration(args, trial):
             selected_str = trial.suggest_categorical("macd_params_tuple", triplet_strings)
             f, s, sig = _str_to_tuple(selected_str)
             macd_params = {"fast": f, "slow": s, "signal": sig}
+
+    # --- VWAP Logic ---
+    use_vwap = False
+
     # print(f"")
     # print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}   {macd_params=} {use_macd}")
     assert 0 == len(shift_macd_col)
@@ -333,6 +337,7 @@ def create_configuration(args, trial):
         enable_macd=use_macd,
         enable_sma=use_sma,
         enable_ema=use_ema,
+        enable_vwap=use_vwap,
         enable_rsi=use_rsi,
         step_back_range=args.step_back_range,
         epsilon=args.epsilon,
@@ -365,6 +370,7 @@ if __name__ == "__main__":
     parser.add_argument('--activate_ema_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_rsi_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_macd_space_search', type=str2bool, default=True)
+    parser.add_argument('--activate_vwap_space_search', type=str2bool, default=True)
 
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
