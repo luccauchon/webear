@@ -219,7 +219,7 @@ def main(args):
 def get_default_namespace(args):
     return Namespace(
         dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False,
+        look_ahead=args.look_ahead, verbose=args.verbose_debug,
         target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ",
         convert_price_level_with_baseline='fraction',
         sma_windows=[],
@@ -392,6 +392,8 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
     parser.add_argument('--step_back_range', type=int, default=99999)
     parser.add_argument('--verbose', type=str2bool, default=True)
+    parser.add_argument('--verbose_debug', type=str2bool, default=False,
+                        help='Whether to enable verbose debugging or not')
 
     parser.add_argument('--activate_sma_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_ema_space_search', type=str2bool, default=True)
