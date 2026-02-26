@@ -241,6 +241,11 @@ def get_default_namespace(args):
         save_dataset_to_file_and_exit=None,
         min_percentage_to_keep_class=2,
         base_models=['xgb'],
+        save_model_path=None,
+        n_estimators=500,
+        max_depth=6,
+        learning_rate=0.05,
+        model_overrides={},
     )
 
 
