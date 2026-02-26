@@ -216,6 +216,34 @@ def main(args):
     print("=" * 80 + "\n")
 
 
+def get_default_namespace(args):
+    return Namespace(
+        dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
+        look_ahead=args.look_ahead, verbose=False,
+        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ",
+        convert_price_level_with_baseline='fraction',
+        sma_windows=[],
+        ema_windows=[],
+        shift_sma_col=[],
+        shift_ema_col=[],
+        shift_rsi_col=[],
+        shift_macd_col=[],
+        rsi_windows=[],
+        macd_params=[],
+        enable_macd=False,
+        enable_sma=False,
+        enable_ema=False,
+        enable_vwap=False,
+        enable_rsi=False,
+        step_back_range=args.step_back_range,
+        epsilon=args.epsilon,
+        compiled_dataset_filename=None,
+        save_dataset_to_file_and_exit=None,
+        min_percentage_to_keep_class=2,
+        base_models=['xgb'],
+    )
+
+
 def create_configuration(args, trial):
     """
     Creates the configuration Namespace.
@@ -321,27 +349,21 @@ def create_configuration(args, trial):
     # print(f"")
     # print(f"{sma_windows=} {shift_sma_col=} {use_sma}   {ema_windows=} {shift_ema_col=} {use_ema}   {rsi_windows=} {shift_rsi_col=} {use_rsi}   {macd_params=} {use_macd}")
     assert 0 == len(shift_macd_col)
-    configuration = Namespace(
-        dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=False,
-        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ",
-        convert_price_level_with_baseline='fraction',
-        sma_windows=sma_windows,
-        ema_windows=ema_windows,
-        shift_sma_col=shift_sma_col,
-        shift_ema_col=shift_ema_col,
-        shift_rsi_col=shift_rsi_col,
-        shift_macd_col=shift_macd_col,
-        rsi_windows=rsi_windows,
-        macd_params=macd_params,
-        enable_macd=use_macd,
-        enable_sma=use_sma,
-        enable_ema=use_ema,
-        enable_vwap=use_vwap,
-        enable_rsi=use_rsi,
-        step_back_range=args.step_back_range,
-        epsilon=args.epsilon,
-    )
+    configuration = get_default_namespace(args)
+    configuration.convert_price_level_with_baseline = 'fraction'
+    configuration.ema_windows = ema_windows
+    configuration.shift_sma_col = shift_sma_col
+    configuration.shift_ema_col = shift_ema_col
+    configuration.shift_rsi_col = shift_rsi_col
+    configuration.shift_macd_col = shift_macd_col
+    configuration.rsi_windows = rsi_windows
+    configuration.macd_params = macd_params
+    configuration.enable_macd = use_macd
+    configuration.enable_sma = use_sma
+    configuration.enable_ema = use_ema
+    configuration.enable_vwap = use_vwap
+    configuration.enable_rsi = use_rsi
+    configuration.enable_rsi = use_rsi
 
     return configuration
 
