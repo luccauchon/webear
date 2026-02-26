@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: --- Parameters ---
-set "RANGE=333"
+set "RANGE=99999"
 set "DATASET_ID=week"
 set "TIMEOUT=500000"
 set "CONDA_ACTIVATE=C:\Users\cj3272\AppData\Local\miniconda3\Scripts\activate.bat"
