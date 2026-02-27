@@ -690,7 +690,7 @@ def main(args):
 
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
     # Run Optimization
-    if IS_RUNNING_ON_CASIR:
+    if IS_RUNNING_ON_CASIR and False:
         print(f"Using 4 cores")
         # Create Study
         study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage=f"sqlite:///{args.storage}")
