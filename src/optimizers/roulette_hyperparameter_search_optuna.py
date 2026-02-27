@@ -371,7 +371,7 @@ def create_configuration(args, trial):
     configuration.enable_sma = args.activate_sma_space_search
     configuration.enable_ema = args.activate_ema_space_search
     configuration.enable_vwap = args.activate_vwap_space_search
-    configuration.vwap_window - vwap_window
+    configuration.vwap_window = vwap_window
     configuration.enable_rsi = args.activate_rsi_space_search
     configuration.enable_macd = args.activate_macd_space_search
     configuration.enable_day_data = enable_day_data
