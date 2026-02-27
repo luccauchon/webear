@@ -173,6 +173,8 @@ def objective(trial, configuration_specified, args):
         score = avg_f1[2]
     elif args.optimize_target == 'pos_seq__f1':
         score = f1_scores
+    elif args.optimize_target == 'neg_seq__f1':
+        score = f1_scores
     else:
         assert False, f"{args.optimize_target}"
 
@@ -410,8 +412,8 @@ if __name__ == "__main__":
     parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna (ignored if use_optuna=False)')
     parser.add_argument('--optimize_target', type=str, default='pos_seq_1__f1',
-                        choices=['pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1',
-                                 'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1'],
+                        choices=['pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1', 'pos_seq__f1',
+                                 'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1', 'neg_seq__f1'],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds (None = no limit)')
