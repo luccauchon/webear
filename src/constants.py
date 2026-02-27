@@ -45,12 +45,12 @@ MY_TICKERS = [
     "AAPL", "ADBE", "AFRM", "AMD", "AMZN",
     "ASST", "AVGO", "BAC", "BBAI", "BRK-B", "CLF", "COST", "CRM", "DBRG", "GOOGL",
     "GOOG", "HD", "HIMS", "HOOD", "HYG", "INTC", "JPM", "LLY", "MA", "META", "MSFT",
-    "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT", "RKT", "RSP",
+    "^NDX", "NFLX", "NVDA", "OPEN", "ORCL", "PINS", "QCOM", "PLTR", "RDDT", "RKT", "RSP",
     "SOFI", "SNDK", "TSLA", "TSM", "UUUU", "U", "V", "WMT"
 ]
 
 MY_TICKERS_SMALL_SET = [
-    "^XSP", "^GSPC", "^VIX", "^VVIX", "^SKEW", "^VIX1D", "^VIX9D", "^VIX3M", "^VIX6M", "^VVIX", "^VIX1Y", "SPY", "QQQ", "RSP",
+    "^XSP", "^GSPC", "^VIX", "^VVIX", "^SKEW", "^VIX1D", "^VIX9D", "^VIX3M", "^VIX6M", "^VVIX", "^VIX1Y", "SPY", "QQQ", "RSP", "^NDX",
 ]
 
 # Top 10 S&P 500 tickers as of 2025-10-29
