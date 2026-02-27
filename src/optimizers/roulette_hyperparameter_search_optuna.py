@@ -46,6 +46,8 @@ RSI_COMBINATION_CACHE = {}
 RSI_SHIFT_COMBINATION_CACHE = {}
 MACD_COMBINATION_CACHE = {}
 
+ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = None
+
 
 def _tuple_to_str(t):
     """Convert tuple to string for Optuna storage (e.g., (2, 5) -> '2,5')"""
@@ -196,7 +198,7 @@ def main(args):
     print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
     # Create Study
-    study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
+    study = optuna.create_study(direction="maximize", study_name="Roulette_Strategy_Optimization")
 
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
 
@@ -224,6 +226,42 @@ def main(args):
     for key, value in study.best_params.items():
         print(f"    {key:.<40} {value}")
     print("=" * 80 + "\n")
+    print(f"To run the best experiment:")
+    _tmp_str = (f"python roulette_realtime_and_backtest.py "
+                f"--ticker {args.ticker} --dataset_id {args.dataset_id} --look_ahead {args.look_ahead} --step_back_range {args.step_back_range} "
+                f"--epsilon {args.epsilon} --target {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.target} --convert_price_level_with_baseline {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.convert_price_level_with_baseline} "
+                f"--verbose true --older_dataset none ")
+    if 0 != len(study.best_params['ema_windows_tuple']):
+        assert args.activate_ema_space_search
+        _tmp_str += f"--enable_ema true --ema_windows {study.best_params['ema_windows_tuple'].replace(',', ' ')} "
+        if 0 != len(study.best_params['ema_shifts_tuple']):
+            _tmp_str += f"--shift_ema_col {study.best_params['ema_shifts_tuple'].replace(',', ' ')} "
+    else:
+        _tmp_str += f"--enable_ema false"
+    if 0 != len(study.best_params['sma_windows_tuple']):
+        assert args.activate_sma_space_search
+        _tmp_str += f"--enable_sma true --sma_windows {study.best_params['sma_windows_tuple'].replace(',', ' ')} "
+        if 0 != len(study.best_params['sma_shifts_tuple']):
+            _tmp_str += f"--shift_sma_col {study.best_params['sma_shifts_tuple'].replace(',', ' ')} "
+    else:
+        _tmp_str += f"--enable_sma false"
+    if 0 != len(study.best_params['rsi_windows_tuple']):
+        assert args.activate_rsi_space_search
+        _tmp_str += f"--enable_rsi true --rsi_windows {study.best_params['rsi_windows_tuple'].replace(',', ' ')} "
+        if 0 != len(study.best_params['rsi_shifts_tuple']):
+            _tmp_str += f"--shift_rsi_col {study.best_params['rsi_shifts_tuple'].replace(',', ' ')} "
+    else:
+        _tmp_str += f"--enable_rsi false"
+    if args.activate_macd_space_search:
+        f, s, sig = _str_to_tuple(study.best_params['macd_params_tuple'])
+        macd_params = {"fast": f, "slow": s, "signal": sig}
+        _tmp2 = f"{macd_params}".replace("\'", "\\\"")
+        _tmp_str += f"--enable_macd {args.activate_macd_space_search} --macd_params \'{_tmp2}\' "
+    if args.activate_vwap_space_search:
+        _tmp_str += f"--enable_vwap true --vwap_window {study.best_params['vwap_window']} "
+    _tmp_str += f"--enable_day_data {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.enable_day_data} "
+    _tmp_str += f"--shift_seq_col {study.best_params['shift_seq_col']} "
+    print(_tmp_str)
 
 
 def get_default_namespace(args):
@@ -245,7 +283,8 @@ def get_default_namespace(args):
         enable_ema=False,
         enable_vwap=False,
         enable_rsi=False,
-        enable_day_data=False,
+        enable_day_data=True,
+        shift_seq_col=1,
         step_back_range=args.step_back_range,
         epsilon=args.epsilon,
         compiled_dataset_filename=None,
@@ -258,6 +297,12 @@ def get_default_namespace(args):
         learning_rate=0.05,
         model_overrides='{}',
     )
+
+
+def _set_cfg(cfg): # Add the cfg parameter
+    global ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES
+    if ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES is None:
+        ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = cfg
 
 
 def create_configuration(args, trial):
@@ -356,12 +401,10 @@ def create_configuration(args, trial):
     if args.activate_vwap_space_search:
         vwap_window = trial.suggest_int(name="vwap_window", low=args.vwap_min_window, high=args.vwap_max_window)
 
-    enable_day_data = False
     # print(f"")
     # print(f"{sma_windows=} {shift_sma_col=}    {ema_windows=} {shift_ema_col=}    {rsi_windows=} {shift_rsi_col=}    {macd_params=} ")
     assert 0 == len(shift_macd_col)
     configuration = get_default_namespace(args)
-    configuration.convert_price_level_with_baseline = 'fraction'
     configuration.ema_windows = ema_windows
     configuration.shift_sma_col = shift_sma_col
     configuration.shift_ema_col = shift_ema_col
@@ -375,8 +418,9 @@ def create_configuration(args, trial):
     configuration.enable_vwap = args.activate_vwap_space_search
     configuration.vwap_window = vwap_window
     configuration.enable_rsi = args.activate_rsi_space_search
-    configuration.enable_macd = args.activate_macd_space_search
-    configuration.enable_day_data = enable_day_data
+    configuration.shift_seq_col = trial.suggest_int(name="shift_seq_col", low=args.shift_seq_col_min, high=args.shift_seq_col_max)
+    # Call the setter before returning
+    _set_cfg(configuration)
     return configuration
 
 
@@ -478,12 +522,16 @@ if __name__ == "__main__":
     parser.add_argument('--macd_signal_max', type=int, default=15,
                         help='Maximum MACD Signal period')
 
-    parser.add_argument('--min_percentage_to_keep_class', type=float, default=2.,
-                        help="Minimum percentage of class target data in Y. Default: 2.")
+    parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
+                        help="Minimum percentage of class target data in Y. Default: 4.")
 
     parser.add_argument('--vwap_min_window', type=int, default=2,
                         help='Minimum VWAP window size')
     parser.add_argument('--vwap_max_window', type=int, default=42,
                         help='Maximum VWAP window size')
+    parser.add_argument('--shift_seq_col_min', type=int, default=1,
+                        help='')
+    parser.add_argument('--shift_seq_col_max', type=int, default=5,
+                        help='')
     args = parser.parse_args()
     main(args)

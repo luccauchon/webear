@@ -186,7 +186,8 @@ def main(args):
         # --- UPDATED: Load parameters from args instead of hardcoding ---
         macd_base_cols = ['MACD_Line', 'MACD_Signal', 'MACD_Hist']
         macd_params = json.loads(args.macd_params) if isinstance(args.macd_params, str) else args.macd_params
-
+        SHIFTED_SEQ_COLS = []
+        VWAP_COLS, VWAP_COLS_AS_PRICE = [], []
         def is_ema_enabled():
             return args.enable_ema
 
@@ -224,7 +225,9 @@ def main(args):
         master_data_cache = add_sequence_columns_vectorized(df=master_data_cache[args.ticker].sort_index(), col_name=close_col, ticker_name=args.ticker, epsilon=args.epsilon)
 
         # ---------------------------------------------------------
+        # ---------------------------------------------------------
         # <<master_data_cache>> is now the df
+        # ---------------------------------------------------------
         # ---------------------------------------------------------
 
         # ---------------------------------------------------------
@@ -334,6 +337,14 @@ def main(args):
                 add_z_score_feature=True,
                 add_scretch_condition=(True, True, True),
             )
+            VWAP_COLS += [vwap_cols['vwap'], vwap_cols['vwap_std'], vwap_cols['vwap_z']]
+            VWAP_COLS_AS_PRICE += [vwap_cols['vwap']]
+            for bb in vwap_bands:
+                VWAP_COLS += [vwap_cols[f'vwap_uband_{bb}']]
+                VWAP_COLS += [vwap_cols[f'vwap_lband_{bb}']]
+                VWAP_COLS += [vwap_cols[f'vwap_above_sigma_{bb}']]
+                VWAP_COLS += [vwap_cols[f'vwap_below_sigma_{bb}']]
+                VWAP_COLS_AS_PRICE += [vwap_cols[f'vwap_uband_{bb}'], vwap_cols[f'vwap_lband_{bb}']]
 
         # ---------------------------------------------------------
         # Add Day data
@@ -347,6 +358,18 @@ def main(args):
             master_data_cache[('day_sin', args.ticker)] = np.sin(2 * np.pi * master_data_cache[('day_of_week', args.ticker)] / days_in_week)
             master_data_cache[('day_cos', args.ticker)] = np.cos(2 * np.pi * master_data_cache[('day_of_week', args.ticker)] / days_in_week)
 
+        # ---------------------------------------------------------
+        # Shift SEQ
+        # ---------------------------------------------------------
+        if 0 != args.shift_seq_col:
+            _pos_base_col, _neg_base_col = ('POS_SEQ', args.ticker), ('NEG_SEQ', args.ticker)
+            for plm in range(1, args.shift_seq_col+1):
+                _shift_pos_base_col = (f'SHIFTED_{plm}_POS_SEQ', args.ticker)
+                _shift_neg_base_col = (f'SHIFTED_{plm}_NEG_SEQ', args.ticker)
+                master_data_cache[_shift_pos_base_col] = master_data_cache[_pos_base_col].shift(plm)
+                master_data_cache[_shift_neg_base_col] = master_data_cache[_neg_base_col].shift(plm)
+                SHIFTED_SEQ_COLS.append(_shift_pos_base_col)
+                SHIFTED_SEQ_COLS.append(_shift_neg_base_col)
         step_back_range = args.step_back_range if args.step_back_range < len(master_data_cache) else len(master_data_cache)
 
         pos_proba = streak_probability(Namespace(ticker=args.ticker, frequency=args.dataset_id, direction='pos', max_n=15, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=args.epsilon))
@@ -409,20 +432,12 @@ def main(args):
                     Xs += [(f'SHIFTED_{base_name}_{sw}', args.ticker)]
 
         # Add vwap features
-        vwap_cols_added, vwap_cols_added_as_price = [], []
-        if is_vwap_enabled():
-            vwap_cols_added += [vwap_cols['vwap'], vwap_cols['vwap_std'], vwap_cols['vwap_z']]
-            vwap_cols_added_as_price += [vwap_cols['vwap']]
-            for bb in vwap_bands:
-                vwap_cols_added += [vwap_cols[f'vwap_uband_{bb}']]
-                vwap_cols_added += [vwap_cols[f'vwap_lband_{bb}']]
-                vwap_cols_added += [vwap_cols[f'vwap_above_sigma_{bb}']]
-                vwap_cols_added += [vwap_cols[f'vwap_below_sigma_{bb}']]
-                vwap_cols_added_as_price += [vwap_cols[f'vwap_uband_{bb}'], vwap_cols[f'vwap_lband_{bb}']]
-        Xs += vwap_cols_added
+        Xs += VWAP_COLS
 
         if is_day_data_enabled() and args.dataset_id == 'day':
             Xs += [('day_sin', args.ticker), ('day_cos', args.ticker)]
+
+        Xs += SHIFTED_SEQ_COLS
 
         Xs += [("POS_SEQ", args.ticker), ("NEG_SEQ", args.ticker), close_col]
         Ys = [(args.target, args.ticker)]
@@ -465,7 +480,7 @@ def main(args):
             assert baseline_price > 0, f"{baseline_price=}   {close_col=}"
             price_cols = [col for col in Xs if ('SMA' in col[0] or 'EMA' in col[0] or col == close_col) and col[1] == args.ticker]
             if is_vwap_enabled():
-                price_cols += vwap_cols_added_as_price
+                price_cols += VWAP_COLS_AS_PRICE
             if args.verbose and not only_print_once:
                 print(f"\nConvert price levels to <<returns>> or <<fraction>>, relative to baseline: {price_cols}")
                 only_print_once = True
@@ -834,6 +849,7 @@ def main(args):
                 'enable_macd': args.enable_macd,
                 'enable_vwap': args.enable_vwap,
                 'enable_day_data': args.enable_day_data,
+                'shift_seq_col': args.shift_seq_col,
                 'ema_windows': args.ema_windows,
                 'sma_windows': args.sma_windows,
                 'rsi_windows': args.rsi_windows,
@@ -880,45 +896,45 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
     parser.add_argument("--look_ahead", type=int, default=1)
     #
-    parser.add_argument('--step-back-range', type=int, default=99999,
+    parser.add_argument('--step_back_range', type=int, default=99999,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument("--epsilon", type=float, default=0.,
                         help="Threshold for neutral returns. Default: 0.")
     parser.add_argument("--target", type=str, default='POS_SEQ', choices=['POS_SEQ', 'NEG_SEQ'],
                         help="Target column for prediction. Options: POS_SEQ, NEG_SEQ. Default: POS_SEQ.")
-    parser.add_argument("--convert-price-level-with-baseline", type=str, default='fraction', choices=['fraction', 'return'],
+    parser.add_argument("--convert_price_level_with_baseline", type=str, default='fraction', choices=['fraction', 'return'],
                         help="Method to convert price levels. 'fraction': price/baseline, 'return': (price/baseline)-1. Default: fraction.")
-    parser.add_argument("--ema-windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
+    parser.add_argument("--ema_windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
                         help="List of window sizes for Exponential Moving Average calculation. Default: 2 to 9.")
     parser.add_argument('--enable_ema', type=str2bool, default=False)
-    parser.add_argument("--shift-ema-col", type=int, nargs='+', default=[],
+    parser.add_argument("--shift_ema_col", type=int, nargs='+', default=[],
                         help="List of shift periods for EMA. Default: None.")
-    parser.add_argument("--sma-windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
+    parser.add_argument("--sma_windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
                         help="List of window sizes for Moving Average calculation. Default: 2 to 9.")
     parser.add_argument('--enable_sma', type=str2bool, default=False)
-    parser.add_argument("--shift-sma-col", type=int, nargs='+', default=[],
+    parser.add_argument("--shift_sma_col", type=int, nargs='+', default=[],
                         help="List of shift periods for SMA. Default: None.")
-    parser.add_argument("--rsi-windows", type=int, nargs='+', default=[14],
+    parser.add_argument("--rsi_windows", type=int, nargs='+', default=[14],
                         help="List of window sizes for RSI calculation. Default: 14.")
-    parser.add_argument("--shift-rsi-col", type=int, nargs='+', default=[],
+    parser.add_argument("--shift_rsi_col", type=int, nargs='+', default=[],
                         help="List of shift periods for RSI. Default: None.")
     parser.add_argument('--enable_rsi', type=str2bool, default=False)
-    parser.add_argument("--macd-params", type=str, default='{"fast": 12, "slow": 26, "signal": 9}',
+    parser.add_argument("--macd_params", type=str, default='{"fast": 12, "slow": 26, "signal": 9}',
                         help="JSON string for MACD parameters (fast, slow, signal). Default: 12, 26, 9.")
     parser.add_argument('--enable_macd', type=str2bool, default=False)
     parser.add_argument("--shift_macd_col", type=int, nargs='+', default=[],
                         help="List of shift periods for MACD. Default: None.")
     parser.add_argument('--enable_vwap', type=str2bool, default=False)
     parser.add_argument('--vwap_window', type=int, default=20)
-    parser.add_argument('--enable_day_data', type=str2bool, default=False,
-                        help="Add column for the day , 1=Monday and so forth")
+    parser.add_argument('--enable_day_data', type=str2bool, default=True,
+                        help="Add column for the day")
     parser.add_argument('--compiled_dataset_filename', type=str, default=None,
                         help="Skip the dataframe build process and use the one provided.")
     parser.add_argument('--save_dataset_to_file_and_exit', type=str, default=None,
                         help="Save to disk the dataset created and used for ML.")
-    parser.add_argument('--min_percentage_to_keep_class', type=float, default=2.,
-                        help="Minimum percentage of class target data in Y. Default: 2.")
+    parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
+                        help="Minimum percentage of class target data in Y. Default: 4.")
     parser.add_argument(
         "--base_models",
         type=str,
@@ -947,6 +963,8 @@ if __name__ == "__main__":
                              'Example: \'{"xgb": {"params": {"subsample": 0.5}}, "rf": {"params": {"n_estimators": 100}}}\'')
     # ---------------------------------------------------------
 
+    parser.add_argument("--shift_seq_col", type=int, default=3,
+                        help="")
     args = parser.parse_args()
 
     main(args)
