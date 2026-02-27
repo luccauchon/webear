@@ -1,4 +1,6 @@
 # Local custom modules
+from numba.core.cgutils import printf
+
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -69,6 +71,7 @@ def objective(trial, configuration_specified, args):
     # 5. Report intermediate values if needed (optional, depends on VVIX implementation)
     # trial.report(score, step=...)
     if args.objective_name == "2026_02_20__0_0pct":
+        printf(f"\nBaseline executed. Score: {score}")
         sys.exit(0)
     return score
 
