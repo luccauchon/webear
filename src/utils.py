@@ -1126,23 +1126,38 @@ def add_vwap_with_bands(
         var = (tp2v_sum / vol_sum) - (vwap ** 2)
 
     std = np.sqrt(var.clip(lower=0))  # avoid negative floating noise
+    col_bands_lst, col_features_lst = [], []
+    col_dict = {'vwap':     (f"{prefix}", ticker),
+                'vwap_std': (f"{prefix}_std", ticker),
+                }
+    if add_z_score_feature:
+        col_dict.update({'vwap_z': (f"{prefix}_z", ticker),})
+    for b in bands:
+        col_dict.update({f'vwap_uband_{b}'      : (f"{prefix}_upper_{b}", ticker),
+                         f'vwap_lband_{b}'      : (f"{prefix}_lower_{b}", ticker),
+                         f'vwap_above_sigma_{b}': (f"{prefix}_above_{b}sigma", ticker),
+                         f'vwap_below_sigma_{b}': (f"{prefix}_below_{b}sigma", ticker),
+                         })
 
     # --- Store Base VWAP ---
-    df[(f"{prefix}", ticker)] = vwap
-    df[(f"{prefix}_std", ticker)] = std
+    df[col_dict['vwap']] = vwap
+    df[col_dict['vwap_std']] = std
 
     # --- Multi Bands ---
     for b in bands:
-        df[(f"{prefix}_upper_{b}", ticker)] = vwap + b * std
-        df[(f"{prefix}_lower_{b}", ticker)] = vwap - b * std
+        df[col_dict[f'vwap_uband_{b}']] = vwap + b * std
+        df[col_dict[f'vwap_lband_{b}']] = vwap - b * std
+        col_bands_lst.append(col_dict[f'vwap_uband_{b}'])
+        col_bands_lst.append(col_dict[f'vwap_lband_{b}'])
 
     if add_z_score_feature:
-        df[(f"{prefix}_z", ticker)] = (df[close_col] - df[(f"{prefix}", ticker)]) / df[(f"{prefix}_std", ticker)]
+        df[col_dict[f'vwap_z']] = (df[close_col] - df[col_dict['vwap']]) / df[col_dict['vwap_std']]
+        col_features_lst.append(col_dict['vwap_z'])
 
     if add_scretch_condition:
         assert len(add_scretch_condition) == len(bands)
         for b in bands:
-            df[(f"{prefix}_Above_{b}sigma", ticker)] = df[close_col] > df[(f"{prefix}_upper_{b}", ticker)]
-            df[(f"{prefix}_Below_{b}sigma", ticker)] = df[close_col] < df[(f"{prefix}_lower_{b}", ticker)]
+            df[col_dict[f'vwap_above_sigma_{b}']] = df[close_col] > df[col_dict[f'vwap_uband_{b}']]
+            df[col_dict[f'vwap_below_sigma_{b}']] = df[close_col] < df[col_dict[f'vwap_lband_{b}']]
 
-    return df
+    return df, col_dict
