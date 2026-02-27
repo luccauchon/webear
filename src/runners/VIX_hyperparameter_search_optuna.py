@@ -13,6 +13,7 @@ except ImportError:
 
 from multiprocessing import freeze_support
 from argparse import Namespace
+import sys
 import numpy as np
 import argparse
 from utils import DATASET_AVAILABLE, str2bool
@@ -67,7 +68,8 @@ def objective(trial, configuration_specified, args):
 
     # 5. Report intermediate values if needed (optional, depends on VVIX implementation)
     # trial.report(score, step=...)
-
+    if args.objective_name == "2026_02_20__0_0pct":
+        sys.exit(0)
     return score
 
 
@@ -687,7 +689,8 @@ def main(args):
     timeout_str = f"{args.timeout}s" if args.timeout else "None"
     print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
-
+    if args.objective_name == "2026_02_20__0_0pct":
+        print(f" Attention! no optimization will take place! This is the baseline. Program will exit after one pass.")
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
     # Run Optimization
     if IS_RUNNING_ON_CASIR and False:
