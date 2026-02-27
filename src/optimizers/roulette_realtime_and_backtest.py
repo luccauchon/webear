@@ -511,14 +511,13 @@ def main(args):
             for cls, cnt, pct in zip(unique_classes, counts, class_percentages):
                 print(f"  Class {cls}: {cnt} samples ({pct:.2f}%)")
 
-        # Identify classes with >= 1% of samples
-        min_percentage = 2.0
-        valid_classes = unique_classes[class_percentages >= min_percentage]
-        invalid_classes = unique_classes[class_percentages < min_percentage]
+        # Identify classes with >= X% of samples
+        valid_classes = unique_classes[class_percentages >= args.min_percentage_to_keep_class]
+        invalid_classes = unique_classes[class_percentages < args.min_percentage_to_keep_class]
 
         if len(invalid_classes) > 0:
             if args.verbose:
-                print(f"Removing {len(invalid_classes)} class(es) with < {min_percentage}% samples: {invalid_classes}")
+                print(f"Removing {len(invalid_classes)} class(es) with < {args.min_percentage_to_keep_class}% samples: {invalid_classes}")
 
             # Create mask for valid samples
             mask = np.isin(the_y_data, valid_classes)
