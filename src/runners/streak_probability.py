@@ -373,7 +373,7 @@ def load_data(data_frequency, ticker):
 
 
 def new_main(args, bring_my_own_df=None):
-    ticker = "^GSPC"
+    ticker = args.ticker
     close_col = ('Close', ticker)
     data_frequency = args.frequency
     direction = args.direction
@@ -495,6 +495,7 @@ def main(direction: str, method: str, older_dataset: str, bold: int, frequency: 
         verbose=verbose,
         debug_verify_speeding=False,
         epsilon=0.,
+        ticker=ticker_name,
     )
     return new_main(args, bring_my_own_df=bring_my_own_df,)
 
@@ -504,6 +505,7 @@ if __name__ == "__main__":
         description="Analyze conditional returns for ^GSPC after N consecutive positive/negative periods.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+    parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument(
         "--frequency",
         choices=["day", "week", "month", "quarter", "year"],

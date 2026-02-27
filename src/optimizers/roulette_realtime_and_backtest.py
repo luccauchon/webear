@@ -349,30 +349,19 @@ def main(args):
 
         step_back_range = args.step_back_range if args.step_back_range < len(master_data_cache) else len(master_data_cache)
 
-        pos_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='pos', max_n=15, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=args.epsilon))
-        neg_proba = streak_probability(Namespace(frequency=args.dataset_id, direction='neg', max_n=13, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=-args.epsilon))
+        pos_proba = streak_probability(Namespace(ticker=args.ticker, frequency=args.dataset_id, direction='pos', max_n=15, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=args.epsilon))
+        neg_proba = streak_probability(Namespace(ticker=args.ticker, frequency=args.dataset_id, direction='neg', max_n=13, min_n=0, delta=0., verbose=False, debug_verify_speeding=False, epsilon=-args.epsilon))
         # 1. Create lookup dictionaries mapping streak length (x) to probability
         # We assume pos_proba/neg_proba are lists where index = streak length
-        pos_map, neg_map = {}, {}
-        if args.dataset_id == 'day':
-            pos_map = {x: pos_proba[x]['prob'] for x in range(0, np.max(list(pos_proba.keys()))+1)}
-            neg_map = {x: neg_proba[x]['prob'] for x in range(0, np.max(list(neg_proba.keys()))+1)}
-        elif args.dataset_id == 'week':
-            pos_map = {x: pos_proba[x]['prob'] for x in range(0, 7)}
-            neg_map = {x: neg_proba[x]['prob'] for x in range(0, 4)}
-        elif args.dataset_id == 'month':
-            pos_map = {x: pos_proba[x]['prob'] for x in range(0, 5)}
-            neg_map = {x: neg_proba[x]['prob'] for x in range(0, 4)}
-        elif args.dataset_id == 'quarter':
-            pos_map = {x: pos_proba[x]['prob'] for x in range(0, 5)}
-            neg_map = {x: neg_proba[x]['prob'] for x in range(0, 4)}
-        elif args.dataset_id == 'year':
-            pos_map = {x: pos_proba[x]['prob'] for x in range(0, 5)}
-            neg_map = {x: neg_proba[x]['prob'] for x in range(0, 3)}
-        else:
-            assert False, f"TODO"
+        pos_map, neg_map, count_pos_map, count_neg_map = {}, {}, {}, {}
+        #if args.dataset_id == 'day':
+        count_pos_map = {x: pos_proba[x]['count'] for x in range(0, np.max(list(pos_proba.keys())) + 1)}
+        pos_map       = {x: pos_proba[x]['prob']  for x in range(0, np.max(list(pos_proba.keys()))+1)}
+        count_neg_map = {x: neg_proba[x]['count'] for x in range(0, np.max(list(neg_proba.keys())) + 1)}
+        neg_map       = {x: neg_proba[x]['prob']  for x in range(0, np.max(list(neg_proba.keys()))+1)}
         if args.verbose:
-            print(f"\n{pos_map=}\n{neg_map=}")
+            print(f"\n{count_pos_map=}\n{pos_map=}")
+            print(f"\n{count_neg_map=}\n{neg_map=}")
         # 2. Map the sequence columns to the new probability columns
         # We use Tuple column names ('name', TICKER) to match df2's existing MultiIndex structure
         master_data_cache[('positive_probability', args.ticker)] = master_data_cache[('POS_SEQ', args.ticker)].map(pos_map)
