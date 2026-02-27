@@ -67,7 +67,7 @@ def objective(trial, configuration_specified, args):
 
     # 5. Report intermediate values if needed (optional, depends on VVIX implementation)
     # trial.report(score, step=...)
-    if args.objective_name == "2026_02_20__0_0pct":
+    if args.objective_name in ["2026_02_20__0_0pct"]:
         print(f"\nBaseline executed. Score: {score}")
         sys.exit(0)
     return score
@@ -102,8 +102,8 @@ def create_configuration___2026_02_20__1pct(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -175,8 +175,8 @@ def create_configuration___2026_02_20__2pct(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -248,8 +248,8 @@ def create_configuration___2026_02_20__0_5pct(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -321,8 +321,8 @@ def create_configuration___2026_02_20__0_25pct(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -394,8 +394,8 @@ def create_configuration___2026_02_20__0_0pct(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -467,8 +467,8 @@ def create_configuration___2026_02_20__0_25pct_balanced(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=True,
     )
 
@@ -540,8 +540,8 @@ def create_configuration___2026_02_20__0_5pct_balanced(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=True,
     )
 
@@ -613,8 +613,8 @@ def create_configuration___2026_02_20__1pct_balanced(args, trial):
         step_back_range=args.step_back_range,
         use_directional_var=True,
         use_directional_var__vix3m=False,
-        upper_side_scale_factor=1.,
-        lower_side_scale_factor=1.,
+        upper_side_scale_factor=args.upper_side_scale_factor,
+        lower_side_scale_factor=args.lower_side_scale_factor,
         adj_balanced=True,
     )
 
@@ -689,7 +689,7 @@ def main(args):
     timeout_str = f"{args.timeout}s" if args.timeout else "None"
     print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
-    if args.objective_name == "2026_02_20__0_0pct":
+    if args.objective_name in ["2026_02_20__0_0pct"]:
         print(f" Attention! no optimization will take place! This is the baseline. Program will exit after one pass.")
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
     # Run Optimization
@@ -739,6 +739,8 @@ if __name__ == "__main__":
                         help='Maximum optimization time in seconds (None = no limit)')
     parser.add_argument('--storage', type=str, default='example.db',
                         help='Database storage path (CASIR)')
+    parser.add_argument("--lower_side_scale_factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the lower side price")
+    parser.add_argument("--upper_side_scale_factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the upper side price")
 
     # --- New Argument: Objective Function Selection ---
     parser.add_argument('--objective_name', type=str, default='base_configuration',
