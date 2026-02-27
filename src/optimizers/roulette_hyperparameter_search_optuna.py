@@ -246,7 +246,7 @@ def get_default_namespace(args):
         epsilon=args.epsilon,
         compiled_dataset_filename=None,
         save_dataset_to_file_and_exit=None,
-        min_percentage_to_keep_class=2,
+        min_percentage_to_keep_class=args.min_percentage_to_keep_class,
         base_models=['xgb'],
         save_model_path=None,
         n_estimators=500,
@@ -471,5 +471,7 @@ if __name__ == "__main__":
     parser.add_argument('--macd_signal_max', type=int, default=15,
                         help='Maximum MACD Signal period')
 
+    parser.add_argument('--min_percentage_to_keep_class', type=float, default=2.,
+                        help="Minimum percentage of class target data in Y. Default: 2.")
     args = parser.parse_args()
     main(args)
