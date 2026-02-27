@@ -1,6 +1,3 @@
-# Local custom modules
-from numba.core.cgutils import printf
-
 try:
     from version import sys__name, sys__version
 except ImportError:
