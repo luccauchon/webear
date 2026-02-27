@@ -171,6 +171,8 @@ def objective(trial, configuration_specified, args):
         score = avg_f1[1]
     elif args.optimize_target == 'neg_seq_2__f1':
         score = avg_f1[2]
+    elif args.optimize_target == 'pos_seq__f1':
+        score = f1_scores
     else:
         assert False, f"{args.optimize_target}"
 

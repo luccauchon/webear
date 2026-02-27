@@ -881,7 +881,7 @@ def main(args):
             for c in range(num_classes):
                 print(f"{c:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
             print("=" * 80)
-    return f1_scores, acc_scores, avg_precision, avg_recall, avg_f1
+    return np.mean(f1_scores), np.mean(acc_scores), avg_precision, avg_recall, avg_f1
 
 
 if __name__ == "__main__":
