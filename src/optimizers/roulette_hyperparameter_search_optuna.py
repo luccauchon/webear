@@ -350,7 +350,9 @@ def create_configuration(args, trial):
         macd_params = {"fast": f, "slow": s, "signal": sig}
 
     # --- VWAP Logic ---
-    use_vwap = False
+    vwap_window = None
+    if args.activate_vwap_space_search:
+        vwap_window = trial.suggest_int(name="vwap_window", low=args.vwap_min_window, high=args.vwap_max_window)
 
     enable_day_data = False
     # print(f"")
@@ -368,7 +370,8 @@ def create_configuration(args, trial):
     configuration.enable_macd = args.activate_macd_space_search
     configuration.enable_sma = args.activate_sma_space_search
     configuration.enable_ema = args.activate_ema_space_search
-    configuration.enable_vwap = use_vwap
+    configuration.enable_vwap = args.activate_vwap_space_search
+    configuration.vwap_window - vwap_window
     configuration.enable_rsi = args.activate_rsi_space_search
     configuration.enable_macd = args.activate_macd_space_search
     configuration.enable_day_data = enable_day_data
@@ -475,5 +478,10 @@ if __name__ == "__main__":
 
     parser.add_argument('--min_percentage_to_keep_class', type=float, default=2.,
                         help="Minimum percentage of class target data in Y. Default: 2.")
+
+    parser.add_argument('--vwap_min_window', type=int, default=2,
+                        help='Minimum VWAP window size')
+    parser.add_argument('--vwap_max_window', type=int, default=42,
+                        help='Maximum VWAP window size')
     args = parser.parse_args()
     main(args)
