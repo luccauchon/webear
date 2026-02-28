@@ -261,6 +261,9 @@ def main(args):
         _tmp_str += f"--enable_vwap true --vwap_window {study.best_params['vwap_window']} "
     _tmp_str += f"--enable_day_data {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.enable_day_data} "
     _tmp_str += f"--shift_seq_col {study.best_params['shift_seq_col']} "
+    _tmp_str += f"--min_percentage_to_keep_class {args.min_percentage_to_keep_class} "
+    if 0 != len(args.specific_wanted_class):
+        _tmp_str += f"--specific_wanted_class {str(args.specific_wanted_class)[1:-1].replace(',', ' ')} "
     print(_tmp_str)
 
 
@@ -290,6 +293,7 @@ def get_default_namespace(args):
         compiled_dataset_filename=None,
         save_dataset_to_file_and_exit=None,
         min_percentage_to_keep_class=args.min_percentage_to_keep_class,
+        specific_wanted_class=args.specific_wanted_class,
         base_models=['xgb'],
         save_model_path=None,
         n_estimators=500,
@@ -455,7 +459,7 @@ if __name__ == "__main__":
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna (ignored if use_optuna=False)')
-    parser.add_argument('--optimize_target', type=str, default='pos_seq_1__f1',
+    parser.add_argument('--optimize_target', type=str, default='pos_seq__f1',
                         choices=['pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1', 'pos_seq__f1',
                                  'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1', 'neg_seq__f1'],
                         help='Which score to maximize')
@@ -524,6 +528,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
                         help="Minimum percentage of class target data in Y. Default: 4.")
+    parser.add_argument("--specific_wanted_class", type=int, nargs='+', default=[],
+                        help="List of classes to keep. Discard others. Default: None.")
 
     parser.add_argument('--vwap_min_window', type=int, default=2,
                         help='Minimum VWAP window size')

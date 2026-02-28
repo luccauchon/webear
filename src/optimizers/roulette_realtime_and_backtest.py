@@ -482,7 +482,7 @@ def main(args):
             if is_vwap_enabled():
                 price_cols += VWAP_COLS_AS_PRICE
             if args.verbose and not only_print_once:
-                print(f"\nConvert price levels to <<returns>> or <<fraction>>, relative to baseline: {price_cols}")
+                print(f"\nConvert price levels to <<{args.convert_price_level_with_baseline}>>, relative to baseline: {price_cols}")
                 only_print_once = True
             for col in price_cols:
                 assert col in the_X.index
@@ -490,6 +490,8 @@ def main(args):
                     the_X[col] = the_X[col] / baseline_price
                 elif args.convert_price_level_with_baseline == "return":
                     the_X[col] = (the_X[col] / baseline_price) - 1  # -1 --> Returns instead of fractions
+                else:
+                    assert False, f"{args.convert_price_level_with_baseline=}"
             the_d_data.append(past_df.index[-1])
             the_x_data.append(the_X.values)
             the_y_data.append(the_Y.values)
@@ -504,55 +506,53 @@ def main(args):
 
         # Ensure the_y_data is 1D
         the_y_data = the_y_data.ravel()
-
-        # Calculate class distribution
-        unique_classes, counts = np.unique(the_y_data, return_counts=True)
-        total_samples = len(the_y_data)
-        class_percentages = counts / total_samples * 100
-
-        if args.verbose:
-            print(f"Class distribution before filtering:")
-            for cls, cnt, pct in zip(unique_classes, counts, class_percentages):
-                print(f"  Class {cls}: {cnt} samples ({pct:.2f}%)")
-
-        # Identify classes with >= X% of samples
-        valid_classes = unique_classes[class_percentages >= args.min_percentage_to_keep_class]
-        invalid_classes = unique_classes[class_percentages < args.min_percentage_to_keep_class]
-
-        if len(invalid_classes) > 0:
-            if args.verbose:
-                print(f"Removing {len(invalid_classes)} class(es) with < {args.min_percentage_to_keep_class}% samples: {invalid_classes}")
-
-            # Create mask for valid samples
-            mask = np.isin(the_y_data, valid_classes)
+        if -1 != args.min_percentage_to_keep_class:
+            # Calculate class distribution
+            unique_classes, counts = np.unique(the_y_data, return_counts=True)
+            total_samples = len(the_y_data)
+            class_percentages = counts / total_samples * 100
 
             if args.verbose:
-                print(f"Mask shape: {mask.shape}, the_x_data shape: {the_x_data.shape}")
-                print(f"Mask shape: {mask.shape}, the_d_data shape: {the_y_data.shape}")
-                print(f"Mask shape: {mask.shape}, the_d_data shape: {the_d_data.shape}")
+                print(f"Class distribution before filtering:")
+                for cls, cnt, pct in zip(unique_classes, counts, class_percentages):
+                    print(f"  Class {cls}: {cnt} samples ({pct:.2f}%)")
 
-            # Filter data - index axis 0 explicitly for 2D arrays
-            the_x_data = the_x_data[mask, :] if the_x_data.ndim > 1 else the_x_data[mask]
-            the_y_data = the_y_data[mask]
-            the_d_data = the_d_data[mask]
-
+            # Identify classes with >= X% of samples
+            valid_classes = unique_classes[class_percentages >= args.min_percentage_to_keep_class]
+            invalid_classes = unique_classes[class_percentages < args.min_percentage_to_keep_class]
+            if len(invalid_classes) > 0:
+                if args.verbose:
+                    print(f"Removing {len(invalid_classes)} class(es) with < {args.min_percentage_to_keep_class}% samples: {invalid_classes}")
+                # Create mask for valid samples
+                mask = np.isin(the_y_data, valid_classes)
+                # Filter data - index axis 0 explicitly for 2D arrays
+                the_x_data = the_x_data[mask, :] if the_x_data.ndim > 1 else the_x_data[mask]
+                the_y_data = the_y_data[mask]
+                the_d_data = the_d_data[mask]
+                if args.verbose:
+                    print(f"Removed {np.sum(~mask)} samples. Remaining: {len(the_y_data)}")
+            # Recalculate num_classes after filtering
+            num_classes = len(np.unique(the_y_data))
+            assert num_classes > 1, f"There shall be more than 1 class"
             if args.verbose:
-                print(f"Removed {np.sum(~mask)} samples. Remaining: {len(the_y_data)}")
-
-        # Recalculate num_classes after filtering
-        num_classes = len(np.unique(the_y_data))
-        assert num_classes > 1, f"There shall be more than 1 class"
-
-        if args.verbose:
-            unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
-            print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
-            print(f"Count per class:")
-            for cls, cnt in zip(unique_classes_new, counts_new):
-                print(f"  Class {int(cls)}: {int(cnt)} samples")
-            print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
-
+                unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
+                print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
+                print(f"Count per class:")
+                for cls, cnt in zip(unique_classes_new, counts_new):
+                    print(f"  Class {int(cls)}: {int(cnt)} samples")
+                print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
+        # --- Filter by specified classes (e.g., [0, 1, 2]) ---
+        if len(args.specific_wanted_class) > 0:
+            initial_mask = np.isin(the_y_data, args.specific_wanted_class)
+            the_x_data = the_x_data[initial_mask]
+            the_y_data = the_y_data[initial_mask]
+            the_d_data = the_d_data[initial_mask]
+            if args.verbose:
+                print(f"Kept only specified classes {args.specific_wanted_class}. Samples remaining: {len(the_y_data)}")
+            # Recalculate num_classes after filtering by classes
+            num_classes = len(np.unique(the_y_data))
+            assert num_classes > 1, f"There shall be more than 1 class"
         assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
-
         if args.save_dataset_to_file_and_exit is not None:
             if args.verbose:
                 print(f"Saving data arrays to disk...")
@@ -757,7 +757,6 @@ def main(args):
             # Print Per-Class F1 for this fold
             f1_str = ", ".join([f"{i}:{v:.3f}" for i, v in enumerate(f1_per_class)])
             print(f"  Per-Class F1: [{f1_str}]")
-
         acc_scores.append(acc)
         f1_scores.append(f1)
     if args.verbose:
@@ -934,7 +933,9 @@ if __name__ == "__main__":
     parser.add_argument('--save_dataset_to_file_and_exit', type=str, default=None,
                         help="Save to disk the dataset created and used for ML.")
     parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
-                        help="Minimum percentage of class target data in Y. Default: 4.")
+                        help="Minimum percentage of class target data in Y. Default: 4. -1 to disabled.")
+    parser.add_argument("--specific_wanted_class", type=int, nargs='+', default=[],
+                        help="List of classes to keep. Discard others. Default: None.")
     parser.add_argument(
         "--base_models",
         type=str,
