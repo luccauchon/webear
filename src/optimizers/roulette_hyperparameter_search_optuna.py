@@ -266,6 +266,9 @@ def main(args):
     _tmp_str += f"--min_percentage_to_keep_class {args.min_percentage_to_keep_class} "
     if 0 != len(args.specific_wanted_class):
         _tmp_str += f"--specific_wanted_class {str(args.specific_wanted_class)[1:-1].replace(',', ' ')} "
+    _tmp_str += f"--base_models {str(args.base_models)[1:-1].replace(',', '').replace('\'', '')} "
+    if args.add_only_vwap_z_and_vwap_triggers:
+        _tmp_str += f"--add_only_vwap_z_and_vwap_triggers {args.add_only_vwap_z_and_vwap_triggers} "
     print(_tmp_str)
 
 
@@ -302,6 +305,7 @@ def get_default_namespace(args):
         max_depth=6,
         learning_rate=0.05,
         model_overrides='{}',
+        add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
     )
 
 
@@ -457,7 +461,7 @@ if __name__ == "__main__":
     parser.add_argument('--activate_rsi_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_macd_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_vwap_space_search', type=str2bool, default=True)
-
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=False)
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna (ignored if use_optuna=False)')

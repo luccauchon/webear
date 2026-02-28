@@ -337,14 +337,20 @@ def main(args):
                 add_z_score_feature=True,
                 add_scretch_condition=(True, True, True),
             )
-            VWAP_COLS += [vwap_cols['vwap'], vwap_cols['vwap_std'], vwap_cols['vwap_z']]
-            VWAP_COLS_AS_PRICE += [vwap_cols['vwap']]
-            for bb in vwap_bands:
-                VWAP_COLS += [vwap_cols[f'vwap_uband_{bb}']]
-                VWAP_COLS += [vwap_cols[f'vwap_lband_{bb}']]
-                VWAP_COLS += [vwap_cols[f'vwap_above_sigma_{bb}']]
-                VWAP_COLS += [vwap_cols[f'vwap_below_sigma_{bb}']]
-                VWAP_COLS_AS_PRICE += [vwap_cols[f'vwap_uband_{bb}'], vwap_cols[f'vwap_lband_{bb}']]
+            if args.add_only_vwap_z_and_vwap_triggers:
+                VWAP_COLS += [vwap_cols['vwap_z']]
+                for bb in vwap_bands:
+                    VWAP_COLS += [vwap_cols[f'vwap_above_sigma_{bb}']]
+                    VWAP_COLS += [vwap_cols[f'vwap_below_sigma_{bb}']]
+            else:
+                VWAP_COLS += [vwap_cols['vwap'], vwap_cols['vwap_std'], vwap_cols['vwap_z']]
+                VWAP_COLS_AS_PRICE += [vwap_cols['vwap']]
+                for bb in vwap_bands:
+                    VWAP_COLS += [vwap_cols[f'vwap_uband_{bb}']]
+                    VWAP_COLS += [vwap_cols[f'vwap_lband_{bb}']]
+                    VWAP_COLS += [vwap_cols[f'vwap_above_sigma_{bb}']]
+                    VWAP_COLS += [vwap_cols[f'vwap_below_sigma_{bb}']]
+                    VWAP_COLS_AS_PRICE += [vwap_cols[f'vwap_uband_{bb}'], vwap_cols[f'vwap_lband_{bb}']]
 
         # ---------------------------------------------------------
         # Add Day data
@@ -854,6 +860,7 @@ def main(args):
                 'rsi_windows': args.rsi_windows,
                 'macd_params': macd_params if 'macd_params' in locals() else args.macd_params,
                 'vwap_window': args.vwap_window,
+                'add_only_vwap_z_and_vwap_triggers': args.add_only_vwap_z_and_vwap_triggers,
                 'epsilon': args.epsilon,
                 'look_ahead': args.look_ahead,
             }
@@ -926,6 +933,7 @@ if __name__ == "__main__":
                         help="List of shift periods for MACD. Default: None.")
     parser.add_argument('--enable_vwap', type=str2bool, default=False)
     parser.add_argument('--vwap_window', type=int, default=20)
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=False)
     parser.add_argument('--enable_day_data', type=str2bool, default=True,
                         help="Add column for the day")
     parser.add_argument('--compiled_dataset_filename', type=str, default=None,
