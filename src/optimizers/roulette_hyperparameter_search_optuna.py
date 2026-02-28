@@ -154,6 +154,8 @@ def objective(trial, configuration_specified, args):
     # return random.random() - random.random() /2 + random.random()/4
     try:
         f1_scores, acc_scores, avg_precision, avg_recall, avg_f1 = roulette_realtime_and_backtest(configuration)
+    except ValueError:
+        return 0.0
     except Exception as e:
         print(f"Trial {trial.number} failed: {e}")
         traceback.print_exc()
@@ -294,7 +296,7 @@ def get_default_namespace(args):
         save_dataset_to_file_and_exit=None,
         min_percentage_to_keep_class=args.min_percentage_to_keep_class,
         specific_wanted_class=args.specific_wanted_class,
-        base_models=['xgb'],
+        base_models=args.base_models,
         save_model_path=None,
         n_estimators=500,
         max_depth=6,
@@ -539,5 +541,18 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--shift_seq_col_max', type=int, default=5,
                         help='')
+
+    parser.add_argument(
+        "--base_models",
+        type=str,
+        nargs="+",  # Accept one or more values
+        default=["xgb"],
+        choices=["xgb", "lgb", "cat", "hgb", "rf", "et", "svm", "knn", "mlp", "lr", "dt"],
+        help="Base model(s) to use for training. Can specify multiple. "
+             "Options: xgb (XGBoost), lgb (LightGBM), cat (CatBoost), hgb (HistGradientBoosting), "
+             "rf (Random Forest), et (Extra Trees), svm (SVM), knn (K-Nearest Neighbors), "
+             "mlp (Multi-Layer Perceptron), lr (Logistic Regression), dt (Decision Tree). "
+             "Example: --base_models xgb lgb cat"
+    )
     args = parser.parse_args()
     main(args)
