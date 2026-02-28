@@ -1161,3 +1161,53 @@ def add_vwap_with_bands(
             df[col_dict[f'vwap_below_sigma_{b}']] = df[close_col] < df[col_dict[f'vwap_lband_{b}']]
 
     return df, col_dict
+
+
+def get_growth_function(y_min, y_max):
+    """
+    Returns a function that maps:
+    10  -> y_min
+    20  -> 1.0
+    100 -> y_max
+    """
+    x_min, x_mid, x_max = 10, 20, 100
+    y_mid = 1.0
+
+    # Solve for curvature 'k' based on the ratio of growth
+    # (y_max - y_min) / (y_mid - y_min) = ((x_max - x_min) / (x_mid - x_min))^k
+    ratio_y = (y_max - y_min) / (y_mid - y_min)
+    ratio_x = (x_max - x_min) / (x_mid - x_min)  # This is 90 / 10 = 9
+
+    k = np.log(ratio_y) / np.log(ratio_x)
+    C = (y_mid - y_min) / ((x_mid - x_min) ** k)
+
+    def growth_func(x):
+        # Clip x to the bounds [10, 100] to avoid errors or unexpected values
+        x = np.clip(x, x_min, x_max)
+        return C * (x - x_min) ** k + y_min
+
+    return growth_func
+
+
+def abrupt_growth(x, y_min=0.1, y_max=10.0, sharpness=5):
+    """
+    x: input (10 to 100)
+    y_min: value at x=10
+    y_max: value at x=100
+    sharpness: higher values = flatter start, more abrupt finish
+    """
+    x_min, x_mid, x_max = 10, 20, 100
+    y_mid = 1.0
+
+    # Normalize x to a 0-1 scale for the math
+    # 0 at x=10, ~0.11 at x=20, 1 at x=100
+    norm_x = (x - x_min) / (x_max - x_min)
+
+    # Apply exponential growth: (e^(s*x) - 1) / (e^s - 1)
+    # This creates a curve that starts at 0 and ends at 1
+    curve = (np.exp(sharpness * norm_x) - 1) / (np.exp(sharpness) - 1)
+
+    # Rescale the curve to fit y_min and y_max
+    # Note: This might not hit 1.0 at exactly 20 unless we solve for
+    # the specific 'sharpness' that passes through (20, 1).
+    return y_min + (y_max - y_min) * curve

@@ -11,7 +11,7 @@ except ImportError:
 
 import argparse
 import pickle
-from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool, next_weekday
+from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool, next_weekday, get_growth_function
 import copy
 import numpy as np
 from tqdm import tqdm
@@ -190,8 +190,13 @@ def main(args):
         # To get 1-day expected move: (Index / 100) * sqrt(1 / 252)
         trading_days_per_year = 252.0
         vix_implied_daily = (vix / 100.0) * np.sqrt(1. / trading_days_per_year) * np.sqrt(args.look_ahead)
-        upper_limit = args.upper_side_scale_factor * current_price * (1 + vix_implied_daily)
-        lower_limit = args.lower_side_scale_factor * current_price * (1 - vix_implied_daily)
+        if args.sharpen_x_side_scale_factor:
+            _fctg = get_growth_function(0.98, 1.02)
+            upper_limit = (_fctg(vix) * args.upper_side_scale_factor) * current_price * (1 + vix_implied_daily)
+            lower_limit = (_fctg(vix) * args.lower_side_scale_factor) * current_price * (1 - vix_implied_daily)
+        else:
+            upper_limit = args.upper_side_scale_factor * current_price * (1 + vix_implied_daily)
+            lower_limit = args.lower_side_scale_factor * current_price * (1 - vix_implied_daily)
 
         def _increase_by_half_of_the_fraction(number):
             assert number >= 1.
@@ -378,6 +383,8 @@ if __name__ == "__main__":
     #
     parser.add_argument("--lower_side_scale_factor", type=float, default=1, help="Gets multiplied againts the current price to obtain the lower side price")
     parser.add_argument("--upper_side_scale_factor", type=float, default=1, help="Gets multiplied againts the current price to obtain the upper side price")
+    parser.add_argument('--sharpen_x_side_scale_factor', type=str2bool, default=False,
+                        help="Sharpen the factor wrt the VIX")
     parser.add_argument('--put', type=str2bool, default=True)
     parser.add_argument('--call', type=str2bool, default=True)
     parser.add_argument('--iron_condor', type=str2bool, default=False)
