@@ -104,6 +104,7 @@ def create_configuration___2026_02_20__1pct(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -177,6 +178,7 @@ def create_configuration___2026_02_20__2pct(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -250,6 +252,7 @@ def create_configuration___2026_02_20__0_5pct(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -323,6 +326,7 @@ def create_configuration___2026_02_20__0_25pct(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -396,6 +400,7 @@ def create_configuration___2026_02_20__0_0pct(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=False,
     )
 
@@ -469,6 +474,7 @@ def create_configuration___2026_02_20__0_25pct_balanced(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=True,
     )
 
@@ -542,6 +548,7 @@ def create_configuration___2026_02_20__0_5pct_balanced(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=True,
     )
 
@@ -615,6 +622,7 @@ def create_configuration___2026_02_20__1pct_balanced(args, trial):
         use_directional_var__vix3m=False,
         upper_side_scale_factor=args.upper_side_scale_factor,
         lower_side_scale_factor=args.lower_side_scale_factor,
+        sharpen_x_side_scale_factor=args.sharpen_x_side_scale_factor,
         adj_balanced=True,
     )
 
@@ -741,7 +749,8 @@ if __name__ == "__main__":
                         help='Database storage path (CASIR)')
     parser.add_argument("--lower_side_scale_factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the lower side price")
     parser.add_argument("--upper_side_scale_factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the upper side price")
-
+    parser.add_argument('--sharpen_x_side_scale_factor', type=str2bool, default=False,
+                        help="Sharpen the factor wrt the VIX")
     # --- New Argument: Objective Function Selection ---
     parser.add_argument('--objective_name', type=str, default='base_configuration',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
