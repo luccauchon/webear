@@ -191,9 +191,9 @@ def main(args):
         trading_days_per_year = 252.0
         vix_implied_daily = (vix / 100.0) * np.sqrt(1. / trading_days_per_year) * np.sqrt(args.look_ahead)
         if args.sharpen_x_side_scale_factor:
-            _fctg = get_growth_function(0.98, 1.02)
-            upper_limit = (_fctg(vix) * args.upper_side_scale_factor) * current_price * (1 + vix_implied_daily)
-            lower_limit = (_fctg(vix) * args.lower_side_scale_factor) * current_price * (1 - vix_implied_daily)
+            _fctg = get_growth_function(0.95, 1.05)
+            upper_limit = (np.max([1., _fctg(vix)]) * args.upper_side_scale_factor) * current_price * (1 + vix_implied_daily)
+            lower_limit = (np.min([1., _fctg(vix)]) * args.lower_side_scale_factor) * current_price * (1 - vix_implied_daily)
         else:
             upper_limit = args.upper_side_scale_factor * current_price * (1 + vix_implied_daily)
             lower_limit = args.lower_side_scale_factor * current_price * (1 - vix_implied_daily)

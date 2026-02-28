@@ -1170,7 +1170,7 @@ def get_growth_function(y_min, y_max):
     20  -> 1.0
     100 -> y_max
     """
-    x_min, x_mid, x_max = 10, 20, 100
+    x_min, x_mid, x_max = 5, 20, 100
     y_mid = 1.0
 
     # Solve for curvature 'k' based on the ratio of growth

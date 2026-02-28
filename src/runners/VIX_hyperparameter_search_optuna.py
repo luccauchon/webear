@@ -752,7 +752,7 @@ if __name__ == "__main__":
     parser.add_argument('--sharpen_x_side_scale_factor', type=str2bool, default=False,
                         help="Sharpen the factor wrt the VIX")
     # --- New Argument: Objective Function Selection ---
-    parser.add_argument('--objective_name', type=str, default='base_configuration',
+    parser.add_argument('--objective_name', type=str, default='2026_02_20__0_0pct',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
                         help='Select the objective function logic by name (determine by its configuration)')
 
