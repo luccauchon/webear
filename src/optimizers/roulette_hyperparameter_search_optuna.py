@@ -230,7 +230,7 @@ def main(args):
     print("=" * 80 + "\n")
     print(f"To run the best experiment:")
     _tmp_str = (f"python roulette_realtime_and_backtest.py "
-                f"--ticker {args.ticker} --dataset_id {args.dataset_id} --look_ahead {args.look_ahead} --step_back_range {args.step_back_range} "
+                f"--ticker \"{args.ticker}\" --dataset_id {args.dataset_id} --look_ahead {args.look_ahead} --step_back_range {args.step_back_range} "
                 f"--epsilon {args.epsilon} --target {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.target} --convert_price_level_with_baseline {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.convert_price_level_with_baseline} "
                 f"--verbose true --older_dataset none ")
     if 0 != len(study.best_params['ema_windows_tuple']):
@@ -258,7 +258,7 @@ def main(args):
         f, s, sig = _str_to_tuple(study.best_params['macd_params_tuple'])
         macd_params = {"fast": f, "slow": s, "signal": sig}
         _tmp2 = f"{macd_params}".replace("\'", "\\\"")
-        _tmp_str += f"--enable_macd {args.activate_macd_space_search} --macd_params \'{_tmp2}\' "
+        _tmp_str += f"--enable_macd {args.activate_macd_space_search} --macd_params \"{_tmp2}\" "
     if args.activate_vwap_space_search:
         _tmp_str += f"--enable_vwap true --vwap_window {study.best_params['vwap_window']} "
     _tmp_str += f"--enable_day_data {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.enable_day_data} "
@@ -269,6 +269,8 @@ def main(args):
     _tmp_str += f"--base_models {str(args.base_models)[1:-1].replace(',', '').replace('\'', '')} "
     if args.add_only_vwap_z_and_vwap_triggers:
         _tmp_str += f"--add_only_vwap_z_and_vwap_triggers {args.add_only_vwap_z_and_vwap_triggers} "
+    if not args.add_close_diff:
+        _tmp_str += f"--add_close_diff {args.add_close_diff} "
     print(_tmp_str)
 
 
@@ -301,11 +303,9 @@ def get_default_namespace(args):
         specific_wanted_class=args.specific_wanted_class,
         base_models=args.base_models,
         save_model_path=None,
-        n_estimators=500,
-        max_depth=6,
-        learning_rate=0.05,
         model_overrides='{}',
         add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
+        add_close_diff = args.add_close_diff,
     )
 
 
@@ -315,7 +315,7 @@ def _set_cfg(cfg): # Add the cfg parameter
         ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = cfg
 
 
-def create_configuration(args, trial):
+def create_base_configuration(args, trial):
     """
     Creates the configuration Namespace.
     Ensures unique values in windows and shifts.
@@ -436,7 +436,7 @@ def create_configuration(args, trial):
 
 # --- Objective Function Registry ---
 CONFIGURATION_FUNCTIONS = {
-    "base_configuration": create_configuration,
+    "base_configuration": create_base_configuration,
 }
 
 
@@ -461,7 +461,7 @@ if __name__ == "__main__":
     parser.add_argument('--activate_rsi_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_macd_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_vwap_space_search', type=str2bool, default=True)
-    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=False)
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=True)
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna (ignored if use_optuna=False)')
@@ -545,7 +545,8 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('--shift_seq_col_max', type=int, default=5,
                         help='')
-
+    parser.add_argument('--add_close_diff', type=str2bool, default=True,
+                        help="Compute close.diff / close as a feature")
     parser.add_argument(
         "--base_models",
         type=str,

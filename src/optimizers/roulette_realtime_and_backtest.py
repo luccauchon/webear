@@ -186,7 +186,7 @@ def main(args):
         # --- UPDATED: Load parameters from args instead of hardcoding ---
         macd_base_cols = ['MACD_Line', 'MACD_Signal', 'MACD_Hist']
         macd_params = json.loads(args.macd_params) if isinstance(args.macd_params, str) else args.macd_params
-        SHIFTED_SEQ_COLS = []
+        SHIFTED_SEQ_COLS, CLOSE_DIFF_COLS = [], []
         VWAP_COLS, VWAP_COLS_AS_PRICE = [], []
         def is_ema_enabled():
             return args.enable_ema
@@ -229,6 +229,13 @@ def main(args):
         # <<master_data_cache>> is now the df
         # ---------------------------------------------------------
         # ---------------------------------------------------------
+
+        # ---------------------------------------------------------
+        # ADD DIFF
+        # ---------------------------------------------------------
+        if args.add_close_diff:
+            master_data_cache[("Close_diff", args.ticker)] = master_data_cache[close_col].diff() / master_data_cache[close_col]
+            CLOSE_DIFF_COLS.append(("Close_diff", args.ticker))
 
         # ---------------------------------------------------------
         # ADD MOVING AVERAGES
@@ -383,7 +390,6 @@ def main(args):
         # 1. Create lookup dictionaries mapping streak length (x) to probability
         # We assume pos_proba/neg_proba are lists where index = streak length
         pos_map, neg_map, count_pos_map, count_neg_map = {}, {}, {}, {}
-        #if args.dataset_id == 'day':
         count_pos_map = {x: pos_proba[x]['count'] for x in range(0, np.max(list(pos_proba.keys())) + 1)}
         pos_map       = {x: pos_proba[x]['prob']  for x in range(0, np.max(list(pos_proba.keys()))+1)}
         count_neg_map = {x: neg_proba[x]['count'] for x in range(0, np.max(list(neg_proba.keys())) + 1)}
@@ -400,6 +406,7 @@ def main(args):
         # BUILD FEATURE LIST (Xs)
         # ---------------------------------------------------------
         Xs = []
+        Xs += CLOSE_DIFF_COLS
         if is_sma_enabled():
             if 0 != len(args.sma_windows):
                 Xs = [(f'SMA_{w}', args.ticker) for w in args.sma_windows if w != 0]
@@ -452,6 +459,25 @@ def main(args):
             print(f"Xs are:\n{Xs}\nYs are: {Ys}")
         only_print_once = False
         the_x_data, the_y_data, the_d_data = [], [], []
+
+        # 1. Define a mask for invalid rows (where BOTH are non-zero)
+        # Using .loc is safer for MultiIndex access
+        _pos_col, _neg_col = ("POS_SEQ", args.ticker), ("NEG_SEQ", args.ticker)
+        invalid_mask = (master_data_cache[_pos_col] != 0) & (master_data_cache[_neg_col] != 0)
+        invalid_count = invalid_mask.sum()
+        if invalid_count > 0 and args.epsilon == 0:
+            if args.verbose:
+                print(f"⚠️ Dropping {invalid_count} (out of {len(master_data_cache)} rows) rows where POS_SEQ and NEG_SEQ were both non-zero.")
+                # Check entire dataframe at once (highly efficient)
+                invalid_rows = master_data_cache.index[(master_data_cache[("POS_SEQ", args.ticker)] != 0) & (master_data_cache[("NEG_SEQ", args.ticker)] != 0)]
+                print(f"Mutual exclusivity violated at indices: {invalid_rows.tolist()}")
+
+            # 2. Keep only the valid rows
+            master_data_cache = master_data_cache[~invalid_mask]
+
+            # Optional: If vix_df must match the master_data_cache indices
+            if use_vix:
+                vix__master_data_cache = vix__master_data_cache.loc[master_data_cache.index]
         for step_back in tqdm(range(0, step_back_range + 1)) if args.verbose else range(0, step_back_range + 1):
             if 0 == step_back:
                 past_df = master_data_cache[close_col]
@@ -459,9 +485,9 @@ def main(args):
                 vix_df = vix__master_data_cache
                 continue # skip real time
             else:
-                past_df   = master_data_cache.iloc[:-step_back]
-                future_df = master_data_cache.iloc[-step_back:]
-                vix_df    = vix__master_data_cache.iloc[:-step_back]
+                past_df   = master_data_cache.iloc[:-step_back].dropna()
+                future_df = master_data_cache.iloc[-step_back:].dropna()
+                vix_df    = vix__master_data_cache.iloc[:-step_back].dropna()
             if args.look_ahead > len(future_df) or 0 == len(past_df):
                 continue
             if use_vix and 0 == len(vix_df):
@@ -476,6 +502,8 @@ def main(args):
             # print(f"Using {past_df.index[0].strftime('%Y-%m-%d')}/{past_df.index[-1].strftime('%Y-%m-%d')} to predict {future_df.index[args.look_ahead - 1].strftime('%Y-%m-%d')}")
             # print(f"\n\n")
             assert past_df.index.intersection(future_df.index).empty, "Indices must be disjoint"
+            _pos_val, _neg_val = past_df.iloc[-1][("POS_SEQ", args.ticker)], past_df.iloc[-1][("NEG_SEQ", args.ticker)]
+            assert not (_pos_val != 0 and _neg_val != 0), f"Sanity Check Failed: POS_SEQ ({_pos_val}) and NEG_SEQ ({_neg_val}) are both non-zero at {past_df.index[-1]}"
             the_X = past_df.iloc[-1][Xs].copy().sort_index()
             the_Y = future_df.iloc[args.look_ahead - 1][Ys].copy()
             # --- NORMALIZATION FOR STATIONARITY ---
@@ -504,12 +532,9 @@ def main(args):
         the_x_data = np.asarray(the_x_data[::-1])
         the_y_data = np.asarray(the_y_data[::-1])
         the_d_data = np.asarray(the_d_data[::-1])
-
         if args.verbose:
             print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
-
         assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
-
         # Ensure the_y_data is 1D
         the_y_data = the_y_data.ravel()
         if -1 != args.min_percentage_to_keep_class:
@@ -627,12 +652,7 @@ def main(args):
             "uses_validation_fraction": False
         }
         # Apply global args to params if keys exist
-        if 'n_estimators' in cfg["params"]: cfg["params"]["n_estimators"] = args.n_estimators
-        if 'max_depth' in cfg["params"]: cfg["params"]["max_depth"] = args.max_depth
-        if 'learning_rate' in cfg["params"]: cfg["params"]["learning_rate"] = args.learning_rate
-        if 'max_iter' in cfg["params"]: cfg["params"]["max_iter"] = args.n_estimators # Map n_estimators to max_iter for some models
-        if 'iterations' in cfg["params"]: cfg["params"]["iterations"] = args.n_estimators # Map for CatBoost
-        if 'depth' in cfg["params"]: cfg["params"]["depth"] = args.max_depth # Map for CatBoost
+        # if 'n_estimators' in cfg["params"]: cfg["params"]["n_estimators"] = args.n_estimators
 
         # Special flags
         if model_name in ["xgb", "lgb", "cat", "hgb", "mlp"]:
@@ -911,6 +931,8 @@ if __name__ == "__main__":
                         help="Target column for prediction. Options: POS_SEQ, NEG_SEQ. Default: POS_SEQ.")
     parser.add_argument("--convert_price_level_with_baseline", type=str, default='fraction', choices=['fraction', 'return'],
                         help="Method to convert price levels. 'fraction': price/baseline, 'return': (price/baseline)-1. Default: fraction.")
+    parser.add_argument('--add_close_diff', type=str2bool, default=True,
+                        help="Compute close.diff / close as a feature")
     parser.add_argument("--ema_windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
                         help="List of window sizes for Exponential Moving Average calculation. Default: 2 to 9.")
     parser.add_argument('--enable_ema', type=str2bool, default=False)
@@ -933,7 +955,7 @@ if __name__ == "__main__":
                         help="List of shift periods for MACD. Default: None.")
     parser.add_argument('--enable_vwap', type=str2bool, default=False)
     parser.add_argument('--vwap_window', type=int, default=20)
-    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=False)
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=True)
     parser.add_argument('--enable_day_data', type=str2bool, default=True,
                         help="Add column for the day")
     parser.add_argument('--compiled_dataset_filename', type=str, default=None,
@@ -961,12 +983,6 @@ if __name__ == "__main__":
     # ---------------------------------------------------------
     # MODEL HYPERPARAMETER ARGUMENTS
     # ---------------------------------------------------------
-    parser.add_argument('--n_estimators', type=int, default=500,
-                        help="Global default for n_estimators/iterations/max_iter across models. (Default: 500)")
-    parser.add_argument('--max_depth', type=int, default=6,
-                        help="Global default for max_depth/depth across models. (Default: 6)")
-    parser.add_argument('--learning_rate', type=float, default=0.05,
-                        help="Global default for learning_rate across models. (Default: 0.05)")
     parser.add_argument('--model_overrides', type=str, default='{}',
                         help='JSON string to override specific model params. Structure: {"model_name": {"params": {"param": value}}}. '
                              'Example: \'{"xgb": {"params": {"subsample": 0.5}}, "rf": {"params": {"n_estimators": 100}}}\'')
