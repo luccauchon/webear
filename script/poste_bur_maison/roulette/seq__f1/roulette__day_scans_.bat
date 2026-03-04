@@ -7,7 +7,7 @@ set "DATASET_ID=day"
 set "EPSILON=0."
 set "TIMEOUT=40000"
 set "CONDA_ACTIVATE=C:\Users\cj3272\AppData\Local\miniconda3\Scripts\activate.bat"
-set "CONDA_ENV=PY311"
+set "CONDA_ENV=PY312"
 set "WORK_DIR=C:\Projets\webear\src\optimizers"
 
 :: --- Process 1: Positive Sequence ---
