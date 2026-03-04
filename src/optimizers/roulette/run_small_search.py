@@ -17,7 +17,7 @@ import subprocess
 import sys
 from constants import IS_RUNNING_ON_CASIR
 cmd = [
-    sys.executable, "roulette_hyperparameter_search_optuna_2.py",
+    sys.executable, "hyperparameter_search_optuna_2.py",
     "--ticker", "^GSPC",
     "--dataset_id", "day",
     "--look_ahead", "1",
