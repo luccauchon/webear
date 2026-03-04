@@ -10,7 +10,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent
+    parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 
@@ -19,7 +19,7 @@ from argparse import Namespace
 import numpy as np
 import argparse
 from utils import DATASET_AVAILABLE, str2bool
-from optimizers.roulette_realtime_and_backtest import main as roulette_realtime_and_backtest
+from optimizers.roulette.realtime_and_backtest import main as roulette_realtime_and_backtest
 import warnings
 import traceback
 import itertools

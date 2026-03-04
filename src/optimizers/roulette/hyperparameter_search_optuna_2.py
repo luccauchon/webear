@@ -5,7 +5,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent
+    parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 # Local custom modules
@@ -30,7 +30,7 @@ except ImportError:
     print("⚠️  Warning: optuna not installed. Run 'pip install optuna' to enable parameter search.")
 
 from utils import DATASET_AVAILABLE, str2bool
-from optimizers.roulette_realtime_and_backtest import main as roulette_realtime_and_backtest
+from optimizers.roulette.realtime_and_backtest import main as roulette_realtime_and_backtest
 
 # Suppress specific numpy warnings
 warnings.filterwarnings("ignore", message="overflow encountered in matmul")
@@ -216,7 +216,7 @@ def main(args):
             if 'rsi_shifts_tuple' in best_params and len(best_params['rsi_shifts_tuple']) > 0:
                 _tmp_str += f"--shift_rsi_col {best_params['rsi_shifts_tuple'].replace(',', ' ')} "
         else:
-            _tmp_str += f"--enable_rsi false"
+            _tmp_str += f"--enable_rsi false "
 
         # MACD
         if args.activate_macd_space_search and 'macd_params_tuple' in best_params:
