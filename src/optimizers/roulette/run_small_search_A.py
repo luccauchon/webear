@@ -29,7 +29,7 @@ cmd = [
     "--timeout", "500000",
     "--optimize_target", "pos_seq__f1",
     "--objective_name", "base_configuration",
-    "--activate_sma_space_search", "true",
+    "--activate_sma_space_search", "false",
     "--activate_ema_space_search", "true",
     "--activate_rsi_space_search", "true",
     "--activate_macd_space_search", "true",
