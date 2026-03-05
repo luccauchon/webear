@@ -53,6 +53,209 @@ MACD_COMBINATION_CACHE = {}
 ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = None
 
 
+def estimate_search_space_size(args):
+    """
+    Estimates the total number of possible parameter combinations
+    based on the Optuna search space configuration.
+
+    Returns:
+        dict: Dictionary containing breakdown of search space by indicator type
+        int: Total number of possible combinations
+    """
+    search_space = {}
+    total_combinations = 1
+
+    print("\n" + "=" * 80)
+    print("📊 SEARCH SPACE ESTIMATION")
+    print("=" * 80)
+
+    # --- EMA Combinations ---
+    if args.activate_ema_space_search:
+        ema_number_pool = range(args.ema_min, args.ema_max + 1, args.ema_step)
+        ema_total_available = len(ema_number_pool)
+        ema_combos = 0
+        for r in range(0, args.max_ema_slots + 1):
+            if r <= ema_total_available:
+                from math import comb
+                ema_combos += comb(ema_total_available, r)
+
+        ema_shift_number_pool = range(args.ema_shift_min, args.ema_shift_max + 1, 1)
+        ema_shift_total_available = len(ema_shift_number_pool)
+        ema_shift_combos = 0
+        for r in range(0, args.max_ema_shift_slots + 1):
+            if r <= ema_shift_total_available:
+                from math import comb
+                ema_shift_combos += comb(ema_shift_total_available, r)
+
+        ema_total = ema_combos * ema_shift_combos
+        search_space['EMA'] = {
+            'windows': ema_combos,
+            'shifts': ema_shift_combos,
+            'total': ema_total
+        }
+        total_combinations *= ema_total
+        print(f"\n📈 EMA Search Space:")
+        print(f"    Windows: {args.ema_min}-{args.ema_max} (step={args.ema_step}), max_slots={args.max_ema_slots}")
+        print(f"    → {ema_combos:,} window combinations")
+        print(f"    Shifts: {args.ema_shift_min}-{args.ema_shift_max}, max_slots={args.max_ema_shift_slots}")
+        print(f"    → {ema_shift_combos:,} shift combinations")
+        print(f"    ✅ EMA Total: {ema_total:,} combinations")
+    else:
+        print(f"\n📈 EMA Search Space: DISABLED")
+
+    # --- SMA Combinations ---
+    if args.activate_sma_space_search:
+        sma_number_pool = range(args.sma_min, args.sma_max + 1, args.sma_step)
+        sma_total_available = len(sma_number_pool)
+        sma_combos = 0
+        for r in range(0, args.max_sma_slots + 1):
+            if r <= sma_total_available:
+                from math import comb
+                sma_combos += comb(sma_total_available, r)
+
+        sma_shift_number_pool = range(args.sma_shift_min, args.sma_shift_max + 1, 1)
+        sma_shift_total_available = len(sma_shift_number_pool)
+        sma_shift_combos = 0
+        for r in range(0, args.max_sma_shift_slots + 1):
+            if r <= sma_shift_total_available:
+                from math import comb
+                sma_shift_combos += comb(sma_shift_total_available, r)
+
+        sma_total = sma_combos * sma_shift_combos
+        search_space['SMA'] = {
+            'windows': sma_combos,
+            'shifts': sma_shift_combos,
+            'total': sma_total
+        }
+        total_combinations *= sma_total
+        print(f"\n📈 SMA Search Space:")
+        print(f"    Windows: {args.sma_min}-{args.sma_max} (step={args.sma_step}), max_slots={args.max_sma_slots}")
+        print(f"    → {sma_combos:,} window combinations")
+        print(f"    Shifts: {args.sma_shift_min}-{args.sma_shift_max}, max_slots={args.max_sma_shift_slots}")
+        print(f"    → {sma_shift_combos:,} shift combinations")
+        print(f"    ✅ SMA Total: {sma_total:,} combinations")
+    else:
+        print(f"\n📈 SMA Search Space: DISABLED")
+
+    # --- RSI Combinations ---
+    if args.activate_rsi_space_search:
+        rsi_number_pool = range(args.rsi_min, args.rsi_max + 1, 1)
+        rsi_total_available = len(rsi_number_pool)
+        rsi_combos = 0
+        for r in range(0, args.max_rsi_slots + 1):
+            if r <= rsi_total_available:
+                from math import comb
+                rsi_combos += comb(rsi_total_available, r)
+
+        rsi_shift_number_pool = range(args.rsi_shift_min, args.rsi_shift_max + 1, 1)
+        rsi_shift_total_available = len(rsi_shift_number_pool)
+        rsi_shift_combos = 0
+        for r in range(0, args.max_rsi_shift_slots + 1):
+            if r <= rsi_shift_total_available:
+                from math import comb
+                rsi_shift_combos += comb(rsi_shift_total_available, r)
+
+        rsi_total = rsi_combos * rsi_shift_combos
+        search_space['RSI'] = {
+            'windows': rsi_combos,
+            'shifts': rsi_shift_combos,
+            'total': rsi_total
+        }
+        total_combinations *= rsi_total
+        print(f"\n📈 RSI Search Space:")
+        print(f"    Windows: {args.rsi_min}-{args.rsi_max}, max_slots={args.max_rsi_slots}")
+        print(f"    → {rsi_combos:,} window combinations")
+        print(f"    Shifts: {args.rsi_shift_min}-{args.rsi_shift_max}, max_slots={args.max_rsi_shift_slots}")
+        print(f"    → {rsi_shift_combos:,} shift combinations")
+        print(f"    ✅ RSI Total: {rsi_total:,} combinations")
+    else:
+        print(f"\n📈 RSI Search Space: DISABLED")
+
+    # --- MACD Combinations ---
+    if args.activate_macd_space_search:
+        f_min = getattr(args, 'macd_fast_min', 10)
+        f_max = getattr(args, 'macd_fast_max', 20)
+        s_min = getattr(args, 'macd_slow_min', 20)
+        s_max = getattr(args, 'macd_slow_max', 40)
+        sig_min = getattr(args, 'macd_signal_min', 5)
+        sig_max = getattr(args, 'macd_signal_max', 15)
+
+        macd_combos = 0
+        for f in range(f_min, f_max + 1):
+            effective_s_min = max(s_min, f + 1)
+            if effective_s_min > s_max:
+                continue
+            for s in range(effective_s_min, s_max + 1):
+                for sig in range(sig_min, sig_max + 1):
+                    macd_combos += 1
+
+        search_space['MACD'] = {
+            'total': macd_combos
+        }
+        total_combinations *= macd_combos
+        print(f"\n📈 MACD Search Space:")
+        print(f"    Fast: {f_min}-{f_max}, Slow: {s_min}-{s_max}, Signal: {sig_min}-{sig_max}")
+        print(f"    ✅ MACD Total: {macd_combos:,} combinations")
+    else:
+        print(f"\n📈 MACD Search Space: DISABLED")
+
+    # --- VWAP Combinations ---
+    if args.activate_vwap_space_search:
+        vwap_combos = args.vwap_max_window - args.vwap_min_window + 1
+        search_space['VWAP'] = {
+            'total': vwap_combos
+        }
+        total_combinations *= vwap_combos
+        print(f"\n📈 VWAP Search Space:")
+        print(f"    Window: {args.vwap_min_window}-{args.vwap_max_window}")
+        print(f"    ✅ VWAP Total: {vwap_combos:,} combinations")
+    else:
+        print(f"\n📈 VWAP Search Space: DISABLED")
+
+    # --- Shift Sequence Column ---
+    shift_seq_combos = args.shift_seq_col_max - args.shift_seq_col_min + 1
+    search_space['SHIFT_SEQ'] = {
+        'total': shift_seq_combos
+    }
+    total_combinations *= shift_seq_combos
+    print(f"\n📈 Shift Sequence Column Search Space:")
+    print(f"    Range: {args.shift_seq_col_min}-{args.shift_seq_col_max}")
+    print(f"    ✅ Shift Seq Total: {shift_seq_combos:,} combinations")
+
+    # --- Summary ---
+    print("\n" + "=" * 80)
+    print(f"🎯 TOTAL SEARCH SPACE SIZE: {total_combinations:,} unique combinations")
+    print("=" * 80)
+
+    # --- Trial Coverage Analysis ---
+    if args.n_trials:
+        coverage_percentage = min(100.0, (args.n_trials / total_combinations) * 100)
+        print(f"\n📋 TRIAL COVERAGE ANALYSIS:")
+        print(f"    Planned Trials: {args.n_trials:,}")
+        print(f"    Search Space: {total_combinations:,}")
+        print(f"    Coverage: {coverage_percentage:.2f}%")
+
+        if coverage_percentage < 1.0:
+            print(f"    ⚠️  WARNING: Very low coverage! Consider increasing n_trials or reducing search space.")
+        elif coverage_percentage < 10.0:
+            print(f"    ⚠️  Low coverage. Optuna's TPE sampler will help, but results may vary.")
+        elif coverage_percentage < 50.0:
+            print(f"    ✅ Moderate coverage. TPE sampler should find good solutions.")
+        else:
+            print(f"    ✅ Excellent coverage. Near-exhaustive search possible.")
+
+    # --- Time Estimation ---
+    print(f"\n⏱️  TIME ESTIMATION:")
+    print(f"    Timeout: {args.timeout if args.timeout else 'None (unlimited)'} seconds")
+    if args.n_trials and args.timeout:
+        avg_time_per_trial = args.timeout / args.n_trials
+        print(f"    Estimated avg time per trial: {avg_time_per_trial:.2f} seconds")
+
+    print("=" * 80 + "\n")
+
+    return search_space, total_combinations
+
+
 def _tuple_to_str(t):
     """Convert tuple to string for Optuna storage (e.g., (2, 5) -> '2,5')"""
     if len(t) == 0:
@@ -193,8 +396,13 @@ def main(args):
             print(f"    {arg:.<40} {value}")
         print("-" * 80, flush=True)
 
+        # Estimate search space before optimization ---
+        if OPTUNA_AVAILABLE:
+            search_space, total_combinations = estimate_search_space_size(args)
+        else:
+            print("\n⚠️  Search space estimation skipped (Optuna disabled)\n")
+
     if not OPTUNA_AVAILABLE:
-        args.use_optuna = False
         print("⚠️  Optuna not available. Running single backtest with default parameters.")
 
     timeout_str = f"{args.timeout}s" if args.timeout else "None"

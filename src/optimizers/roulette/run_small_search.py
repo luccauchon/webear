@@ -64,9 +64,9 @@ cmd = [
     "--rsi_shift_max", "2",
     # MACD (Very Small)
     "--macd_fast_min", "10",
-    "--macd_fast_max", "14",
+    "--macd_fast_max", "12",
     "--macd_slow_min", "22",
-    "--macd_slow_max", "28",
+    "--macd_slow_max", "24",
     "--macd_signal_min", "8",
     "--macd_signal_max", "10",
     # VWAP (Very Small)
