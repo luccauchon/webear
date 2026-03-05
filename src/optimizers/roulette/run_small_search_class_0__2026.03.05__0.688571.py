@@ -26,7 +26,7 @@ cmd = [
     "--verbose", "true",
     "--n_trials", "999999",
     "--n_jobs", "1",
-    "--timeout", "86400",
+    "--timeout", "160000",
     "--optimize_target", "pos_seq_0__f1",
     "--objective_name", "base_configuration",
     "--activate_sma_space_search", "false",
@@ -37,8 +37,8 @@ cmd = [
     "--add_only_vwap_z_and_vwap_triggers", "true",
     "--add_close_diff", "true",
     "--base_models", "xgb",
-    "--min_percentage_to_keep_class", "0.",
-    # "--specific_wanted_class",
+    "--min_percentage_to_keep_class", "4.",
+    "--specific_wanted_class", "0", "1", "2",
 
     # EMA 3, Shift: 1,2
     "--max_ema_slots", "1",
