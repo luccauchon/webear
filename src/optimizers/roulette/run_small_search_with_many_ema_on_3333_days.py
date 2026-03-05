@@ -21,7 +21,7 @@ cmd = [
     "--ticker", "^GSPC",
     "--dataset_id", "day",
     "--look_ahead", "1",
-    "--step_back_range", "99999",
+    "--step_back_range", "3333",
     "--epsilon", "0.0",
     "--verbose", "true",
     "--n_trials", "999999",
