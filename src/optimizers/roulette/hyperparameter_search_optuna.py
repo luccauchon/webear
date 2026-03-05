@@ -708,7 +708,7 @@ if __name__ == "__main__":
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
                         help='Number of trials for Optuna')
-    parser.add_argument('--n_jobs', type=int, default=-1,
+    parser.add_argument('--n_jobs', type=int, default=1,
                         help='Number of parallel jobs. -1 means all CPUs. (Critical for speed)')
     parser.add_argument('--optimize_target', type=str, default='pos_seq__f1',
                         choices=[
