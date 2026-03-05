@@ -8,9 +8,13 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+
 # Local custom modules
 import multiprocessing
 import random
+import numpy as np
+
+np.seterr(invalid='ignore')
 import sys
 import pathlib
 import argparse
@@ -87,7 +91,7 @@ def get_unique_combinations(min_val, max_val, max_slots, _cache, _step):
 
 
 def objective(trial, configuration_specified, args):
-    """Optuna objective function."""
+    """Optuna objective function with class 0 focus and penalty options."""
     # Create configuration for this trial
     configuration = configuration_specified(args, trial=trial)
 
@@ -107,26 +111,77 @@ def objective(trial, configuration_specified, args):
 
     # Select optimization target
     score = 0.0
+    class_0_score = 0.0
+    other_scores = []
+
+    # Extract class 0 and other class scores
+    if len(avg_f1) > 0:
+        class_0_score = avg_f1[0]
+    if len(avg_f1) > 1:
+        other_scores = avg_f1[1:]
+
+    # Calculate penalty for other classes
+    penalty = 0.0
+    if len(other_scores) > 0:
+        penalty = np.mean(other_scores) * args.other_classes_penalty
+
     if args.optimize_target == 'pos_seq_0__f1':
-        score = avg_f1[0]
+        score = class_0_score
     elif args.optimize_target == 'pos_seq_1__f1':
-        score = avg_f1[1]
+        score = avg_f1[1] if len(avg_f1) > 1 else 0.0
     elif args.optimize_target == 'pos_seq_2__f1':
-        score = avg_f1[2]
+        score = avg_f1[2] if len(avg_f1) > 2 else 0.0
     elif args.optimize_target == 'pos_seq_3__f1':
-        score = avg_f1[3]
+        score = avg_f1[3] if len(avg_f1) > 3 else 0.0
     elif args.optimize_target == 'neg_seq_0__f1':
-        score = avg_f1[0]
+        score = class_0_score
     elif args.optimize_target == 'neg_seq_1__f1':
-        score = avg_f1[1]
+        score = avg_f1[1] if len(avg_f1) > 1 else 0.0
     elif args.optimize_target == 'neg_seq_2__f1':
-        score = avg_f1[2]
+        score = avg_f1[2] if len(avg_f1) > 2 else 0.0
     elif args.optimize_target == 'pos_seq__f1':
         score = f1_scores
     elif args.optimize_target == 'neg_seq__f1':
         score = f1_scores
+
+    # Class 0 focus with penalty on other classes
+    elif args.optimize_target == 'pos_seq_0__f1_penalty_others':
+        score = class_0_score - penalty
+
+    elif args.optimize_target == 'neg_seq_0__f1_penalty_others':
+        score = class_0_score - penalty
+
+    # Class 0 focus with weighted penalty (class 0 = 2x weight)
+    elif args.optimize_target == 'pos_seq_0__f1_weighted_penalty':
+        score = (2.0 * class_0_score) - penalty
+
+    elif args.optimize_target == 'neg_seq_0__f1_weighted_penalty':
+        score = (2.0 * class_0_score) - penalty
+
+    # Custom weight optimization for class 0
+    elif args.optimize_target == 'pos_seq_0__f1_custom_weight':
+        score = (args.class_0_weight * class_0_score) - penalty
+
+    elif args.optimize_target == 'neg_seq_0__f1_custom_weight':
+        score = (args.class_0_weight * class_0_score) - penalty
+
+    # Maximize class 0 only, ignore others completely
+    elif args.optimize_target == 'pos_seq_0__f1_only':
+        score = class_0_score
+
+    elif args.optimize_target == 'neg_seq_0__f1_only':
+        score = class_0_score
+
     else:
         raise ValueError(f"Unknown optimize_target: {args.optimize_target}")
+
+    # Optional verbose logging for class-specific scores
+    if args.verbose and args.verbose_info_score and trial.number % 10 == 0:
+        print(f"\n📊 Trial {trial.number} Scores:")
+        for i, f1 in enumerate(avg_f1):
+            marker = "🎯" if i == 0 else "  "
+            print(f"    {marker} Class {i} F1: {f1:.4f}")
+        print(f"    Final Optimization Score: {score:.4f}")
 
     return score
 
@@ -172,6 +227,13 @@ def main(args):
         print("Best Parameters:")
         for key, value in study.best_params.items():
             print(f"    {key:.<40} {value}")
+
+        # Show class-specific performance if available
+        if hasattr(study.best_trial, 'user_attrs') and 'class_scores' in study.best_trial.user_attrs:
+            print("\n📊 Best Trial Class Performance:")
+            for i, score in enumerate(study.best_trial.user_attrs['class_scores']):
+                marker = "🎯" if i == 0 else "  "
+                print(f"    {marker} Class {i} F1: {score:.4f}")
     else:
         print("No successful trials completed.")
     print("=" * 80 + "\n")
@@ -186,7 +248,7 @@ def main(args):
         convert_price_val = 'fraction'
         enable_day_data_val = True
 
-        _tmp_str = (f"python roulette_realtime_and_backtest.py "
+        _tmp_str = (f"python realtime_and_backtest.py "
                     f"--ticker \"{args.ticker}\" --dataset_id {args.dataset_id} --look_ahead {args.look_ahead} --step_back_range {args.step_back_range} "
                     f"--epsilon {args.epsilon} --target {target_val} --convert_price_level_with_baseline {convert_price_val} "
                     f"--verbose true --older_dataset none ")
@@ -247,6 +309,13 @@ def main(args):
 
         if not args.add_close_diff:
             _tmp_str += f"--add_close_diff {args.add_close_diff} "
+
+        # Add new class optimization parameters
+        if 'class_0_weight' in args and args.class_0_weight != 1.0:
+            _tmp_str += f"--class_0_weight {args.class_0_weight} "
+
+        if 'other_classes_penalty' in args and args.other_classes_penalty != 0.0:
+            _tmp_str += f"--other_classes_penalty {args.other_classes_penalty} "
 
         print(f"To run the best experiment:")
         print(_tmp_str)
@@ -416,8 +485,10 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
     parser.add_argument('--step_back_range', type=int, default=99999)
     parser.add_argument('--verbose', type=str2bool, default=True)
+    parser.add_argument('--verbose_info_score', type=str2bool, default=False,
+                        help='Print info about score while doing optimization')
     parser.add_argument('--verbose_debug', type=str2bool, default=False,
-                        help='Whether to enable verbose debugging or not')
+                        help='Whether to enable verbose debugging or not in the realtime-backtest module')
 
     parser.add_argument('--activate_sma_space_search', type=str2bool, default=True)
     parser.add_argument('--activate_ema_space_search', type=str2bool, default=True)
@@ -432,8 +503,24 @@ if __name__ == "__main__":
     parser.add_argument('--n_jobs', type=int, default=-1,
                         help='Number of parallel jobs. -1 means all CPUs. (Critical for speed)')
     parser.add_argument('--optimize_target', type=str, default='pos_seq__f1',
-                        choices=['pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1', 'pos_seq__f1',
-                                 'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1', 'neg_seq__f1'],
+                        choices=[
+                            'pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1',
+                            'pos_seq__f1',
+                            'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1',
+                            'neg_seq__f1',
+                            # Class 0 focus with penalty
+                            'pos_seq_0__f1_penalty_others',
+                            'neg_seq_0__f1_penalty_others',
+                            # Class 0 focus with weighted penalty
+                            'pos_seq_0__f1_weighted_penalty',
+                            'neg_seq_0__f1_weighted_penalty',
+                            # Custom weight optimization
+                            'pos_seq_0__f1_custom_weight',
+                            'neg_seq_0__f1_custom_weight',
+                            # Class 0 only (ignore others)
+                            'pos_seq_0__f1_only',
+                            'neg_seq_0__f1_only',
+                        ],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds')
@@ -443,6 +530,12 @@ if __name__ == "__main__":
     parser.add_argument('--objective_name', type=str, default='base_configuration',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
                         help='Select the objective function logic by name')
+
+    # --- NEW: Class 0 Optimization Weights ---
+    parser.add_argument('--class_0_weight', type=float, default=1.0,
+                        help='Weight for class 0 in optimization (higher = more focus on class 0)')
+    parser.add_argument('--other_classes_penalty', type=float, default=0.0,
+                        help='Penalty multiplier for other classes (0 = no penalty, 1 = full penalty)')
 
     # --- EMA Optimization Search Space ---
     parser.add_argument('--max_ema_slots', type=int, default=2)
