@@ -1,0 +1,539 @@
+# Local custom modules
+import time
+
+from matplotlib import use
+import random
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    import sys
+    import pathlib
+
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
+
+from multiprocessing import freeze_support
+from argparse import Namespace
+import numpy as np
+import argparse
+from utils import DATASET_AVAILABLE, str2bool
+from optimizers.roulette.realtime_and_backtest import main as roulette_realtime_and_backtest
+import warnings
+import traceback
+import itertools
+import math
+from math import comb
+
+
+warnings.filterwarnings("ignore", message="overflow encountered in matmul")
+warnings.filterwarnings("ignore", message="invalid value encountered in matmul")
+
+# --- Optuna Integration ---
+try:
+    import optuna
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    print("⚠️  Warning: optuna not installed. Run 'pip install optuna' to enable parameter search.")
+
+# --- Cache for Valid Combinations to avoid regenerating every trial ---
+# Key: (min_val, max_val, max_slots), Value: List of Tuples
+EMA_COMBINATION_CACHE = {}
+EMA_SHIFT_COMBINATION_CACHE = {}
+SMA_COMBINATION_CACHE = {}
+SMA_SHIFT_COMBINATION_CACHE = {}
+RSI_COMBINATION_CACHE = {}
+RSI_SHIFT_COMBINATION_CACHE = {}
+MACD_COMBINATION_CACHE = {}
+
+ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = None
+ONE_CONFIGURATION_TO_ACCESS__DEBUG__ = []
+
+def _tuple_to_str(t):
+    """Convert tuple to string for Optuna storage (e.g., (2, 5) -> '2,5')"""
+    if 0 == len(t):
+        return ''
+    return ','.join(map(str, t))
+
+
+def _str_to_tuple(s):
+    """Convert string back to tuple of ints (e.g., '2,5' -> (2, 5))"""
+    if s == '':
+        return ()
+    return tuple(map(int, s.split(',')))
+
+
+def select_distinct(n, a, b):
+    if b - a + 1 < n:
+        raise ValueError("Range too small")
+    return random.sample(range(a, b + 1), n)
+
+
+def get_unique_combinations(min_val, max_val, max_slots, _cache, _step):
+    """
+    Generates all unique, strictly increasing combinations of numbers
+    from min_val to max_val with lengths from 0 up to max_slots.
+
+    Args:
+        min_val (int): Minimum value in the range (inclusive).
+        max_val (int): Maximum value in the range (inclusive).
+        max_slots (int): Maximum number of items in a combination (inclusive).
+        _cache (dict): A dictionary used to memoize results.
+
+    Returns:
+        list[tuple]: A list of tuples containing the combinations.
+    """
+    # Create a unique key for the cache based on input arguments
+    cache_key = (min_val, max_val, max_slots)
+
+    # Check if result already exists in cache
+    if cache_key in _cache:
+        return _cache[cache_key]
+
+    all_combos = []
+    # Create the pool of numbers to choose from
+    number_pool = range(min_val, max_val + 1, _step)
+    total_available = len(number_pool)
+
+    # Generate combinations for each length from 1 to max_slots
+    # Note: We use max_slots + 1 to make the limit inclusive (fixing the original off-by-one)
+    for r in range(0, max_slots + 1):
+        # Optimization: If requested length > available numbers, stop
+        if r > total_available:
+            break
+
+        # itertools.combinations handles the nested loop logic automatically
+        # It yields tuples in sorted order (e.g., (1, 2) but not (2, 1))
+        all_combos.extend(itertools.combinations(number_pool, r))
+
+    # Store result in cache before returning
+    _cache[cache_key] = all_combos
+
+    return all_combos
+
+
+def objective(trial, configuration_specified, args):
+    """Optuna objective function."""
+    configuration = configuration_specified(args, trial=trial)
+    if args.skip_optimization:
+        return random.random() - random.random() /2 + random.random()/4 - random.random()/8 + random.random()/16
+    try:
+        f1_scores, acc_scores, avg_precision, avg_recall, avg_f1 = roulette_realtime_and_backtest(configuration)
+    except ValueError:
+        return 0.0
+    except Exception as e:
+        print(f"Trial {trial.number} failed: {e}")
+        traceback.print_exc()
+        return 0.0
+
+    if args.optimize_target   == 'pos_seq_0__f1':
+        score = avg_f1[0]
+    elif args.optimize_target == 'pos_seq_1__f1':
+        score = avg_f1[1]
+    elif args.optimize_target == 'pos_seq_2__f1':
+        score = avg_f1[2]
+    elif args.optimize_target == 'pos_seq_3__f1':
+        score = avg_f1[3]
+    elif args.optimize_target == 'neg_seq_0__f1':
+        score = avg_f1[0]
+    elif args.optimize_target == 'neg_seq_1__f1':
+        score = avg_f1[1]
+    elif args.optimize_target == 'neg_seq_2__f1':
+        score = avg_f1[2]
+    elif args.optimize_target == 'pos_seq__f1':
+        score = f1_scores
+    elif args.optimize_target == 'neg_seq__f1':
+        score = f1_scores
+    else:
+        assert False, f"{args.optimize_target}"
+
+    return score
+
+
+def main(args):
+    if args.verbose:
+        print("🔧 Arguments:")
+        for arg, value in vars(args).items():
+            print(f"    {arg:.<40} {value}")
+        print("-" * 80, flush=True)
+
+    if not OPTUNA_AVAILABLE:
+        args.use_optuna = False
+        print("⚠️  Optuna not available. Running single backtest with default parameters.")
+
+    timeout_str = f"{args.timeout}s" if args.timeout else "None"
+    print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
+
+    # Create Study
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
+    study = optuna.create_study(direction="maximize", study_name="Roulette_Strategy_Optimization", sampler=optuna.samplers.TPESampler(),pruner=pruner)
+
+    selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
+
+    # Pre-validate search spaces to warn user if they are too large for unique enforcement
+    study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
+
+    print("\n" + "=" * 80)
+    print("🏆 Optimization Finished!")
+    print(f"Best Score ({args.optimize_target}): {study.best_value:.8f}")
+    print("Best Parameters:")
+    for key, value in study.best_params.items():
+        print(f"    {key:.<40} {value}")
+    print("=" * 80 + "\n")
+    print(f"To run the best experiment:")
+    _tmp_str = (f"python roulette_realtime_and_backtest.py "
+                f"--ticker \"{args.ticker}\" --dataset_id {args.dataset_id} --look_ahead {args.look_ahead} --step_back_range {args.step_back_range} "
+                f"--epsilon {args.epsilon} --target {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.target} --convert_price_level_with_baseline {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.convert_price_level_with_baseline} "
+                f"--verbose true --older_dataset none ")
+    if 0 != len(study.best_params['ema_windows_tuple']):
+        assert args.activate_ema_space_search
+        _tmp_str += f"--enable_ema true --ema_windows {study.best_params['ema_windows_tuple'].replace(',', ' ')} "
+        if 0 != len(study.best_params['ema_shifts_tuple']):
+            _tmp_str += f"--shift_ema_col {study.best_params['ema_shifts_tuple'].replace(',', ' ')} "
+    else:
+        _tmp_str += f"--enable_ema false"
+    if 0 != len(study.best_params['sma_windows_tuple']):
+        assert args.activate_sma_space_search
+        _tmp_str += f"--enable_sma true --sma_windows {study.best_params['sma_windows_tuple'].replace(',', ' ')} "
+        if 0 != len(study.best_params['sma_shifts_tuple']):
+            _tmp_str += f"--shift_sma_col {study.best_params['sma_shifts_tuple'].replace(',', ' ')} "
+    else:
+        _tmp_str += f"--enable_sma false"
+    if 0 != len(study.best_params['rsi_windows_tuple']):
+        assert args.activate_rsi_space_search
+        _tmp_str += f"--enable_rsi true --rsi_windows {study.best_params['rsi_windows_tuple'].replace(',', ' ')} "
+        if 0 != len(study.best_params['rsi_shifts_tuple']):
+            _tmp_str += f"--shift_rsi_col {study.best_params['rsi_shifts_tuple'].replace(',', ' ')} "
+    else:
+        _tmp_str += f"--enable_rsi false"
+    if args.activate_macd_space_search:
+        f, s, sig = _str_to_tuple(study.best_params['macd_params_tuple'])
+        macd_params = {"fast": f, "slow": s, "signal": sig}
+        _tmp2 = f"{macd_params}".replace("\'", "\\\"")
+        _tmp_str += f"--enable_macd {args.activate_macd_space_search} --macd_params \"{_tmp2}\" "
+    if args.activate_vwap_space_search:
+        _tmp_str += f"--enable_vwap true --vwap_window {study.best_params['vwap_window']} "
+    _tmp_str += f"--enable_day_data {ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES.enable_day_data} "
+    _tmp_str += f"--shift_seq_col {study.best_params['shift_seq_col']} "
+    _tmp_str += f"--min_percentage_to_keep_class {args.min_percentage_to_keep_class} "
+    if 0 != len(args.specific_wanted_class):
+        _tmp_str += f"--specific_wanted_class {str(args.specific_wanted_class)[1:-1].replace(',', ' ')} "
+    _tmp_str += f"--base_models {str(args.base_models)[1:-1].replace(',', '').replace('\'', '')} "
+    if args.add_only_vwap_z_and_vwap_triggers:
+        _tmp_str += f"--add_only_vwap_z_and_vwap_triggers {args.add_only_vwap_z_and_vwap_triggers} "
+    if not args.add_close_diff:
+        _tmp_str += f"--add_close_diff {args.add_close_diff} "
+    print(_tmp_str)
+
+
+def get_default_namespace(args):
+    return Namespace(
+        dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
+        look_ahead=args.look_ahead, verbose=args.verbose_debug,
+        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ",
+        convert_price_level_with_baseline='fraction',
+        sma_windows=[],
+        ema_windows=[],
+        shift_sma_col=[],
+        shift_ema_col=[],
+        shift_rsi_col=[],
+        shift_macd_col=[],
+        rsi_windows=[],
+        macd_params=[],
+        enable_macd=False,
+        enable_sma=False,
+        enable_ema=False,
+        enable_vwap=False,
+        enable_rsi=False,
+        enable_day_data=True,
+        shift_seq_col=1,
+        step_back_range=args.step_back_range,
+        epsilon=args.epsilon,
+        compiled_dataset_filename=None,
+        save_dataset_to_file_and_exit=None,
+        min_percentage_to_keep_class=args.min_percentage_to_keep_class,
+        specific_wanted_class=args.specific_wanted_class,
+        base_models=args.base_models,
+        save_model_path=None,
+        model_overrides='{}',
+        add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
+        add_close_diff = args.add_close_diff,
+    )
+
+
+def _set_cfg(cfg): # Add the cfg parameter
+    global ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES
+    if ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES is None:
+        ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = cfg
+
+
+def create_base_configuration(args, trial):
+    """
+    Creates the configuration Namespace.
+    Ensures unique values in windows and shifts.
+    """
+
+    # --- EMA Logic ---
+    ema_windows, shift_ema_col = [], []
+    if args.activate_ema_space_search:
+        valid_combos = get_unique_combinations(args.ema_min, args.ema_max, args.max_ema_slots, EMA_COMBINATION_CACHE, _step=args.ema_step)
+        # Convert tuples to strings for Optuna compatibility
+        combo_strings = [_tuple_to_str(c) for c in valid_combos]
+        selected_str = trial.suggest_categorical("ema_windows_tuple", combo_strings)
+        ema_windows = list(_str_to_tuple(selected_str))
+
+        valid_shift_combos = get_unique_combinations(args.ema_shift_min, args.ema_shift_max, args.max_ema_shift_slots, EMA_SHIFT_COMBINATION_CACHE, _step=1)
+        shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
+        selected_shift_str = trial.suggest_categorical("ema_shifts_tuple", shift_combo_strings)
+        shift_ema_col = list(_str_to_tuple(selected_shift_str))
+
+    # --- SMA Logic ---
+    sma_windows, shift_sma_col = [], []
+    if args.activate_sma_space_search:
+        valid_combos = get_unique_combinations(args.sma_min, args.sma_max, args.max_sma_slots, SMA_COMBINATION_CACHE, _step=args.sma_step)
+        assert valid_combos
+        # if valid_combos:
+        combo_strings = [_tuple_to_str(c) for c in valid_combos]
+        selected_str = trial.suggest_categorical("sma_windows_tuple", combo_strings)
+        sma_windows = list(_str_to_tuple(selected_str))
+
+        valid_shift_combos = get_unique_combinations(args.sma_shift_min, args.sma_shift_max, args.max_sma_shift_slots, SMA_SHIFT_COMBINATION_CACHE, _step=1)
+        assert valid_shift_combos
+        # if valid_shift_combos:
+        shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
+        selected_shift_str = trial.suggest_categorical("sma_shifts_tuple", shift_combo_strings)
+        shift_sma_col = list(_str_to_tuple(selected_shift_str))
+
+    # --- RSI Logic ---
+    rsi_windows, shift_rsi_col = [], []
+    if args.activate_rsi_space_search:
+        valid_combos = get_unique_combinations(args.rsi_min, args.rsi_max, args.max_rsi_slots, RSI_COMBINATION_CACHE, _step=1)
+        assert valid_combos
+        # if valid_combos:
+        combo_strings = [_tuple_to_str(c) for c in valid_combos]
+        selected_str = trial.suggest_categorical("rsi_windows_tuple", combo_strings)
+        rsi_windows = list(_str_to_tuple(selected_str))
+
+        valid_shift_combos = get_unique_combinations(args.rsi_shift_min, args.rsi_shift_max, args.max_rsi_shift_slots, RSI_SHIFT_COMBINATION_CACHE, _step=1)
+        assert valid_shift_combos
+        # if valid_shift_combos:
+        shift_combo_strings = [_tuple_to_str(c) for c in valid_shift_combos]
+        selected_shift_str = trial.suggest_categorical("rsi_shifts_tuple", shift_combo_strings)
+        shift_rsi_col = list(_str_to_tuple(selected_shift_str))
+
+    # --- MACD Logic ---
+    macd_params = {}
+    shift_macd_col = []  # MACD typically doesn't use shifts in the same way, keeping empty for compatibility
+    if args.activate_macd_space_search:
+        # Define search ranges (uses args if available, else defaults)
+        f_min = getattr(args, 'macd_fast_min', 10)
+        f_max = getattr(args, 'macd_fast_max', 20)
+        s_min = getattr(args, 'macd_slow_min', 20)
+        s_max = getattr(args, 'macd_slow_max', 40)
+        sig_min = getattr(args, 'macd_signal_min', 5)
+        sig_max = getattr(args, 'macd_signal_max', 15)
+
+        # Create cache key
+        cache_key = (f_min, f_max, s_min, s_max, sig_min, sig_max)
+
+        # Generate valid triplets (fast, slow, signal) where fast < slow
+        if cache_key not in MACD_COMBINATION_CACHE:
+            valid_triplets = []
+            for f in range(f_min, f_max + 1):
+                # Enforce Slow > Fast (Standard MACD definition)
+                effective_s_min = max(s_min, f + 1)
+                if effective_s_min > s_max:
+                    continue
+                for s in range(effective_s_min, s_max + 1):
+                    for sig in range(sig_min, sig_max + 1):
+                        valid_triplets.append((f, s, sig))
+            MACD_COMBINATION_CACHE[cache_key] = valid_triplets
+
+        valid_triplets = MACD_COMBINATION_CACHE[cache_key]
+        assert valid_triplets
+
+        # Convert to strings for Optuna categorical suggestion
+        triplet_strings = [_tuple_to_str(t) for t in valid_triplets]
+        selected_str = trial.suggest_categorical("macd_params_tuple", triplet_strings)
+        f, s, sig = _str_to_tuple(selected_str)
+        macd_params = {"fast": f, "slow": s, "signal": sig}
+
+    # --- VWAP Logic ---
+    vwap_window = None
+    if args.activate_vwap_space_search:
+        vwap_window = trial.suggest_int(name="vwap_window", low=args.vwap_min_window, high=args.vwap_max_window)
+
+    # print(f"")
+    # print(f"{sma_windows=} {shift_sma_col=}    {ema_windows=} {shift_ema_col=}    {rsi_windows=} {shift_rsi_col=}    {macd_params=} ")
+    # global ONE_CONFIGURATION_TO_ACCESS__DEBUG__
+    # toto = rsi_windows + shift_rsi_col
+    # if toto in ONE_CONFIGURATION_TO_ACCESS__DEBUG__:
+    #     print(f"{sma_windows=} {shift_sma_col=}    {ema_windows=} {shift_ema_col=}    {rsi_windows=} {shift_rsi_col=}    {macd_params=} ")
+    #     print(f"\n\n\n\t\t{len(ONE_CONFIGURATION_TO_ACCESS__DEBUG__)}")
+    # ONE_CONFIGURATION_TO_ACCESS__DEBUG__.append(toto)
+
+    assert 0 == len(shift_macd_col)
+    configuration = get_default_namespace(args)
+    configuration.ema_windows = ema_windows
+    configuration.shift_sma_col = shift_sma_col
+    configuration.shift_ema_col = shift_ema_col
+    configuration.shift_rsi_col = shift_rsi_col
+    configuration.shift_macd_col = shift_macd_col
+    configuration.rsi_windows = rsi_windows
+    configuration.macd_params = macd_params
+    configuration.enable_macd = args.activate_macd_space_search
+    configuration.enable_sma = args.activate_sma_space_search
+    configuration.enable_ema = args.activate_ema_space_search
+    configuration.enable_vwap = args.activate_vwap_space_search
+    configuration.vwap_window = vwap_window
+    configuration.enable_rsi = args.activate_rsi_space_search
+    configuration.shift_seq_col = trial.suggest_int(name="shift_seq_col", low=args.shift_seq_col_min, high=args.shift_seq_col_max)
+    # Call the setter before returning
+    _set_cfg(configuration)
+    return configuration
+
+
+# --- Objective Function Registry ---
+CONFIGURATION_FUNCTIONS = {
+    "base_configuration": create_base_configuration,
+}
+
+
+if __name__ == "__main__":
+    freeze_support()
+
+    parser = argparse.ArgumentParser(description="Roulette Strategy Backtest & Optimization")
+
+    # --- Existing Args ---
+    parser.add_argument('--ticker', type=str, default='^GSPC')
+    parser.add_argument('--col', type=str, default='Close',
+                        choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
+    parser.add_argument('--look_ahead', type=int, default=1)
+    parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
+    parser.add_argument('--step_back_range', type=int, default=99999)
+    parser.add_argument('--verbose', type=str2bool, default=True)
+    parser.add_argument('--verbose_debug', type=str2bool, default=False,
+                        help='Whether to enable verbose debugging or not')
+
+    parser.add_argument('--activate_sma_space_search', type=str2bool, default=True)
+    parser.add_argument('--activate_ema_space_search', type=str2bool, default=True)
+    parser.add_argument('--activate_rsi_space_search', type=str2bool, default=True)
+    parser.add_argument('--activate_macd_space_search', type=str2bool, default=True)
+    parser.add_argument('--activate_vwap_space_search', type=str2bool, default=True)
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=True)
+    # --- Optuna Args ---
+    parser.add_argument('--n_trials', type=int, default=99999,
+                        help='Number of trials for Optuna (ignored if use_optuna=False)')
+    parser.add_argument('--optimize_target', type=str, default='pos_seq__f1',
+                        choices=['pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1', 'pos_seq__f1',
+                                 'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1', 'neg_seq__f1'],
+                        help='Which score to maximize')
+    parser.add_argument('--timeout', type=int, default=None,
+                        help='Maximum optimization time in seconds (None = no limit)')
+    parser.add_argument("--epsilon", type=float, default=0.,
+                        help="Threshold for neutral returns. Default: 0.")
+
+    # --- New Argument: Objective Function Selection ---
+    parser.add_argument('--objective_name', type=str, default='base_configuration',
+                        choices=list(CONFIGURATION_FUNCTIONS.keys()),
+                        help='Select the objective function logic by name (determine by its configuration)')
+
+    # --- EMA Optimization Search Space ---
+    parser.add_argument('--max_ema_slots', type=int, default=2,
+                        help='Max number of EMA windows Optuna can combine')
+    parser.add_argument('--ema_min', type=int, default=5,
+                        help='Minimum EMA window size')
+    parser.add_argument('--ema_max', type=int, default=20,
+                        help='Maximum EMA window size')
+    parser.add_argument('--ema_step', type=int, default=5,
+                        help='')
+    parser.add_argument('--max_ema_shift_slots', type=int, default=1,
+                        help='')
+    parser.add_argument('--ema_shift_min', type=int, default=1,
+                        help='Minimum EMA shift')
+    parser.add_argument('--ema_shift_max', type=int, default=3,
+                        help='Maximum EMA shift')
+
+    # --- SMA Optimization Search Space ---
+    parser.add_argument('--max_sma_slots', type=int, default=2,
+                        help='Max number of SMA windows Optuna can combine')
+    parser.add_argument('--sma_min', type=int, default=50,
+                        help='Minimum SMA window size')
+    parser.add_argument('--sma_max', type=int, default=200,
+                        help='Maximum SMA window size')
+    parser.add_argument('--sma_step', type=int, default=20,
+                        help='')
+    parser.add_argument('--max_sma_shift_slots', type=int, default=1,  # Reduced from 2
+                        help='')
+    parser.add_argument('--sma_shift_min', type=int, default=1,
+                        help='Minimum SMA shift')
+    parser.add_argument('--sma_shift_max', type=int, default=3,
+                        help='Maximum SMA shift')
+
+    # --- RSI Optimization Search Space ---
+    parser.add_argument('--max_rsi_slots', type=int, default=1,
+                        help='')
+    parser.add_argument('--rsi_min', type=int, default=2,  # Lowered for "Larry Connors" style RSI
+                        help='Minimum RSI window size')
+    parser.add_argument('--rsi_max', type=int, default=14,  # 14 is the industry standard
+                        help='Maximum RSI window size')
+    parser.add_argument('--max_rsi_shift_slots', type=int, default=1,
+                        help='')
+    parser.add_argument('--rsi_shift_min', type=int, default=1,
+                        help='Minimum RSI shift')
+    parser.add_argument('--rsi_shift_max', type=int, default=3,
+                        help='Maximum RSI shift')
+
+    # --- MACD Optimization Search Space ---
+    # Tightened to standard ranges to avoid "inverted" MACDs
+    parser.add_argument('--macd_fast_min', type=int, default=8,
+                        help='Minimum MACD Fast period')
+    parser.add_argument('--macd_fast_max', type=int, default=16,
+                        help='Maximum MACD Fast period')
+    parser.add_argument('--macd_slow_min', type=int, default=21,
+                        help='Minimum MACD Slow period')
+    parser.add_argument('--macd_slow_max', type=int, default=34,
+                        help='Maximum MACD Slow period')
+    parser.add_argument('--macd_signal_min', type=int, default=7,
+                        help='Minimum MACD Signal period')
+    parser.add_argument('--macd_signal_max', type=int, default=12,
+                        help='Maximum MACD Signal period')
+
+    # --- VWAP & Sequence ---
+    parser.add_argument('--vwap_min_window', type=int, default=5,
+                        help='Minimum VWAP window size')
+    parser.add_argument('--vwap_max_window', type=int, default=30,
+                        help='Maximum VWAP window size')
+    parser.add_argument('--shift_seq_col_min', type=int, default=1,
+                        help='')
+    parser.add_argument('--shift_seq_col_max', type=int, default=3,
+                        help='')
+
+
+    parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
+                        help="Minimum percentage of class target data in Y. Default: 4.")
+    parser.add_argument("--specific_wanted_class", type=int, nargs='+', default=[],
+                        help="List of classes to keep. Discard others. Default: None.")
+
+    parser.add_argument('--add_close_diff', type=str2bool, default=True,
+                        help="Compute close.diff / close as a feature")
+    parser.add_argument('--skip_optimization', type=str2bool, default=False,
+                        help="Only return a random value for optimization")
+    parser.add_argument(
+        "--base_models",
+        type=str,
+        nargs="+",  # Accept one or more values
+        default=["xgb"],
+        choices=["xgb", "lgb", "cat", "hgb", "rf", "et", "svm", "knn", "mlp", "lr", "dt"],
+        help="Base model(s) to use for training. Can specify multiple. "
+             "Options: xgb (XGBoost), lgb (LightGBM), cat (CatBoost), hgb (HistGradientBoosting), "
+             "rf (Random Forest), et (Extra Trees), svm (SVM), knn (K-Nearest Neighbors), "
+             "mlp (Multi-Layer Perceptron), lr (Logistic Regression), dt (Decision Tree). "
+             "Example: --base_models xgb lgb cat"
+    )
+    args = parser.parse_args()
+    main(args)

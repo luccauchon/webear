@@ -17,16 +17,16 @@ import subprocess
 import sys
 from constants import IS_RUNNING_ON_CASIR
 cmd = [
-    sys.executable, "hyperparameter_search_optuna_2.py",
+    sys.executable, "hyperparameter_search_optuna.py",
     "--ticker", "^GSPC",
     "--dataset_id", "day",
     "--look_ahead", "1",
-    "--step_back_range", "500",
+    "--step_back_range", "333",
     "--epsilon", "0.0",
     "--verbose", "true",
     "--n_trials", "999999",
     "--n_jobs", "1",
-    "--timeout", "43200",
+    "--timeout", "86400",
     "--optimize_target", "pos_seq__f1",
     "--objective_name", "base_configuration",
     "--activate_sma_space_search", "true",
@@ -41,17 +41,17 @@ cmd = [
     "--specific_wanted_class", "0", "1", "2", "3",
     # EMA (Very Small)
     "--max_ema_slots", "1",
-    "--ema_min", "5",
-    "--ema_max", "15",
-    "--ema_step", "5",
+    "--ema_min", "2",
+    "--ema_max", "20",
+    "--ema_step", "4",
     "--max_ema_shift_slots", "1",
     "--ema_shift_min", "1",
     "--ema_shift_max", "2",
     # SMA (Very Small)
     "--max_sma_slots", "1",
-    "--sma_min", "50",
+    "--sma_min", "20",
     "--sma_max", "100",
-    "--sma_step", "25",
+    "--sma_step", "20",
     "--max_sma_shift_slots", "1",
     "--sma_shift_min", "1",
     "--sma_shift_max", "2",
@@ -71,10 +71,10 @@ cmd = [
     "--macd_signal_max", "10",
     # VWAP (Very Small)
     "--vwap_min_window", "10",
-    "--vwap_max_window", "20",
+    "--vwap_max_window", "12",
     # Sequence
     "--shift_seq_col_min", "1",
-    "--shift_seq_col_max", "2",
+    "--shift_seq_col_max", "5",
 ]
 
 subprocess.run(cmd)
