@@ -971,8 +971,8 @@ if __name__ == "__main__":
                         help="Skip the dataframe build process and use the one provided.")
     parser.add_argument('--save_dataset_to_file_and_exit', type=str, default=None,
                         help="Save to disk the dataset created and used for ML.")
-    parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
-                        help="Minimum percentage of class target data in Y. Default: 4. -1 to disabled.")
+    parser.add_argument('--min_percentage_to_keep_class', type=float, default=-1.,
+                        help="Minimum percentage of class target data in Y. Default: -1. -1 to disabled.")
     parser.add_argument("--specific_wanted_class", type=int, nargs='+', default=[],
                         help="List of classes to keep. Discard others. Default: [].")
     parser.add_argument(
