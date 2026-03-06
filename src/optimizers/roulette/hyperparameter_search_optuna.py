@@ -468,7 +468,7 @@ def main(args):
             if 'ema_shifts_tuple' in best_params and len(best_params['ema_shifts_tuple']) > 0:
                 _tmp_str += f"--shift_ema_col {best_params['ema_shifts_tuple'].replace(',', ' ')} "
         else:
-            _tmp_str += f"--enable_ema false"
+            _tmp_str += f"--enable_ema false "
 
         # SMA
         if 'sma_windows_tuple' in best_params and len(best_params['sma_windows_tuple']) > 0:
