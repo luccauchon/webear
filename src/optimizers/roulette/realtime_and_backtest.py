@@ -919,8 +919,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--older_dataset", type=str, default="None")
-    parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
-    parser.add_argument("--look_ahead", type=int, default=1)
+    parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE,
+                        help="Default: day")
+    parser.add_argument("--look_ahead", type=int, default=1,
+                        help="Default: 1")
     #
     parser.add_argument('--step_back_range', type=int, default=99999,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
@@ -932,30 +934,37 @@ if __name__ == "__main__":
     parser.add_argument("--convert_price_level_with_baseline", type=str, default='fraction', choices=['fraction', 'return'],
                         help="Method to convert price levels. 'fraction': price/baseline, 'return': (price/baseline)-1. Default: fraction.")
     parser.add_argument('--add_close_diff', type=str2bool, default=True,
-                        help="Compute close.diff / close as a feature")
+                        help="Compute close.diff / close as a feature. Default: True")
     parser.add_argument("--ema_windows", type=int, nargs='+', default=[],
                         help="List of window sizes for Exponential Moving Average calculation. Default: [].")
-    parser.add_argument('--enable_ema', type=str2bool, default=False)
+    parser.add_argument('--enable_ema', type=str2bool, default=False,
+                        help="Default: False")
     parser.add_argument("--shift_ema_col", type=int, nargs='+', default=[],
                         help="List of shift periods for EMA. Default: None.")
     parser.add_argument("--sma_windows", type=int, nargs='+', default=[],
                         help="List of window sizes for Moving Average calculation. Default: [].")
-    parser.add_argument('--enable_sma', type=str2bool, default=False)
+    parser.add_argument('--enable_sma', type=str2bool, default=False,
+                        help="Default: False")
     parser.add_argument("--shift_sma_col", type=int, nargs='+', default=[],
                         help="List of shift periods for SMA. Default: None.")
     parser.add_argument("--rsi_windows", type=int, nargs='+', default=[],
                         help="List of window sizes for RSI calculation. Default: [].")
     parser.add_argument("--shift_rsi_col", type=int, nargs='+', default=[],
                         help="List of shift periods for RSI. Default: None.")
-    parser.add_argument('--enable_rsi', type=str2bool, default=False)
+    parser.add_argument('--enable_rsi', type=str2bool, default=False,
+                        help="Default: False")
     parser.add_argument("--macd_params", type=str, default='{"fast": 12, "slow": 26, "signal": 9}',
                         help="JSON string for MACD parameters (fast, slow, signal). Default: 12, 26, 9.")
-    parser.add_argument('--enable_macd', type=str2bool, default=False)
+    parser.add_argument('--enable_macd', type=str2bool, default=False,
+                        help="Default: False")
     parser.add_argument("--shift_macd_col", type=int, nargs='+', default=[],
                         help="List of shift periods for MACD. Default: None.")
-    parser.add_argument('--enable_vwap', type=str2bool, default=False)
-    parser.add_argument('--vwap_window', type=int, default=20)
-    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=True)
+    parser.add_argument('--enable_vwap', type=str2bool, default=False,
+                        help="Default: False")
+    parser.add_argument('--vwap_window', type=int, default=20,
+                        help="Default: 20")
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=True,
+                        help="Default: True")
     parser.add_argument('--enable_day_data', type=str2bool, default=True,
                         help="Add column for the day")
     parser.add_argument('--compiled_dataset_filename', type=str, default=None,
@@ -965,7 +974,7 @@ if __name__ == "__main__":
     parser.add_argument('--min_percentage_to_keep_class', type=float, default=4.,
                         help="Minimum percentage of class target data in Y. Default: 4. -1 to disabled.")
     parser.add_argument("--specific_wanted_class", type=int, nargs='+', default=[],
-                        help="List of classes to keep. Discard others. Default: None.")
+                        help="List of classes to keep. Discard others. Default: [].")
     parser.add_argument(
         "--base_models",
         type=str,
