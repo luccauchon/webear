@@ -537,6 +537,7 @@ def main(args):
         assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
         # Ensure the_y_data is 1D
         the_y_data = the_y_data.ravel()
+        num_classes = len(np.unique(the_y_data))
         if -1 != args.min_percentage_to_keep_class:
             # Calculate class distribution
             unique_classes, counts = np.unique(the_y_data, return_counts=True)
