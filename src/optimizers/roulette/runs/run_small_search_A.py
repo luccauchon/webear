@@ -10,7 +10,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent.parent
+    parent_dir = current_dir.parent.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import subprocess
@@ -21,15 +21,15 @@ cmd = [
     "--ticker", "^GSPC",
     "--dataset_id", "day",
     "--look_ahead", "1",
-    "--step_back_range", "3333",
+    "--step_back_range", "333",
     "--epsilon", "0.0",
     "--verbose", "true",
     "--n_trials", "999999",
     "--n_jobs", "1",
-    "--timeout", "43200",
+    "--timeout", "500000",
     "--optimize_target", "pos_seq__f1",
     "--objective_name", "base_configuration",
-    "--activate_sma_space_search", "true",
+    "--activate_sma_space_search", "false",
     "--activate_ema_space_search", "true",
     "--activate_rsi_space_search", "true",
     "--activate_macd_space_search", "true",
@@ -43,38 +43,38 @@ cmd = [
     "--max_ema_slots", "10",
     "--ema_min", "2",
     "--ema_max", "50",
-    "--ema_step", "5",
+    "--ema_step", "3",
     "--max_ema_shift_slots", "5",
     "--ema_shift_min", "1",
     "--ema_shift_max", "10",
     # SMA (Very Small)
-    "--max_sma_slots", "1",
+    "--max_sma_slots", "10",
     "--sma_min", "50",
     "--sma_max", "100",
-    "--sma_step", "25",
-    "--max_sma_shift_slots", "1",
+    "--sma_step", "5",
+    "--max_sma_shift_slots", "5",
     "--sma_shift_min", "1",
-    "--sma_shift_max", "2",
+    "--sma_shift_max", "10",
     # RSI (Very Small)
-    "--max_rsi_slots", "1",
+    "--max_rsi_slots", "2",
     "--rsi_min", "5",
-    "--rsi_max", "10",
-    "--max_rsi_shift_slots", "1",
-    "--rsi_shift_min", "1",
-    "--rsi_shift_max", "2",
+    "--rsi_max", "21",
+    "--max_rsi_shift_slots", "0",
+    "--rsi_shift_min", "0",
+    "--rsi_shift_max", "0",
     # MACD (Very Small)
     "--macd_fast_min", "10",
-    "--macd_fast_max", "14",
+    "--macd_fast_max", "12",
     "--macd_slow_min", "22",
-    "--macd_slow_max", "28",
+    "--macd_slow_max", "24",
     "--macd_signal_min", "8",
     "--macd_signal_max", "10",
     # VWAP (Very Small)
-    "--vwap_min_window", "10",
-    "--vwap_max_window", "20",
+    "--vwap_min_window", "5",
+    "--vwap_max_window", "10",
     # Sequence
     "--shift_seq_col_min", "1",
-    "--shift_seq_col_max", "2",
+    "--shift_seq_col_max", "5",
 ]
 
 subprocess.run(cmd)

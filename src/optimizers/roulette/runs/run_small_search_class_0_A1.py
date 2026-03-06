@@ -10,7 +10,7 @@ except ImportError:
     import pathlib
 
     current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent.parent
+    parent_dir = current_dir.parent.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import subprocess
@@ -27,7 +27,7 @@ cmd = [
     "--n_trials", "999999",
     "--n_jobs", "1",
     "--timeout", "86400",
-    "--optimize_target", "pos_seq__f1",
+    "--optimize_target", "pos_seq_0__f1_penalty_others",
     "--objective_name", "base_configuration",
     "--activate_sma_space_search", "true",
     "--activate_ema_space_search", "true",
@@ -37,8 +37,8 @@ cmd = [
     "--add_only_vwap_z_and_vwap_triggers", "true",
     "--add_close_diff", "true",
     "--base_models", "xgb",
-    "--min_percentage_to_keep_class", "4.0",
-    "--specific_wanted_class", "0", "1", "2", "3",
+    "--min_percentage_to_keep_class", "0.",
+    # "--specific_wanted_class",
     # EMA (Very Small)
     "--max_ema_slots", "1",
     "--ema_min", "2",
