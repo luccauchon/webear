@@ -477,7 +477,7 @@ def main(args):
             if 'sma_shifts_tuple' in best_params and len(best_params['sma_shifts_tuple']) > 0:
                 _tmp_str += f"--shift_sma_col {best_params['sma_shifts_tuple'].replace(',', ' ')} "
         else:
-            _tmp_str += f"--enable_sma false"
+            _tmp_str += f"--enable_sma false "
 
         # RSI
         if 'rsi_windows_tuple' in best_params and len(best_params['rsi_windows_tuple']) > 0:
