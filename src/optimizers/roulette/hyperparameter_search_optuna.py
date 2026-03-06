@@ -682,6 +682,7 @@ CONFIGURATION_FUNCTIONS = {
     "base_configuration": create_base_configuration,
 }
 
+
 if __name__ == "__main__":
     # Essential for multiprocessing on Windows, harmless on Linux
     multiprocessing.freeze_support()
@@ -701,12 +702,12 @@ if __name__ == "__main__":
     parser.add_argument('--verbose_debug', type=str2bool, default=False,
                         help='Whether to enable verbose debugging or not in the realtime-backtest module')
 
-    parser.add_argument('--activate_sma_space_search', type=str2bool, default=True)
-    parser.add_argument('--activate_ema_space_search', type=str2bool, default=True)
-    parser.add_argument('--activate_rsi_space_search', type=str2bool, default=True)
-    parser.add_argument('--activate_macd_space_search', type=str2bool, default=True)
-    parser.add_argument('--activate_vwap_space_search', type=str2bool, default=True)
-    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=True)
+    parser.add_argument('--activate_sma_space_search', type=str2bool, default=False)
+    parser.add_argument('--activate_ema_space_search', type=str2bool, default=False)
+    parser.add_argument('--activate_rsi_space_search', type=str2bool, default=False)
+    parser.add_argument('--activate_macd_space_search', type=str2bool, default=False)
+    parser.add_argument('--activate_vwap_space_search', type=str2bool, default=False)
+    parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=False)
 
     # --- Optuna Args ---
     parser.add_argument('--n_trials', type=int, default=99999,
