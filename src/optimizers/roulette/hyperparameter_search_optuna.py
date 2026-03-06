@@ -489,15 +489,19 @@ def main(args):
             _tmp_str += f"--enable_rsi false "
 
         # MACD
-        if args.activate_macd_space_search and 'macd_params_tuple' in best_params:
+        if 'macd_params_tuple' in best_params:
             f, s, sig = _str_to_tuple(best_params['macd_params_tuple'])
             macd_params = {"fast": f, "slow": s, "signal": sig}
             _tmp2 = f"{macd_params}".replace("\'", "\\\"")
             _tmp_str += f"--enable_macd {args.activate_macd_space_search} --macd_params \"{_tmp2}\" "
+        else:
+            _tmp_str += f"--enable_macd false "
 
         # VWAP
-        if args.activate_vwap_space_search and 'vwap_window' in best_params:
+        if 'vwap_window' in best_params:
             _tmp_str += f"--enable_vwap true --vwap_window {best_params['vwap_window']} "
+        else:
+            _tmp_str += f"--enable_vwap false "
 
         _tmp_str += f"--enable_day_data {enable_day_data_val} "
 
@@ -517,13 +521,6 @@ def main(args):
 
         if not args.add_close_diff:
             _tmp_str += f"--add_close_diff {args.add_close_diff} "
-
-        # Add new class optimization parameters
-        if 'class_0_weight' in args and args.class_0_weight != 1.0:
-            _tmp_str += f"--class_0_weight {args.class_0_weight} "
-
-        if 'other_classes_penalty' in args and args.other_classes_penalty != 0.0:
-            _tmp_str += f"--other_classes_penalty {args.other_classes_penalty} "
 
         print(f"To run the best experiment:")
         print(_tmp_str)
@@ -655,19 +652,25 @@ def create_base_configuration(args, trial):
         vwap_window = trial.suggest_int(name="vwap_window", low=args.vwap_min_window, high=args.vwap_max_window)
 
     configuration = get_default_namespace(args)
-    configuration.ema_windows = ema_windows
-    configuration.shift_sma_col = shift_sma_col
-    configuration.shift_ema_col = shift_ema_col
-    configuration.shift_rsi_col = shift_rsi_col
-    configuration.shift_macd_col = shift_macd_col
-    configuration.rsi_windows = rsi_windows
-    configuration.macd_params = macd_params
-    configuration.enable_macd = args.activate_macd_space_search
     configuration.enable_sma = args.activate_sma_space_search
+    configuration.sma_windows = sma_windows
+    configuration.shift_sma_col = shift_sma_col
+
     configuration.enable_ema = args.activate_ema_space_search
+    configuration.ema_windows = ema_windows
+    configuration.shift_ema_col = shift_ema_col
+
+    configuration.enable_rsi = args.activate_rsi_space_search
+    configuration.shift_rsi_col = shift_rsi_col
+    configuration.rsi_windows = rsi_windows
+
+    configuration.enable_macd = args.activate_macd_space_search
+    configuration.macd_params = macd_params
+    configuration.shift_macd_col = shift_macd_col
+
     configuration.enable_vwap = args.activate_vwap_space_search
     configuration.vwap_window = vwap_window
-    configuration.enable_rsi = args.activate_rsi_space_search
+
     configuration.shift_seq_col = trial.suggest_int(name="shift_seq_col", low=args.shift_seq_col_min, high=args.shift_seq_col_max)
 
     _set_cfg(configuration)

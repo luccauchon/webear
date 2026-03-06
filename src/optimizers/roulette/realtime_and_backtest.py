@@ -933,18 +933,18 @@ if __name__ == "__main__":
                         help="Method to convert price levels. 'fraction': price/baseline, 'return': (price/baseline)-1. Default: fraction.")
     parser.add_argument('--add_close_diff', type=str2bool, default=True,
                         help="Compute close.diff / close as a feature")
-    parser.add_argument("--ema_windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
-                        help="List of window sizes for Exponential Moving Average calculation. Default: 2 to 9.")
+    parser.add_argument("--ema_windows", type=int, nargs='+', default=[],
+                        help="List of window sizes for Exponential Moving Average calculation. Default: [].")
     parser.add_argument('--enable_ema', type=str2bool, default=False)
     parser.add_argument("--shift_ema_col", type=int, nargs='+', default=[],
                         help="List of shift periods for EMA. Default: None.")
-    parser.add_argument("--sma_windows", type=int, nargs='+', default=[2, 3, 4, 5, 6, 7, 8, 9],
-                        help="List of window sizes for Moving Average calculation. Default: 2 to 9.")
+    parser.add_argument("--sma_windows", type=int, nargs='+', default=[],
+                        help="List of window sizes for Moving Average calculation. Default: [].")
     parser.add_argument('--enable_sma', type=str2bool, default=False)
     parser.add_argument("--shift_sma_col", type=int, nargs='+', default=[],
                         help="List of shift periods for SMA. Default: None.")
-    parser.add_argument("--rsi_windows", type=int, nargs='+', default=[14],
-                        help="List of window sizes for RSI calculation. Default: 14.")
+    parser.add_argument("--rsi_windows", type=int, nargs='+', default=[],
+                        help="List of window sizes for RSI calculation. Default: [].")
     parser.add_argument("--shift_rsi_col", type=int, nargs='+', default=[],
                         help="List of shift periods for RSI. Default: None.")
     parser.add_argument('--enable_rsi', type=str2bool, default=False)
