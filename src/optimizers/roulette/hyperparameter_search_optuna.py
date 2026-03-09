@@ -307,11 +307,9 @@ def main(args):
         _clean_model = str(args.base_models)[1:-1].replace(',', '').replace("'", "")
         _tmp_str += f"--base_models {_clean_model} "
 
-        if args.add_only_vwap_z_and_vwap_triggers:
-            _tmp_str += f"--add_only_vwap_z_and_vwap_triggers {args.add_only_vwap_z_and_vwap_triggers} "
+        _tmp_str += f"--add_only_vwap_z_and_vwap_triggers {args.add_only_vwap_z_and_vwap_triggers} "
 
-        if not args.add_close_diff:
-            _tmp_str += f"--add_close_diff {args.add_close_diff} "
+        _tmp_str += f"--add_close_diff {args.add_close_diff} "
 
         print(f"To run the best experiment:")
         print(_tmp_str)
