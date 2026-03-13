@@ -1,3 +1,14 @@
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    # Fallback: dynamically add parent directory to path if 'version' module isn't found
+    import sys
+    import pathlib
+
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
 import psutil
 import time
@@ -28,20 +39,18 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
 def main():
     _nb_workers = 12
-    output_dir = fr"D:\Temp2\use_case_alpha_2"
-    os.makedirs(output_dir, exist_ok=True)
+    experience_id = "alpha_2"
+    output_dir = os.path.join(fr"D:\Temp2\use_case", experience_id)
     timeout = 120
+    if IS_RUNNING_ON_CASIR:
+        timeout = 7200
+        _nb_workers = 35
+        output_dir = os.path.join("/gpfs/home/cj3272/14b/cj3272/experiences/", experience_id)
+
+    os.makedirs(output_dir, exist_ok=True)
     use_cases = []
-    for a_forward_days in [2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]:
+    for a_forward_days in [1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]:
         for a_threshold in [-0.01, -0.0125, -0.020, -0.025, -0.03]:
-            # if a_forward_days in [1, 2, 3 ,4, 5] and a_threshold in []:
-            #     a_threshold = -0.0125
-            # if a_forward_days in [5, 6, 7, 8 , 9, 10]:
-            #     a_threshold = -0.020
-            # elif a_forward_days in [11, 12, 13, 14, 15]:
-            #     a_threshold = -0.025
-            # elif a_forward_days in [16, 17, 18, 19, 20]:
-            #     a_threshold = -0.03
             for a_threshold_penalty_for_low_events in [250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000]:
                 output_filename = os.path.join(output_dir, f"use_case__drop_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json")
                 configuration_experimentation = argparse.Namespace(forward_days=a_forward_days, threshold=a_threshold, cluster_mode='every_day', ticker='^GSPC', seed=42,
@@ -49,7 +58,7 @@ def main():
                                                                    mode='drop', use_z_score_boost=False, sampler='tpe', n_startup_trials=10, trials=999999, timeout=timeout,
                                                                    threshold_penalty_for_low_events=a_threshold_penalty_for_low_events, no_plot=True, save_params_to=output_filename)
                 use_cases.append(configuration_experimentation)
-    for a_forward_days in [2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]:
+    for a_forward_days in [1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]:
         for a_threshold in [0.01, 0.0125, 0.020, 0.025, 0.03]:
             for a_threshold_penalty_for_low_events in [250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000]:
                 output_filename = os.path.join(output_dir, f"use_case__rise_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json")
@@ -57,7 +66,7 @@ def main():
                                                                    min_signals_required=None, fixed_cluster_threshold=None, fixed_cluster_window=None, verbose=False,
                                                                    mode='upper', use_z_score_boost=False, sampler='tpe', n_startup_trials=10, trials=999999, timeout=timeout,
                                                                    threshold_penalty_for_low_events=a_threshold_penalty_for_low_events, no_plot=True, save_params_to=output_filename)
-                use_cases.append(configuration_experimentation)
+                # use_cases.append(configuration_experimentation)
     print(f"Generated {len(use_cases)} use cases, total time of {format_execution_time(len(use_cases) * timeout / _nb_workers)}. Be patient.")
     use_cases__shared, master_cmd__shared = Queue(len(use_cases)), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, _nb_workers)]

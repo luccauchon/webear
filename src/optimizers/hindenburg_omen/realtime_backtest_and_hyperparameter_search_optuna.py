@@ -183,29 +183,29 @@ def run_professional_optimization(args):
         rsi_len = trial.suggest_int("rsi_len", 10, 20)
         rsi_thresh = trial.suggest_int("rsi_thresh", 60, 75)
         rsi_lookback = trial.suggest_int("rsi_lookback", 3, 10)
-        sma_len = trial.suggest_int("sma_len", 20, 100)
+        sma_len = trial.suggest_int("sma_len", 2, 100)
         macd_fast = trial.suggest_int("macd_fast", 8, 15)
         macd_slow = trial.suggest_int("macd_slow", macd_fast + 5, 40)
         macd_signal = trial.suggest_int("macd_signal", 5, 15)
 
         if fixed__cluster_window is None:
-            cluster_window = trial.suggest_int("cluster_window", 10, 60)
+            cluster_window = trial.suggest_int("cluster_window", 2, 120)
         else:
             cluster_window = fixed__cluster_window
 
         if fixed__cluster_threshold is None:
-            cluster_threshold = trial.suggest_int("cluster_threshold", 2, 8)
+            cluster_threshold = trial.suggest_int("cluster_threshold", 2, 12)
         else:
             cluster_threshold = fixed__cluster_threshold
 
         bb_len, bb_width_thresh = None, None
         if use_volatility_compression:
-            bb_len = trial.suggest_int("bb_len", 10, 30)
+            bb_len = trial.suggest_int("bb_len", 2, 30)
             bb_width_thresh = trial.suggest_float("bb_width_thresh", 0.02, 0.10)
 
         ema_len, stretch_thresh = None, None
         if use_ema_stretch:
-            ema_len = trial.suggest_int("ema_len", 20, 200)
+            ema_len = trial.suggest_int("ema_len", 2, 200)
             stretch_thresh = trial.suggest_float("stretch_thresh", 0.01, 0.08)
 
         roc_len, roc_thresh = None, None
