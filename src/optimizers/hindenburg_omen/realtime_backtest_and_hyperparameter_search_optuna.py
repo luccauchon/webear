@@ -334,7 +334,7 @@ def run_professional_optimization(args):
     best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE, 'mode': args.mode})
     info = verify_best(df_data=close, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, event_direction="drop" if args.mode == "drop" else "upper", verbose=args.verbose)
-    best_params.update({'win_rate': info["win_rate"], 'base_line': info["base_line"]})
+    best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"]})
     # =========================================================
     # SAVE BEST PARAMETERS
     # =========================================================
