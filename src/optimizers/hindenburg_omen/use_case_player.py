@@ -41,7 +41,7 @@ def parse_arguments():
     )
 
     parser.add_argument(
-        "--exp-id",
+        "--experience-id",
         type=str,
         default="alpha_3",
         help="The specific experience ID subfolder to process within the base directory. (Default: alpha_3)"
@@ -86,7 +86,7 @@ def main():
     # Construct the full path to the experience directory
     # Using pathlib for robust path handling across OS
     base_path = Path(args.base_dir)
-    target_directory = base_path / args.exp_id
+    target_directory = base_path / args.experience_id
 
     # Validate directory existence before proceeding
     if not target_directory.exists():
