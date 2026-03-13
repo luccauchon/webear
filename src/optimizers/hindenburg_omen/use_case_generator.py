@@ -260,7 +260,7 @@ def main(args):
     for p in processes:
         p.join()
 
-    print(f"Workers finished. Results: {data_from_workers}")
+    print(f"Workers finished.")
 
 
 if __name__ == "__main__":

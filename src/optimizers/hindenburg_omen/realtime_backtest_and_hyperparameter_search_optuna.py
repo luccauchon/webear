@@ -426,6 +426,10 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
     is_active_now = cluster.iloc[-1]  # Is the cluster active today?
     current_count = omen_count.iloc[-1]
 
+    threshold_abs = abs(threshold)
+    direction_word = "DROP" if event_direction == "drop" else "SPIKE"
+    direction_verb = "drops" if event_direction == "drop" else "rises"
+    _tmp_is_active_str = f"High probability SPX {direction_verb} ≥{threshold_abs * 100:.1f}% within the next {forward_days} days."
     if verbose:
         print("\n" + "=" * 40)
         print("      BEST PARAMETERS")
@@ -438,10 +442,6 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
         print(f"Historical Win Rate: {win_rate:.2f}%")
         print(f"Baseline was:        {baseline:.2f}%")
         print(f"Edge vs Baseline:    {win_rate - baseline:.2f}%")
-
-        threshold_abs = abs(threshold)
-        direction_word = "DROP" if event_direction == "drop" else "SPIKE"
-        direction_verb = "drops" if event_direction == "drop" else "rises"
         print("\n" + "=" * 40)
         print(f"      REAL-TIME PREDICTION - {direction_word}")
         print("=" * 40)
@@ -449,11 +449,11 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
         print(f"Current Count:  {current_count} / {params['cluster_threshold']}")
         print(f"SIGNAL ACTIVE:  {'YES - PREDICTING ' + direction_word if is_active_now else 'NO - NEUTRAL'}")
         if is_active_now:
-            print(f"High probability SPX {direction_verb} ≥{threshold_abs * 100:.1f}% within the next {forward_days} days.")
+            print(_tmp_is_active_str)
         print("=" * 40)
 
     return {'win_rate': win_rate, 'baseline': baseline, 'last_date': last_date, 'current_count': current_count, 'cluster_threshold':params['cluster_threshold'],
-            'is_active_now': is_active_now, 'event_direction': event_direction}
+            'is_active_now': is_active_now, 'event_direction': event_direction, 'threshold': threshold , 'is_active_str': _tmp_is_active_str}
 
 
 # =========================================================

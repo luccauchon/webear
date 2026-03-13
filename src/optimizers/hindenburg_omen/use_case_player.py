@@ -1,27 +1,164 @@
+#!/usr/bin/env python3
+"""
+Hindenburg Omen Realtime Backtest Runner
+
+This script iterates through files in a specified experience directory,
+runs a realtime backtest optimization on each file, and reports active signals
+based on the Hindenburg Omen indicator logic.
+
+All configuration parameters are exposed via command-line arguments.
+"""
+
+import argparse
+import os
+import sys
 from pathlib import Path
+from tqdm import tqdm
+from constants import IS_RUNNING_ON_CASIR
+# Import the core logic function from the optimizer module
 from optimizers.hindenburg_omen.realtime_backtest_and_hyperparameter_search_optuna import run_realtime_only
 
+
+def parse_arguments():
+    """
+    Configures and parses command-line arguments using argparse.
+
+    Returns:
+        argparse.Namespace: Parsed arguments object.
+    """
+    parser = argparse.ArgumentParser(
+        description="Run realtime backtest and hyperparameter search on Hindenburg Omen data files.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog="Example:\n  python script.py --base-dir 'D:\\Temp2\\use_case' --exp-id 'alpha_3' --verbose"
+    )
+
+    # Directory Configuration
+    parser.add_argument(
+        "--base-dir",
+        type=str,
+        default=r"/gpfs/home/cj3272/14b/cj3272/experiences/" if IS_RUNNING_ON_CASIR else r"D:\Temp2\use_case",
+        help="The root directory containing the experience folders. (Default: D:\\Temp2\\use_case)"
+    )
+
+    parser.add_argument(
+        "--exp-id",
+        type=str,
+        default="alpha_3",
+        help="The specific experience ID subfolder to process within the base directory. (Default: alpha_3)"
+    )
+
+    # Execution Flags
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable detailed logging for every file processed (Win Rate, Baseline, etc.). (Default: False)"
+    )
+
+    parser.add_argument(
+        "--run-flag",
+        action="store_true",
+        default=False,
+        help="Secondary boolean flag passed to run_realtime_only(). Use this if the underlying function requires a specific mode. (Default: False)"
+    )
+
+    parser.add_argument(
+        "--disable-progress",
+        action="store_true",
+        default=False,
+        help="Disable tqdm progress bars. Useful when logging output to a file. (Default: False)"
+    )
+
+    return parser.parse_args()
+
+
 def main():
-    directory = Path(fr"D:\Temp2\use_case_alpha")
-    for file in directory.iterdir():
-        if not file.is_file():  # Vérifie que c'est bien un fichier et non un dossier
-            continue
-        info = run_realtime_only(file, False)
+    """
+    Main execution flow.
+    1. Parses arguments.
+    2. Constructs the target directory path.
+    3. Iterates through files and runs the backtest.
+    4. Prints signal information if active.
+    """
+    # Parse command-line arguments
+    args = parse_arguments()
+
+    # Construct the full path to the experience directory
+    # Using pathlib for robust path handling across OS
+    base_path = Path(args.base_dir)
+    target_directory = base_path / args.exp_id
+
+    # Validate directory existence before proceeding
+    if not target_directory.exists():
+        print(f"Error: Directory not found: {target_directory}")
+        sys.exit(1)
+
+    if not target_directory.is_dir():
+        print(f"Error: Path is not a directory: {target_directory}")
+        sys.exit(1)
+
+    print(f"Processing files in: {target_directory}")
+    print("-" * 50)
+
+    # Collect all files to process
+    # We filter to ensure we only process actual files, not subdirectories
+    all_files_to_process = [file for file in target_directory.iterdir() if file.is_file()]
+
+    if not all_files_to_process:
+        print("No files found to process.")
+        return
+
+    # Configure tqdm (progress bar)
+    # If --disable-progress is set, we use a simple iterator instead of tqdm wrapper
+    iterator = all_files_to_process
+    if not args.disable_progress:
+        iterator = tqdm(all_files_to_process, desc="Processing Files")
+
+    # Iterate through each file and run the backtest logic
+    for file in iterator:
+        # Run the core backtest function
+        # args.run_flag maps to the second hardcoded 'False' in the original script
+        info = run_realtime_only(file, args.run_flag)
+
+        # Extract key metrics from the result
         is_active_now = info["is_active_now"]
+
+        # Optional: Print detailed statistics for every file if verbose mode is on
+        if args.verbose:
+            print(f"[{info['event_direction']}] Win Rate: {info['win_rate']:.2f}%   "
+                  f"Baseline: {info['baseline']:.2f}%   "
+                  f"Last date: {info['last_date'].strftime('%Y-%m-%d')}  "
+                  f"CC: {info['current_count']} / {info['cluster_threshold']}")
+
+        # Mandatory: Print Signal Active status if the condition is met
         if is_active_now:
             event_direction = info["event_direction"]
             current_count = info["current_count"]
             cluster_threshold = info["cluster_threshold"]
+
+            # Determine direction word for display
             direction_word = "DROP" if event_direction == "drop" else "SPIKE"
+
+            # Construct status strings
             _tmp_str = f"SIGNAL ACTIVE:  {'YES - PREDICTING ' + direction_word if is_active_now else 'NO - NEUTRAL'}"
             _tmp_str2 = f"Current Count:  {current_count} / {cluster_threshold}"
-            print(f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str}  {_tmp_str2}")
-        #import sys
-        #sys.exit()
+
+            # Print the final signal alert
+            print(f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str}  {_tmp_str2}  {info['is_active_str']}")
+
+    print("-" * 50)
+    print("Processing complete.")
+
+
 # =========================================================
-# MAIN
+# ENTRY POINT
 # =========================================================
 if __name__ == "__main__":
-    main()
-
-
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProcess interrupted by user.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
+        sys.exit(1)
