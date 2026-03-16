@@ -353,7 +353,7 @@ def main(args):
             p.start()
             pid = p.pid
             p_obj = psutil.Process(pid)
-            p_obj.nice(10 if IS_RUNNING_ON_CASIR else psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            p_obj.nice(10 if IS_RUNNING_ON_CASIR else psutil.NORMAL_PRIORITY_CLASS)
         # Envoie les informations aux workers pour traitement
         for use_case in use_cases:
             use_cases__shared.put(use_case)
