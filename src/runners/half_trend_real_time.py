@@ -237,7 +237,7 @@ def entry():
         p.start()
         pid = p.pid
         p_obj = psutil.Process(pid)
-        p_obj.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        p_obj.nice(psutil.NORMAL_PRIORITY_CLASS)
 
     # Envoie les informations aux workers pour traitement
     # print(f"Preparations de {len(data_cache.items())} annotations...")
