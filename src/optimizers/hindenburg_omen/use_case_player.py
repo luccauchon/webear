@@ -113,7 +113,7 @@ def main():
     iterator = all_files_to_process
     if not args.disable_progress:
         iterator = tqdm(all_files_to_process, desc="Processing Files")
-
+    _tmp_str_result = ''
     # Iterate through each file and run the backtest logic
     for file in iterator:
         # Run the core backtest function
@@ -123,13 +123,6 @@ def main():
         # Extract key metrics from the result
         is_active_now = info["is_active_now"]
 
-        # Optional: Print detailed statistics for every file if verbose mode is on
-        if args.verbose:
-            print(f"[{info['event_direction']}] Win Rate: {info['win_rate']:.2f}%   "
-                  f"Baseline: {info['baseline']:.2f}%   "
-                  f"Last date: {info['last_date'].strftime('%Y-%m-%d')}  "
-                  f"CC: {info['current_count']} / {info['cluster_threshold']}")
-
         # Mandatory: Print Signal Active status if the condition is met
         if is_active_now:
             event_direction = info["event_direction"]
@@ -138,14 +131,17 @@ def main():
 
             # Determine direction word for display
             direction_word = "DROP" if event_direction == "drop" else "SPIKE"
-
+            GREEN = "\033[92m"
+            BOLD = "\033[1m"
+            RESET = "\033[0m"
             # Construct status strings
             _tmp_str = f"SIGNAL ACTIVE:  {'YES - PREDICTING ' + direction_word if is_active_now else 'NO - NEUTRAL'}"
-            _tmp_str2 = f"Current Count:  {current_count} / {cluster_threshold}"
-
+            _tmp_str2 = f"{current_count} / {cluster_threshold}"
+            _tmp_str3 = f"[{info['event_direction']}]    {BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   Baseline: {info['baseline']:.2f}%   "#{info['threshold_penalty_for_low_events']}"
             # Print the final signal alert
-            print(f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str}  {_tmp_str2}  {info['is_active_str']}")
+            _tmp_str_result += f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2}) \n\t {info['is_active_str']}  {_tmp_str3} \n\n"
 
+    print(_tmp_str_result)
     print("-" * 50)
     print("Processing complete.")
 

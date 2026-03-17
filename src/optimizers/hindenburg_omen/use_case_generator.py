@@ -63,6 +63,12 @@ Examples:
         default=None,
         help="Timeout per trial in seconds. (Default: 120 locally, 7200 on CASIR)"
     )
+    res_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Juste compute the use cases and display the time required for execution"
+    )
 
     # --- Experiment Configuration ---
     exp_group = parser.add_argument_group("Experiment Configuration")
@@ -188,7 +194,6 @@ def main(args):
                     output_dir,
                     f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json"
                 )
-
                 configuration_experimentation = argparse.Namespace(
                     forward_days=a_forward_days,
                     threshold=a_threshold,
@@ -210,12 +215,12 @@ def main(args):
                     save_params_to=output_filename
                 )
                 use_cases.append(configuration_experimentation)
-
     total_estimated_time = len(use_cases) * timeout / nb_workers
     print(f"Generated {len(use_cases)} use cases.")
     print(f"Output directory: {output_dir}")
     print(f"Estimated total time: {format_execution_time(total_estimated_time)} ({nb_workers} workers). Be patient.")
-
+    if args.dry_run:
+        sys.exit()
     # 5. Setup Multiprocessing
     # Note: Queue(maxsize) is valid, but standard Queue() is often safer for infinite buffering
     use_cases__shared = Queue()

@@ -30,12 +30,6 @@ from optuna.trial import TrialState
 warnings.filterwarnings("ignore")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 from utils import str2bool
-# =========================================================
-# DETERMINISTIC SEED CONFIGURATION
-# =========================================================
-# Default seed, will be overridden by argparse if provided
-DEFAULT_RANDOM_SEED = 42
-
 
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
@@ -163,14 +157,15 @@ def run_professional_optimization(args):
     total_days = valid_mask.sum()
     total_events = target.sum()
     baseline = total_events / total_days * 100
+    assert 0 < args.threshold_penalty_for_low_events <= 1
+    args.threshold_penalty_for_low_events = int(args.threshold_penalty_for_low_events * total_events)
+    def penalty_for_having_low_number_of_events(n):
+        return min(n / args.threshold_penalty_for_low_events, 1.0)
     if args.verbose:
         print(f"\nMode: {event_direction.upper()} | "
               f"Threshold: {THRESHOLD * 100:+.1f}% | "
-              f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days})")
-
-    def penalty_for_having_low_number_of_events(n):
-        return min(n / args.threshold_penalty_for_low_events, 1.0)
-
+              f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days}) | "
+              f"Penalty threshold @ {args.threshold_penalty_for_low_events}")
     improve_score_function = args.use_z_score_boost
 
     def objective(trial):
@@ -179,14 +174,9 @@ def run_professional_optimization(args):
         use_volatility_compression = trial.suggest_categorical("use_volatility_compression", [True, False])
         use_market_breadth_proxy = trial.suggest_categorical("use_market_breadth_proxy", [True, False])
         use_trend_regime_filter = trial.suggest_categorical("use_trend_regime_filter", [True, False])
-
-        rsi_len = trial.suggest_int("rsi_len", 10, 20)
-        rsi_thresh = trial.suggest_int("rsi_thresh", 60, 75)
-        rsi_lookback = trial.suggest_int("rsi_lookback", 3, 10)
-        sma_len = trial.suggest_int("sma_len", 2, 100)
-        macd_fast = trial.suggest_int("macd_fast", 8, 15)
-        macd_slow = trial.suggest_int("macd_slow", macd_fast + 5, 40)
-        macd_signal = trial.suggest_int("macd_signal", 5, 15)
+        use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False])
+        use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False])
+        base_signal = trial.suggest_categorical("base_signal", ["simple_ma", "ecart_type", "slope_3days", "bull_market_global"])
 
         if fixed__cluster_window is None:
             cluster_window = trial.suggest_int("cluster_window", 2, 120)
@@ -198,50 +188,65 @@ def run_professional_optimization(args):
         else:
             cluster_threshold = fixed__cluster_threshold
 
-        bb_len, bb_width_thresh = None, None
-        if use_volatility_compression:
-            bb_len = trial.suggest_int("bb_len", 2, 30)
-            bb_width_thresh = trial.suggest_float("bb_width_thresh", 0.02, 0.10)
+        # ---------------- Base signal ----------------
+        cond_price = None
+        if base_signal == "simple_ma":
+            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma = ta.sma(close, length=sma_len)
+            cond_price = close > sma
+        elif base_signal == "ecart_type":
+            # Calcule à combien d'écarts-types le prix se trouve de la moyenne
+            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma = ta.sma(close, length=sma_len)
+            std = close.rolling(window=sma_len).std()
+            z_score = (close - sma) / std
+            cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
+        elif base_signal == "slope_3days":
+            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma = ta.sma(close, length=sma_len)
+            sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
+            cond_price = (close > sma) & (sma_slope > 0)
+        elif base_signal == "bull_market_global":
+            # On ne prend des signaux d'achat que si on est en "Bull Market" global
+            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma = ta.sma(close, length=sma_len)
+            cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
+            cond_price = (close > sma) & cond_regime
+        assert cond_price is not None
+        base_signal = cond_price
 
-        ema_len, stretch_thresh = None, None
+        # ---------------- Indicators ----------------
+        if use_rsi_indicator:
+            rsi_len = trial.suggest_int("rsi_len", 10, 20)
+            rsi_thresh = trial.suggest_int("rsi_thresh", 60, 75)
+            rsi_lookback = trial.suggest_int("rsi_lookback", 3, 10)
+            rsi = ta.rsi(close, length=rsi_len)
+            rsi_max = rsi.rolling(rsi_lookback).max()
+            cond_rsi = rsi_max > rsi_thresh
+            base_signal = base_signal & cond_rsi
+
+        if use_macd_indicator:
+            macd_fast = trial.suggest_int("macd_fast", 8, 15)
+            macd_slow = trial.suggest_int("macd_slow", macd_fast + 5, 40)
+            macd_signal = trial.suggest_int("macd_signal", 5, 15)
+            macd = ta.macd(close, fast=macd_fast, slow=macd_slow, signal=macd_signal)
+            if macd is None: return 0
+            macd_line = macd.iloc[:, 0]
+            macd_sig = macd.iloc[:, 1]
+            cond_macd = macd_line < macd_sig
+            base_signal = base_signal & cond_macd
+
         if use_ema_stretch:
             ema_len = trial.suggest_int("ema_len", 2, 200)
             stretch_thresh = trial.suggest_float("stretch_thresh", 0.01, 0.08)
-
-        roc_len, roc_thresh = None, None
-        if use_market_breadth_proxy:
-            roc_len = trial.suggest_int("roc_len", 5, 20)
-            roc_thresh = trial.suggest_float("roc_thresh", -0.02, 0.02)
-
-        ema200 = None
-        if use_trend_regime_filter:
-            ema200 = ta.ema(close, length=200)
-
-        # ---------------- Indicators ----------------
-        rsi = ta.rsi(close, length=rsi_len)
-        macd = ta.macd(close, fast=macd_fast, slow=macd_slow, signal=macd_signal)
-
-        if macd is None: return 0
-
-        macd_line = macd.iloc[:, 0]
-        macd_sig = macd.iloc[:, 1]
-        sma = ta.sma(close, length=sma_len)
-
-        # ---------------- Base signal ----------------
-        cond_price = close > sma
-        rsi_max = rsi.rolling(rsi_lookback).max()
-        cond_rsi = rsi_max > rsi_thresh
-        cond_macd = macd_line < macd_sig
-
-        base_signal = cond_price & cond_rsi & cond_macd
-
-        if use_ema_stretch:
             ema = ta.ema(close, length=ema_len)
             stretch = (close - ema) / ema
             cond_stretch = stretch > stretch_thresh
             base_signal = base_signal & cond_stretch
 
         if use_volatility_compression:
+            bb_len = trial.suggest_int("bb_len", 2, 30)
+            bb_width_thresh = trial.suggest_float("bb_width_thresh", 0.02, 0.10)
             bb = ta.bbands(close, length=bb_len)
             if bb is None:
                 return 0
@@ -250,11 +255,14 @@ def run_professional_optimization(args):
             base_signal = base_signal & cond_volatility
 
         if use_market_breadth_proxy:
+            roc_len = trial.suggest_int("roc_len", 5, 20)
+            roc_thresh = trial.suggest_float("roc_thresh", -0.02, 0.02)
             roc = ta.roc(close, length=roc_len)
             cond_roc = roc < roc_thresh
             base_signal = base_signal & cond_roc
 
         if use_trend_regime_filter:
+            ema200 = ta.ema(close, length=200)
             bull_regime = close > ema200
             base_signal = base_signal & bull_regime
 
@@ -277,6 +285,7 @@ def run_professional_optimization(args):
         n = len(cluster_targets)
         penalty = penalty_for_having_low_number_of_events(n)
         assert 0 <= penalty <= 1
+        trial.set_user_attr("penalty", penalty)
         score = win_rate * penalty
         trial.report(score, step=n)
         if trial.should_prune(): raise optuna.TrialPruned()
@@ -334,7 +343,10 @@ def run_professional_optimization(args):
     best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE, 'mode': args.mode})
     info = verify_best(df_data=close, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, event_direction="drop" if args.mode == "drop" else "upper", verbose=args.verbose)
-    best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"]})
+    best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
+                        'penalty': study.best_trial.user_attrs['penalty']})
+    if args.verbose:
+        print(f"Infos extra: {study.best_trial.user_attrs}")
     # =========================================================
     # SAVE BEST PARAMETERS
     # =========================================================
@@ -346,18 +358,42 @@ def run_professional_optimization(args):
 # VERIFICATION & REAL-TIME PREDICTION
 # =========================================================
 def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, event_direction):
-    # 1. Calculate Indicators
-    rsi = ta.rsi(df_data, length=params["rsi_len"])
-    macd = ta.macd(df_data, fast=params["macd_fast"], slow=params["macd_slow"], signal=params["macd_signal"])
-    sma = ta.sma(df_data, length=params["sma_len"])
+    # 1. Base Signal Logic
+    base_signal = params["base_signal"]
+    cond_price = None
+    if base_signal == "simple_ma":
+        sma = ta.sma(df_data, length=params["sma_len"])
+        cond_price = df_data > sma
+    elif base_signal == "ecart_type":
+        # Calcule à combien d'écarts-types le prix se trouve de la moyenne
+        sma_len = params["sma_len"]
+        sma = ta.sma(df_data, length=sma_len)
+        std = df_data.rolling(window=sma_len).std()
+        z_score = (df_data - sma) / std
+        cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
+    elif base_signal == "slope_3days":
+        sma = ta.sma(df_data, length=params["sma_len"])
+        sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
+        cond_price = (df_data > sma) & (sma_slope > 0)
+    elif base_signal == "bull_market_global":
+        # On ne prend des signaux d'achat que si on est en "Bull Market" global
+        sma = ta.sma(df_data, length=params["sma_len"])
+        cond_regime = ta.sma(df_data, 50) > ta.sma(df_data, 200)
+        cond_price = (df_data > sma) & cond_regime
+    assert cond_price is not None
+    base_signal = cond_price
 
-    # 2. Base Signal Logic
-    cond_price = df_data > sma
-    rsi_max = rsi.rolling(params["rsi_lookback"]).max()
-    cond_rsi = rsi_max > params["rsi_thresh"]
-    cond_macd = macd.iloc[:, 0] < macd.iloc[:, 1]
+    # 2. Calculate Indicators
+    if params.get("use_rsi_indicator"):
+        rsi = ta.rsi(df_data, length=params["rsi_len"])
+        rsi_max = rsi.rolling(params["rsi_lookback"]).max()
+        cond_rsi = rsi_max > params["rsi_thresh"]
+        base_signal = base_signal & cond_rsi
 
-    base_signal = cond_price & cond_rsi & cond_macd
+    if params.get("use_macd_indicator"):
+        macd = ta.macd(df_data, fast=params["macd_fast"], slow=params["macd_slow"], signal=params["macd_signal"])
+        cond_macd = macd.iloc[:, 0] < macd.iloc[:, 1]
+        base_signal = base_signal & cond_macd
 
     if params.get("use_ema_stretch"):
         ema = ta.ema(df_data, length=params["ema_len"])
@@ -438,7 +474,7 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
             print(f"  - {key}: {value}")
         print("-" * 40)
         print(f"Total Signals Found: {total}")
-        assert np.allclose(win_rate, precision*100), f"\t\t{win_rate=}  vs  {precision=}"
+        assert np.allclose(win_rate, precision*100), f"\t\t{win_rate=}  vs  {precision*100=}"
         print(f"Historical Win Rate: {win_rate:.2f}%")
         print(f"Baseline was:        {baseline:.2f}%")
         print(f"Edge vs Baseline:    {win_rate - baseline:.2f}%")
@@ -583,16 +619,11 @@ if __name__ == "__main__":
         default=None,
         help="If set, fixes the signal count threshold for clustering instead of optimizing it."
     )
-    # strat_group.add_argument(
-    #     "--fixed-market-breadth-proxy",
-    #     action="store_true",
-    #     help="If set, use it in optimization."
-    # )
     strat_group.add_argument(
         "--threshold-penalty-for-low-events",
-        type=int,
-        default=2000,
-        help="Minimal number of required past events to disable penalty on the score."
+        type=float,
+        default=0.5,
+        help="Minimal number (pourcentage of the total number of events) of required past events to disable penalty on the score."
     )
     strat_group.add_argument(
         "--mode",
