@@ -88,8 +88,11 @@ def entry(
         print(f"{len(tickers)} tickers, {daily_start=}, {daily_end=}, interval=1d", flush=True)
         data_cache = {}
         for ticker in tqdm(tickers, desc="Daily"):
-            data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d',
-                               auto_adjust=False, ignore_tz=True, progress=False)
+            data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
+            # if 0 == len(data):
+            #     print(f"WARNING: --> For {ticker} ,end date is yesterday")
+            #     data = yf.download(ticker, start=daily_start, end=(datetime.today() - timedelta(days=1)).strftime('%Y-%m-%d'),
+            #                        interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
             data_cache[ticker] = data
         with open(FYAHOO__OUTPUTFILENAME_DAY, 'wb') as f:
             pickle.dump(data_cache, f)
