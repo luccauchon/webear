@@ -37,8 +37,10 @@ def main(args):
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     close_col = (args.col, args.ticker)
+    enabled_vix1d = False
     vix__master_data_cache = copy.deepcopy(master_data_cache['^VIX'].sort_index()[('Close', '^VIX')])
-    vix1d__master_data_cache = copy.deepcopy(master_data_cache['^VIX1D'].sort_index()[('Close', '^VIX1D')])
+    if enabled_vix1d:
+        vix1d__master_data_cache = copy.deepcopy(master_data_cache['^VIX1D'].sort_index()[('Close', '^VIX1D')])
     vix3m__master_data_cache = copy.deepcopy(master_data_cache['^VIX3M'].sort_index()[('Close', '^VIX3M')])
     master_data_cache = copy.deepcopy(master_data_cache[args.ticker].sort_index())[close_col]
     put_credit = args.put
@@ -50,7 +52,8 @@ def main(args):
             print(f"Removing last element of VIX DF.")
         vix__master_data_cache = vix__master_data_cache.iloc[:-1]
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix__master_data_cache.index[-1].strftime('%Y-%m-%d')
-    assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix1d__master_data_cache.index[-1].strftime('%Y-%m-%d')
+    if enabled_vix1d:
+        assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix1d__master_data_cache.index[-1].strftime('%Y-%m-%d')
     assert master_data_cache.index[-1].strftime('%Y-%m-%d') == vix3m__master_data_cache.index[-1].strftime('%Y-%m-%d')
     results_realtime, results_backtest, _str_tmp_put_credit, _str_tmp_call_credit, _str_tmp_iron_condor_credit = [], [], '', '', ''
     step_back_range = args.step_back_range if args.step_back_range < len(master_data_cache) else len(master_data_cache)
