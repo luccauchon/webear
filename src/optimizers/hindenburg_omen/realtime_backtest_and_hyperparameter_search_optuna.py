@@ -178,15 +178,8 @@ def run_professional_optimization(args):
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False])
         base_signal = trial.suggest_categorical("base_signal", ["simple_ma", "ecart_type", "slope_3days", "bull_market_global"])
 
-        if fixed__cluster_window is None:
-            cluster_window = trial.suggest_int("cluster_window", 2, 120)
-        else:
-            cluster_window = fixed__cluster_window
-
-        if fixed__cluster_threshold is None:
-            cluster_threshold = trial.suggest_int("cluster_threshold", 2, 12)
-        else:
-            cluster_threshold = fixed__cluster_threshold
+        cluster_window = fixed__cluster_window if fixed__cluster_window is not None else trial.suggest_int("cluster_window", 2, 120)
+        cluster_threshold = fixed__cluster_threshold if fixed__cluster_window is not None else trial.suggest_int("cluster_threshold", 2, 12)
 
         # ---------------- Base signal ----------------
         cond_price = None
