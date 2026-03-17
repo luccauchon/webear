@@ -4,3 +4,5 @@
 .idea/webear.iml
 .idea/misc.xml
 /src/sandbox/.ipynb_checkpoints/
+/src/optimizers/hindenburg_omen/param_importances.png
+/src/optimizers/hindenburg_omen/optimization_history.png
