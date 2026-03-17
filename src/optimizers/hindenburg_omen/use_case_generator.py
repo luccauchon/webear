@@ -103,10 +103,10 @@ Examples:
     )
     grid_group.add_argument(
         "--penalties",
-        type=int,
+        type=float,
         nargs="+",
         default=None,
-        help="List of penalty values for low events (space separated). e.g., 500 1000 2000"
+        help="List of penalty factor values for low events (space separated). e.g., 0.5 0.75 0.98"
     )
 
     return parser.parse_args()
