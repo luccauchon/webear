@@ -691,14 +691,13 @@ def main(args):
         print("-" * 80, flush=True)
 
     if not OPTUNA_AVAILABLE:
-        args.use_optuna = False
         print("⚠️  Optuna not available. Running single backtest with default parameters.")
 
     timeout_str = f"{args.timeout}s" if args.timeout else "None"
     print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
     if args.objective_name in ["2026_02_20__0_0pct"]:
-        print(f" Attention! no optimization will take place! This is the baseline. Program will exit after one pass.")
+        print(f" Attention! no optimization will take place! This is the baseline. Program will exit after one pass. Change the objective_name if you want to optimize.")
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
     # Run Optimization
     if IS_RUNNING_ON_CASIR and False:
@@ -736,10 +735,8 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', type=str2bool, default=True)
 
     # --- Optuna Args ---
-    parser.add_argument('--use_optuna', type=str2bool, default=True,
-                        help='Enable Optuna parameter search')
     parser.add_argument('--n_trials', type=int, default=99999,
-                        help='Number of trials for Optuna (ignored if use_optuna=False)')
+                        help='Number of trials for Optuna (default: 99999)')
     parser.add_argument('--optimize_target', type=str, default='put',
                         choices=['put', 'call', 'average', 'iron_condor'],
                         help='Which score to maximize')
@@ -754,7 +751,7 @@ if __name__ == "__main__":
     # --- New Argument: Objective Function Selection ---
     parser.add_argument('--objective_name', type=str, default='2026_02_20__0_0pct',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
-                        help='Select the objective function logic by name (determine by its configuration)')
+                        help='Select the objective function logic by name (determine by its configuration). Default: 2026_02_20__0_0pct')
 
     args = parser.parse_args()
     main(args)
