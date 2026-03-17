@@ -176,7 +176,7 @@ def run_professional_optimization(args):
         use_trend_regime_filter = trial.suggest_categorical("use_trend_regime_filter", [True, False])
         use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False])
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False])
-        base_signal = trial.suggest_categorical("base_signal", ["simple_ma", "ecart_type", "slope_3days", "bull_market_global"])
+        base_signal = trial.suggest_categorical("base_signal", ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"])
 
         cluster_window = fixed__cluster_window if fixed__cluster_window is not None else trial.suggest_int("cluster_window", 2, 120)
         cluster_threshold = fixed__cluster_threshold if fixed__cluster_window is not None else trial.suggest_int("cluster_threshold", 2, 12)
@@ -205,6 +205,10 @@ def run_professional_optimization(args):
             sma = ta.sma(close, length=sma_len)
             cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
             cond_price = (close > sma) & cond_regime
+        elif base_signal == "breakout":
+            lookback = trial.suggest_int("breakout_lookback", 10, 50)
+            resistance = close.rolling(lookback).max().shift(1)
+            cond_price = close > resistance  # Price breaks above recent high
         assert cond_price is not None
         base_signal = cond_price
 
@@ -214,8 +218,16 @@ def run_professional_optimization(args):
             rsi_thresh = trial.suggest_int("rsi_thresh", 60, 75)
             rsi_lookback = trial.suggest_int("rsi_lookback", 3, 10)
             rsi = ta.rsi(close, length=rsi_len)
-            rsi_max = rsi.rolling(rsi_lookback).max()
-            cond_rsi = rsi_max > rsi_thresh
+            if args.mode == "upper":
+                # Momentum without overextension
+                cond_rsi = (rsi > 50) & (rsi < rsi_thresh)
+            else:
+                # Overbought for drop prediction
+                cond_rsi = rsi.rolling(rsi_lookback).max() > rsi_thresh
+            base_signal = base_signal & cond_rsi
+
+
+
             base_signal = base_signal & cond_rsi
 
         if use_macd_indicator:
@@ -226,7 +238,11 @@ def run_professional_optimization(args):
             if macd is None: return 0
             macd_line = macd.iloc[:, 0]
             macd_sig = macd.iloc[:, 1]
-            cond_macd = macd_line < macd_sig
+            # Mode-aware MACD
+            if args.mode == "upper":
+                cond_macd = macd_line > macd_sig  # Bullish crossover
+            else:
+                cond_macd = macd_line < macd_sig  # Bearish crossover
             base_signal = base_signal & cond_macd
 
         if use_ema_stretch:
@@ -373,19 +389,34 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
         sma = ta.sma(df_data, length=params["sma_len"])
         cond_regime = ta.sma(df_data, 50) > ta.sma(df_data, 200)
         cond_price = (df_data > sma) & cond_regime
+    elif base_signal == "breakout":
+        lookback = params["breakout_lookback"]
+        resistance = df_data.rolling(lookback).max().shift(1)
+        cond_price = df_data > resistance  # Price breaks above recent high
     assert cond_price is not None
     base_signal = cond_price
 
     # 2. Calculate Indicators
     if params.get("use_rsi_indicator"):
         rsi = ta.rsi(df_data, length=params["rsi_len"])
-        rsi_max = rsi.rolling(params["rsi_lookback"]).max()
-        cond_rsi = rsi_max > params["rsi_thresh"]
+        if args.mode == "upper":
+            # Momentum without overextension
+            cond_rsi = (rsi > 50) & (rsi < params["rsi_thresh"])
+        else:
+            # Overbought for drop prediction
+            cond_rsi = rsi.rolling(params["rsi_lookback"]).max() > params["rsi_thresh"]
+
         base_signal = base_signal & cond_rsi
 
     if params.get("use_macd_indicator"):
         macd = ta.macd(df_data, fast=params["macd_fast"], slow=params["macd_slow"], signal=params["macd_signal"])
-        cond_macd = macd.iloc[:, 0] < macd.iloc[:, 1]
+        macd_line = macd.iloc[:, 0]
+        macd_sig = macd.iloc[:, 1]
+        # Mode-aware MACD
+        if args.mode == "upper":
+            cond_macd = macd_line > macd_sig  # Bullish crossover
+        else:
+            cond_macd = macd_line < macd_sig  # Bearish crossover
         base_signal = base_signal & cond_macd
 
     if params.get("use_ema_stretch"):
