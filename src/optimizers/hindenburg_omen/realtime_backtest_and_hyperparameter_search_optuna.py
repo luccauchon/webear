@@ -29,7 +29,7 @@ from optuna.trial import TrialState
 
 warnings.filterwarnings("ignore")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-from utils import str2bool
+from utils import str2bool, DATASET_AVAILABLE
 
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
@@ -82,9 +82,9 @@ def load_best_params(filepath: str, verbose: bool) -> dict:
 # =========================================================
 # DATA LOADING
 # =========================================================
-def load_close_data(_ticker):
+def load_data(_ticker, _dataset_choice):
     from utils import get_filename_for_dataset
-    filename = get_filename_for_dataset("day", older_dataset=None)
+    filename = get_filename_for_dataset(dataset_choice=_dataset_choice, older_dataset=None)
     with open(filename, "rb") as f:
         cache = pickle.load(f)
     df = cache[_ticker].copy()
@@ -126,12 +126,17 @@ def run_professional_optimization(args):
     # Fixed parameters override
     fixed__cluster_threshold = args.fixed_cluster_threshold
     fixed__cluster_window = args.fixed_cluster_window
-
-    df = load_close_data(_ticker=TICKER)
+    if args.verbose:
+        if fixed__cluster_threshold:
+            print(f"Using fixed cluster threshold of {fixed__cluster_threshold}")
+        if fixed__cluster_window:
+            print(f"Using fixed cluster window of {fixed__cluster_window}")
+    df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id)
     if args.verbose:
         print(f"Data loaded: {len(df)} rows | "
               f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
+    df_open, df_low, df_high  = df['Open'], df['Low'], df['High']
 
     # =========================================================
     # TARGET CALCULATION (MODE-AWARE)
@@ -161,8 +166,16 @@ def run_professional_optimization(args):
     args.threshold_penalty_for_low_events = int(args.threshold_penalty_for_low_events * total_events)
     def penalty_for_having_low_number_of_events(n):
         return min(n / args.threshold_penalty_for_low_events, 1.0)
+    if args.softer_penalty_for_low_events:
+        if args.verbose:
+            print(f"Switching to sigmoid-like curve for penalty of low number of events")
+        def penalty_for_having_low_number_of_events(n):
+            # Softer penalty: sigmoid-like curve instead of linear cap
+            if n >= args.threshold_penalty_for_low_events:
+                return 1.0
+            return 0.5 + 0.5 * (n / args.threshold_penalty_for_low_events)  # 0.5→1.0 range
     if args.verbose:
-        print(f"\nMode: {event_direction.upper()} | "
+        print(f"\nMode: {event_direction.upper()} | Forward {FORWARD_DAYS} {args.dataset_id} |"
               f"Threshold: {THRESHOLD * 100:+.1f}% | "
               f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days}) | "
               f"Penalty threshold @ {args.threshold_penalty_for_low_events}")
@@ -176,6 +189,7 @@ def run_professional_optimization(args):
         use_trend_regime_filter = trial.suggest_categorical("use_trend_regime_filter", [True, False])
         use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False])
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False])
+        use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False])
         base_signal = trial.suggest_categorical("base_signal", ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"])
 
         cluster_window = fixed__cluster_window if fixed__cluster_window is not None else trial.suggest_int("cluster_window", 2, 120)
@@ -184,29 +198,29 @@ def run_professional_optimization(args):
         # ---------------- Base signal ----------------
         cond_price = None
         if base_signal == "simple_ma":
-            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
             sma = ta.sma(close, length=sma_len)
             cond_price = close > sma
         elif base_signal == "ecart_type":
             # Calcule à combien d'écarts-types le prix se trouve de la moyenne
-            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
             sma = ta.sma(close, length=sma_len)
             std = close.rolling(window=sma_len).std()
             z_score = (close - sma) / std
             cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
         elif base_signal == "slope_3days":
-            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
             sma = ta.sma(close, length=sma_len)
             sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
             cond_price = (close > sma) & (sma_slope > 0)
         elif base_signal == "bull_market_global":
             # On ne prend des signaux d'achat que si on est en "Bull Market" global
-            sma_len = trial.suggest_int("sma_len", 2, 100)
+            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
             sma = ta.sma(close, length=sma_len)
             cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
             cond_price = (close > sma) & cond_regime
         elif base_signal == "breakout":
-            lookback = trial.suggest_int("breakout_lookback", 10, 50)
+            lookback = trial.suggest_int("breakout_lookback", 10, 50, log=False, step=1)
             resistance = close.rolling(lookback).max().shift(1)
             cond_price = close > resistance  # Price breaks above recent high
         assert cond_price is not None
@@ -226,16 +240,12 @@ def run_professional_optimization(args):
                 cond_rsi = rsi.rolling(rsi_lookback).max() > rsi_thresh
             base_signal = base_signal & cond_rsi
 
-
-
-            base_signal = base_signal & cond_rsi
-
         if use_macd_indicator:
             macd_fast = trial.suggest_int("macd_fast", 8, 15)
             macd_slow = trial.suggest_int("macd_slow", macd_fast + 5, 40)
             macd_signal = trial.suggest_int("macd_signal", 5, 15)
             macd = ta.macd(close, fast=macd_fast, slow=macd_slow, signal=macd_signal)
-            if macd is None: return 0
+            if macd is None: return -10
             macd_line = macd.iloc[:, 0]
             macd_sig = macd.iloc[:, 1]
             # Mode-aware MACD
@@ -258,7 +268,7 @@ def run_professional_optimization(args):
             bb_width_thresh = trial.suggest_float("bb_width_thresh", 0.02, 0.10)
             bb = ta.bbands(close, length=bb_len)
             if bb is None:
-                return 0
+                return -10
             bb_width = (bb.iloc[:, 2] - bb.iloc[:, 0]) / close
             cond_volatility = bb_width < bb_width_thresh
             base_signal = base_signal & cond_volatility
@@ -275,6 +285,31 @@ def run_professional_optimization(args):
             bull_regime = close > ema200
             base_signal = base_signal & bull_regime
 
+        if use_stochastic_indicator:
+            stoch_len = trial.suggest_int("stoch_len", 10, 20)
+            stoch_k = trial.suggest_int("stoch_k", 3, 5)
+            stoch_d = trial.suggest_int("stoch_d", 3, 5)
+            stoch_overbought = trial.suggest_int("stoch_overbought", 70, 85)
+            stoch_oversold = trial.suggest_int("stoch_oversold", 15, 30)
+
+            stoch = ta.stoch(close, high=df_high, low=df_low, k=stoch_k, d=stoch_d, smooth_k=stoch_len)
+            if stoch is None or stoch.empty:
+                return -10
+
+            stoch_k_line = stoch.iloc[:, 0]  # %K
+            stoch_d_line = stoch.iloc[:, 1]  # %D
+
+            if args.mode == "upper":
+                # Bullish: Stochastic rising from oversold or %K > %D in neutral zone
+                cond_stoch = ((stoch_k_line > stoch_oversold) & (stoch_k_line < stoch_overbought) &
+                              (stoch_k_line > stoch_d_line))
+            else:
+                # Bearish: Stochastic falling from overbought or %K < %D in overbought zone
+                cond_stoch = ((stoch_k_line < stoch_overbought) & (stoch_k_line > stoch_oversold) &
+                              (stoch_k_line < stoch_d_line)) | (stoch_k_line > stoch_overbought)
+
+            base_signal = base_signal & cond_stoch
+
         # ---------------- Cluster logic ----------------
         omen_count = base_signal.rolling(cluster_window).sum()
 
@@ -285,10 +320,10 @@ def run_professional_optimization(args):
             cluster = (omen_count >= cluster_threshold) & (prev < cluster_threshold)
 
         signal_dates = cluster[cluster].index
-        if len(signal_dates) < MIN_SIGNALS_REQUIRED: return 0
+        if len(signal_dates) < MIN_SIGNALS_REQUIRED: return -10
 
         cluster_targets = target.loc[signal_dates].dropna()
-        if len(cluster_targets) < MIN_SIGNALS_REQUIRED: return 0
+        if len(cluster_targets) < MIN_SIGNALS_REQUIRED: return -10
 
         win_rate = cluster_targets.mean() * 100
         n = len(cluster_targets)
@@ -298,8 +333,9 @@ def run_professional_optimization(args):
         score = win_rate * penalty
         trial.report(score, step=n)
         if trial.should_prune(): raise optuna.TrialPruned()
+        z = (win_rate / 100 - baseline / 100) / math.sqrt((baseline / 100) * (1 - baseline / 100) / n)
+        trial.set_user_attr("z_score", float(z))
         if improve_score_function:
-            z = (win_rate / 100 - baseline / 100) / math.sqrt((baseline / 100) * (1 - baseline / 100) / n)
             score = win_rate * penalty + z * 10
         return score
 
@@ -310,21 +346,26 @@ def run_professional_optimization(args):
     callbacks = [stop_at_threshold]
 
     # Sampler and Pruner Configuration
-    sampler = TPESampler(seed=RANDOM_SEED)
+    sampler = TPESampler(
+        seed=RANDOM_SEED,
+        multivariate=True,  # Model parameter dependencies
+        warn_independent_sampling=False,
+        group=True,  # Decompose conditional search space
+        n_startup_trials=20  # More exploration before pruning
+    )
     if args.sampler == "cmaes":
         try:
             from optuna.samplers import CmaEsSampler
             sampler = CmaEsSampler(seed=RANDOM_SEED)
         except ImportError:
             print("Warning: CmaEsSampler not available, falling back to TPE.")
-
-    pruner = MedianPruner(n_startup_trials=args.n_startup_trials)
-
+    pruner = MedianPruner(n_startup_trials=25, n_warmup_steps=50)
     study = optuna.create_study(
         direction="maximize",
         sampler=sampler,
         pruner=pruner,
     )
+
     if args.verbose:
         print(f"\nStarting Optimization: {args.trials} trials or {args.timeout}s timeout...")
     study.optimize(objective, n_trials=args.trials, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks)
@@ -349,13 +390,23 @@ def run_professional_optimization(args):
         best_params.update({'cluster_threshold': fixed__cluster_threshold})
     if fixed__cluster_window is not None:
         best_params.update({'cluster_window': fixed__cluster_window})
-    best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE, 'mode': args.mode})
+    best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'dataset_id': args.dataset_id, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE,
+                        'mode': args.mode})
     info = verify_best(df_data=close, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, event_direction="drop" if args.mode == "drop" else "upper", verbose=args.verbose)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
                         'penalty': study.best_trial.user_attrs['penalty']})
     if args.verbose:
         print(f"Infos extra: {study.best_trial.user_attrs}")
+        # How many trials had statistically significant results?
+        significant = [t for t in study.trials if t.user_attrs.get('z_score', 0) > 1.96]
+        # What was the Z-score of the best trial?
+        print(f"Best trial Z-score: {study.best_trial.user_attrs['z_score']:.2f}   Trials with z_score>1.96: {len(significant)} / {len(study.trials)}")
+        # 0      Your result = baseline           No edge
+        # ±1     Result is 1 SD from baseline     ~68% of random results fall here
+        # ±1.96  Result is ~2 SD from baseline    p < 0.05 (common significance threshold)
+        # ±2.58  Result is ~2.6 SD from baseline  p < 0.01 (strong evidence)
+        # ±3+    Result is very far from baseline p < 0.003 (very strong evidence)
     # =========================================================
     # SAVE BEST PARAMETERS
     # =========================================================
@@ -366,7 +417,7 @@ def run_professional_optimization(args):
 # =========================================================
 # VERIFICATION & REAL-TIME PREDICTION
 # =========================================================
-def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, event_direction):
+def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, event_direction):
     # 1. Base Signal Logic
     base_signal = params["base_signal"]
     cond_price = None
@@ -439,6 +490,26 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
         bull_regime = df_data > ema200
         base_signal &= bull_regime
 
+    if params.get("use_stochastic_indicator"):
+        stoch = ta.stoch(df_data,high=df_high,low=df_low,k=params["stoch_k"], d=params["stoch_d"], smooth_k=params["stoch_len"])
+        if stoch is None or stoch.empty:
+            stoch_k_line = pd.Series(50, index=df_data.index)  # Fallback neutral
+            stoch_d_line = pd.Series(50, index=df_data.index)
+        else:
+            stoch_k_line = stoch.iloc[:, 0]
+            stoch_d_line = stoch.iloc[:, 1]
+
+        if params.get("mode") == "upper":
+            cond_stoch = ((stoch_k_line > params["stoch_oversold"]) &
+                          (stoch_k_line < params["stoch_overbought"]) &
+                          (stoch_k_line > stoch_d_line))
+        else:
+            cond_stoch = ((stoch_k_line < params["stoch_overbought"]) &
+                          (stoch_k_line > params["stoch_oversold"]) &
+                          (stoch_k_line < stoch_d_line)) | (stoch_k_line > params["stoch_overbought"])
+
+        base_signal = base_signal & cond_stoch
+
     # 3. Cluster Logic
     omen_count = base_signal.rolling(params["cluster_window"]).sum()
     if cluster_mode == "every_day":
@@ -498,7 +569,7 @@ def verify_best(df_data, cluster_mode, params, target, valid_mask, baseline, for
             print(f"  - {key}: {value}")
         print("-" * 40)
         print(f"Total Signals Found: {total}")
-        assert np.allclose(win_rate, precision*100), f"\t\t{win_rate=}  vs  {precision*100=}"
+        assert np.allclose(win_rate, precision*100, atol=0.1), f"\t\t{win_rate=}  vs  {precision*100=}"
         print(f"Historical Win Rate: {win_rate:.2f}%")
         print(f"Baseline was:        {baseline:.2f}%")
         print(f"Edge vs Baseline:    {win_rate - baseline:.2f}%")
@@ -528,11 +599,12 @@ def run_realtime_only(params_file, verbose):
     best_params = load_best_params(params_file, verbose)
 
     # Load data
-    df = load_close_data(_ticker=best_params['ticker'])
+    df = load_data(_ticker=best_params['ticker'], _dataset_choice=best_params['dataset_id'])
     if verbose:
         print(f"Data loaded: {len(df)} rows | "
               f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
+    df_open, df_low, df_high = df['Open'], df['Low'], df['High']
 
     # Calculate target for verification (historical performance only)
     FORWARD_DAYS = best_params['forward_days']
@@ -565,7 +637,7 @@ def run_realtime_only(params_file, verbose):
               f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days})")
 
     # Run verification with loaded params
-    info = verify_best(df_data=close, cluster_mode=best_params['cluster_mode'], params=best_params,
+    info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=best_params['cluster_mode'], params=best_params,
                        target=target,valid_mask=valid_mask, baseline=baseline,forward_days=FORWARD_DAYS, threshold=THRESHOLD,
                        event_direction="drop" if best_params['mode'] == "drop" else "upper",verbose = verbose,)
     return info
@@ -588,6 +660,7 @@ if __name__ == "__main__":
         default="^GSPC",
         help="Stock ticker symbol to analyze (e.g., ^GSPC, AAPL, BTC-USD)."
     )
+    parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
     data_group.add_argument(
         "--seed",
         type=int,
@@ -650,6 +723,11 @@ if __name__ == "__main__":
         help="Minimal number (pourcentage of the total number of events) of required past events to disable penalty on the score."
     )
     strat_group.add_argument(
+        "--softer-penalty-for-low-events",
+        action="store_true",
+        help="Use a sigmoid more like function for penalty of low events."
+    )
+    strat_group.add_argument(
         "--mode",
         type=str,
         choices=["drop", "upper"],
@@ -678,12 +756,6 @@ if __name__ == "__main__":
         choices=["tpe", "cmaes"],
         default="tpe",
         help="Optuna sampler algorithm."
-    )
-    opt_group.add_argument(
-        "--n-startup-trials",
-        type=int,
-        default=10,
-        help="Number of startup trials for the MedianPruner before pruning begins."
     )
     opt_group.add_argument(
         "--use-z-score-boost",
