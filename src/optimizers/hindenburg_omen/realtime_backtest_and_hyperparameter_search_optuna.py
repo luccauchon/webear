@@ -26,11 +26,12 @@ import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from optuna.trial import TrialState
-
+from optuna.samplers import RandomSampler, GridSampler
 warnings.filterwarnings("ignore")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-from utils import str2bool, DATASET_AVAILABLE
-
+from utils import str2bool, DATASET_AVAILABLE, format_execution_time
+from sklearn.model_selection import ParameterGrid, ParameterSampler
+import time
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
 # =========================================================
@@ -123,6 +124,7 @@ def run_professional_optimization(args):
     else:
         MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
 
+    base_signals = list(set(str(args.base_signals).split(",")))
     # Fixed parameters override
     fixed__cluster_threshold = args.fixed_cluster_threshold
     fixed__cluster_window = args.fixed_cluster_window
@@ -131,6 +133,21 @@ def run_professional_optimization(args):
             print(f"Using fixed cluster threshold of {fixed__cluster_threshold}")
         if fixed__cluster_window:
             print(f"Using fixed cluster window of {fixed__cluster_window}")
+        if args.disable_ema_stretch:
+            print(f"Disabling EMA strech indicator")
+        if args.disable_volatility_compression:
+            print(f"Disabling Volatility Compression indicator")
+        if args.disable_market_breadth_proxy:
+            print(f"Disabling Market Breadth Proxy indicator")
+        if args.disable_trend_regime_filter:
+            print(f"Disabling Trend Regime Filter indicator")
+        if args.disable_rsi:
+            print(f"Disabling RSI indicator")
+        if args.disable_macd:
+            print(f"Disabling MACD indicator")
+        if args.disable_stochastic:
+            print(f"Disabling Stochastic indicator")
+        print(f"Using base signals: {base_signals}")
     df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id)
     if args.verbose:
         print(f"Data loaded: {len(df)} rows | "
@@ -183,14 +200,14 @@ def run_professional_optimization(args):
 
     def objective(trial):
         # New boolean toggle via Optuna
-        use_ema_stretch = trial.suggest_categorical("use_ema_stretch", [True, False])
-        use_volatility_compression = trial.suggest_categorical("use_volatility_compression", [True, False])
-        use_market_breadth_proxy = trial.suggest_categorical("use_market_breadth_proxy", [True, False])
-        use_trend_regime_filter = trial.suggest_categorical("use_trend_regime_filter", [True, False])
-        use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False])
-        use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False])
-        use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False])
-        base_signal = trial.suggest_categorical("base_signal", ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"])
+        use_ema_stretch = trial.suggest_categorical("use_ema_stretch", [True, False]) if not args.disable_ema_stretch else False
+        use_volatility_compression = trial.suggest_categorical("use_volatility_compression", [True, False]) if not args.disable_volatility_compression else False
+        use_market_breadth_proxy = trial.suggest_categorical("use_market_breadth_proxy", [True, False]) if not args.disable_market_breadth_proxy else False
+        use_trend_regime_filter = trial.suggest_categorical("use_trend_regime_filter", [True, False]) if not args.disable_trend_regime_filter else False
+        use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False]) if not args.disable_rsi else False
+        use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False]) if not args.disable_macd else False
+        use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False]) if not args.disable_stochastic else False
+        base_signal = trial.suggest_categorical("base_signal", base_signals)
 
         cluster_window = fixed__cluster_window if fixed__cluster_window is not None else trial.suggest_int("cluster_window", 2, 120)
         cluster_threshold = fixed__cluster_threshold if fixed__cluster_window is not None else trial.suggest_int("cluster_threshold", 2, 12)
@@ -214,7 +231,6 @@ def run_professional_optimization(args):
             sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
             cond_price = (close > sma) & (sma_slope > 0)
         elif base_signal == "bull_market_global":
-            # On ne prend des signaux d'achat que si on est en "Bull Market" global
             sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
             sma = ta.sma(close, length=sma_len)
             cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
@@ -292,7 +308,7 @@ def run_professional_optimization(args):
             stoch_overbought = trial.suggest_int("stoch_overbought", 70, 85)
             stoch_oversold = trial.suggest_int("stoch_oversold", 15, 30)
 
-            stoch = ta.stoch(close, high=df_high, low=df_low, k=stoch_k, d=stoch_d, smooth_k=stoch_len)
+            stoch = ta.stoch(close=close, high=df_high, low=df_low, k=stoch_k, d=stoch_d, smooth_k=stoch_len)
             if stoch is None or stoch.empty:
                 return -10
 
@@ -337,6 +353,9 @@ def run_professional_optimization(args):
         trial.set_user_attr("z_score", float(z))
         if improve_score_function:
             score = win_rate * penalty + z * 10
+        trial.set_user_attr("total_events", int(total_events))
+        trial.set_user_attr("total_days", int(total_days))
+        trial.set_user_attr("n", int(n))
         return score
 
     def stop_at_threshold(study, trial):
@@ -344,7 +363,7 @@ def run_professional_optimization(args):
             study.stop()
 
     callbacks = [stop_at_threshold]
-
+    pruner = MedianPruner(n_startup_trials=25, n_warmup_steps=50)
     # Sampler and Pruner Configuration
     sampler = TPESampler(
         seed=RANDOM_SEED,
@@ -359,16 +378,54 @@ def run_professional_optimization(args):
             sampler = CmaEsSampler(seed=RANDOM_SEED)
         except ImportError:
             print("Warning: CmaEsSampler not available, falling back to TPE.")
-    pruner = MedianPruner(n_startup_trials=25, n_warmup_steps=50)
-    study = optuna.create_study(
-        direction="maximize",
-        sampler=sampler,
-        pruner=pruner,
-    )
-
-    if args.verbose:
-        print(f"\nStarting Optimization: {args.trials} trials or {args.timeout}s timeout...")
-    study.optimize(objective, n_trials=args.trials, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks)
+    if args.sampler == "grid":
+        search_space = {
+            "use_ema_stretch": [True, False],
+            "use_volatility_compression": [True, False],
+            "use_stochastic_indicator": [True, False],
+            "base_signal": ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"],
+            "sma_len": [10, 20, 50, 100],
+            "cluster_window": [20, 60, 120],
+            "cluster_threshold": [2, 5, 10],
+            "stoch_len": [10, 15, 20],
+            "stoch_k": [3, 4, 5],
+            "stoch_d": [3, 4, 5],
+            "stoch_overbought": [70, 75, 80, 85],
+            "stoch_oversold": [15, 20, 25, 30],
+            "breakout_lookback": [10, 20, 30, 40, 50],
+        }
+        sampler = GridSampler(seed=RANDOM_SEED, search_space=search_space)
+        pruner = None
+    if args.sampler == "random":
+        pruner = None
+        best_value, best_params, best_study = float(0), None, None
+        local_trial = 10000
+        n_studies = int(args.trials // local_trial)
+        print(f"There will be {n_studies} studies of {local_trial} passes each")
+        t1 = time.time()
+        for j in range(n_studies):
+            t2 = time.time()
+            sampler = RandomSampler(seed=RANDOM_SEED+j)
+            study = optuna.create_study(direction="maximize", sampler=sampler,pruner=pruner,)
+            study.optimize(objective, n_trials=local_trial, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks, gc_after_trial=False)
+            t3 = time.time()
+            # On garde seulement le meilleur score de ce bloc
+            if study.best_value > best_value:
+                best_study = study
+                best_value = study.best_value
+                best_params = study.best_params
+                print(f"@iter={j+1} Best value is {best_value}. Time remaining: {format_execution_time((t3-t2) * (n_studies-j))}")
+        print(f"Best value is {best_value}\nBest parameters are:\n{best_params}")
+        study = best_study  # For the rest of the code
+    else:
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=sampler,
+            pruner=pruner,
+        )
+        if args.verbose:
+            print(f"\nStarting Optimization: {args.trials} trials or {args.timeout}s timeout...")
+        study.optimize(objective, n_trials=args.trials, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks, gc_after_trial=False)
 
     # PLOTS
     if not args.no_plot:
@@ -392,7 +449,7 @@ def run_professional_optimization(args):
         best_params.update({'cluster_window': fixed__cluster_window})
     best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'dataset_id': args.dataset_id, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE,
                         'mode': args.mode})
-    info = verify_best(df_data=close, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
+    info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, event_direction="drop" if args.mode == "drop" else "upper", verbose=args.verbose)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
                         'penalty': study.best_trial.user_attrs['penalty']})
@@ -491,7 +548,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         base_signal &= bull_regime
 
     if params.get("use_stochastic_indicator"):
-        stoch = ta.stoch(df_data,high=df_high,low=df_low,k=params["stoch_k"], d=params["stoch_d"], smooth_k=params["stoch_len"])
+        stoch = ta.stoch(close=df_data,high=df_high,low=df_low,k=params["stoch_k"], d=params["stoch_d"], smooth_k=params["stoch_len"])
         if stoch is None or stoch.empty:
             stoch_k_line = pd.Series(50, index=df_data.index)  # Fallback neutral
             stoch_d_line = pd.Series(50, index=df_data.index)
@@ -642,6 +699,7 @@ def run_realtime_only(params_file, verbose):
                        event_direction="drop" if best_params['mode'] == "drop" else "upper",verbose = verbose,)
     return info
 
+
 # =========================================================
 # MAIN
 # =========================================================
@@ -735,6 +793,47 @@ if __name__ == "__main__":
         help="Prediction mode: 'drop' for downward movements (price decreases), "
              "'upper' for upward spikes (price increases). Threshold sign should match mode."
     )
+    strat_group.add_argument(
+        "--disable-ema-stretch",
+        action="store_true",
+        help="Do not use the EMA stretch indicator"
+    )
+    strat_group.add_argument(
+        "--disable-volatility-compression",
+        action="store_true",
+        help="Do not use the Volatility Compression indicator"
+    )
+    strat_group.add_argument(
+        "--disable-market-breadth-proxy",
+        action="store_true",
+        help="Do not use the Market Breadth Proxy indicator"
+    )
+    strat_group.add_argument(
+        "--disable-trend-regime-filter",
+        action="store_true",
+        help="Do not use the Trend Regime Filter indicator"
+    )
+    strat_group.add_argument(
+        "--disable-rsi",
+        action="store_true",
+        help="Do not use the RSI indicator"
+    )
+    strat_group.add_argument(
+        "--disable-macd",
+        action="store_true",
+        help="Do not use the MACD indicator"
+    )
+    strat_group.add_argument(
+        "--disable-stochastic",
+        action="store_true",
+        help="Do not use the Stochastic indicator"
+    )
+    strat_group.add_argument(
+        "--base-signals",
+        type=str,
+        default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
+        help="Different startegies for the creation of the base signal."
+    )
 
     # --- Optimization Settings ---
     opt_group = parser.add_argument_group("Optimization Settings")
@@ -753,7 +852,7 @@ if __name__ == "__main__":
     opt_group.add_argument(
         "--sampler",
         type=str,
-        choices=["tpe", "cmaes"],
+        choices=["tpe", "cmaes", "random", "grid"],
         default="tpe",
         help="Optuna sampler algorithm."
     )

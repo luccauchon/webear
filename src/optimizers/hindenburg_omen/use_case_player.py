@@ -39,7 +39,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Run realtime backtest and hyperparameter search on Hindenburg Omen data files.",
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog="Example:\n  python script.py --base-dir 'D:\\Temp2\\use_case' --exp-id 'alpha_3' --verbose"
+        epilog="Example:\n  python script.py --base-dir 'D:\\Temp2\\use_case' --experience-id 'alpha_3' --verbose"
     )
 
     # Directory Configuration
