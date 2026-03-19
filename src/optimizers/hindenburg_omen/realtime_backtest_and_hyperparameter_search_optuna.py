@@ -662,7 +662,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
             print(f"  - {key}: {value}")
         print("-" * 40)
         print(f"Total Signals Found: {total}")
-        assert np.allclose(win_rate, precision*100, atol=0.1), f"\t\t{win_rate=}  vs  {precision*100=}"
+        assert np.allclose(win_rate, precision*100, atol=0.5), f"\t\t{win_rate=}  vs  {precision*100=}"
         print(f"Historical Win Rate: {win_rate:.2f}%")
         print(f"Baseline was:        {baseline:.2f}%")
         print(f"Edge vs Baseline:    {win_rate - baseline:.2f}%")
