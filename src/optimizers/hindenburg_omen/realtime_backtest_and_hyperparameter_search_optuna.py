@@ -125,14 +125,7 @@ def run_professional_optimization(args):
         MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
 
     base_signals = list(set(str(args.base_signals).split(",")))
-    # Fixed parameters override
-    fixed__cluster_threshold = args.fixed_cluster_threshold
-    fixed__cluster_window = args.fixed_cluster_window
     if args.verbose:
-        if fixed__cluster_threshold:
-            print(f"Using fixed cluster threshold of {fixed__cluster_threshold}")
-        if fixed__cluster_window:
-            print(f"Using fixed cluster window of {fixed__cluster_window}")
         if args.disable_ema_stretch:
             print(f"Disabling EMA strech indicator")
         if args.disable_volatility_compression:
@@ -159,15 +152,20 @@ def run_professional_optimization(args):
     # TARGET CALCULATION (MODE-AWARE)
     # =========================================================
     if args.mode == "drop":
+        # Pour chaque ligne t:
+        # close[::-1] : On retourne la liste des prix (le futur devient le passé).
+        # rolling(FORWARD_DAYS).min() : On trouve le prix le plus bas dans les jours précédents (qui sont en fait les jours suivants dans le temps réel).
+        # shift(-1) : On décale pour s'assurer que le prix actuel (t) n'est pas inclus dans le calcul du "futur". On ne veut comparer t qu'avec [t+1,...t+N]
+        # Comparaison : Si le rendement entre le prix actuel et le pire prix futur est inférieur ou égal à votre seuil (ex: -0.03), le 1 est déclenché.
         # Drop mode: look for minimum price in forward window
-        future_extreme = close.shift(-1).rolling(FORWARD_DAYS, min_periods=FORWARD_DAYS).min()
+        future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
         df["Target_Pct_Change"] = (future_extreme - close) / close
         # Negative threshold: e.g., -0.03 means 3% drop
         df["Is_Event"] = (df["Target_Pct_Change"] <= THRESHOLD).astype(int)
         event_direction = "drop"
     else:  # upper mode
         # Upper mode: look for maximum price in forward window
-        future_extreme = close.shift(-1).rolling(FORWARD_DAYS, min_periods=FORWARD_DAYS).max()
+        future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
         df["Target_Pct_Change"] = (future_extreme - close) / close
         # Positive threshold: e.g., 0.03 means 3% spike
         df["Is_Event"] = (df["Target_Pct_Change"] >= THRESHOLD).astype(int)
@@ -192,13 +190,14 @@ def run_professional_optimization(args):
                 return 1.0
             return 0.5 + 0.5 * (n / args.threshold_penalty_for_low_events)  # 0.5→1.0 range
     if args.verbose:
-        print(f"\nMode: {event_direction.upper()} | Forward {FORWARD_DAYS} {args.dataset_id} |"
+        print(f"\nMode: {event_direction.upper()} | Forward {FORWARD_DAYS} {args.dataset_id} | "
               f"Threshold: {THRESHOLD * 100:+.1f}% | "
               f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days}) | "
               f"Penalty threshold @ {args.threshold_penalty_for_low_events}")
     improve_score_function = args.use_z_score_boost
 
     def objective(trial):
+        _p_init = dict(trial.params)
         # New boolean toggle via Optuna
         use_ema_stretch = trial.suggest_categorical("use_ema_stretch", [True, False]) if not args.disable_ema_stretch else False
         use_volatility_compression = trial.suggest_categorical("use_volatility_compression", [True, False]) if not args.disable_volatility_compression else False
@@ -209,32 +208,36 @@ def run_professional_optimization(args):
         use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False]) if not args.disable_stochastic else False
         base_signal = trial.suggest_categorical("base_signal", base_signals)
 
-        cluster_window = fixed__cluster_window if fixed__cluster_window is not None else trial.suggest_int("cluster_window", 2, 120)
-        cluster_threshold = fixed__cluster_threshold if fixed__cluster_window is not None else trial.suggest_int("cluster_threshold", 2, 12)
+        p1, p2 , p3, p4 = int(str(args.cluster_window_params).split(",")[0]), int(str(args.cluster_window_params).split(",")[1]), bool(str(args.cluster_window_params).split(",")[2]), int(str(args.cluster_window_params).split(",")[3])
+        cluster_window = trial.suggest_int(name="cluster_window", low=p1, high=p2, log=p3, step=p4)
+        p1, p2, p3, p4 = int(str(args.cluster_threshold_params).split(",")[0]), int(str(args.cluster_threshold_params).split(",")[1]), bool(str(args.cluster_threshold_params).split(",")[2]), int(str(args.cluster_threshold_params).split(",")[3])
+        cluster_threshold = trial.suggest_int("cluster_threshold", low=p1, high=p2, log=p3, step=p4)
 
         # ---------------- Base signal ----------------
         cond_price = None
-        if base_signal == "simple_ma":
-            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
-            sma = ta.sma(close, length=sma_len)
-            cond_price = close > sma
-        elif base_signal == "ecart_type":
-            # Calcule à combien d'écarts-types le prix se trouve de la moyenne
-            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
-            sma = ta.sma(close, length=sma_len)
-            std = close.rolling(window=sma_len).std()
-            z_score = (close - sma) / std
-            cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
-        elif base_signal == "slope_3days":
-            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
-            sma = ta.sma(close, length=sma_len)
-            sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
-            cond_price = (close > sma) & (sma_slope > 0)
-        elif base_signal == "bull_market_global":
-            sma_len = trial.suggest_int("sma_len", 2, 100, log=False, step=1)
-            sma = ta.sma(close, length=sma_len)
-            cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
-            cond_price = (close > sma) & cond_regime
+        if base_signal in ["simple_ma", "ecart_type", "slope_3days", "bull_market_global"]:
+            sma_len_min, sma_len_max, sma_len_log, sma_len_step = int(str(args.sma_len_params).split(",")[0]), int(str(args.sma_len_params).split(",")[1]), bool(str(args.sma_len_params).split(",")[2]), int(str(args.sma_len_params).split(",")[3])
+            if base_signal == "simple_ma":
+                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
+                sma = ta.sma(close, length=sma_len)
+                cond_price = close > sma
+            elif base_signal == "ecart_type":
+                # Calcule à combien d'écarts-types le prix se trouve de la moyenne
+                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
+                sma = ta.sma(close, length=sma_len)
+                std = close.rolling(window=sma_len).std()
+                z_score = (close - sma) / std
+                cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
+            elif base_signal == "slope_3days":
+                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
+                sma = ta.sma(close, length=sma_len)
+                sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
+                cond_price = (close > sma) & (sma_slope > 0)
+            elif base_signal == "bull_market_global":
+                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
+                sma = ta.sma(close, length=sma_len)
+                cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
+                cond_price = (close > sma) & cond_regime
         elif base_signal == "breakout":
             lookback = trial.suggest_int("breakout_lookback", 10, 50, log=False, step=1)
             resistance = close.rolling(lookback).max().shift(1)
@@ -272,8 +275,10 @@ def run_professional_optimization(args):
             base_signal = base_signal & cond_macd
 
         if use_ema_stretch:
-            ema_len = trial.suggest_int("ema_len", 2, 200)
-            stretch_thresh = trial.suggest_float("stretch_thresh", 0.01, 0.08)
+            ema_len_min, ema_len_max, ema_len_log, ema_len_step = str(args.ema_stretch_params_ema_len).split(",")
+            ema_len = trial.suggest_int(name="ema_len", low=int(ema_len_min), high=int(ema_len_max), log=str2bool(ema_len_log), step=int(ema_len_step))
+            stretch_thresh_min, stretch_thresh_max, stretch_thresh_log, stretch_thresh_step = str(args.ema_stretch_params_stretch_treshold).split(",")
+            stretch_thresh = trial.suggest_float(name="stretch_thresh", low=float(stretch_thresh_min), high=float(stretch_thresh_max), log=str2bool(stretch_thresh_log), step=float(stretch_thresh_step))
             ema = ta.ema(close, length=ema_len)
             stretch = (close - ema) / ema
             cond_stretch = stretch > stretch_thresh
@@ -326,21 +331,22 @@ def run_professional_optimization(args):
 
             base_signal = base_signal & cond_stoch
 
+        # Vérifier si ces paramètres existent déjà dans les essais TERMINÉS
+        for t in trial.study.trials:
+            if t.state == optuna.trial.TrialState.COMPLETE and t.params == trial.params:
+                raise optuna.exceptions.TrialPruned("Paramètres déjà testés")
+        _p_before = dict(trial.params)
         # ---------------- Cluster logic ----------------
         omen_count = base_signal.rolling(cluster_window).sum()
-
         if CLUSTER_MODE == "every_day":
             cluster = omen_count >= cluster_threshold
         else:
             prev = omen_count.shift(1)
             cluster = (omen_count >= cluster_threshold) & (prev < cluster_threshold)
-
         signal_dates = cluster[cluster].index
         if len(signal_dates) < MIN_SIGNALS_REQUIRED: return -10
-
         cluster_targets = target.loc[signal_dates].dropna()
         if len(cluster_targets) < MIN_SIGNALS_REQUIRED: return -10
-
         win_rate = cluster_targets.mean() * 100
         n = len(cluster_targets)
         penalty = penalty_for_having_low_number_of_events(n)
@@ -356,6 +362,9 @@ def run_professional_optimization(args):
         trial.set_user_attr("total_events", int(total_events))
         trial.set_user_attr("total_days", int(total_days))
         trial.set_user_attr("n", int(n))
+        _p_after = dict(trial.params)
+        assert list(_p_before.keys()) == list(_p_after.keys()) and list(_p_before.values()) == list(_p_after.values())
+        assert list(_p_init.keys()) != list(_p_after.keys()) and list(_p_init.values()) != list(_p_after.values())
         return score
 
     def stop_at_threshold(study, trial):
@@ -370,7 +379,7 @@ def run_professional_optimization(args):
         multivariate=True,  # Model parameter dependencies
         warn_independent_sampling=False,
         group=True,  # Decompose conditional search space
-        n_startup_trials=20  # More exploration before pruning
+        n_startup_trials=60  # More exploration before pruning
     )
     if args.sampler == "cmaes":
         try:
@@ -427,6 +436,13 @@ def run_professional_optimization(args):
             print(f"\nStarting Optimization: {args.trials} trials or {args.timeout}s timeout...")
         study.optimize(objective, n_trials=args.trials, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks, gc_after_trial=False)
 
+    if args.verbose:
+        pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
+        complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        print(f"Total des essais : {len(study.trials)}")
+        print(f"Essais utiles (calculés) : {len(complete_trials)}")
+        print(f"Doublons évités (élagués) : {len(pruned_trials)}")
+
     # PLOTS
     if not args.no_plot:
         try:
@@ -443,14 +459,10 @@ def run_professional_optimization(args):
             print(f"\n⚠️ Plotting skipped: {e}")
 
     best_params = dict(study.best_params)
-    if fixed__cluster_threshold is not None:
-        best_params.update({'cluster_threshold': fixed__cluster_threshold})
-    if fixed__cluster_window is not None:
-        best_params.update({'cluster_window': fixed__cluster_window})
     best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'dataset_id': args.dataset_id, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE,
                         'mode': args.mode})
     info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
-                       forward_days=FORWARD_DAYS, threshold=THRESHOLD, event_direction="drop" if args.mode == "drop" else "upper", verbose=args.verbose)
+                       forward_days=FORWARD_DAYS, threshold=THRESHOLD, mode=args.mode, verbose=args.verbose)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
                         'penalty': study.best_trial.user_attrs['penalty']})
     if args.verbose:
@@ -474,7 +486,8 @@ def run_professional_optimization(args):
 # =========================================================
 # VERIFICATION & REAL-TIME PREDICTION
 # =========================================================
-def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, event_direction):
+def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, mode):
+    event_direction = "drop" if mode == "drop" else "upper"
     # 1. Base Signal Logic
     base_signal = params["base_signal"]
     cond_price = None
@@ -507,7 +520,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
     # 2. Calculate Indicators
     if params.get("use_rsi_indicator"):
         rsi = ta.rsi(df_data, length=params["rsi_len"])
-        if args.mode == "upper":
+        if mode == "upper":
             # Momentum without overextension
             cond_rsi = (rsi > 50) & (rsi < params["rsi_thresh"])
         else:
@@ -521,7 +534,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         macd_line = macd.iloc[:, 0]
         macd_sig = macd.iloc[:, 1]
         # Mode-aware MACD
-        if args.mode == "upper":
+        if mode == "upper":
             cond_macd = macd_line > macd_sig  # Bullish crossover
         else:
             cond_macd = macd_line < macd_sig  # Bearish crossover
@@ -696,7 +709,7 @@ def run_realtime_only(params_file, verbose):
     # Run verification with loaded params
     info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=best_params['cluster_mode'], params=best_params,
                        target=target,valid_mask=valid_mask, baseline=baseline,forward_days=FORWARD_DAYS, threshold=THRESHOLD,
-                       event_direction="drop" if best_params['mode'] == "drop" else "upper",verbose = verbose,)
+                       mode=best_params['mode'], verbose = verbose,)
     return info
 
 
@@ -763,18 +776,6 @@ if __name__ == "__main__":
         help="Minimum number of signals required to validate a trial. If None, defaults to 50 (crossover) or 250 (every_day)."
     )
     strat_group.add_argument(
-        "--fixed-cluster-window",
-        type=int,
-        default=None,
-        help="If set, fixes the rolling window size for clustering instead of optimizing it."
-    )
-    strat_group.add_argument(
-        "--fixed-cluster-threshold",
-        type=int,
-        default=None,
-        help="If set, fixes the signal count threshold for clustering instead of optimizing it."
-    )
-    strat_group.add_argument(
         "--threshold-penalty-for-low-events",
         type=float,
         default=0.5,
@@ -834,6 +835,13 @@ if __name__ == "__main__":
         default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
         help="Different startegies for the creation of the base signal."
     )
+
+    bound_group = parser.add_argument_group("Bound Parameters")
+    bound_group.add_argument("--sma-len-params", type=str, default="2,100,false,1", )
+    bound_group.add_argument("--ema-stretch-params-ema-len", type=str, default="2,200,false,1", )
+    bound_group.add_argument("--ema-stretch-params-stretch-treshold", type=str, default="0.01,0.08,false,0.01", )
+    bound_group.add_argument("--cluster-window-params", type=str, default="2,120,false,1", )
+    bound_group.add_argument("--cluster-threshold-params", type=str, default="2,12,false,1", )
 
     # --- Optimization Settings ---
     opt_group = parser.add_argument_group("Optimization Settings")

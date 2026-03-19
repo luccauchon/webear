@@ -4,7 +4,7 @@ import sys
 import time
 import pathlib
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
-
+import traceback
 # Attempt to import psutil, handle if missing gracefully if needed,
 # but assuming it's required based on original script.
 try:
@@ -26,10 +26,10 @@ from constants import IS_RUNNING_ON_CASIR
 from utils import format_execution_time
 
 # Default Grid Parameters (used if CLI args are not provided)
-DEFAULT_FORWARD_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+DEFAULT_FORWARD_DAYS = [1, 5, 10, 20]
 DEFAULT_THRESHOLDS_NEG = [-0.01, -0.0125, -0.020, -0.025, -0.03]
 DEFAULT_THRESHOLDS_POS = [0.01, 0.0125, 0.020, 0.025, 0.03]
-DEFAULT_PENALTIES = [250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000]
+DEFAULT_PENALTIES = [0.5, 0.8, 0.99]
 
 
 def parse_arguments():
@@ -108,6 +108,12 @@ Examples:
         default=None,
         help="List of penalty factor values for low events (space separated). e.g., 0.5 0.75 0.98"
     )
+    grid_group.add_argument(
+        "--base-signals",
+        type=str,
+        default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
+        help="Different startegies for the creation of the base signal."
+    )
 
     return parser.parse_args()
 
@@ -132,9 +138,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
         # print(f"[{os.getpid()}] Processing use_case", flush=True)
         try:
-            run_professional_optimization(use_case)
+            run_professional_optimization(args=use_case)
         except Exception as e:
+            error_msg = traceback.format_exc()
             print(f"[{os.getpid()}] Error processing use_case: {e}", flush=True)
+            print(f"[{os.getpid()}] Error processing use_case: {error_msg}", flush=True)
 
     # Signal completion
     out__shared.put((1, 2))
@@ -195,6 +203,8 @@ def main(args):
                     f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json"
                 )
                 configuration_experimentation = argparse.Namespace(
+                    dataset_id="day",
+                    softer_penalty_for_low_events=None,
                     forward_days=a_forward_days,
                     threshold=a_threshold,
                     cluster_mode='every_day',
@@ -212,7 +222,20 @@ def main(args):
                     timeout=timeout,
                     threshold_penalty_for_low_events=a_threshold_penalty_for_low_events,
                     no_plot=True,
-                    save_params_to=output_filename
+                    save_params_to=output_filename,
+                    disable_ema_stretch=False,
+                    disable_volatility_compression=False,
+                    disable_market_breadth_proxy=False,
+                    disable_trend_regime_filter=False,
+                    disable_rsi=False,
+                    disable_macd=False,
+                    disable_stochastic=False,
+                    base_signals=args.base_signals,
+                    sma_len_params="2,100,false,1",
+                    ema_stretch_params_ema_len="2,200,false,1",
+                    ema_stretch_params_stretch_treshold="0.01,0.08,false,0.01",
+                    cluster_window_params="2,120,false,1",
+                    cluster_threshold_params="2,120,false,1",
                 )
                 use_cases.append(configuration_experimentation)
     total_estimated_time = len(use_cases) * timeout / nb_workers
@@ -223,7 +246,7 @@ def main(args):
         sys.exit()
     # 5. Setup Multiprocessing
     # Note: Queue(maxsize) is valid, but standard Queue() is often safer for infinite buffering
-    use_cases__shared = Queue()
+    use_cases__shared = Queue(9999)
     master_cmd__shared = Value('i', 0)  # 'i' for signed int
 
     # Create a specific output queue for each worker to collect completion signals

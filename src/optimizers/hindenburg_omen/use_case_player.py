@@ -124,34 +124,53 @@ def main():
     if not args.disable_progress:
         iterator = tqdm(all_files_to_process, desc="Processing Files")
     _tmp_str_result = ''
-    # Iterate through each file and run the backtest logic
+
+    results = []
     for file in iterator:
-        # Run the core backtest function
-        # args.run_flag maps to the second hardcoded 'False' in the original script
         info = run_realtime_only(file, args.run_flag)
 
-        # Extract key metrics from the result
         is_active_now = info["is_active_now"]
 
-        # Mandatory: Print Signal Active status if the condition is met
         if is_active_now:
             event_direction = info["event_direction"]
             current_count = info["current_count"]
             cluster_threshold = info["cluster_threshold"]
 
-            # Determine direction word for display
             direction_word = "DROP" if event_direction == "drop" else "SPIKE"
+
+            # ✅ Correct colors
+            RED = "\033[91m"
             GREEN = "\033[92m"
             BOLD = "\033[1m"
             RESET = "\033[0m"
-            # Construct status strings
-            _tmp_str = f"SIGNAL ACTIVE:  {'YES - PREDICTING ' + direction_word if is_active_now else 'NO - NEUTRAL'}"
-            _tmp_str2 = f"{current_count} / {cluster_threshold}"
-            _tmp_str3 = f"[{info['event_direction']}]    {BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   Baseline: {info['baseline']:.2f}%   "#{info['threshold_penalty_for_low_events']}"
-            # Print the final signal alert
-            _tmp_str_result += f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2}) \n\t {info['is_active_str']}  {_tmp_str3} \n\n"
 
-    print(_tmp_str_result)
+            edge = info['win_rate'] - info['baseline']
+            edge_color = GREEN if edge > 0 else RED
+            _tmp_str = f"SIGNAL ACTIVE: YES - PREDICTING {direction_word}"
+            _tmp_str2 = f"{current_count} / {cluster_threshold}"
+
+            _tmp_str3 = (
+                f"[{event_direction}]    "
+                f"{BOLD}{edge_color}Edge: {edge:.2f}%{RESET}   "
+                f"{BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   "
+                f"Baseline: {info['baseline']:.2f}%"
+            )
+
+            result_str = (
+                f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})\n"
+                f"\t{info['is_active_str']}  {_tmp_str3}\n\n"
+            )
+
+            # ✅ store (edge, string)
+            results.append((edge, result_str))
+
+    # ✅ Sort by edge DESC (best → worst)
+    results.sort(key=lambda x: x[0], reverse=True)
+
+    # ✅ Print
+    for _, res in results:
+        print(res)
+
     print("-" * 50)
     print("Processing complete.")
 
