@@ -164,8 +164,8 @@ def main():
             # ✅ store (edge, string)
             results.append((edge, result_str))
 
-    # ✅ Sort by edge DESC (best → worst)
-    results.sort(key=lambda x: x[0], reverse=True)
+    # ✅ Sort by edge
+    results.sort(key=lambda x: x[0], reverse=False)
 
     # ✅ Print
     for _, res in results:
