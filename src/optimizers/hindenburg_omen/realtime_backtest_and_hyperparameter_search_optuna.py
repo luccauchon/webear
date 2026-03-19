@@ -148,7 +148,8 @@ def run_professional_optimization(args):
     close = df["Close"]
     df_open, df_low, df_high  = df['Open'], df['Low'], df['High']
     use_closing_price_strategy = False
-    print(f"Using the {'close-to-close stability' if use_closing_price_strategy else 'intra-day sensitivity'} to compute the target")
+    if args.verbose:
+        print(f"Using the {'close-to-close stability' if use_closing_price_strategy else 'intra-day sensitivity'} to compute the target")
     # =========================================================
     # TARGET CALCULATION (MODE-AWARE)
     # =========================================================
