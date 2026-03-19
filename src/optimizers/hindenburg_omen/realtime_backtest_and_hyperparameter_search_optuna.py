@@ -23,7 +23,7 @@ import pandas_ta as ta
 from argparse import Namespace
 import argparse
 import optuna
-from optuna.pruners import MedianPruner
+from optuna.pruners import MedianPruner,NopPruner
 from optuna.samplers import TPESampler
 from optuna.trial import TrialState
 from optuna.samplers import RandomSampler, GridSampler
@@ -147,7 +147,8 @@ def run_professional_optimization(args):
               f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
     df_open, df_low, df_high  = df['Open'], df['Low'], df['High']
-
+    use_closing_price_strategy = False
+    print(f"Using the {'close-to-close stability' if use_closing_price_strategy else 'intra-day sensitivity'} to compute the target")
     # =========================================================
     # TARGET CALCULATION (MODE-AWARE)
     # =========================================================
@@ -158,19 +159,45 @@ def run_professional_optimization(args):
         # shift(-1) : On décale pour s'assurer que le prix actuel (t) n'est pas inclus dans le calcul du "futur". On ne veut comparer t qu'avec [t+1,...t+N]
         # Comparaison : Si le rendement entre le prix actuel et le pire prix futur est inférieur ou égal à votre seuil (ex: -0.03), le 1 est déclenché.
         # Drop mode: look for minimum price in forward window
-        future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
-        df["Target_Pct_Change"] = (future_extreme - close) / close
-        # Negative threshold: e.g., -0.03 means 3% drop
-        df["Is_Event"] = (df["Target_Pct_Change"] <= THRESHOLD).astype(int)
-        event_direction = "drop"
-    else:  # upper mode
-        # Upper mode: look for maximum price in forward window
-        future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
-        df["Target_Pct_Change"] = (future_extreme - close) / close
-        # Positive threshold: e.g., 0.03 means 3% spike
-        df["Is_Event"] = (df["Target_Pct_Change"] >= THRESHOLD).astype(int)
-        event_direction = "spike"
+        if use_closing_price_strategy:
+            future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
+            df["Target_Pct_Change"] = (future_extreme - close) / close
+            # Negative threshold: e.g., -0.03 means 3% drop
+            df["Is_Event"] = (df["Target_Pct_Change"] <= THRESHOLD).astype(int)
+            df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
+        else:
+            # 1. Calcul du point le plus bas sur les N prochains jours
+            # On utilise df['low'] pour capturer l'extrême intra-day
+            future_low = df_low[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
+            # 2. Calcul du rendement potentiel (Close actuel vs Low futur)
+            df["Target_Pct_Change"] = (future_low - close) / close
+            # 3. Déclenchement de l'événement
+            # On utilise <= car le THRESHOLD est négatif (ex: -0.03)
+            df["Is_Event"] = (future_low <= close * (1 + THRESHOLD)).astype(int)
+            # 4. SÉCURITÉ : Invalider les dernières lignes
+            # Si FORWARD_DAYS = 10, les 10 dernières lignes n'ont pas assez de futur pour être valides
+            df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
 
+    else:  # upper mode
+        # # Upper mode: look for maximum price in forward window
+        if use_closing_price_strategy:
+            future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
+            df["Target_Pct_Change"] = (future_extreme - close) / close
+            # Positive threshold: e.g., 0.03 means 3% spike
+            df["Is_Event"] = (df["Target_Pct_Change"] >= THRESHOLD).astype(int)
+        else:
+            # 1. On cherche le prix le PLUS HAUT sur les N prochains jours
+            # On utilise .max() au lieu de .min()
+            future_high = df_high[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
+            # 2. Calcul du gain potentiel (Close actuel vs High futur)
+            # THRESHOLD doit être positif (ex: 0.05 pour +5%)
+            df["Target_Pct_Change"] = (future_high - close) / close
+            # 3. Déclenchement de l'événement si le gain >= Seuil
+            df["Is_Event"] = (future_high >= close * (1 + THRESHOLD)).astype(int)
+            # 4. SÉCURITÉ : On invalide les dernières lignes (données incomplètes)
+            df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
+
+    event_direction = "drop" if args.mode == "drop" else "spike"
     target = df["Is_Event"]
     valid_mask = df["Target_Pct_Change"].notna()
 
@@ -189,15 +216,15 @@ def run_professional_optimization(args):
             if n >= args.threshold_penalty_for_low_events:
                 return 1.0
             return 0.5 + 0.5 * (n / args.threshold_penalty_for_low_events)  # 0.5→1.0 range
+    improve_score_function = args.use_z_score_boost
     if args.verbose:
         print(f"\nMode: {event_direction.upper()} | Forward {FORWARD_DAYS} {args.dataset_id} | "
               f"Threshold: {THRESHOLD * 100:+.1f}% | "
               f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days}) | "
-              f"Penalty threshold @ {args.threshold_penalty_for_low_events}")
-    improve_score_function = args.use_z_score_boost
-
+              f"Penalty threshold @ {args.threshold_penalty_for_low_events}"
+              f"{' | Use Z-Score boost' if improve_score_function else ''} | "
+              f"Optimizing Edge")
     def objective(trial):
-        _p_init = dict(trial.params)
         # New boolean toggle via Optuna
         use_ema_stretch = trial.suggest_categorical("use_ema_stretch", [True, False]) if not args.disable_ema_stretch else False
         use_volatility_compression = trial.suggest_categorical("use_volatility_compression", [True, False]) if not args.disable_volatility_compression else False
@@ -331,11 +358,6 @@ def run_professional_optimization(args):
 
             base_signal = base_signal & cond_stoch
 
-        # Vérifier si ces paramètres existent déjà dans les essais TERMINÉS
-        for t in trial.study.trials:
-            if t.state == optuna.trial.TrialState.COMPLETE and t.params == trial.params:
-                raise optuna.exceptions.TrialPruned("Paramètres déjà testés")
-        _p_before = dict(trial.params)
         # ---------------- Cluster logic ----------------
         omen_count = base_signal.rolling(cluster_window).sum()
         if CLUSTER_MODE == "every_day":
@@ -348,23 +370,25 @@ def run_professional_optimization(args):
         cluster_targets = target.loc[signal_dates].dropna()
         if len(cluster_targets) < MIN_SIGNALS_REQUIRED: return -10
         win_rate = cluster_targets.mean() * 100
+        # # Early pruning if win_rate is below baseline
+        # if win_rate < baseline:
+        #     raise optuna.TrialPruned()
         n = len(cluster_targets)
         penalty = penalty_for_having_low_number_of_events(n)
         assert 0 <= penalty <= 1
         trial.set_user_attr("penalty", penalty)
-        score = win_rate * penalty
-        trial.report(score, step=n)
-        if trial.should_prune(): raise optuna.TrialPruned()
         z = (win_rate / 100 - baseline / 100) / math.sqrt((baseline / 100) * (1 - baseline / 100) / n)
         trial.set_user_attr("z_score", float(z))
         if improve_score_function:
-            score = win_rate * penalty + z * 10
+            edge = (win_rate - baseline) / 100  # Edge as decimal
+            statistical_confidence = min(abs(z) / 1.96, 1.0)  # Normalize to p<0.05 threshold
+            score = (edge * penalty) * (1 + 0.5 * statistical_confidence)  # Cap boost at 50%
+        else:
+            score = (win_rate - baseline) * penalty  # Only reward edge over baseline
+        trial.report(score, step=n)
         trial.set_user_attr("total_events", int(total_events))
         trial.set_user_attr("total_days", int(total_days))
         trial.set_user_attr("n", int(n))
-        _p_after = dict(trial.params)
-        assert list(_p_before.keys()) == list(_p_after.keys()) and list(_p_before.values()) == list(_p_after.values())
-        assert list(_p_init.keys()) != list(_p_after.keys()) and list(_p_init.values()) != list(_p_after.values())
         return score
 
     def stop_at_threshold(study, trial):
@@ -439,9 +463,7 @@ def run_professional_optimization(args):
     if args.verbose:
         pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
         complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-        print(f"Total des essais : {len(study.trials)}")
-        print(f"Essais utiles (calculés) : {len(complete_trials)}")
-        print(f"Doublons évités (élagués) : {len(pruned_trials)}")
+        print(f"Total des essais : {len(study.trials)}    Essais utiles (calculés) : {len(complete_trials)}    Doublons évités (élagués) : {len(pruned_trials)}")
 
     # PLOTS
     if not args.no_plot:
@@ -460,7 +482,7 @@ def run_professional_optimization(args):
 
     best_params = dict(study.best_params)
     best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'dataset_id': args.dataset_id, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE,
-                        'mode': args.mode})
+                        'mode': args.mode, 'use_closing_price_strategy': use_closing_price_strategy})
     info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, mode=args.mode, verbose=args.verbose)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
@@ -679,22 +701,51 @@ def run_realtime_only(params_file, verbose):
     # Calculate target for verification (historical performance only)
     FORWARD_DAYS = best_params['forward_days']
     THRESHOLD = best_params['threshold']
-
+    use_closing_price_strategy = best_params['use_closing_price_strategy']
     if best_params['mode'] == "drop":
+        # Pour chaque ligne t:
+        # close[::-1] : On retourne la liste des prix (le futur devient le passé).
+        # rolling(FORWARD_DAYS).min() : On trouve le prix le plus bas dans les jours précédents (qui sont en fait les jours suivants dans le temps réel).
+        # Comparaison : Si le rendement entre le prix actuel et le pire prix futur est inférieur ou égal à votre seuil (ex: -0.03), le 1 est déclenché.
         # Drop mode: look for minimum price in forward window
-        future_extreme = close.shift(-1).rolling(FORWARD_DAYS, min_periods=FORWARD_DAYS).min()
-        df["Target_Pct_Change"] = (future_extreme - close) / close
-        # Negative threshold: e.g., -0.03 means 3% drop
-        df["Is_Event"] = (df["Target_Pct_Change"] <= THRESHOLD).astype(int)
-        event_direction = "drop"
+        if use_closing_price_strategy:
+            future_extreme = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
+            df["Target_Pct_Change"] = (future_extreme - close) / close
+            # Negative threshold: e.g., -0.03 means 3% drop
+            df["Is_Event"] = (df["Target_Pct_Change"] <= THRESHOLD).astype(int)
+            df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
+        else:
+            # 1. Calcul du point le plus bas sur les N prochains jours
+            # On utilise df['low'] pour capturer l'extrême intra-day
+            future_low = df_low[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
+            # 2. Calcul du rendement potentiel (Close actuel vs Low futur)
+            df["Target_Pct_Change"] = (future_low - close) / close
+            # 3. Déclenchement de l'événement
+            # On utilise <= car le THRESHOLD est négatif (ex: -0.03)
+            df["Is_Event"] = (future_low <= close * (1 + THRESHOLD)).astype(int)
+            # 4. SÉCURITÉ : Invalider les dernières lignes
+            # Si FORWARD_DAYS = 10, les 10 dernières lignes n'ont pas assez de futur pour être valides
+            df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
     else:  # upper mode
-        # Upper mode: look for maximum price in forward window
-        future_extreme = close.shift(-1).rolling(FORWARD_DAYS, min_periods=FORWARD_DAYS).max()
-        df["Target_Pct_Change"] = (future_extreme - close) / close
-        # Positive threshold: e.g., 0.03 means 3% spike
-        df["Is_Event"] = (df["Target_Pct_Change"] >= THRESHOLD).astype(int)
-        event_direction = "spike"
+        # # Upper mode: look for maximum price in forward window
+        if use_closing_price_strategy:
+            future_extreme = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
+            df["Target_Pct_Change"] = (future_extreme - close) / close
+            # Positive threshold: e.g., 0.03 means 3% spike
+            df["Is_Event"] = (df["Target_Pct_Change"] >= THRESHOLD).astype(int)
+        else:
+            # 1. On cherche le prix le PLUS HAUT sur les N prochains jours
+            # On utilise .max() au lieu de .min()
+            future_high = df_high[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
+            # 2. Calcul du gain potentiel (Close actuel vs High futur)
+            # THRESHOLD doit être positif (ex: 0.05 pour +5%)
+            df["Target_Pct_Change"] = (future_high - close) / close
+            # 3. Déclenchement de l'événement si le gain >= Seuil
+            df["Is_Event"] = (future_high >= close * (1 + THRESHOLD)).astype(int)
+            # 4. SÉCURITÉ : On invalide les dernières lignes (données incomplètes)
+            df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
 
+    event_direction = "drop" if args.mode == "drop" else "spike"
     target = df["Is_Event"]
     valid_mask = df["Target_Pct_Change"].notna()
 
@@ -778,7 +829,7 @@ if __name__ == "__main__":
     strat_group.add_argument(
         "--threshold-penalty-for-low-events",
         type=float,
-        default=0.5,
+        default=0.95,
         help="Minimal number (pourcentage of the total number of events) of required past events to disable penalty on the score."
     )
     strat_group.add_argument(

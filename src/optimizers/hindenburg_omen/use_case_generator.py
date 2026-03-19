@@ -45,7 +45,7 @@ Examples:
   python script.py --nb-workers 8 --experience-id my_exp_v1
 
   # Custom hyperparameter grid
-  python script.py --forward-days 1 5 10 --thresholds -0.05 -0.01 --penalties 1000 5000
+  python script.py --forward-days 1 5 10 --thresholds -0.05 -0.01 --penalties 0.9 0.99
         """
     )
 
