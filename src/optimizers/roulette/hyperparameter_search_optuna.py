@@ -413,6 +413,7 @@ def get_default_namespace(args):
         model_overrides='{}',
         add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
         add_close_diff=args.add_close_diff,
+        drop_when_out_of_range=args.drop_when_out_of_range,
     )
 
 
@@ -557,6 +558,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose_debug', type=str2bool, default=False,
                         help='Whether to enable verbose debugging or not in the realtime-backtest module')
 
+    parser.add_argument('--drop_when_out_of_range', type=str2bool, default=False)
     parser.add_argument('--activate_sma_space_search', type=str2bool, default=False)
     parser.add_argument('--activate_ema_space_search', type=str2bool, default=False)
     parser.add_argument('--activate_rsi_space_search', type=str2bool, default=False)
