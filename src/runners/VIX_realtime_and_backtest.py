@@ -115,8 +115,8 @@ def main(args):
             if args.adj_call__rsi or args.adj_put__rsi:
                 # 2. Momentum Filter: 14-Day RSI
                 delta = past_df.diff()
-                gain = (delta.where(delta > 0, 0)).rolling(window=args.rsi_period).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=args.rsi_period).mean()
+                gain = (delta.where(delta > 0, 0)).rolling(window=int(args.rsi_period)).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(window=int(args.rsi_period)).mean()
                 rs = gain / loss
                 rsi = 100 - (100 / (1 + rs))
                 rsi_val = rsi.iloc[-1]
@@ -134,7 +134,7 @@ def main(args):
                 vol_structure = 'BACKWARDATION (Fear)' if vix_ratio > 1.0 else 'CONTANGO (Normal)'
 
             if args.adj_call__ema or args.adj_put__ema:
-                # 4. --- 🚀 NEW: EMA DIRECTIONAL LOGIC 🚀 ---
+                # 4. --- 🚀 EMA DIRECTIONAL LOGIC 🚀 ---
                 # Calculate EMAs on the PAST data only (no look-ahead bias)
                 # adjust=False makes it behave like standard trading view EMA
                 ema_short_series = past_df.ewm(span=args.ema_short, adjust=False).mean()

@@ -465,15 +465,6 @@ def new_main(args, bring_my_own_df=None):
                           f"({restricted_stats['number_of_n_plus_one_consecutive_step']}/{restricted_stats['number_of_n_consecutive_step']})")
                     if cond_prob*100. < 5:  # Below 5%, we stop
                         break
-            # if stats['count'] > 0:
-            #     print(f"{'Next Return μ:':<20} {stats['mean']*100:+8.2f}%")
-            #     print(f"{'Next Return σ:':<20} {stats['std']*100:8.2f}%")
-            #     if 'pre_window_mean' in stats:
-            #         print(f"{'Pre-Window μ:':<20} {stats['pre_window_mean']*100:+8.2f}%")
-            #         print(f"{'Pre-Window σ:':<20} {stats['pre_window_std']*100:8.2f}%")
-            # else:
-            #     print(f"{'Next Return μ:':<20} {'N/A':>8}")
-            #     print(f"{'Next Return σ:':<20} {'N/A':>8}")
         returned_results.update({NN: {'NN': NN, 'frequency': data_frequency, 'prob': pct, 'count': stats['count'], 'total_streaks': stats['total'], 'delta': delta}})
         if stats['count'] == 0:
             if verbose:

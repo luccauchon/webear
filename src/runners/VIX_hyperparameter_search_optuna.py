@@ -302,16 +302,6 @@ def create_configuration___2026_02_20__0_25pct(args, trial):
     """
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
-    def suggest_int(name, low, high, default):
-        return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
-
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
     # but the optimizer will only see the selected score.
@@ -331,43 +321,43 @@ def create_configuration___2026_02_20__0_25pct(args, trial):
     )
 
     # --- EMA ---
-    configuration.adj_call__ema = True
-    configuration.adj_put__ema = True
+    configuration.adj_call__ema = trial.suggest_categorical("adj_call__ema", [True])
+    configuration.adj_put__ema = trial.suggest_categorical("adj_put__ema", [True])
     # Only suggest parameters if at least one EMA is active to save search space,
     # or always suggest if the underlying function requires the values to exist.
     # Safest is to always suggest, but conditional is more efficient.
     # Assuming underlying code checks the boolean flag first.
-    configuration.ema_short = suggest_int("ema_short", 5, 50, 21)
-    configuration.ema_long = suggest_int("ema_long", 50, 200, 50)
-    configuration.adj_call__ema_factor = 1.0025
-    configuration.adj_put__ema_factor = 0.9975
+    configuration.ema_short = trial.suggest_int("ema_short", low=5, high=50, step=5)
+    configuration.ema_long = trial.suggest_int("ema_long", low=50, high=200, step=5)
+    configuration.adj_call__ema_factor = trial.suggest_float(name='adj_call__ema_factor', low=1.0025, high=1.0025, step=0.01)
+    configuration.adj_put__ema_factor = trial.suggest_float(name='adj_put__ema_factor', low=0.9975, high=0.9975, step=0.01)
 
     # --- SMA ---
-    configuration.adj_call__sma = True
-    configuration.adj_put__sma = True
-    configuration.sma_period = suggest_int("sma_period", 10, 100, 50)
-    configuration.adj_call__sma_factor = 1.0025
-    configuration.adj_put__sma_factor = 0.9975
+    configuration.adj_call__sma = trial.suggest_categorical("adj_call__sma", [True])
+    configuration.adj_put__sma = trial.suggest_categorical("adj_put__sma", [True])
+    configuration.sma_period = trial.suggest_int(name="sma_period", low=10, high=100, step=5)
+    configuration.adj_call__sma_factor = trial.suggest_float(name='adj_call__sma_factor', low=1.0025, high=1.0025, step=0.01)
+    configuration.adj_put__sma_factor = trial.suggest_float(name='adj_put__sma_factor', low=0.9975, high=0.9975, step=0.01)
 
     # --- RSI ---
-    configuration.adj_call__rsi = True
-    configuration.adj_put__rsi = True
-    configuration.rsi_period = suggest_int("rsi_period", 5, 30, 14)
-    configuration.adj_call__rsi_factor = 1.0025
-    configuration.adj_put__rsi_factor = 0.9975
+    configuration.adj_call__rsi = trial.suggest_categorical("adj_call__rsi", [True])
+    configuration.adj_put__rsi = trial.suggest_categorical("adj_put__rsi", [True])
+    configuration.rsi_period = trial.suggest_int("rsi_period", low=5, high=30, step=1)
+    configuration.adj_call__rsi_factor = trial.suggest_float(name='adj_call__rsi_factor', low=1.0025, high=1.0025, step=0.01)
+    configuration.adj_put__rsi_factor = trial.suggest_float(name='adj_put__rsi_factor', low=0.9975, high=0.9975, step=0.01)
 
     # --- MACD ---
-    configuration.adj_call__macd = True
-    configuration.adj_put__macd = True
-    configuration.macd_fast_period = suggest_int("macd_fast_period", 5, 20, 12)
-    configuration.macd_slow_period = suggest_int("macd_slow_period", 20, 50, 26)
-    configuration.macd_signal_period = suggest_int("macd_signal_period", 5, 15, 9)
-    configuration.adj_call__macd_factor = 1.0025
-    configuration.adj_put__macd_factor = 0.9975
+    configuration.adj_call__macd = trial.suggest_categorical("adj_call__macd", [True])
+    configuration.adj_put__macd = trial.suggest_categorical("adj_put__macd", [True])
+    configuration.macd_fast_period = trial.suggest_int("macd_fast_period", low=5, high=20, step=1)
+    configuration.macd_slow_period = trial.suggest_int("macd_slow_period", low=20, high=50, step=5)
+    configuration.macd_signal_period = trial.suggest_int("macd_signal_period", low=5, high=15, step=1)
+    configuration.adj_call__macd_factor = trial.suggest_float(name='adj_call__macd_factor', low=1.0025, high=1.0025, step=0.01)
+    configuration.adj_put__macd_factor = trial.suggest_float(name='adj_put__macd_factor', low=0.9975, high=0.9975, step=0.01)
 
     # --- Contango ---
-    configuration.adj_call_and_put__contango = True
-    configuration.adj_call_and_put__contango_factor = 0.005
+    configuration.adj_call_and_put__contango = trial.suggest_categorical("adj_call_and_put__contango", [True])
+    configuration.adj_call_and_put__contango_factor = trial.suggest_float(name='adj_call_and_put__contango_factor', low=0.005, high=0.005, step=0.01)
 
     return configuration
 
