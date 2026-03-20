@@ -215,7 +215,7 @@ def main(args):
         low_col    = ("Low", args.ticker)
         close_col  = ("Close", args.ticker)
         volume_col = ("Volume", args.ticker)
-        vix__master_data_cache = copy.deepcopy(master_data_cache['^VIX'].sort_index()[('Close', '^VIX')])
+        vix__master_data_cache   = copy.deepcopy(master_data_cache['^VIX'].sort_index()[('Close', '^VIX')])
         vix1d__master_data_cache = copy.deepcopy(master_data_cache['^VIX1D'].sort_index()[('Close', '^VIX1D')])
         vix3m__master_data_cache = copy.deepcopy(master_data_cache['^VIX3M'].sort_index()[('Close', '^VIX3M')])
         # ---------------------------------------------------------
@@ -403,6 +403,13 @@ def main(args):
         master_data_cache[('negative_probability', args.ticker)] = master_data_cache[('NEG_SEQ', args.ticker)].map(neg_map)
 
         # ---------------------------------------------------------
+        # Add future information: whether the next opening is withing low/high values
+        # In real time, user will discard the use of the model if this condition is met.
+        # ---------------------------------------------------------
+        if args.drop_when_out_of_range:
+            master_data_cache[("next_step_withing_low_high", args.ticker)] = master_data_cache[close_col].shift(-1).between(master_data_cache[low_col], master_data_cache[high_col],inclusive="both")
+
+        # ---------------------------------------------------------
         # BUILD FEATURE LIST (Xs)
         # ---------------------------------------------------------
         Xs = []
@@ -480,15 +487,17 @@ def main(args):
                 vix__master_data_cache = vix__master_data_cache.loc[master_data_cache.index]
         for step_back in tqdm(range(0, step_back_range + 1)) if args.verbose else range(0, step_back_range + 1):
             if 0 == step_back:
-                past_df = master_data_cache[close_col]
-                future_df = master_data_cache[close_col]
-                vix_df = vix__master_data_cache
-                continue # skip real time
+                past_df   = master_data_cache.dropna()
+                future_df = None
+                vix_df = vix__master_data_cache.dropna()
+                if not args.real_time_only:
+                    continue
             else:
+                assert not args.real_time_only
                 past_df   = master_data_cache.iloc[:-step_back].dropna()
                 future_df = master_data_cache.iloc[-step_back:].dropna()
                 vix_df    = vix__master_data_cache.iloc[:-step_back].dropna()
-            if args.look_ahead > len(future_df) or 0 == len(past_df):
+            if not args.real_time_only and args.look_ahead > len(future_df) or 0 == len(past_df):
                 continue
             if use_vix and 0 == len(vix_df):
                 continue
@@ -501,11 +510,12 @@ def main(args):
             #     print(f"VIX   : {vix_df.index[0].strftime('%Y-%m-%d')}/{vix_df.index[-1].strftime('%Y-%m-%d')}")
             # print(f"Using {past_df.index[0].strftime('%Y-%m-%d')}/{past_df.index[-1].strftime('%Y-%m-%d')} to predict {future_df.index[args.look_ahead - 1].strftime('%Y-%m-%d')}")
             # print(f"\n\n")
-            assert past_df.index.intersection(future_df.index).empty, "Indices must be disjoint"
+            if not args.real_time_only:
+                assert past_df.index.intersection(future_df.index).empty, "Indices must be disjoint"
             _pos_val, _neg_val = past_df.iloc[-1][("POS_SEQ", args.ticker)], past_df.iloc[-1][("NEG_SEQ", args.ticker)]
             assert not (_pos_val != 0 and _neg_val != 0), f"Sanity Check Failed: POS_SEQ ({_pos_val}) and NEG_SEQ ({_neg_val}) are both non-zero at {past_df.index[-1]}"
             the_X = past_df.iloc[-1][Xs].copy().sort_index()
-            the_Y = future_df.iloc[args.look_ahead - 1][Ys].copy()
+            the_Y = future_df.iloc[args.look_ahead - 1][Ys].copy() if not args.real_time_only else None
             # --- NORMALIZATION FOR STATIONARITY ---
             baseline_price = the_X[close_col]
             if isinstance(baseline_price, pd.Series):
@@ -528,75 +538,86 @@ def main(args):
                     assert False, f"{args.convert_price_level_with_baseline=}"
             the_d_data.append(past_df.index[-1])
             the_x_data.append(the_X.values)
-            the_y_data.append(the_Y.values)
+            if not args.real_time_only:
+                the_y_data.append(the_Y.values)
+            if args.real_time_only:
+                break
         the_x_data = np.asarray(the_x_data[::-1])
-        the_y_data = np.asarray(the_y_data[::-1])
+        the_y_data = np.asarray(the_y_data[::-1]) if not args.real_time_only else None
         the_d_data = np.asarray(the_d_data[::-1])
         if args.verbose:
             print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
-        assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
+        assert the_d_data[0] <= the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!  {the_d_data[0]} < {the_d_data[-1]}"
         # Ensure the_y_data is 1D
-        the_y_data = the_y_data.ravel()
-        num_classes = len(np.unique(the_y_data))
-        if -1 != args.min_percentage_to_keep_class:
-            # Calculate class distribution
-            unique_classes, counts = np.unique(the_y_data, return_counts=True)
-            total_samples = len(the_y_data)
-            class_percentages = counts / total_samples * 100
-
-            if args.verbose:
-                print(f"Class distribution before filtering:")
-                for cls, cnt, pct in zip(unique_classes, counts, class_percentages):
-                    print(f"  Class {cls}: {cnt} samples ({pct:.2f}%)")
-
-            # Identify classes with >= X% of samples
-            valid_classes = unique_classes[class_percentages >= args.min_percentage_to_keep_class]
-            invalid_classes = unique_classes[class_percentages < args.min_percentage_to_keep_class]
-            if len(invalid_classes) > 0:
-                if args.verbose:
-                    print(f"Removing {len(invalid_classes)} class(es) with < {args.min_percentage_to_keep_class}% samples: {invalid_classes}")
-                # Create mask for valid samples
-                mask = np.isin(the_y_data, valid_classes)
-                # Filter data - index axis 0 explicitly for 2D arrays
-                the_x_data = the_x_data[mask, :] if the_x_data.ndim > 1 else the_x_data[mask]
-                the_y_data = the_y_data[mask]
-                the_d_data = the_d_data[mask]
-                if args.verbose:
-                    print(f"Removed {np.sum(~mask)} samples. Remaining: {len(the_y_data)}")
-            # Recalculate num_classes after filtering
+        if not args.real_time_only:
+            the_y_data = the_y_data.ravel()
             num_classes = len(np.unique(the_y_data))
-            assert num_classes > 1, f"There shall be more than 1 class"
-            if args.verbose:
-                unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
-                print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
-                print(f"Count per class:")
-                for cls, cnt in zip(unique_classes_new, counts_new):
-                    print(f"  Class {int(cls)}: {int(cnt)} samples")
-                print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
-        # --- Filter by specified classes (e.g., [0, 1, 2]) ---
-        if len(args.specific_wanted_class) > 0:
-            initial_mask = np.isin(the_y_data, args.specific_wanted_class)
-            the_x_data = the_x_data[initial_mask]
-            the_y_data = the_y_data[initial_mask]
-            the_d_data = the_d_data[initial_mask]
-            if args.verbose:
-                print(f"Kept only specified classes {args.specific_wanted_class}. Samples remaining: {len(the_y_data)}")
-            # Recalculate num_classes after filtering by classes
-            num_classes = len(np.unique(the_y_data))
-            assert num_classes > 1, f"There shall be more than 1 class"
-        assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
+            if -1 != args.min_percentage_to_keep_class:
+                # Calculate class distribution
+                unique_classes, counts = np.unique(the_y_data, return_counts=True)
+                total_samples = len(the_y_data)
+                class_percentages = counts / total_samples * 100
+
+                if args.verbose:
+                    print(f"Class distribution before filtering:")
+                    for cls, cnt, pct in zip(unique_classes, counts, class_percentages):
+                        print(f"  Class {cls}: {cnt} samples ({pct:.2f}%)")
+
+                # Identify classes with >= X% of samples
+                valid_classes = unique_classes[class_percentages >= args.min_percentage_to_keep_class]
+                invalid_classes = unique_classes[class_percentages < args.min_percentage_to_keep_class]
+                if len(invalid_classes) > 0:
+                    if args.verbose:
+                        print(f"Removing {len(invalid_classes)} class(es) with < {args.min_percentage_to_keep_class}% samples: {invalid_classes}")
+                    # Create mask for valid samples
+                    mask = np.isin(the_y_data, valid_classes)
+                    # Filter data - index axis 0 explicitly for 2D arrays
+                    the_x_data = the_x_data[mask, :] if the_x_data.ndim > 1 else the_x_data[mask]
+                    the_y_data = the_y_data[mask]
+                    the_d_data = the_d_data[mask]
+                    if args.verbose:
+                        print(f"Removed {np.sum(~mask)} samples. Remaining: {len(the_y_data)}")
+                # Recalculate num_classes after filtering
+                num_classes = len(np.unique(the_y_data))
+                assert num_classes > 1, f"There shall be more than 1 class"
+                if args.verbose:
+                    unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
+                    print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
+                    print(f"Count per class:")
+                    for cls, cnt in zip(unique_classes_new, counts_new):
+                        print(f"  Class {int(cls)}: {int(cnt)} samples")
+                    print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
+            # --- Filter by specified classes (e.g., [0, 1, 2]) ---
+            if len(args.specific_wanted_class) > 0:
+                initial_mask = np.isin(the_y_data, args.specific_wanted_class)
+                the_x_data = the_x_data[initial_mask]
+                the_y_data = the_y_data[initial_mask]
+                the_d_data = the_d_data[initial_mask]
+                if args.verbose:
+                    print(f"Kept only specified classes {args.specific_wanted_class}. Samples remaining: {len(the_y_data)}")
+                # Recalculate num_classes after filtering by classes
+                num_classes = len(np.unique(the_y_data))
+                assert num_classes > 1, f"There shall be more than 1 class"
+            assert the_d_data[0] < the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!"
         if args.save_dataset_to_file_and_exit is not None:
-            if args.verbose:
-                print(f"Saving data arrays to disk...")
-                print(f"  the_x_data shape: {the_x_data.shape}, dtype: {the_x_data.dtype}")
-                print(f"  the_y_data shape: {the_y_data.shape}, dtype: {the_y_data.dtype}")
-                print(f"  the_d_data shape: {the_d_data.shape}, dtype: {the_d_data.dtype}")
+            if args.real_time_only:
+                num_classes = args.real_time_only_num_classes
+                if args.verbose:
+                    print(f"Saving data arrays to disk...")
+                    print(f"  the_x_data shape: {the_x_data.shape}, dtype: {the_x_data.dtype}")
+                    print(f"  the_d_data shape: {the_d_data.shape}, dtype: {the_d_data.dtype}")
+            else:
+                assert num_classes is not None
+                if args.verbose:
+                    print(f"Saving data arrays to disk...")
+                    print(f"  the_x_data shape: {the_x_data.shape}, dtype: {the_x_data.dtype}")
+                    print(f"  the_y_data shape: {the_y_data.shape}, dtype: {the_y_data.dtype}")
+                    print(f"  the_d_data shape: {the_d_data.shape}, dtype: {the_d_data.dtype}")
             args_array = np.array(vars(args), dtype=object)
             np.savez_compressed(args.save_dataset_to_file_and_exit, x=the_x_data, y=the_y_data, d=the_d_data, args=args_array, num_classes=num_classes, xs=Xs, ys=Ys)
-            file_size = os.path.getsize(args.save_dataset_to_file_and_exit) / (1024 * 1024)  # Size in MB
             if args.verbose:
-                print(f"Saved to {args.save_dataset_to_file_and_exit} ({file_size:.2f} MB)")
-            sys.exit(0)
+                print(f"Saved to {args.save_dataset_to_file_and_exit}")
+            return
     else:
         # Load the .npz file
         data = np.load(args.compiled_dataset_filename, allow_pickle=True)
@@ -625,9 +646,68 @@ def main(args):
             print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
             print(f"Count per class:")
             for cls, cnt in zip(unique_classes_new, counts_new):
-                print(f"  Class {int(cls)}: {int(cnt)} samples")
+                if cls is not None:
+                    print(f"  Class {int(cls)}: {int(cnt)} samples")
             print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
             print(f"Xs={Xs}    Ys={Ys}")
+
+    # ---------------------------------------------------------
+    # LOAD MODEL AND PREDICT
+    # ---------------------------------------------------------
+    if args.load_model_path is not None and args.real_time_only and args.compiled_dataset_filename is not None:
+        if args.verbose:
+            print("\n" + "=" * 80)
+            print("🔮 LOADING MODEL FOR REAL-TIME PREDICTION")
+            print("=" * 80)
+
+        # Load the saved model
+        model_data = load_model_for_inference(args.load_model_path, verbose=args.verbose)
+        assert len(the_x_data) == len(the_d_data)
+        # Prepare the latest data point from the compiled dataset
+        # Get the last row from the_x_data (most recent data)
+        latest_X = the_x_data[-1:].copy()  # Keep as 2D array (1, n_features)
+        date_of_data_point_x_used = the_d_data[-1]
+
+        if args.verbose:
+            print(f"\n📅 Data point used to make prediction: {date_of_data_point_x_used.strftime('%Y-%m-%d')}")
+            print(f"📊 Input Features Shape: {latest_X.shape}")
+            print(f"📋 Expected Features: {len(model_data['feature_list'])}")
+
+        # Make predictions
+        predicted_classes, prediction_probabilities = predict_with_saved_model(
+            model_data,
+            latest_X,
+            verbose=args.verbose
+        )
+
+        # Display Results
+        if args.verbose:
+            print("\n" + "=" * 80)
+            print("📈 PREDICTION RESULTS")
+            print("=" * 80)
+            print(f"Date of data point X used: {date_of_data_point_x_used.strftime('%Y-%m-%d')}")
+            print(f"Predicted Class: {predicted_classes[0]}")
+            print(f"\nClass Probabilities:")
+            for i, prob in enumerate(prediction_probabilities[0]):
+                print(f"  Class {i}: {prob:.4f} ({prob * 100:.2f}%)")
+
+            # Show model metadata
+            print(f"\n📦 Model Information:")
+            print(f"  Training Period: {model_data['training_date_range']['start']} to {model_data['training_date_range']['end']}")
+            print(f"  CV Accuracy: {model_data['cv_scores']['accuracy_mean']:.4f} (+/- {model_data['cv_scores']['accuracy_std']:.4f})")
+            print(f"  CV F1-Score: {model_data['cv_scores']['f1_mean']:.4f} (+/- {model_data['cv_scores']['f1_std']:.4f})")
+            print(f"  Number of Classes: {model_data['num_classes']}")
+            print(f"  Models in Ensemble: {list(model_data['models'].keys())}")
+            print("=" * 80)
+
+        # Return prediction results
+        return predicted_classes[0], prediction_probabilities[0], date_of_data_point_x_used, model_data
+
+    # ---------------------------------------------------------
+    # Existing training code continues here...
+    # ---------------------------------------------------------
+    if args.verbose:
+        print(f"Building the model...")
     tscv = TimeSeriesSplit(n_splits=5)
     acc_scores, f1_scores = [], []
     # Initialize lists to store per-class scores across folds ---
@@ -924,6 +1004,10 @@ if __name__ == "__main__":
                         help="Default: day")
     parser.add_argument("--look_ahead", type=int, default=1,
                         help="Default: 1")
+    parser.add_argument("--real-time-only",action="store_true",help="Skip optimization entirely; run only real-time prediction.")
+    parser.add_argument("--real-time-only-num-classes", type=int, default=None,help="Patch: specify the number of classes when using the real-time-only feature")
+    parser.add_argument('--drop_when_out_of_range', type=str2bool, default=False,
+                        help="Drop the line if the value is not between the preceding low/high values. Default: False")
     #
     parser.add_argument('--step_back_range', type=int, default=99999,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
@@ -990,6 +1074,9 @@ if __name__ == "__main__":
     )
     parser.add_argument('--save_model_path', type=str, default=None,
                         help="Path to save the trained model(s) and preprocessing objects for later inference.")
+    # Add this new argument to the argument parser (near line ~850)
+    parser.add_argument('--load_model_path', type=str, default=None,
+                        help="Path to load a saved model for inference. Use with --real-time-only and --compiled_dataset_filename")
     # ---------------------------------------------------------
     # MODEL HYPERPARAMETER ARGUMENTS
     # ---------------------------------------------------------
