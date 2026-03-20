@@ -22,6 +22,8 @@ import copy
 # Third-party optimization library
 import optuna
 
+# Set verbosity to INFO to see trial progress when using storage
+# (WARNING hides the optimization log table)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Suppress specific numpy warnings that are non-critical for this application
@@ -48,7 +50,7 @@ def main(args):
     # Extract frequently used args for clarity
     dataset_id = args.dataset_id
     step_back_range = args.step_back_range
-    n_trials = args.n_trials
+    total_n_trials = args.n_trials
 
     # =========================
     # Optuna Objective Function
@@ -58,7 +60,7 @@ def main(args):
         Objective function for Optuna: suggests hyperparameter values and returns backtest accuracy.
         Each trial tests a unique combination of strategy parameters.
         """
-        # Suggest hyperparameters within fixed ranges (you can make these dynamic via args if needed)
+        # Suggest hyperparameters within fixed ranges
         LOOKAHEAD = trial.suggest_int("LOOKAHEAD", args.lookahead_min, args.lookahead_max)
         RETURN_THRESHOLD = trial.suggest_float("RETURN_THRESHOLD", args.return_threshold_min, args.return_threshold_max)
         MMI_TREND_MAX = trial.suggest_int("MMI_TREND_MAX", args.mmi_trend_max_min, args.mmi_trend_max_max)
@@ -78,21 +80,67 @@ def main(args):
             step_back_range=step_back_range,
             use_ema=args.use_ema,
             verbose=False,
+            use_vix=args.use_vix,
         )
 
         # Run backtest and return accuracy (to be maximized)
-        metrics, results_df = MMI_backtest(configuration)
-        accuracy = metrics[args.metric]
-        return accuracy
+        try:
+            metrics, results_df = MMI_backtest(configuration)
+            accuracy = metrics[args.metric]
+            return accuracy
+        except Exception as e:
+            # Tell Optuna this trial failed so it doesn't count as a successful value
+            print(f"Trial {trial.number} failed with error: {e}")
+            raise optuna.exceptions.TrialPruned()
 
-    # Create and run the Optuna study
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+    # =========================
+    # Create/Load Study with Storage
+    # =========================
+    print(f"\n💾 Using Storage: {args.storage}")
+    print(f"📛 Study Name: {args.study_name}")
+
+    try:
+        study = optuna.create_study(
+            direction="maximize",
+            storage=args.storage,
+            study_name=args.study_name,
+            load_if_exists=True  # Crucial: Loads existing study if name matches
+        )
+        if len(study.trials) > 0:
+            print(f"⏩ Resuming existing study. Completed trials so far: {len(study.trials)}")
+        else:
+            print("🆕 Created new study.")
+
+    except Exception as e:
+        print(f"Error creating/loading study: {e}")
+        return
+
+    # =========================
+    # Calculate Remaining Trials
+    # =========================
+    current_trials = len(study.trials)
+    if current_trials >= total_n_trials:
+        print(f"\n✅ Target number of trials ({total_n_trials}) already reached.")
+        print("\n===== BEST PARAMETERS =====")
+        print(study.best_params)
+        print(f"Best Score: {study.best_value:.8f}")
+        return
+
+    trials_to_run = total_n_trials - current_trials
+    print(f"🚀 Running {trials_to_run} additional trials to reach target of {total_n_trials}...\n")
+
+    # Create a callback to print progress occasionally if needed,
+    # but show_progress_bar handles most of it.
+    study.optimize(objective, n_trials=trials_to_run, show_progress_bar=True)
 
     # Output best results
     print("\n===== BEST PARAMETERS =====")
     print(study.best_params)
     print(f"Best Score: {study.best_value:.8f}")
+
+    # Optional: Save best params to a file for easy access later
+    # with open(f"best_params_{args.study_name}.pkl", "wb") as f:
+    #     pickle.dump(study.best_params, f)
 
 
 if __name__ == "__main__":
@@ -115,9 +163,15 @@ if __name__ == "__main__":
     parser.add_argument('--step_back_range', type=int, default=15000,
                         help="Number of historical data points to consider during backtest")
     parser.add_argument('--n_trials', type=int, default=1500,
-                        help="Number of Optuna trials (hyperparameter combinations to test)")
+                        help="Total target number of Optuna trials")
 
-    # === New Hyperparameter Search Ranges ===
+    # === Persistence Args ===
+    parser.add_argument('--storage', type=str, default='sqlite:///mmi_optuna_study.db',
+                        help="Database URL for Optuna storage (e.g., sqlite:///db.sqlite3)")
+    parser.add_argument('--study_name', type=str, default=None,
+                        help="Unique name for the study. If None, defaults to ticker_dataset")
+
+    # === Hyperparameter Search Ranges ===
     # RETURN_THRESHOLD: min/max in decimal (e.g., 0.01 = 1%)
     parser.add_argument('--return_threshold_min', type=float, default=0.01,
                         help="Minimum return threshold (as decimal, e.g., 0.01 for 1pourcent)")
@@ -150,5 +204,12 @@ if __name__ == "__main__":
     parser.add_argument('--lookahead_min', type=int, default=5, help="Min look-ahead steps")
     parser.add_argument('--lookahead_max', type=int, default=5, help="Max look-ahead steps")
 
+    parser.add_argument('--use_vix', action='store_true')
+
     args = parser.parse_args()
+
+    # Auto-generate study name if not provided to avoid collisions
+    if args.study_name is None:
+        args.study_name = f"study_{args.ticker.replace('^', '')}_{args.dataset_id}"
+
     main(args)
