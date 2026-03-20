@@ -414,6 +414,7 @@ def get_default_namespace(args):
         add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
         add_close_diff=args.add_close_diff,
         drop_when_out_of_range=args.drop_when_out_of_range,
+        real_time_only=False,
     )
 
 
