@@ -32,6 +32,12 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 from utils import str2bool, DATASET_AVAILABLE, format_execution_time
 from sklearn.model_selection import ParameterGrid, ParameterSampler
 import time
+
+# =========================================================
+# FIXED SEARCH SPACE CONSTANTS (For Storage Compatibility)
+# =========================================================
+BASE_SIGNALS_OPTIONS = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
 # =========================================================
@@ -124,7 +130,7 @@ def run_professional_optimization(args):
     else:
         MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
 
-    base_signals = list(set(str(args.base_signals).split(",")))
+    base_signals = BASE_SIGNALS_OPTIONS # list(set(str(args.base_signals).split(",")))
     if args.verbose:
         if args.disable_ema_stretch:
             print(f"Disabling EMA strech indicator")
@@ -234,8 +240,8 @@ def run_professional_optimization(args):
         use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False]) if not args.disable_rsi else False
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False]) if not args.disable_macd else False
         use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False]) if not args.disable_stochastic else False
-        base_signal = trial.suggest_categorical("base_signal", base_signals)
-
+        # base_signal = trial.suggest_categorical("base_signal", base_signals)
+        base_signal = trial.suggest_categorical("base_signal", BASE_SIGNALS_OPTIONS)
         p1, p2 , p3, p4 = int(str(args.cluster_window_params).split(",")[0]), int(str(args.cluster_window_params).split(",")[1]), bool(str(args.cluster_window_params).split(",")[2]), int(str(args.cluster_window_params).split(",")[3])
         cluster_window = trial.suggest_int(name="cluster_window", low=p1, high=p2, log=p3, step=p4)
         p1, p2, p3, p4 = int(str(args.cluster_threshold_params).split(",")[0]), int(str(args.cluster_threshold_params).split(",")[1]), bool(str(args.cluster_threshold_params).split(",")[2]), int(str(args.cluster_threshold_params).split(",")[3])
@@ -430,36 +436,89 @@ def run_professional_optimization(args):
         }
         sampler = GridSampler(seed=RANDOM_SEED, search_space=search_space)
         pruner = None
+
     if args.sampler == "random":
         pruner = None
-        best_value, best_params, best_study = float(0), None, None
+
+    # =========================================================
+    # STORAGE & STUDY INITIALIZATION
+    # =========================================================
+    best_value, best_params, best_study = float(0), None, None
+
+    # Check if Persistent Storage is enabled
+    if args.storage:
+        # Ensure study name is unique based on config if not provided
+        if not args.study_name:
+            args.study_name = f"{args.ticker}_{args.mode}_f{args.forward_days}_t{args.threshold}_s{args.seed}"
+
+        # Normalize storage URL for SQLite
+        storage_url = args.storage
+        if not storage_url.startswith("sqlite:///") and not storage_url.startswith("sqlite:"):
+            storage_url = f"sqlite:///{storage_url}"
+
+        if args.verbose:
+            print(f"\n💾 Using Persistent Storage: {storage_url}")
+            print(f"📛 Study Name: {args.study_name}")
+
+        # Create or Load Study
+        study = optuna.create_study(
+            storage=storage_url,
+            study_name=args.study_name,
+            load_if_exists=True,
+            direction="maximize",
+            sampler=sampler,
+            pruner=pruner,
+        )
+
+        # Run Optimization (Continues from last trial if exists)
+        if args.verbose:
+            print(f"\nStarting Optimization: {args.trials} trials (or {args.timeout}s timeout)...")
+            existing_trials = len(study.trials)
+            print(f"Found {existing_trials} existing trials in storage.")
+
+        study.optimize(objective, n_trials=args.trials, timeout=args.timeout,
+                       show_progress_bar=True if args.verbose else False,
+                       callbacks=callbacks, gc_after_trial=False)
+
+        # Set best study for downstream processing
+        best_study = study
+        best_value = study.best_value
+        best_params = study.best_params
+    else:
+        # =========================================================
+        # IN-MEMORY MODE (Original Logic)
+        # =========================================================
         local_trial = 10000
         n_studies = int(args.trials // local_trial)
+        # Ensure at least 1 study if trials < local_trial
+        if n_studies == 0 and args.trials > 0:
+            n_studies = 1
+            local_trial = args.trials
+
         print(f"There will be {n_studies} studies of {local_trial} passes each")
         t1 = time.time()
         for j in range(n_studies):
             t2 = time.time()
-            sampler = RandomSampler(seed=RANDOM_SEED+j)
-            study = optuna.create_study(direction="maximize", sampler=sampler,pruner=pruner,)
-            study.optimize(objective, n_trials=local_trial, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks, gc_after_trial=False)
+            # In memory mode, we vary seed per study chunk
+            sampler_chunk = RandomSampler(seed=RANDOM_SEED + j) if args.sampler == "random" else sampler
+            study = optuna.create_study(direction="maximize", sampler=sampler_chunk, pruner=pruner)
+            study.optimize(objective, n_trials=local_trial, timeout=args.timeout,
+                           show_progress_bar=True if args.verbose else False,
+                           callbacks=callbacks, gc_after_trial=False)
             t3 = time.time()
             # On garde seulement le meilleur score de ce bloc
             if study.best_value > best_value:
                 best_study = study
                 best_value = study.best_value
                 best_params = study.best_params
-                print(f"@iter={j+1} Best value is {best_value}. Time remaining: {format_execution_time((t3-t2) * (n_studies-j))}")
+            print(f"@iter={j + 1} Best value is {best_value}. Time remaining: {format_execution_time((t3 - t2) * (n_studies - j))}")
+
         print(f"Best value is {best_value}\nBest parameters are:\n{best_params}")
         study = best_study  # For the rest of the code
-    else:
-        study = optuna.create_study(
-            direction="maximize",
-            sampler=sampler,
-            pruner=pruner,
-        )
-        if args.verbose:
-            print(f"\nStarting Optimization: {args.trials} trials or {args.timeout}s timeout...")
-        study.optimize(objective, n_trials=args.trials, timeout=args.timeout, show_progress_bar=True if args.verbose else False, callbacks=callbacks, gc_after_trial=False)
+
+    # =========================================================
+    # POST-OPTIMIZATION REPORTING
+    # =========================================================
 
     if args.verbose:
         pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
@@ -881,12 +940,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Do not use the Stochastic indicator"
     )
-    strat_group.add_argument(
-        "--base-signals",
-        type=str,
-        default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
-        help="Different startegies for the creation of the base signal."
-    )
+    # strat_group.add_argument(
+    #     "--base-signals",
+    #     type=str,
+    #     default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
+    #     help="Different startegies for the creation of the base signal."
+    # )
 
     bound_group = parser.add_argument_group("Bound Parameters")
     bound_group.add_argument("--sma-len-params", type=str, default="2,100,false,1", )
@@ -921,6 +980,13 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable Z-Score statistical boost in the objective function to favor statistical significance."
     )
+
+    # --- Storage & Resuming ---
+    storage_group = parser.add_argument_group("Storage & Resuming")
+    storage_group.add_argument("--storage", type=str, default=None,
+                               help="Path to SQLite DB for persistent storage (e.g., 'optuna.db'). Enables resuming.")
+    storage_group.add_argument("--study-name", type=str, default=None,
+                               help="Unique name for the study. If using --storage, use same name to resume.")
 
     # --- Output & Logging ---
     out_group = parser.add_argument_group("Output & Logging")
