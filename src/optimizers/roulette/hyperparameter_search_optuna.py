@@ -261,18 +261,55 @@ def main(args):
 
     if not OPTUNA_AVAILABLE:
         print("⚠️  Optuna not available. Running single backtest with default parameters.")
+        return
+
+    # --- Storage Configuration ---
+    storage_url = None
+    load_if_exists = False
+
+    if args.storage:
+        # Ensure SQLAlchemy is available for RDB Storage
+        try:
+            import sqlalchemy
+        except ImportError:
+            print("❌ Error: --storage requires 'sqlalchemy'. Please run: pip install 'optuna[sql]'")
+            return
+
+        # Format storage URL if not fully provided (e.g., 'study.db' -> 'sqlite:///study.db')
+        if not args.storage.startswith("sqlite:///"):
+            storage_url = f"sqlite:///{args.storage}"
+        else:
+            storage_url = args.storage
+
+        load_if_exists = True
+        print(f"💾 Using Storage: {storage_url}")
+        print(f"📛 Study Name: {args.study_name}")
 
     timeout_str = f"{args.timeout}s" if args.timeout else "None"
     print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str}, Jobs: {args.n_jobs})...")
 
     # Create Study
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
-    study = optuna.create_study(
-        direction="maximize",
-        study_name="Roulette_Strategy_Optimization",
-        sampler=optuna.samplers.TPESampler(),
-        pruner=pruner
-    )
+
+    try:
+        study = optuna.create_study(
+            direction="maximize",
+            study_name=args.study_name,
+            storage=storage_url,
+            load_if_exists=load_if_exists,
+            sampler=optuna.samplers.TPESampler(),
+            pruner=pruner
+        )
+
+        # Inform user about resume status
+        if len(study.trials) > 0:
+            print(f"✅ Loaded existing study with {len(study.trials)} completed trials. Running {args.n_trials} additional trials.")
+        else:
+            print("✅ Created new study.")
+
+    except Exception as e:
+        print(f"❌ Failed to initialize Optuna Study: {e}")
+        return
 
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
 
@@ -706,6 +743,12 @@ if __name__ == "__main__":
         choices=["xgb", "lgb", "cat", "hgb", "rf", "et", "svm", "knn", "mlp", "lr", "dt"],
         help="Base model(s) to use for training."
     )
+
+    # --- Storage & Resume Args ---
+    parser.add_argument('--storage', type=str, default=None,
+                        help='Path to SQLite DB for persistence (e.g., "optuna_study.db"). Enables resume capability.')
+    parser.add_argument('--study_name', type=str, default='Roulette_Strategy_Optimization',
+                        help='Unique name for the study within the storage. Use same name to resume.')
 
     args = parser.parse_args()
     main(args)
