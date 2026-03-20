@@ -415,6 +415,7 @@ def get_default_namespace(args):
         add_close_diff=args.add_close_diff,
         drop_when_out_of_range=args.drop_when_out_of_range,
         real_time_only=False,
+        load_model_path=None,
     )
 
 
