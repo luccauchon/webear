@@ -34,11 +34,6 @@ from sklearn.model_selection import ParameterGrid, ParameterSampler
 import time
 
 # =========================================================
-# FIXED SEARCH SPACE CONSTANTS (For Storage Compatibility)
-# =========================================================
-BASE_SIGNALS_OPTIONS = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
-
-# =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
 # =========================================================
 def save_best_params(params: dict, filepath: str, verbose: bool):
@@ -129,8 +124,11 @@ def run_professional_optimization(args):
         MIN_SIGNALS_REQUIRED = args.min_signals_required
     else:
         MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
-
-    base_signals = BASE_SIGNALS_OPTIONS # list(set(str(args.base_signals).split(",")))
+    base_signals_list_1 = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+    base_signals_list_2 = list(set(str(args.base_signals).split(",")))
+    # base_signals = list(set(str(args.base_signals).split(",")))
+    base_signals   = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+    base_signals   = base_signals_list_2
     if args.verbose:
         if args.disable_ema_stretch:
             print(f"Disabling EMA strech indicator")
@@ -214,7 +212,7 @@ def run_professional_optimization(args):
     assert 0 < args.threshold_penalty_for_low_events <= 1
     args.threshold_penalty_for_low_events = int(args.threshold_penalty_for_low_events * total_events)
     def penalty_for_having_low_number_of_events(n):
-        return min(n / args.threshold_penalty_for_low_events, 1.0)
+        return min(n / args.threshold_penalty_for_low_events, 1.0)**2
     if args.softer_penalty_for_low_events:
         if args.verbose:
             print(f"Switching to sigmoid-like curve for penalty of low number of events")
@@ -240,8 +238,8 @@ def run_professional_optimization(args):
         use_rsi_indicator = trial.suggest_categorical("use_rsi_indicator", [True, False]) if not args.disable_rsi else False
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False]) if not args.disable_macd else False
         use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False]) if not args.disable_stochastic else False
-        # base_signal = trial.suggest_categorical("base_signal", base_signals)
-        base_signal = trial.suggest_categorical("base_signal", BASE_SIGNALS_OPTIONS)
+
+        base_signal = trial.suggest_categorical("base_signal", base_signals)
         p1, p2 , p3, p4 = int(str(args.cluster_window_params).split(",")[0]), int(str(args.cluster_window_params).split(",")[1]), bool(str(args.cluster_window_params).split(",")[2]), int(str(args.cluster_window_params).split(",")[3])
         cluster_window = trial.suggest_int(name="cluster_window", low=p1, high=p2, log=p3, step=p4)
         p1, p2, p3, p4 = int(str(args.cluster_threshold_params).split(",")[0]), int(str(args.cluster_threshold_params).split(",")[1]), bool(str(args.cluster_threshold_params).split(",")[2]), int(str(args.cluster_threshold_params).split(",")[3])
@@ -276,7 +274,7 @@ def run_professional_optimization(args):
             lookback = trial.suggest_int("breakout_lookback", 10, 50, log=False, step=1)
             resistance = close.rolling(lookback).max().shift(1)
             cond_price = close > resistance  # Price breaks above recent high
-        assert cond_price is not None
+        assert cond_price is not None, f"Unknown base signal: {base_signal}"
         base_signal = cond_price
 
         # ---------------- Indicators ----------------
@@ -373,13 +371,14 @@ def run_professional_optimization(args):
             prev = omen_count.shift(1)
             cluster = (omen_count >= cluster_threshold) & (prev < cluster_threshold)
         signal_dates = cluster[cluster].index
-        if len(signal_dates) < MIN_SIGNALS_REQUIRED: return -10
-        cluster_targets = target.loc[signal_dates].dropna()
+        # Only evaluate signals where the outcome is actually known
+        # valid_mask is defined in the parent scope run_professional_optimization
+        valid_signal_indices = signal_dates.intersection(valid_mask[valid_mask].index)
+        if len(valid_signal_indices) < MIN_SIGNALS_REQUIRED: return -10
+        cluster_targets = target.loc[valid_signal_indices]
+        # Safety check again after filtering
         if len(cluster_targets) < MIN_SIGNALS_REQUIRED: return -10
         win_rate = cluster_targets.mean() * 100
-        # # Early pruning if win_rate is below baseline
-        # if win_rate < baseline:
-        #     raise optuna.TrialPruned()
         n = len(cluster_targets)
         penalty = penalty_for_having_low_number_of_events(n)
         assert 0 <= penalty <= 1
@@ -488,33 +487,54 @@ def run_professional_optimization(args):
         # =========================================================
         # IN-MEMORY MODE (Original Logic)
         # =========================================================
-        local_trial = 10000
-        n_studies = int(args.trials // local_trial)
-        # Ensure at least 1 study if trials < local_trial
-        if n_studies == 0 and args.trials > 0:
-            n_studies = 1
-            local_trial = args.trials
+        if args.sampler == "random":
+            local_trial = 10000
+            n_studies = int(args.trials // local_trial)
+            # Ensure at least 1 study if trials < local_trial
+            if n_studies == 0 and args.trials > 0:
+                n_studies = 1
+                local_trial = args.trials
+            if args.verbose:
+                print(f"Using Random Sampler")
+                print(f"There will be {n_studies} studies of {local_trial} passes each")
+            t1 = time.time()
+            for j in range(n_studies):
+                t2 = time.time()
+                # In memory mode, we vary seed per study chunk
+                sampler_chunk = RandomSampler(seed=RANDOM_SEED + j)
+                study = optuna.create_study(direction="maximize", sampler=sampler_chunk, pruner=pruner)
+                study.optimize(objective, n_trials=local_trial, timeout=args.timeout,
+                               show_progress_bar=True if args.verbose else False,
+                               callbacks=callbacks, gc_after_trial=False)
+                t3 = time.time()
+                # On garde seulement le meilleur score de ce bloc
+                if study.best_value > best_value:
+                    best_study = study
+                    best_value = study.best_value
+                    best_params = study.best_params
+                print(f"@iter={j + 1} Best value is {best_value}. Time remaining: {format_execution_time((t3 - t2) * (n_studies - j))}")
+            print(f"Best value is {best_value}\nBest parameters are:\n{best_params}")
+            study = best_study  # For the rest of the code
+        else:
+            # Create or Load Study
+            study = optuna.create_study(
+                direction="maximize",
+                sampler=sampler,
+                pruner=pruner,
+            )
 
-        print(f"There will be {n_studies} studies of {local_trial} passes each")
-        t1 = time.time()
-        for j in range(n_studies):
-            t2 = time.time()
-            # In memory mode, we vary seed per study chunk
-            sampler_chunk = RandomSampler(seed=RANDOM_SEED + j) if args.sampler == "random" else sampler
-            study = optuna.create_study(direction="maximize", sampler=sampler_chunk, pruner=pruner)
-            study.optimize(objective, n_trials=local_trial, timeout=args.timeout,
+            # Run Optimization (Continues from last trial if exists)
+            if args.verbose:
+                print(f"\nStarting Optimization: {args.trials} trials (or {args.timeout}s timeout)...")
+
+            study.optimize(objective, n_trials=args.trials, timeout=args.timeout,
                            show_progress_bar=True if args.verbose else False,
                            callbacks=callbacks, gc_after_trial=False)
-            t3 = time.time()
-            # On garde seulement le meilleur score de ce bloc
-            if study.best_value > best_value:
-                best_study = study
-                best_value = study.best_value
-                best_params = study.best_params
-            print(f"@iter={j + 1} Best value is {best_value}. Time remaining: {format_execution_time((t3 - t2) * (n_studies - j))}")
 
-        print(f"Best value is {best_value}\nBest parameters are:\n{best_params}")
-        study = best_study  # For the rest of the code
+            # Set best study for downstream processing
+            best_study = study
+            best_value = study.best_value
+            best_params = study.best_params
 
     # =========================================================
     # POST-OPTIMIZATION REPORTING
@@ -940,12 +960,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Do not use the Stochastic indicator"
     )
-    # strat_group.add_argument(
-    #     "--base-signals",
-    #     type=str,
-    #     default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
-    #     help="Different startegies for the creation of the base signal."
-    # )
+    strat_group.add_argument(
+        "--base-signals",
+        type=str,
+        default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
+        help="Different startegies for the creation of the base signal."
+    )
 
     bound_group = parser.add_argument_group("Bound Parameters")
     bound_group.add_argument("--sma-len-params", type=str, default="2,100,false,1", )
