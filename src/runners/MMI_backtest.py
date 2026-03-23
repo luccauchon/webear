@@ -60,13 +60,21 @@ def main(args):
             use_ema=args.use_ema,
             keep_last_step=True,
             verbose=False,
+            filter_open_gaps=args.filter_open_gaps,
+            filter_inside_open=args.filter_inside_open,
         )
         _result       = MMI_realtime(configuration)
         close_col     = (args.col, args.ticker)
         close_prices  = past_df[close_col]
+        # open_prices   = past_df[("Open", args.ticker)]
+        # high_prices   = past_df[("High", args.ticker)]
+        # low_prices    = past_df[("Low", args.ticker)]
         # print(f"{past_df.index[0].strftime('%Y-%m-%d')}/{past_df.index[-1].strftime('%Y-%m-%d')} :: {future_df.index[args.look_ahead - 1].strftime('%Y-%m-%d')}\n\n")
         # continue
-        future_price  = future_df[close_col].iloc[args.look_ahead - 1]
+        future_price      = future_df[close_col].iloc[args.look_ahead - 1]
+        # future_open_price = future_df[("Open", args.ticker)].iloc[args.look_ahead - 1]
+        # future_high_price = future_df[("High", args.ticker)].iloc[args.look_ahead - 1]
+        # future_low_price  = future_df[("Low", args.ticker)].iloc[args.look_ahead - 1]
         current_price = close_prices.iloc[-1]
         future_return = (future_price / current_price) - 1
         if future_return > args.return_threshold:
@@ -75,6 +83,18 @@ def main(args):
             gt = "Bear"
         else:
             gt = "Choppy"
+
+        # --- Check if Open is inside Precedent Day's Range ---
+        # Precedent Day = Last row of past_df
+        # Current Day   = First row of future_df (Execution day)
+        prec_low = past_df[("Low", args.ticker)].iloc[-1]
+        prec_high = past_df[("High", args.ticker)].iloc[-1]
+        curr_open = future_df[("Open", args.ticker)].iloc[args.look_ahead - 1]
+
+        is_inside = (curr_open >= prec_low) and (curr_open <= prec_high)
+        _result['is_inside_open'] = is_inside
+        # ---------------------------------------------------------------
+
         if args.use_vix:
             _result.update({"ground_truth": gt, "return": future_return, "vix": vix_df.iloc[-1]})
         else:
@@ -82,37 +102,56 @@ def main(args):
         results.append(_result)
     _results_df = pd.DataFrame(results)
     if 0 == len(_results_df):
-        return {'overall_accuracy': 0,'bull_accuracy': 0,'bear_accuracy': 0,'n_bull': 0,'n_bear': 0,}, _results_df
-    # Overall accuracy (unchanged)
-    overall_accuracy = (_results_df.signal == _results_df.ground_truth).mean()
+        return {'overall_accuracy': 0, 'bull_accuracy': 0, 'bear_accuracy': 0, 'n_bull': 0, 'n_bear': 0, }, _results_df
+
+    # --- Filter DataFrame based on new option ---
+    eval_df = _results_df
+    if args.filter_inside_open:
+        eval_df = _results_df[_results_df['is_inside_open'] == True]
+
+    if 0 == len(eval_df):
+        # If filtering removes all data, return zeros but indicate sample count is 0
+        return {'overall_accuracy': 0, 'bull_accuracy': 0, 'bear_accuracy': 0, 'n_bull': 0, 'n_bear': 0, }, _results_df
+
+    # Overall accuracy (calculated on filtered eval_df if option is set)
+    overall_accuracy = (eval_df.signal == eval_df.ground_truth).mean()
+
     if args.use_vix:
-        # Sanity check
-        assert overall_accuracy == _results_df[_results_df.vix < 9999].apply(lambda x: x.signal == x.ground_truth, axis=1).mean()
+        # Sanity check (applied to filtered df)
+        # Note: We assume vix column exists if args.use_vix is True
+        assert overall_accuracy == eval_df[eval_df.vix < 9999].apply(lambda x: x.signal == x.ground_truth, axis=1).mean()
         # Filter for low volatility and then calculate accuracy
         for vix_value in (9, 10, 20, 30, 40, 60, 99):
-            overall_accuracy = _results_df[_results_df.vix < vix_value].apply(lambda x: x.signal == x.ground_truth, axis=1).mean()
-            if np.isnan(overall_accuracy):
-                continue
-            print(f"\tVIX below {vix_value} -> {overall_accuracy:.4f}")
+            # Calculate accuracy on the subset of eval_df that meets VIX criteria
+            vix_subset = eval_df[eval_df.vix < vix_value]
+            if len(vix_subset) > 0:
+                overall_accuracy = vix_subset.apply(lambda x: x.signal == x.ground_truth, axis=1).mean()
+                if not np.isnan(overall_accuracy):
+                    print(f"\tVIX below {vix_value} -> {overall_accuracy:.4f} (on inside-open samples)")
+
     # --- Accuracy when Ground Truth is "Bull" ---
-    bull_mask = _results_df.ground_truth == "Bull"
+    bull_mask = eval_df.ground_truth == "Bull"
     if bull_mask.any():
-        bull_accuracy = (_results_df.loc[bull_mask, 'signal'] == "Bull").mean()
+        bull_accuracy = (eval_df.loc[bull_mask, 'signal'] == "Bull").mean()
     else:
         bull_accuracy = 0.0
 
     # --- Accuracy when Ground Truth is "Bear" ---
-    bear_mask = _results_df.ground_truth == "Bear"
+    bear_mask = eval_df.ground_truth == "Bear"
     if bear_mask.any():
-        bear_accuracy = (_results_df.loc[bear_mask, 'signal'] == "Bear").mean()
+        bear_accuracy = (eval_df.loc[bear_mask, 'signal'] == "Bear").mean()
     else:
         bear_accuracy = 0.0
 
     # Optional: print or return detailed metrics
     if args.verbose:
-        print(f"Overall Accuracy: {overall_accuracy:.4f} ({len(_results_df)}) samples")
-        print(f"Bull Accuracy (when GT=Bull): {bull_accuracy:.4f} ({bull_mask.sum()} samples)")
-        print(f"Bear Accuracy (when GT=Bear): {bear_accuracy:.4f} ({bear_mask.sum()} samples)")
+        filter_note = " (Filtered: Inside Open)" if args.filter_inside_open else ""
+        print(f"Overall Accuracy{filter_note}: {overall_accuracy:.4f} ({len(eval_df)}) samples")
+        print(f"Bull Accuracy (when GT=Bull){filter_note}: {bull_accuracy:.4f} ({bull_mask.sum()} samples)")
+        print(f"Bear Accuracy (when GT=Bear){filter_note}: {bear_accuracy:.4f} ({bear_mask.sum()} samples)")
+        if args.filter_inside_open:
+            print(f"\tTotal samples before filter: {len(_results_df)}")
+            print(f"\tTotal samples after filter:  {len(eval_df)}")
 
     # Return a dict or tuple with all metrics
     metrics = {
@@ -141,8 +180,13 @@ if __name__ == "__main__":
     parser.add_argument('--step-back-range', type=int, default=5,
                         help="Number of historical time windows to simulate (rolling backtest depth).")
     parser.add_argument('--verbose', type=str2bool, default=True)
-    parser.add_argument('--use_vix', action='store_true',
+    parser.add_argument('--use_vix', type=str2bool,
                         help="Save the vix value per run in backtest")
+    parser.add_argument('--filter_open_gaps', type=str2bool, default=False,
+                        help="Remove rows where Open > Prev High or Open < Prev Low")
+    parser.add_argument('--filter_inside_open', type=str2bool,
+                        help="Compute accuracy only if Current Open is between Precedent Day's Low and High")
+    # -------------------
     args = parser.parse_args()
 
     metrics, results_df = main(args)
