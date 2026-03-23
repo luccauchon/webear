@@ -1,3 +1,2 @@
-D:
-cd D:\PyCharmProjects\webear\src\graphics
+cd ..\..\src\graphics
 .\day_week_month.bat

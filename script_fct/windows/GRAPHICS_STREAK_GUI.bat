@@ -1,3 +1,2 @@
-D:
-cd D:\PyCharmProjects\webear\src\graphics
+cd ..\..\src\graphics
 .\streak_gui.bat
