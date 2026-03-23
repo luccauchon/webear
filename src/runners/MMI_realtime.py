@@ -55,6 +55,7 @@ def main(args):
                 continue
             print(f"    {arg:.<40} {value}")
         print("-" * 80, flush=True)
+
     master_data_cache = None
     if 'master_data_cache' in args:
         master_data_cache = args.master_data_cache
@@ -64,10 +65,46 @@ def main(args):
             master_data_cache = pickle.load(f)
         master_data_cache = copy.deepcopy(master_data_cache[args.ticker])
         master_data_cache = master_data_cache.sort_index()
+
     close_col = (args.col, args.ticker)
     close_prices = master_data_cache[close_col]
+    open_prices = master_data_cache[("Open", args.ticker)]
+    low_prices = master_data_cache[("Low", args.ticker)]
+    high_prices = master_data_cache[("High", args.ticker)]
+
+    # =========================
+    # Filter Open Gaps
+    # =========================
+    if args.filter_open_gaps:
+        # Get preceding day's High and Low
+        prev_high = high_prices.shift(1)
+        prev_low = low_prices.shift(1)
+
+        # Identify rows where Open is outside the previous day's range
+        # Condition: Open > Prev High OR Open < Prev Low
+        # Note: shift(1) creates NaN for the first row; comparisons with NaN return False, so first row is kept.
+        gap_mask = (open_prices > prev_high) | (open_prices < prev_low)
+
+        # Invert mask to identify rows to KEEP
+        keep_mask = ~gap_mask
+
+        # Apply filtering to all series to maintain alignment
+        rows_removed = gap_mask.sum()
+        close_prices = close_prices[keep_mask]
+        open_prices  = open_prices[keep_mask]
+        low_prices   = low_prices[keep_mask]
+        high_prices  = high_prices[keep_mask]
+
+        if args.verbose and rows_removed > 0:
+            print(f"🔧 Filtered {rows_removed} rows due to Open gaps (Open > Prev High or Open < Prev Low).")
+        elif args.verbose:
+            print(f"🔧 Gap filter activated (0 rows removed).")
+
     if not args.keep_last_step:
         close_prices = close_prices.iloc[:-1]
+        open_prices  = open_prices.iloc[:-1]
+        low_prices   = low_prices.iloc[:-1]
+        high_prices  = high_prices.iloc[:-1]
     # =========================
     # Indicators
     # =========================
@@ -125,6 +162,9 @@ if __name__ == "__main__":
     parser.add_argument('--use_ema', type=str2bool, default=False)
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument('--keep_last_step', type=str2bool, default=True)
+    parser.add_argument('--filter_open_gaps', type=str2bool, default=False,
+                        help="Remove rows where Open > Prev High or Open < Prev Low")
+
     args = parser.parse_args()
     result = main(args)
     if args.verbose:
