@@ -81,6 +81,8 @@ def main(args):
             use_ema=args.use_ema,
             verbose=False,
             use_vix=args.use_vix,
+            filter_open_gaps=args.filter_open_gaps,
+            filter_inside_open=args.filter_inside_open,
         )
 
         # Run backtest and return accuracy (to be maximized)
@@ -110,7 +112,26 @@ def main(args):
             print(f"⏩ Resuming existing study. Completed trials so far: {len(study.trials)}")
         else:
             print("🆕 Created new study.")
+        # =========================================================
+        # DB RESUME VERIFICATION
+        # =========================================================
+        trials = study.trials
+        completed_trials = [t for t in trials if t.state == optuna.trial.TrialState.COMPLETE]
 
+        print("\n" + "=" * 30)
+        print("   OPTUNA PERSISTENCE CHECK")
+        print("=" * 30)
+        print(f"Database: {args.storage}")
+        print(f"Total trials in DB:    {len(trials)}")
+        print(f"Completed trials:      {len(completed_trials)}")
+
+        if len(completed_trials) > 0:
+            print(f"Current Best Score:    {study.best_value:.6f}")
+            print(f"Last trial ID:         {trials[-1].number}")
+            print(">>> Resuming from existing data...")
+        else:
+            print(">>> No history found. Starting a new study.")
+        print("=" * 30 + "\n")
     except Exception as e:
         print(f"Error creating/loading study: {e}")
         return
@@ -137,6 +158,25 @@ def main(args):
     print("\n===== BEST PARAMETERS =====")
     print(study.best_params)
     print(f"Best Score: {study.best_value:.8f}")
+
+    # 1. Convert the study to a Pandas DataFrame
+    df_trials = study.trials_dataframe()
+
+    # 2. Clean up the columns (removes datetime/duration for a cleaner view)
+    # We focus on 'value' (the score) and the 'params_' columns
+    param_cols = [c for c in df_trials.columns if c.startswith('params_')]
+    summary = df_trials[['value'] + param_cols].sort_values(by='value', ascending=False)
+
+    print("\n" + "=" * 50)
+    print("   TOP 10 HYPERPARAMETER COMBINATIONS")
+    print("=" * 50)
+    print(summary.head(10).to_string(index=False))
+    print("=" * 50 + "\n")
+
+    # 3. Quick Statistics: See the 'Spread' of your parameters
+    print("Parameter Ranges in Top 20% of Trials:")
+    top_20_percent = summary.head(int(len(summary) * 0.2))
+    print(top_20_percent.describe().loc[['min', 'max', 'mean']])
 
     # Optional: Save best params to a file for easy access later
     # with open(f"best_params_{args.study_name}.pkl", "wb") as f:
@@ -204,8 +244,11 @@ if __name__ == "__main__":
     parser.add_argument('--lookahead_min', type=int, default=5, help="Min look-ahead steps")
     parser.add_argument('--lookahead_max', type=int, default=5, help="Max look-ahead steps")
 
-    parser.add_argument('--use_vix', action='store_true')
-
+    parser.add_argument('--use_vix', type=str2bool)
+    parser.add_argument('--filter_open_gaps', type=str2bool, default=False,
+                        help="Remove rows where Open > Prev High or Open < Prev Low")
+    parser.add_argument('--filter_inside_open', type=str2bool,
+                        help="Compute accuracy only if Current Open is between Precedent Day's Low and High")
     args = parser.parse_args()
 
     # Auto-generate study name if not provided to avoid collisions
