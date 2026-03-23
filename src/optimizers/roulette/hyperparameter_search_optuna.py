@@ -94,7 +94,7 @@ def objective(trial, configuration_specified, args):
     """Optuna objective function with class 0 focus and penalty options."""
     # Create configuration for this trial
     configuration = configuration_specified(args, trial=trial)
-
+    is_classification = False if args.optimize_target == "streak_seq__mae" else True
     if args.skip_optimization:
         return random.random()
 
@@ -109,22 +109,6 @@ def objective(trial, configuration_specified, args):
             traceback.print_exc()
         return 0.0
 
-    # Extract class scores safely (Support up to Class 3)
-    class_scores = {}
-    for i in range(4):
-        class_scores[i] = avg_f1[i] if len(avg_f1) > i else 0.0
-
-    class_0_score = class_scores[0]
-    class_1_score = class_scores[1]
-    class_2_score = class_scores[2]
-    class_3_score = class_scores[3]
-
-    # Legacy variable for existing Class 0 logic compatibility
-    other_scores_no_class_0 = [class_scores[i] for i in range(1, 4)]
-    penalty__other_scores_no_class_0 = 0.0
-    if len(other_scores_no_class_0) > 0:
-        penalty__other_scores_no_class_0 = np.mean(other_scores_no_class_0) * args.other_classes_penalty
-
     # Helper to calculate penalty for a specific target class index dynamically
     def get_other_penalty(target_idx):
         other_vals = [v for k, v in class_scores.items() if k != target_idx]
@@ -132,10 +116,28 @@ def objective(trial, configuration_specified, args):
             return np.mean(other_vals) * args.other_classes_penalty
         return 0.0
 
+    if is_classification:
+        # Extract class scores safely (Support up to Class 3)
+        class_scores = {}
+        for i in range(4):
+            class_scores[i] = avg_f1[i] if len(avg_f1) > i else 0.0
+
+        class_0_score = class_scores[0]
+        class_1_score = class_scores[1]
+        class_2_score = class_scores[2]
+        class_3_score = class_scores[3]
+
+        # Legacy variable for existing Class 0 logic compatibility
+        other_scores_no_class_0 = [class_scores[i] for i in range(1, 4)]
+        penalty__other_scores_no_class_0 = 0.0
+        if len(other_scores_no_class_0) > 0:
+            penalty__other_scores_no_class_0 = np.mean(other_scores_no_class_0) * args.other_classes_penalty
+
     # Select optimization target
     score = 0.0
-
-    if args.optimize_target == 'pos_seq_0__f1':
+    if args.optimize_target == 'streak_seq__mae':
+        score = acc_scores
+    elif args.optimize_target == 'pos_seq_0__f1':
         score = class_0_score
     elif args.optimize_target == 'pos_seq_1__f1':
         score = class_1_score
@@ -242,7 +244,7 @@ def objective(trial, configuration_specified, args):
         raise ValueError(f"Unknown optimize_target: {args.optimize_target}")
 
     # Optional verbose logging for class-specific scores
-    if args.verbose and args.verbose_info_score and trial.number % 10 == 0:
+    if args.verbose and args.verbose_info_score and trial.number % 10 == 0 and is_classification:
         print(f"\n📊 Trial {trial.number} Scores:")
         for i, f1 in enumerate(avg_f1):
             marker = "🎯" if i == 0 else "  "
@@ -346,7 +348,9 @@ def main(args):
         best_params = study.best_params
 
         # Derive fixed values from args (mimicking get_default_namespace logic)
-        target_val = "POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ"
+        target_val = "POS_SEQ" if "pos_seq" in args.optimize_target else None
+        target_val = "NEG_SEQ" if "neg_seq" in args.optimize_target else None
+        target_val = "STREAK_SEQ" if "streak_seq" in args.optimize_target else None
         convert_price_val = 'fraction'
         enable_day_data_val = True
 
@@ -419,10 +423,13 @@ def main(args):
 
 
 def get_default_namespace(args):
+    target = "POS_SEQ" if "pos_seq" in args.optimize_target else None
+    target = "NEG_SEQ" if "neg_seq" in args.optimize_target else None
+    target = "STREAK_SEQ" if "streak_seq" in args.optimize_target else None
     return argparse.Namespace(
         dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
         look_ahead=args.look_ahead, verbose=args.verbose_debug,
-        target="POS_SEQ" if "pos_seq" in args.optimize_target else "NEG_SEQ",
+        target=target,
         convert_price_level_with_baseline='fraction',
         sma_windows=[],
         ema_windows=[],
@@ -611,7 +618,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_jobs', type=int, default=1,
                         help='Number of parallel jobs. -1 means all CPUs. (Critical for speed)')
     parser.add_argument('--optimize_target', type=str, default='pos_seq__f1',
-                        choices=[
+                        choices=['streak_seq__mae',
                             'pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1',
                             'pos_seq__f1',
                             'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1', 'neg_seq_3__f1',
