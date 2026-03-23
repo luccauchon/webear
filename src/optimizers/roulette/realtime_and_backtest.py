@@ -34,6 +34,19 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from catboost import CatBoostRegressor
+from sklearn.ensemble import (
+    RandomForestRegressor,
+    ExtraTreesRegressor,
+    HistGradientBoostingRegressor
+)
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.linear_model import Ridge
 import xgboost as xgb
 import lightgbm as lgb
 from catboost import CatBoostClassifier
@@ -172,6 +185,10 @@ def main(args):
     # ---------------------------------------------------------
     use_vix = False
     classification_model_configs = None
+    if args.target == "STREAK_SEQ":
+        assert args.optimization_strategy == 'regression'
+    else:
+        assert args.optimization_strategy == 'classification'
     # ------------------------------
     if args.verbose:
         # --- Nicely print the arguments ---
@@ -219,7 +236,7 @@ def main(args):
         vix1d__master_data_cache = copy.deepcopy(master_data_cache['^VIX1D'].sort_index()[('Close', '^VIX1D')])
         vix3m__master_data_cache = copy.deepcopy(master_data_cache['^VIX3M'].sort_index()[('Close', '^VIX3M')])
         # ---------------------------------------------------------
-        # Add POS/NEG Sequence
+        # Add POS/NEG and STREAM Sequences
         # ---------------------------------------------------------
         assert args.epsilon >= 0.
         master_data_cache = add_sequence_columns_vectorized(df=master_data_cache[args.ticker].sort_index(), col_name=close_col, ticker_name=args.ticker, epsilon=args.epsilon)
@@ -458,9 +475,11 @@ def main(args):
             Xs += [('day_sin', args.ticker), ('day_cos', args.ticker)]
 
         Xs += SHIFTED_SEQ_COLS
-
-        Xs += [("POS_SEQ", args.ticker), ("NEG_SEQ", args.ticker), close_col]
+        assert args.target in ["POS_SEQ", "NEG_SEQ", "STREAK_SEQ"]
+        Xs += [("POS_SEQ", args.ticker), ("NEG_SEQ", args.ticker), ("STREAK_SEQ", args.ticker), close_col]
         Ys = [(args.target, args.ticker)]
+        if args.target == "STREAK_SEQ":
+            assert args.optimization_strategy == 'regression'
 
         if args.verbose:
             print(f"Xs are:\n{Xs}\nYs are: {Ys}")
@@ -548,8 +567,8 @@ def main(args):
         if args.verbose:
             print(f"There is {len(the_d_data)} data, ranging from {the_d_data[0].strftime('%Y-%m-%d')} to {the_d_data[-1].strftime('%Y-%m-%d')}.")
         assert the_d_data[0] <= the_d_data[-1] and isinstance(the_d_data[0], pd.Timestamp), f"Make sure most recent data is at the end!  {the_d_data[0]} < {the_d_data[-1]}"
-        # Ensure the_y_data is 1D
         if not args.real_time_only:
+            # Ensure the_y_data is 1D
             the_y_data = the_y_data.ravel()
             num_classes = len(np.unique(the_y_data))
             if -1 != args.min_percentage_to_keep_class:
@@ -704,296 +723,531 @@ def main(args):
         return predicted_classes[0], prediction_probabilities[0], date_of_data_point_x_used, model_data
 
     # ---------------------------------------------------------
-    # Existing training code continues here...
+    # Existing training code continues here
     # ---------------------------------------------------------
-    if args.verbose:
-        print(f"Building the model...")
-    tscv = TimeSeriesSplit(n_splits=5)
-    acc_scores, f1_scores = [], []
-    # Initialize lists to store per-class scores across folds ---
-    fold_precision_scores_per_class = []
-    fold_recall_scores_per_class = []
-    fold_f1_scores_per_class = []
-    # ---------------------------------------------------------
-    # MODEL CONFIGURATION (UPDATED WITH ARGS)
-    # ---------------------------------------------------------
-    # 1. Parse Model Overrides
-    try:
-        model_overrides = json.loads(args.model_overrides)
-    except json.JSONDecodeError:
-        raise ValueError("Invalid JSON for --model_overrides. Example: '{\"xgb\": {\"params\": {\"n_estimators\": 1000}}}'")
+    if args.optimization_strategy == 'regression':
+        # ---------------------------------------------------------
+        # MODEL CONFIGURATION (REGRESSION)
+        # ---------------------------------------------------------
+        # 2. Parse Model Overrides
+        try:
+            model_overrides = json.loads(args.model_overrides)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON for --model_overrides.")
 
-    ## 2. Define Base Configs using Global Args
-    # We use a factory pattern to ensure args are applied consistently
-    def get_base_config(model_name, model_class, params_template):
-        cfg = {
-            "class": model_class,
-            "params": params_template.copy(),
-            "supports_early_stopping": False,
-            "uses_validation_fraction": False
-        }
-        # Apply global args to params if keys exist
-        # if 'n_estimators' in cfg["params"]: cfg["params"]["n_estimators"] = args.n_estimators
-
-        # Special flags
-        if model_name in ["xgb", "lgb", "cat", "hgb", "mlp"]:
-            cfg["supports_early_stopping"] = False
-        if model_name in ["hgb", "mlp"]:
-            cfg["uses_validation_fraction"] = False
-        return cfg
-
-    classification_model_configs = {
-        "xgb": get_base_config("xgb", xgb.XGBClassifier, {
-            'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.05,
-            'subsample': 0.8, 'colsample_bytree': 0.8, 'random_state': 42,
-            'objective': 'multi:softprob', 'num_class': num_classes,
-            'eval_metric': 'mlogloss', 'tree_method': 'hist',
-        }),
-        "rf": get_base_config("rf", RandomForestClassifier, {
-            'n_estimators': 500, 'max_depth': 6, 'random_state': 42,
-            'n_jobs': -1, 'class_weight': 'balanced'
-        }),
-        "lgb": get_base_config("lgb", lgb.LGBMClassifier, {
-            'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.05,
-            'subsample': 0.8, 'colsample_bytree': 0.8, 'random_state': 42,
-            'objective': 'multiclass', 'num_class': num_classes,
-            'metric': 'multi_logloss', 'verbosity': -1,
-        }),
-        "cat": get_base_config("cat", CatBoostClassifier, {
-            'iterations': 500, 'depth': 6, 'learning_rate': 0.05,
-            'random_seed': 42, 'verbose': False,
-            'loss_function': 'MultiClass', 'classes_count': num_classes,
-            'eval_metric': 'MultiClass',
-        }),
-        "hgb": get_base_config("hgb", HistGradientBoostingClassifier, {
-            'max_iter': 500, 'max_depth': 6, 'learning_rate': 0.05,
-            'random_state': 42, 'loss': 'log_loss',
-            'early_stopping': False, 'n_iter_no_change': 20,
-        }),
-        "et": get_base_config("et", ExtraTreesClassifier, {
-            'n_estimators': 500, 'max_depth': 6, 'random_state': 42,
-            'n_jobs': -1, 'class_weight': 'balanced', 'bootstrap': False
-        }),
-        "svm": get_base_config("svm", SVC, {
-            'C': 1.0, 'kernel': 'rbf', 'gamma': 'scale', 'random_state': 42,
-            'probability': True, 'class_weight': 'balanced',
-            'decision_function_shape': 'ovr'
-        }),
-        "knn": get_base_config("knn", KNeighborsClassifier, {
-            'n_neighbors': 5, 'weights': 'distance', 'metric': 'minkowski',
-            'p': 2, 'n_jobs': 1
-        }),
-        "mlp": get_base_config("mlp", MLPClassifier, {
-            'hidden_layer_sizes': (100, 50), 'activation': 'relu',
-            'solver': 'adam', 'alpha': 0.0001, 'batch_size': 'auto',
-            'learning_rate': 'adaptive', 'learning_rate_init': 0.05,
-            'max_iter': 500, 'early_stopping': False,
-            'validation_fraction': 0.1, 'n_iter_no_change': 20,
-            'random_state': 42,
-        }),
-        "lr": get_base_config("lr", LogisticRegression, {
-            'C': 1.0, 'penalty': 'l2', 'solver': 'lbfgs',
-            'max_iter': 500, 'random_state': 42,
-            'class_weight': 'balanced', 'n_jobs': -1
-        }),
-        "dt": get_base_config("dt", DecisionTreeClassifier, {
-            'max_depth': 6, 'random_state': 42, 'class_weight': 'balanced',
-            'criterion': 'gini', 'min_samples_split': 2, 'min_samples_leaf': 1
-        })
-    }
-    # 3. Apply JSON Overrides
-    for model_name, override_params in model_overrides.items():
-        if model_name in classification_model_configs:
-            deep_update(classification_model_configs[model_name], override_params)
-            if args.verbose:
-                print(f"⚙️ Applied overrides for {model_name}: {override_params}")
-        else:
-            print(f"⚠️ Warning: Model '{model_name}' in overrides not found in config.")
-    for fold, (train_idx, val_idx) in enumerate(tscv.split(the_x_data)):
-        X_train, X_val = copy.deepcopy(the_x_data[train_idx]), copy.deepcopy(the_x_data[val_idx])
-        y_train, y_val = copy.deepcopy(the_y_data[train_idx]), copy.deepcopy(the_y_data[val_idx])
-        # Flatten and Convert Labels to Integers ---
-        # XGBoost expects 1D integer arrays for classification
-        y_train = y_train.ravel().astype(int)
-        y_val = y_val.ravel().astype(int)
-        scaler = RobustScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_val_scaled = scaler.transform(X_val)
-
-        fold_predictions_proba = []  # Store probabilities for ensemble
-        for model_name in args.base_models:
-            cfg = classification_model_configs[model_name]
-            model = cfg["class"](**cfg["params"])
-            fit_kwargs_init = {}
-            model.fit(X_train_scaled, y_train, **fit_kwargs_init)
-
-            # Store Probabilities for Ensemble
-            pred_proba = model.predict_proba(X_val_scaled)
-
-            # Ensure consistent shape (n_samples, num_classes) for all models ---
-            # Models like HistGradientBoostingClassifier infer classes from y_train.
-            # If a fold is missing some classes, pred_proba will have fewer columns.
-            if pred_proba.shape[1] != num_classes:
-                # Create a full probability matrix initialized to 0
-                full_proba = np.zeros((pred_proba.shape[0], num_classes))
-                # Map the predicted probabilities to the correct class indices
-                # model.classes_ contains the specific class labels present in this training fold
-                full_proba[:, model.classes_] = pred_proba
-                fold_predictions_proba.append(full_proba)
-            else:
-                fold_predictions_proba.append(pred_proba)
-        # --- Ensemble Averaging Probabilities ---
-        avg_proba = np.mean(fold_predictions_proba, axis=0)
-        y_pred_final = np.argmax(avg_proba, axis=1)
-
-        # --- Multi-Class Metrics ---
-        from sklearn.metrics import accuracy_score, f1_score, classification_report, precision_recall_fscore_support
-
-        acc = accuracy_score(y_val, y_pred_final)
-        f1 = f1_score(y_val, y_pred_final, average='weighted')  # 'weighted' handles imbalance
-
-        # --- Per-Class Scores ---
-        precision, recall, f1_per_class, support = precision_recall_fscore_support(
-            y_val, y_pred_final, labels=range(num_classes), zero_division=0
-        )
-        fold_precision_scores_per_class.append(precision)
-        fold_recall_scores_per_class.append(recall)
-        fold_f1_scores_per_class.append(f1_per_class)
-        if args.verbose:
-            print(f"Fold {fold + 1}: Acc={acc:.4f}, F1={f1:.4f}")
-            # Print Per-Class F1 for this fold
-            f1_str = ", ".join([f"{i}:{v:.3f}" for i, v in enumerate(f1_per_class)])
-            print(f"  Per-Class F1: [{f1_str}]")
-        acc_scores.append(acc)
-        f1_scores.append(f1)
-    if args.verbose:
-        print(f"\nAverage Accuracy: {np.mean(acc_scores):.4f}")
-        print(f"Average Weighted F1: {np.mean(f1_scores):.4f}")
-        print(f"Precision\n"
-              f"TP / (TP + FP)\n"
-              f"Of all the instances I predicted as positive, how many were actually positive?")
-        print(f"Recall\n"
-              f"TP / (TP + FN)\n"
-              f"Of all the actual positive instances, how many did I correctly identify?")
-        print("Accuracy\n"
-              "Accuracy = (True Positives + True Negatives) / Total Predictions\n"
-              "         = (TP + TN) / (TP + TN + FP + FN)")
-    # Average Per-Class Scores ---
-    avg_precision = np.mean(fold_precision_scores_per_class, axis=0)
-    avg_recall = np.mean(fold_recall_scores_per_class, axis=0)
-    avg_f1 = np.mean(fold_f1_scores_per_class, axis=0)
-    if args.verbose:
-        print(f"\nAverage Per-Class Validation Scores ({len(fold_f1_scores_per_class)} folds):")
-        print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
-        print("-" * 44)
-        for c in range(num_classes):
-            print(f"{c:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
-    # ---------------------------------------------------------
-    # SAVE MODEL AND PREPROCESSING OBJECTS
-    # ---------------------------------------------------------
-    if args.save_model_path is not None:
-        if args.verbose:
-            print("\n" + "=" * 80)
-            print("💾 Saving model and preprocessing objects for later inference...")
-            print("=" * 80)
-
-        # Train final models on ALL data (not just CV folds)
-        if args.verbose:
-            print(f"Training final models on full dataset ({len(the_x_data)} samples)...")
-
-        # Fit scaler on full dataset
-        final_scaler = RobustScaler()
-        X_full_scaled = final_scaler.fit_transform(the_x_data)
-        y_full = the_y_data.ravel().astype(int)
-
-        # Train final ensemble models
-        final_models = {}
-        for model_name in args.base_models:
-            cfg = classification_model_configs[model_name]
-            model = cfg["class"](**cfg["params"])
-
-            if args.verbose:
-                print(f"  Training {model_name}...")
-
-            # Handle early stopping if supported
-            fit_kwargs = {}
-            if cfg.get("uses_validation_fraction", False):
-                fit_kwargs['validation_fraction'] = 0.1
-                fit_kwargs['n_iter_no_change'] = 20
-
-            model.fit(X_full_scaled, y_full, **fit_kwargs)
-            final_models[model_name] = model
-
-        # Prepare metadata for inference
-        model_metadata = {
-            'scaler': final_scaler,
-            'models': final_models,
-            'feature_list': Xs,
-            'feature_names': [f"{col[0]}_{col[1]}" if isinstance(col, tuple) else str(col) for col in Xs],
-            'num_classes': num_classes,
-            'target_column': Ys,
-            'args': vars(args),
-            'class_distribution': {int(cls): int(cnt) for cls, cnt in zip(unique_classes_new, counts_new)},
-            'training_date_range': {
-                'start': the_d_data[0].strftime('%Y-%m-%d') if hasattr(the_d_data[0], 'strftime') else str(the_d_data[0]),
-                'end': the_d_data[-1].strftime('%Y-%m-%d') if hasattr(the_d_data[-1], 'strftime') else str(the_d_data[-1])
-            },
-            'cv_scores': {
-                'accuracy_mean': float(np.mean(acc_scores)),
-                'accuracy_std': float(np.std(acc_scores)),
-                'f1_mean': float(np.mean(f1_scores)),
-                'f1_std': float(np.std(f1_scores)),
-                'per_class_f1_mean': avg_f1.tolist(),
-                'per_class_precision_mean': avg_precision.tolist(),
-                'per_class_recall_mean': avg_recall.tolist(),
-            },
-            'preprocessing_config': {
-                'convert_price_level_with_baseline': args.convert_price_level_with_baseline,
-                'enable_ema': args.enable_ema,
-                'enable_sma': args.enable_sma,
-                'enable_rsi': args.enable_rsi,
-                'enable_macd': args.enable_macd,
-                'enable_vwap': args.enable_vwap,
-                'enable_day_data': args.enable_day_data,
-                'shift_seq_col': args.shift_seq_col,
-                'ema_windows': args.ema_windows,
-                'sma_windows': args.sma_windows,
-                'rsi_windows': args.rsi_windows,
-                'macd_params': macd_params if 'macd_params' in locals() else args.macd_params,
-                'vwap_window': args.vwap_window,
-                'add_only_vwap_z_and_vwap_triggers': args.add_only_vwap_z_and_vwap_triggers,
-                'epsilon': args.epsilon,
-                'look_ahead': args.look_ahead,
+        # 3. Define Base Configs for Regression
+        def get_base_config_reg(model_name, model_class, params_template):
+            cfg = {
+                "class": model_class,
+                "params": params_template.copy(),
+                "supports_early_stopping": False,
+                "uses_validation_fraction": False
             }
+            if model_name in ["xgb", "lgb", "cat", "hgb", "mlp"]:
+                cfg["supports_early_stopping"] = False
+            if model_name in ["hgb", "mlp"]:
+                cfg["uses_validation_fraction"] = False
+            return cfg
+
+        regression_model_configs = {
+            "xgb": get_base_config_reg("xgb", XGBRegressor, {
+                'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.05,
+                'subsample': 0.8, 'colsample_bytree': 0.8, 'random_state': 42,
+                'objective': 'reg:squarederror', 'tree_method': 'hist',
+            }),
+            "rf": get_base_config_reg("rf", RandomForestRegressor, {
+                'n_estimators': 500, 'max_depth': 6, 'random_state': 42,
+                'n_jobs': -1,
+            }),
+            "lgb": get_base_config_reg("lgb", LGBMRegressor, {
+                'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.05,
+                'subsample': 0.8, 'colsample_bytree': 0.8, 'random_state': 42,
+                'objective': 'regression', 'metric': 'rmse', 'verbosity': -1,
+            }),
+            "cat": get_base_config_reg("cat", CatBoostRegressor, {
+                'iterations': 500, 'depth': 6, 'learning_rate': 0.05,
+                'random_seed': 42, 'verbose': False,
+                'loss_function': 'RMSE',
+            }),
+            "hgb": get_base_config_reg("hgb", HistGradientBoostingRegressor, {
+                'max_iter': 500, 'max_depth': 6, 'learning_rate': 0.05,
+                'random_state': 42, 'loss': 'squared_error',
+                'early_stopping': False, 'n_iter_no_change': 20,
+            }),
+            "et": get_base_config_reg("et", ExtraTreesRegressor, {
+                'n_estimators': 500, 'max_depth': 6, 'random_state': 42,
+                'n_jobs': -1, 'bootstrap': False
+            }),
+            "svm": get_base_config_reg("svm", SVR, {
+                'C': 1.0, 'kernel': 'rbf', 'gamma': 'scale', 'random_state': 42,
+            }),
+            "knn": get_base_config_reg("knn", KNeighborsRegressor, {
+                'n_neighbors': 5, 'weights': 'distance', 'metric': 'minkowski',
+                'p': 2, 'n_jobs': 1
+            }),
+            "mlp": get_base_config_reg("mlp", MLPRegressor, {
+                'hidden_layer_sizes': (100, 50), 'activation': 'relu',
+                'solver': 'adam', 'alpha': 0.0001, 'batch_size': 'auto',
+                'learning_rate': 'adaptive', 'learning_rate_init': 0.05,
+                'max_iter': 500, 'early_stopping': False,
+                'validation_fraction': 0.1, 'n_iter_no_change': 20,
+                'random_state': 42,
+            }),
+            "ridge": get_base_config_reg("ridge", Ridge, {
+                'alpha': 1.0, 'random_state': 42,
+            }),
+            "dt": get_base_config_reg("dt", DecisionTreeRegressor, {
+                'max_depth': 6, 'random_state': 42,
+                'criterion': 'squared_error', 'min_samples_split': 2, 'min_samples_leaf': 1
+            })
         }
 
-        # Save using pickle
-        import pickle
-        os.makedirs(os.path.dirname(args.save_model_path) if os.path.dirname(args.save_model_path) else '.', exist_ok=True)
+        # 4. Apply JSON Overrides
+        for model_name, override_params in model_overrides.items():
+            if model_name in regression_model_configs:
+                deep_update(regression_model_configs[model_name], override_params)
+                if args.verbose:
+                    print(f"⚙️ Applied overrides for {model_name}: {override_params}")
+            else:
+                print(f"⚠️ Warning: Model '{model_name}' in overrides not found in regression config.")
 
-        with open(args.save_model_path, 'wb') as f:
-            pickle.dump(model_metadata, f)
+        # Initialize lists to store scores across folds
+        rmse_scores, mae_scores, r2_scores = [], [], []
 
-        file_size = os.path.getsize(args.save_model_path) / (1024 * 1024)
         if args.verbose:
-            print(f"\n✅ Model saved successfully!")
-            print(f"   Path: {args.save_model_path}")
-            print(f"   Size: {file_size:.2f} MB")
-            print(f"   Models saved: {list(final_models.keys())}")
-            print(f"   Features: {len(Xs)}")
-            print(f"   Classes: {num_classes}")
-            print(f"   CV Accuracy: {np.mean(acc_scores):.4f} (+/- {np.std(acc_scores):.4f})")
-            print(f"   CV F1-Score: {np.mean(f1_scores):.4f} (+/- {np.std(f1_scores):.4f})")
-            # ---------------------------------------------------------
-            # Added Per-Class Performance Table
-            # ---------------------------------------------------------
-            print(f"\n📊 Per-Class CV Performance (Average across {len(fold_f1_scores_per_class)} folds):")
+            print(f"Building the regression model...")
+
+        tscv = TimeSeriesSplit(n_splits=5)
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(the_x_data)):
+            X_train, X_val = copy.deepcopy(the_x_data[train_idx]), copy.deepcopy(the_x_data[val_idx])
+            # For regression, keep y as float/continuous (do not cast to int)
+            y_train, y_val = copy.deepcopy(the_y_data[train_idx]), copy.deepcopy(the_y_data[val_idx])
+
+            # Flatten labels
+            y_train = y_train.ravel()
+            y_val = y_val.ravel()
+
+            scaler = RobustScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_val_scaled = scaler.transform(X_val)
+
+            fold_predictions = []  # Store predictions for ensemble
+            for model_name in args.base_models:
+                # Skip classifiers if accidentally selected in regression mode
+                if model_name not in regression_model_configs:
+                    continue
+
+                cfg = regression_model_configs[model_name]
+                model = cfg["class"](**cfg["params"])
+                fit_kwargs_init = {}
+                model.fit(X_train_scaled, y_train, **fit_kwargs_init)
+
+                # Store Predictions for Ensemble
+                pred = model.predict(X_val_scaled)
+                fold_predictions.append(pred)
+
+            # --- Ensemble Averaging Predictions ---
+            avg_pred = np.mean(fold_predictions, axis=0)
+
+            # --- Regression Metrics ---
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            rmse = np.sqrt(mean_squared_error(y_val, avg_pred))
+            mae = mean_absolute_error(y_val, avg_pred)
+            r2 = r2_score(y_val, avg_pred)
+
+            if args.verbose:
+                print(f"Fold {fold + 1}: RMSE={rmse:.4f}, MAE={mae:.4f}, R2={r2:.4f}")
+
+            rmse_scores.append(rmse)
+            mae_scores.append(mae)
+            r2_scores.append(r2)
+
+        if args.verbose:
+            print(f"\nAverage RMSE: {np.mean(rmse_scores):.4f} (+/- {np.std(rmse_scores):.4f})")
+            print(f"Average MAE: {np.mean(mae_scores):.4f} (+/- {np.std(mae_scores):.4f})")
+            print(f"Average R2: {np.mean(r2_scores):.4f} (+/- {np.std(r2_scores):.4f})")
+
+        # ---------------------------------------------------------
+        # SAVE MODEL AND PREPROCESSING OBJECTS (REGRESSION)
+        # ---------------------------------------------------------
+        if args.save_model_path is not None:
+            if args.verbose:
+                print("\n" + "=" * 80)
+                print("💾 Saving regression model and preprocessing objects...")
+                print("=" * 80)
+
+            # Train final models on ALL data
+            if args.verbose:
+                print(f"Training final models on full dataset ({len(the_x_data)} samples)...")
+
+            final_scaler = RobustScaler()
+            X_full_scaled = final_scaler.fit_transform(the_x_data)
+            y_full = the_y_data.ravel()  # Keep continuous
+
+            final_models = {}
+            for model_name in args.base_models:
+                if model_name not in regression_model_configs:
+                    continue
+                cfg = regression_model_configs[model_name]
+                model = cfg["class"](**cfg["params"])
+                if args.verbose:
+                    print(f"  Training {model_name}...")
+
+                fit_kwargs = {}
+                if cfg.get("uses_validation_fraction", False):
+                    fit_kwargs['validation_fraction'] = 0.1
+                    fit_kwargs['n_iter_no_change'] = 20
+
+                model.fit(X_full_scaled, y_full, **fit_kwargs)
+                final_models[model_name] = model
+
+            # Prepare metadata for inference
+            # Note: num_classes is not applicable for regression, set to None or 1
+            model_metadata = {
+                'scaler': final_scaler,
+                'models': final_models,
+                'feature_list': Xs,
+                'feature_names': [f"{col[0]}_{col[1]}" if isinstance(col, tuple) else str(col) for col in Xs],
+                'num_classes': None,  # Regression
+                'task_type': 'regression',
+                'target_column': Ys,
+                'args': vars(args),
+                'training_date_range': {
+                    'start': the_d_data[0].strftime('%Y-%m-%d') if hasattr(the_d_data[0], 'strftime') else str(the_d_data[0]),
+                    'end': the_d_data[-1].strftime('%Y-%m-%d') if hasattr(the_d_data[-1], 'strftime') else str(the_d_data[-1])
+                },
+                'cv_scores': {
+                    'rmse_mean': float(np.mean(rmse_scores)),
+                    'rmse_std': float(np.std(rmse_scores)),
+                    'mae_mean': float(np.mean(mae_scores)),
+                    'mae_std': float(np.std(mae_scores)),
+                    'r2_mean': float(np.mean(r2_scores)),
+                    'r2_std': float(np.std(r2_scores)),
+                },
+                'preprocessing_config': {
+                    'convert_price_level_with_baseline': args.convert_price_level_with_baseline,
+                    'enable_ema': args.enable_ema,
+                    'enable_sma': args.enable_sma,
+                    'enable_rsi': args.enable_rsi,
+                    'enable_macd': args.enable_macd,
+                    'enable_vwap': args.enable_vwap,
+                    'enable_day_data': args.enable_day_data,
+                    'shift_seq_col': args.shift_seq_col,
+                    'ema_windows': args.ema_windows,
+                    'sma_windows': args.sma_windows,
+                    'rsi_windows': args.rsi_windows,
+                    'macd_params': macd_params if 'macd_params' in locals() else args.macd_params,
+                    'vwap_window': args.vwap_window,
+                    'add_only_vwap_z_and_vwap_triggers': args.add_only_vwap_z_and_vwap_triggers,
+                    'epsilon': args.epsilon,
+                    'look_ahead': args.look_ahead,
+                }
+            }
+
+            # Save using pickle
+            import pickle
+            os.makedirs(os.path.dirname(args.save_model_path) if os.path.dirname(args.save_model_path) else '.', exist_ok=True)
+            with open(args.save_model_path, 'wb') as f:
+                pickle.dump(model_metadata, f)
+
+            file_size = os.path.getsize(args.save_model_path) / (1024 * 1024)
+            if args.verbose:
+                print(f"\n✅ Model saved successfully!")
+                print(f"   Path: {args.save_model_path}")
+                print(f"   Size: {file_size:.2f} MB")
+                print(f"   Models saved: {list(final_models.keys())}")
+                print(f"   Features: {len(Xs)}")
+                print(f"   Task: Regression")
+                print(f"   CV RMSE: {np.mean(rmse_scores):.4f} (+/- {np.std(rmse_scores):.4f})")
+                print("=" * 80)
+        return np.mean(rmse_scores), np.mean(mae_scores), np.mean(r2_scores), None, None
+    if args.optimization_strategy == 'classification':
+        # ---------------------------------------------------------
+        # MODEL CONFIGURATION (UPDATED WITH ARGS)
+        # ---------------------------------------------------------
+        # 1. Parse Model Overrides
+        try:
+            model_overrides = json.loads(args.model_overrides)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON for --model_overrides. Example: '{\"xgb\": {\"params\": {\"n_estimators\": 1000}}}'")
+        ## 2. Define Base Configs using Global Args
+        # We use a factory pattern to ensure args are applied consistently
+        def get_base_config(model_name, model_class, params_template):
+            cfg = {
+                "class": model_class,
+                "params": params_template.copy(),
+                "supports_early_stopping": False,
+                "uses_validation_fraction": False
+            }
+            # Apply global args to params if keys exist
+            # if 'n_estimators' in cfg["params"]: cfg["params"]["n_estimators"] = args.n_estimators
+
+            # Special flags
+            if model_name in ["xgb", "lgb", "cat", "hgb", "mlp"]:
+                cfg["supports_early_stopping"] = False
+            if model_name in ["hgb", "mlp"]:
+                cfg["uses_validation_fraction"] = False
+            return cfg
+        classification_model_configs = {
+            "xgb": get_base_config("xgb", xgb.XGBClassifier, {
+                'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.05,
+                'subsample': 0.8, 'colsample_bytree': 0.8, 'random_state': 42,
+                'objective': 'multi:softprob', 'num_class': num_classes,
+                'eval_metric': 'mlogloss', 'tree_method': 'hist',
+            }),
+            "rf": get_base_config("rf", RandomForestClassifier, {
+                'n_estimators': 500, 'max_depth': 6, 'random_state': 42,
+                'n_jobs': -1, 'class_weight': 'balanced'
+            }),
+            "lgb": get_base_config("lgb", lgb.LGBMClassifier, {
+                'n_estimators': 500, 'max_depth': 6, 'learning_rate': 0.05,
+                'subsample': 0.8, 'colsample_bytree': 0.8, 'random_state': 42,
+                'objective': 'multiclass', 'num_class': num_classes,
+                'metric': 'multi_logloss', 'verbosity': -1,
+            }),
+            "cat": get_base_config("cat", CatBoostClassifier, {
+                'iterations': 500, 'depth': 6, 'learning_rate': 0.05,
+                'random_seed': 42, 'verbose': False,
+                'loss_function': 'MultiClass', 'classes_count': num_classes,
+                'eval_metric': 'MultiClass',
+            }),
+            "hgb": get_base_config("hgb", HistGradientBoostingClassifier, {
+                'max_iter': 500, 'max_depth': 6, 'learning_rate': 0.05,
+                'random_state': 42, 'loss': 'log_loss',
+                'early_stopping': False, 'n_iter_no_change': 20,
+            }),
+            "et": get_base_config("et", ExtraTreesClassifier, {
+                'n_estimators': 500, 'max_depth': 6, 'random_state': 42,
+                'n_jobs': -1, 'class_weight': 'balanced', 'bootstrap': False
+            }),
+            "svm": get_base_config("svm", SVC, {
+                'C': 1.0, 'kernel': 'rbf', 'gamma': 'scale', 'random_state': 42,
+                'probability': True, 'class_weight': 'balanced',
+                'decision_function_shape': 'ovr'
+            }),
+            "knn": get_base_config("knn", KNeighborsClassifier, {
+                'n_neighbors': 5, 'weights': 'distance', 'metric': 'minkowski',
+                'p': 2, 'n_jobs': 1
+            }),
+            "mlp": get_base_config("mlp", MLPClassifier, {
+                'hidden_layer_sizes': (100, 50), 'activation': 'relu',
+                'solver': 'adam', 'alpha': 0.0001, 'batch_size': 'auto',
+                'learning_rate': 'adaptive', 'learning_rate_init': 0.05,
+                'max_iter': 500, 'early_stopping': False,
+                'validation_fraction': 0.1, 'n_iter_no_change': 20,
+                'random_state': 42,
+            }),
+            "lr": get_base_config("lr", LogisticRegression, {
+                'C': 1.0, 'penalty': 'l2', 'solver': 'lbfgs',
+                'max_iter': 500, 'random_state': 42,
+                'class_weight': 'balanced', 'n_jobs': -1
+            }),
+            "dt": get_base_config("dt", DecisionTreeClassifier, {
+                'max_depth': 6, 'random_state': 42, 'class_weight': 'balanced',
+                'criterion': 'gini', 'min_samples_split': 2, 'min_samples_leaf': 1
+            })
+        }
+        # 3. Apply JSON Overrides
+        for model_name, override_params in model_overrides.items():
+            if model_name in classification_model_configs:
+                deep_update(classification_model_configs[model_name], override_params)
+                if args.verbose:
+                    print(f"⚙️ Applied overrides for {model_name}: {override_params}")
+            else:
+                print(f"⚠️ Warning: Model '{model_name}' in overrides not found in config.")
+        # Initialize lists to store per-class scores across folds ---
+        acc_scores, f1_scores = [], []
+        fold_precision_scores_per_class = []
+        fold_recall_scores_per_class = []
+        fold_f1_scores_per_class = []
+        if args.verbose:
+            print(f"Building the model...")
+        tscv = TimeSeriesSplit(n_splits=5)
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(the_x_data)):
+            X_train, X_val = copy.deepcopy(the_x_data[train_idx]), copy.deepcopy(the_x_data[val_idx])
+            y_train, y_val = copy.deepcopy(the_y_data[train_idx]), copy.deepcopy(the_y_data[val_idx])
+            # Flatten and Convert Labels to Integers ---
+            # XGBoost expects 1D integer arrays for classification
+            y_train = y_train.ravel().astype(int)
+            y_val = y_val.ravel().astype(int)
+            scaler = RobustScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_val_scaled = scaler.transform(X_val)
+
+            fold_predictions_proba = []  # Store probabilities for ensemble
+            for model_name in args.base_models:
+                cfg = classification_model_configs[model_name]
+                model = cfg["class"](**cfg["params"])
+                fit_kwargs_init = {}
+                model.fit(X_train_scaled, y_train, **fit_kwargs_init)
+
+                # Store Probabilities for Ensemble
+                pred_proba = model.predict_proba(X_val_scaled)
+
+                # Ensure consistent shape (n_samples, num_classes) for all models ---
+                # Models like HistGradientBoostingClassifier infer classes from y_train.
+                # If a fold is missing some classes, pred_proba will have fewer columns.
+                if pred_proba.shape[1] != num_classes:
+                    # Create a full probability matrix initialized to 0
+                    full_proba = np.zeros((pred_proba.shape[0], num_classes))
+                    # Map the predicted probabilities to the correct class indices
+                    # model.classes_ contains the specific class labels present in this training fold
+                    full_proba[:, model.classes_] = pred_proba
+                    fold_predictions_proba.append(full_proba)
+                else:
+                    fold_predictions_proba.append(pred_proba)
+            # --- Ensemble Averaging Probabilities ---
+            avg_proba = np.mean(fold_predictions_proba, axis=0)
+            y_pred_final = np.argmax(avg_proba, axis=1)
+
+            # --- Multi-Class Metrics ---
+            from sklearn.metrics import accuracy_score, f1_score, classification_report, precision_recall_fscore_support
+
+            acc = accuracy_score(y_val, y_pred_final)
+            f1 = f1_score(y_val, y_pred_final, average='weighted')  # 'weighted' handles imbalance
+
+            # --- Per-Class Scores ---
+            precision, recall, f1_per_class, support = precision_recall_fscore_support(
+                y_val, y_pred_final, labels=range(num_classes), zero_division=0
+            )
+            fold_precision_scores_per_class.append(precision)
+            fold_recall_scores_per_class.append(recall)
+            fold_f1_scores_per_class.append(f1_per_class)
+            if args.verbose:
+                print(f"Fold {fold + 1}: Acc={acc:.4f}, F1={f1:.4f}")
+                # Print Per-Class F1 for this fold
+                f1_str = ", ".join([f"{i}:{v:.3f}" for i, v in enumerate(f1_per_class)])
+                print(f"  Per-Class F1: [{f1_str}]")
+            acc_scores.append(acc)
+            f1_scores.append(f1)
+        if args.verbose:
+            print(f"\nAverage Accuracy: {np.mean(acc_scores):.4f}")
+            print(f"Average Weighted F1: {np.mean(f1_scores):.4f}")
+            print(f"Precision\n"
+                  f"TP / (TP + FP)\n"
+                  f"Of all the instances I predicted as positive, how many were actually positive?")
+            print(f"Recall\n"
+                  f"TP / (TP + FN)\n"
+                  f"Of all the actual positive instances, how many did I correctly identify?")
+            print("Accuracy\n"
+                  "Accuracy = (True Positives + True Negatives) / Total Predictions\n"
+                  "         = (TP + TN) / (TP + TN + FP + FN)")
+        # Average Per-Class Scores ---
+        avg_precision = np.mean(fold_precision_scores_per_class, axis=0)
+        avg_recall = np.mean(fold_recall_scores_per_class, axis=0)
+        avg_f1 = np.mean(fold_f1_scores_per_class, axis=0)
+        if args.verbose:
+            print(f"\nAverage Per-Class Validation Scores ({len(fold_f1_scores_per_class)} folds):")
             print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
             print("-" * 44)
             for c in range(num_classes):
                 print(f"{c:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
-            print("=" * 80)
-    return np.mean(f1_scores), np.mean(acc_scores), avg_precision, avg_recall, avg_f1
+        # ---------------------------------------------------------
+        # SAVE MODEL AND PREPROCESSING OBJECTS
+        # ---------------------------------------------------------
+        if args.save_model_path is not None:
+            if args.verbose:
+                print("\n" + "=" * 80)
+                print("💾 Saving model and preprocessing objects for later inference...")
+                print("=" * 80)
+
+            # Train final models on ALL data (not just CV folds)
+            if args.verbose:
+                print(f"Training final models on full dataset ({len(the_x_data)} samples)...")
+
+            # Fit scaler on full dataset
+            final_scaler = RobustScaler()
+            X_full_scaled = final_scaler.fit_transform(the_x_data)
+            y_full = the_y_data.ravel().astype(int)
+
+            # Train final ensemble models
+            final_models = {}
+            for model_name in args.base_models:
+                cfg = classification_model_configs[model_name]
+                model = cfg["class"](**cfg["params"])
+
+                if args.verbose:
+                    print(f"  Training {model_name}...")
+
+                # Handle early stopping if supported
+                fit_kwargs = {}
+                if cfg.get("uses_validation_fraction", False):
+                    fit_kwargs['validation_fraction'] = 0.1
+                    fit_kwargs['n_iter_no_change'] = 20
+
+                model.fit(X_full_scaled, y_full, **fit_kwargs)
+                final_models[model_name] = model
+
+            # Prepare metadata for inference
+            model_metadata = {
+                'scaler': final_scaler,
+                'models': final_models,
+                'feature_list': Xs,
+                'feature_names': [f"{col[0]}_{col[1]}" if isinstance(col, tuple) else str(col) for col in Xs],
+                'num_classes': num_classes,
+                'target_column': Ys,
+                'args': vars(args),
+                'class_distribution': {int(cls): int(cnt) for cls, cnt in zip(unique_classes_new, counts_new)},
+                'training_date_range': {
+                    'start': the_d_data[0].strftime('%Y-%m-%d') if hasattr(the_d_data[0], 'strftime') else str(the_d_data[0]),
+                    'end': the_d_data[-1].strftime('%Y-%m-%d') if hasattr(the_d_data[-1], 'strftime') else str(the_d_data[-1])
+                },
+                'cv_scores': {
+                    'accuracy_mean': float(np.mean(acc_scores)),
+                    'accuracy_std': float(np.std(acc_scores)),
+                    'f1_mean': float(np.mean(f1_scores)),
+                    'f1_std': float(np.std(f1_scores)),
+                    'per_class_f1_mean': avg_f1.tolist(),
+                    'per_class_precision_mean': avg_precision.tolist(),
+                    'per_class_recall_mean': avg_recall.tolist(),
+                },
+                'preprocessing_config': {
+                    'convert_price_level_with_baseline': args.convert_price_level_with_baseline,
+                    'enable_ema': args.enable_ema,
+                    'enable_sma': args.enable_sma,
+                    'enable_rsi': args.enable_rsi,
+                    'enable_macd': args.enable_macd,
+                    'enable_vwap': args.enable_vwap,
+                    'enable_day_data': args.enable_day_data,
+                    'shift_seq_col': args.shift_seq_col,
+                    'ema_windows': args.ema_windows,
+                    'sma_windows': args.sma_windows,
+                    'rsi_windows': args.rsi_windows,
+                    'macd_params': macd_params if 'macd_params' in locals() else args.macd_params,
+                    'vwap_window': args.vwap_window,
+                    'add_only_vwap_z_and_vwap_triggers': args.add_only_vwap_z_and_vwap_triggers,
+                    'epsilon': args.epsilon,
+                    'look_ahead': args.look_ahead,
+                }
+            }
+
+            # Save using pickle
+            import pickle
+            os.makedirs(os.path.dirname(args.save_model_path) if os.path.dirname(args.save_model_path) else '.', exist_ok=True)
+
+            with open(args.save_model_path, 'wb') as f:
+                pickle.dump(model_metadata, f)
+
+            file_size = os.path.getsize(args.save_model_path) / (1024 * 1024)
+            if args.verbose:
+                print(f"\n✅ Model saved successfully!")
+                print(f"   Path: {args.save_model_path}")
+                print(f"   Size: {file_size:.2f} MB")
+                print(f"   Models saved: {list(final_models.keys())}")
+                print(f"   Features: {len(Xs)}")
+                print(f"   Classes: {num_classes}")
+                print(f"   CV Accuracy: {np.mean(acc_scores):.4f} (+/- {np.std(acc_scores):.4f})")
+                print(f"   CV F1-Score: {np.mean(f1_scores):.4f} (+/- {np.std(f1_scores):.4f})")
+                # ---------------------------------------------------------
+                # Added Per-Class Performance Table
+                # ---------------------------------------------------------
+                print(f"\n📊 Per-Class CV Performance (Average across {len(fold_f1_scores_per_class)} folds):")
+                print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
+                print("-" * 44)
+                for c in range(num_classes):
+                    print(f"{c:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
+                print("=" * 80)
+        return np.mean(f1_scores), np.mean(acc_scores), avg_precision, avg_recall, avg_f1
 
 
 if __name__ == "__main__":
@@ -1014,8 +1268,8 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument("--epsilon", type=float, default=0.,
                         help="Threshold for neutral returns. Default: 0.")
-    parser.add_argument("--target", type=str, default='POS_SEQ', choices=['POS_SEQ', 'NEG_SEQ'],
-                        help="Target column for prediction. Options: POS_SEQ, NEG_SEQ. Default: POS_SEQ.")
+    parser.add_argument("--target", type=str, default='POS_SEQ', choices=['POS_SEQ', 'NEG_SEQ', 'STREAK_SEQ'],
+                        help="Target column for prediction. Options: POS_SEQ, NEG_SEQ, STREAK_SEQ (pos-neg). Default: POS_SEQ.")
     parser.add_argument("--convert_price_level_with_baseline", type=str, default='fraction', choices=['fraction', 'return'],
                         help="Method to convert price levels. 'fraction': price/baseline, 'return': (price/baseline)-1. Default: fraction.")
     parser.add_argument('--add_close_diff', type=str2bool, default=True,
@@ -1077,6 +1331,8 @@ if __name__ == "__main__":
     # Add this new argument to the argument parser (near line ~850)
     parser.add_argument('--load_model_path', type=str, default=None,
                         help="Path to load a saved model for inference. Use with --real-time-only and --compiled_dataset_filename")
+    parser.add_argument("--optimization_strategy", type=str, default='classification',
+                        help="Either classification or regression")
     # ---------------------------------------------------------
     # MODEL HYPERPARAMETER ARGUMENTS
     # ---------------------------------------------------------
