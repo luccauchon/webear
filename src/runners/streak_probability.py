@@ -99,7 +99,7 @@ def add_sequence_columns_vectorized(df, col_name, ticker_name, epsilon=0.0):
     # Fill NaN with 0
     df[('POS_SEQ', ticker_name)] = pos_seq.fillna(0).astype(int)
     df[('NEG_SEQ', ticker_name)] = neg_seq.fillna(0).astype(int)
-
+    df[('STREAK_SEQ', ticker_name)]       = df[('POS_SEQ', ticker_name)] - df[('NEG_SEQ', ticker_name)]
     return df
 
 
