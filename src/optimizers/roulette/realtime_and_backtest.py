@@ -582,7 +582,8 @@ def main(args):
             if args.verbose:
                 print(f"⚠️ Dropping {invalid_count} rows where POS_SEQ and NEG_SEQ were both non-zero.")
             invalid_rows = master_data_cache.index[invalid_mask]
-            print(f"Mutual exclusivity violated at indices: {invalid_rows.tolist()}")
+            if args.verbose:
+                print(f"Mutual exclusivity violated at indices: {invalid_rows.tolist()}")
             master_data_cache = master_data_cache[~invalid_mask]
 
         # Create tuple label mapping
