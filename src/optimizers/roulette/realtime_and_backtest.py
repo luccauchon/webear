@@ -628,9 +628,7 @@ def main(args):
                 baseline_price = baseline_price.values[0]
             assert baseline_price > 0, f"{baseline_price=}   {close_col=}"
 
-            price_cols = [col for col in Xs
-                          if ('SMA' in col[0] or 'EMA' in col[0] or
-                              col == close_col) and col[1] == args.ticker]
+            price_cols = [col for col in Xs if ('SMA' in col[0] or 'EMA' in col[0] or col == close_col) and col[1] == args.ticker]
 
             if args.enable_vwap:
                 price_cols += VWAP_COLS_AS_PRICE

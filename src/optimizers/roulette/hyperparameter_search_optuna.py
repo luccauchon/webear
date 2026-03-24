@@ -203,17 +203,12 @@ def main(args):
     # (Do not rely on ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES when n_jobs > 1)
     if study.best_trial:
         best_params = study.best_params
-
-        # Derive fixed values from args (mimicking get_default_namespace logic)
-        target_val = "POS_SEQ" if "pos_seq" in args.optimize_target else None
-        target_val = "NEG_SEQ" if "neg_seq" in args.optimize_target else None
-        target_val = "STREAK_SEQ" if "streak_seq" in args.optimize_target else None
         convert_price_val = 'fraction'
         enable_day_data_val = True
 
         _tmp_str = (f"python realtime_and_backtest.py "
                     f"--ticker \"{args.ticker}\" --dataset_id {args.dataset_id} --look_ahead {args.look_ahead} --step_back_range {args.step_back_range} "
-                    f"--epsilon {args.epsilon} --target {target_val} --convert_price_level_with_baseline {convert_price_val} "
+                    f"--epsilon {args.epsilon} --convert_price_level_with_baseline {convert_price_val} "
                     f"--verbose true --older_dataset none ")
 
         # EMA
@@ -470,7 +465,7 @@ if __name__ == "__main__":
                         help='Number of trials for Optuna')
     parser.add_argument('--n_jobs', type=int, default=1,
                         help='Number of parallel jobs. -1 means all CPUs. (Critical for speed)')
-    parser.add_argument('--optimize_target', type=str, default='seq__f1', choices=['seq__f1'],
+    parser.add_argument('--optimize_target', type=str, default='seq__f1', choices=['seq__f1', 'seq__precision'],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds')
@@ -485,7 +480,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_ema_slots', type=int, default=2)
     parser.add_argument('--ema_min', type=int, default=5)
     parser.add_argument('--ema_max', type=int, default=20)
-    parser.add_argument('--ema_step', type=int, default=5)
+    parser.add_argument('--ema_step', type=int, default=2)
     parser.add_argument('--max_ema_shift_slots', type=int, default=1)
     parser.add_argument('--ema_shift_min', type=int, default=1)
     parser.add_argument('--ema_shift_max', type=int, default=3)
@@ -494,7 +489,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_sma_slots', type=int, default=2)
     parser.add_argument('--sma_min', type=int, default=50)
     parser.add_argument('--sma_max', type=int, default=200)
-    parser.add_argument('--sma_step', type=int, default=20)
+    parser.add_argument('--sma_step', type=int, default=5)
     parser.add_argument('--max_sma_shift_slots', type=int, default=1)
     parser.add_argument('--sma_shift_min', type=int, default=1)
     parser.add_argument('--sma_shift_max', type=int, default=3)
