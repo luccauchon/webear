@@ -14,6 +14,7 @@ python .\hyperparameter_search_optuna.py ^
 --activate_macd_space_search true ^
 --activate_vwap_space_search true ^
 --add_only_vwap_z_and_vwap_triggers false ^
+--min_percentage_to_keep_class 4.0 ^
 --storage my_storage_roulette ^
 --study_name opt_f1
 pause
