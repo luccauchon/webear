@@ -17,7 +17,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+import traceback
 import os
 import sys
 import pickle
@@ -935,22 +935,26 @@ def main(args):
 
         fold_predictions_proba = []
         for model_name in args.base_models:
-            cfg = classification_model_configs[model_name]
-            model = cfg["class"](**cfg["params"])  # New model
+            try:
+                cfg = classification_model_configs[model_name]
+                model = cfg["class"](**cfg["params"])  # New model
 
-            fit_kwargs_init = {}
-            model.fit(X_train_scaled, y_train, **fit_kwargs_init)
+                fit_kwargs_init = {}
+                model.fit(X_train_scaled, y_train, **fit_kwargs_init)
 
-            # Store probabilities for ensemble
-            pred_proba = model.predict_proba(X_val_scaled)
+                # Store probabilities for ensemble
+                pred_proba = model.predict_proba(X_val_scaled)
 
-            # Ensure consistent shape
-            if pred_proba.shape[1] != num_classes:
-                full_proba = np.zeros((pred_proba.shape[0], num_classes))
-                full_proba[:, model.classes_] = pred_proba
-                fold_predictions_proba.append(full_proba)
-            else:
-                fold_predictions_proba.append(pred_proba)
+                # Ensure consistent shape
+                if pred_proba.shape[1] != num_classes:
+                    full_proba = np.zeros((pred_proba.shape[0], num_classes))
+                    full_proba[:, model.classes_] = pred_proba
+                    fold_predictions_proba.append(full_proba)
+                else:
+                    fold_predictions_proba.append(pred_proba)
+            except Exception as e:
+                print(e)
+                traceback.print_exc()
 
         # Ensemble averaging
         avg_proba = np.mean(fold_predictions_proba, axis=0)
