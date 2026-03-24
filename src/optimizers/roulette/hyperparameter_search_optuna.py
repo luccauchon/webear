@@ -94,12 +94,8 @@ def objective(trial, configuration_specified, args):
     """Optuna objective function with class 0 focus and penalty options."""
     # Create configuration for this trial
     configuration = configuration_specified(args, trial=trial)
-    is_classification = False if args.optimize_target == "streak_seq__mae" else True
-    if args.skip_optimization:
-        return random.random()
-
     try:
-        f1_scores, acc_scores, avg_precision, avg_recall, avg_f1 = roulette_realtime_and_backtest(configuration)
+        f1_scores = roulette_realtime_and_backtest(configuration)
     except ValueError:
         return 0.0
     except Exception as e:
@@ -109,147 +105,8 @@ def objective(trial, configuration_specified, args):
             traceback.print_exc()
         return 0.0
 
-    # Helper to calculate penalty for a specific target class index dynamically
-    def get_other_penalty(target_idx):
-        other_vals = [v for k, v in class_scores.items() if k != target_idx]
-        if len(other_vals) > 0:
-            return np.mean(other_vals) * args.other_classes_penalty
-        return 0.0
-
-    if is_classification:
-        # Extract class scores safely (Support up to Class 3)
-        class_scores = {}
-        for i in range(4):
-            class_scores[i] = avg_f1[i] if len(avg_f1) > i else 0.0
-
-        class_0_score = class_scores[0]
-        class_1_score = class_scores[1]
-        class_2_score = class_scores[2]
-        class_3_score = class_scores[3]
-
-        # Legacy variable for existing Class 0 logic compatibility
-        other_scores_no_class_0 = [class_scores[i] for i in range(1, 4)]
-        penalty__other_scores_no_class_0 = 0.0
-        if len(other_scores_no_class_0) > 0:
-            penalty__other_scores_no_class_0 = np.mean(other_scores_no_class_0) * args.other_classes_penalty
-
     # Select optimization target
-    score = 0.0
-    if args.optimize_target == 'streak_seq__mae':
-        score = acc_scores
-    elif args.optimize_target == 'pos_seq_0__f1':
-        score = class_0_score
-    elif args.optimize_target == 'pos_seq_1__f1':
-        score = class_1_score
-    elif args.optimize_target == 'pos_seq_2__f1':
-        score = class_2_score
-    elif args.optimize_target == 'pos_seq_3__f1':
-        score = class_3_score
-    elif args.optimize_target == 'neg_seq_0__f1':
-        score = class_0_score
-    elif args.optimize_target == 'neg_seq_1__f1':
-        score = class_1_score
-    elif args.optimize_target == 'neg_seq_2__f1':
-        score = class_2_score
-    elif args.optimize_target == 'neg_seq_3__f1':
-        score = class_3_score
-    elif args.optimize_target == 'pos_seq__f1':
-        score = f1_scores
-    elif args.optimize_target == 'neg_seq__f1':
-        score = f1_scores
-
-    # --- Class 0 Focus ---
-    elif args.optimize_target == 'pos_seq_0__f1_penalty_others':
-        score = class_0_score - penalty__other_scores_no_class_0
-
-    elif args.optimize_target == 'neg_seq_0__f1_penalty_others':
-        score = class_0_score - penalty__other_scores_no_class_0
-
-    # Class 0 focus with weighted penalty (class 0 = 2x weight)
-    elif args.optimize_target == 'pos_seq_0__f1_weighted_penalty':
-        score = (2.0 * class_0_score) - penalty__other_scores_no_class_0
-
-    elif args.optimize_target == 'neg_seq_0__f1_weighted_penalty':
-        score = (2.0 * class_0_score) - penalty__other_scores_no_class_0
-
-    # Custom weight optimization for class 0
-    elif args.optimize_target == 'pos_seq_0__f1_custom_weight':
-        score = (args.class_0_weight * class_0_score) - penalty__other_scores_no_class_0
-
-    elif args.optimize_target == 'neg_seq_0__f1_custom_weight':
-        score = (args.class_0_weight * class_0_score) - penalty__other_scores_no_class_0
-
-    # Maximize class 0 only, ignore others completely
-    elif args.optimize_target == 'pos_seq_0__f1_only':
-        score = class_0_score
-
-    elif args.optimize_target == 'neg_seq_0__f1_only':
-        score = class_0_score
-
-    # --- Class 1 Focus ---
-    elif args.optimize_target == 'pos_seq_1__f1_penalty_others':
-        score = class_1_score - get_other_penalty(1)
-    elif args.optimize_target == 'neg_seq_1__f1_penalty_others':
-        score = class_1_score - get_other_penalty(1)
-    elif args.optimize_target == 'pos_seq_1__f1_weighted_penalty':
-        score = (2.0 * class_1_score) - get_other_penalty(1)
-    elif args.optimize_target == 'neg_seq_1__f1_weighted_penalty':
-        score = (2.0 * class_1_score) - get_other_penalty(1)
-    elif args.optimize_target == 'pos_seq_1__f1_custom_weight':
-        score = (args.class_1_weight * class_1_score) - get_other_penalty(1)
-    elif args.optimize_target == 'neg_seq_1__f1_custom_weight':
-        score = (args.class_1_weight * class_1_score) - get_other_penalty(1)
-    elif args.optimize_target == 'pos_seq_1__f1_only':
-        score = class_1_score
-    elif args.optimize_target == 'neg_seq_1__f1_only':
-        score = class_1_score
-
-    # --- Class 2 Focus ---
-    elif args.optimize_target == 'pos_seq_2__f1_penalty_others':
-        score = class_2_score - get_other_penalty(2)
-    elif args.optimize_target == 'neg_seq_2__f1_penalty_others':
-        score = class_2_score - get_other_penalty(2)
-    elif args.optimize_target == 'pos_seq_2__f1_weighted_penalty':
-        score = (2.0 * class_2_score) - get_other_penalty(2)
-    elif args.optimize_target == 'neg_seq_2__f1_weighted_penalty':
-        score = (2.0 * class_2_score) - get_other_penalty(2)
-    elif args.optimize_target == 'pos_seq_2__f1_custom_weight':
-        score = (args.class_2_weight * class_2_score) - get_other_penalty(2)
-    elif args.optimize_target == 'neg_seq_2__f1_custom_weight':
-        score = (args.class_2_weight * class_2_score) - get_other_penalty(2)
-    elif args.optimize_target == 'pos_seq_2__f1_only':
-        score = class_2_score
-    elif args.optimize_target == 'neg_seq_2__f1_only':
-        score = class_2_score
-
-    # --- Class 3 Focus ---
-    elif args.optimize_target == 'pos_seq_3__f1_penalty_others':
-        score = class_3_score - get_other_penalty(3)
-    elif args.optimize_target == 'neg_seq_3__f1_penalty_others':
-        score = class_3_score - get_other_penalty(3)
-    elif args.optimize_target == 'pos_seq_3__f1_weighted_penalty':
-        score = (2.0 * class_3_score) - get_other_penalty(3)
-    elif args.optimize_target == 'neg_seq_3__f1_weighted_penalty':
-        score = (2.0 * class_3_score) - get_other_penalty(3)
-    elif args.optimize_target == 'pos_seq_3__f1_custom_weight':
-        score = (args.class_3_weight * class_3_score) - get_other_penalty(3)
-    elif args.optimize_target == 'neg_seq_3__f1_custom_weight':
-        score = (args.class_3_weight * class_3_score) - get_other_penalty(3)
-    elif args.optimize_target == 'pos_seq_3__f1_only':
-        score = class_3_score
-    elif args.optimize_target == 'neg_seq_3__f1_only':
-        score = class_3_score
-
-    else:
-        raise ValueError(f"Unknown optimize_target: {args.optimize_target}")
-
-    # Optional verbose logging for class-specific scores
-    if args.verbose and args.verbose_info_score and trial.number % 10 == 0 and is_classification:
-        print(f"\n📊 Trial {trial.number} Scores:")
-        for i, f1 in enumerate(avg_f1):
-            marker = "🎯" if i == 0 else "  "
-            print(f"    {marker} Class {i} F1: {f1:.4f}")
-        print(f"    Final Optimization Score: {score:.4f}")
+    score = f1_scores
 
     return score
 
@@ -423,13 +280,9 @@ def main(args):
 
 
 def get_default_namespace(args):
-    target = "POS_SEQ" if "pos_seq" in args.optimize_target else None
-    target = "NEG_SEQ" if "neg_seq" in args.optimize_target else None
-    target = "STREAK_SEQ" if "streak_seq" in args.optimize_target else None
     return argparse.Namespace(
         dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
         look_ahead=args.look_ahead, verbose=args.verbose_debug,
-        target=target,
         convert_price_level_with_baseline='fraction',
         sma_windows=[],
         ema_windows=[],
@@ -617,64 +470,7 @@ if __name__ == "__main__":
                         help='Number of trials for Optuna')
     parser.add_argument('--n_jobs', type=int, default=1,
                         help='Number of parallel jobs. -1 means all CPUs. (Critical for speed)')
-    parser.add_argument('--optimize_target', type=str, default='pos_seq__f1',
-                        choices=['streak_seq__mae',
-                            'pos_seq_0__f1', 'pos_seq_1__f1', 'pos_seq_2__f1', 'pos_seq_3__f1',
-                            'pos_seq__f1',
-                            'neg_seq_0__f1', 'neg_seq_1__f1', 'neg_seq_2__f1', 'neg_seq_3__f1',
-                            'neg_seq__f1',
-                            # Class 0 focus with penalty
-                            'pos_seq_0__f1_penalty_others',
-                            'neg_seq_0__f1_penalty_others',
-                            # Class 0 focus with weighted penalty
-                            'pos_seq_0__f1_weighted_penalty',
-                            'neg_seq_0__f1_weighted_penalty',
-                            # Custom weight optimization
-                            'pos_seq_0__f1_custom_weight',
-                            'neg_seq_0__f1_custom_weight',
-                            # Class 0 only (ignore others)
-                            'pos_seq_0__f1_only',
-                            'neg_seq_0__f1_only',
-
-                            # Class 1 focus with penalty
-                            'pos_seq_1__f1_penalty_others',
-                            'neg_seq_1__f1_penalty_others',
-                            # Class 1 focus with weighted penalty
-                            'pos_seq_1__f1_weighted_penalty',
-                            'neg_seq_1__f1_weighted_penalty',
-                            # Custom weight optimization
-                            'pos_seq_1__f1_custom_weight',
-                            'neg_seq_1__f1_custom_weight',
-                            # Class 1 only (ignore others)
-                            'pos_seq_1__f1_only',
-                            'neg_seq_1__f1_only',
-
-                            # Class 2 focus with penalty
-                            'pos_seq_2__f1_penalty_others',
-                            'neg_seq_2__f1_penalty_others',
-                            # Class 2 focus with weighted penalty
-                            'pos_seq_2__f1_weighted_penalty',
-                            'neg_seq_2__f1_weighted_penalty',
-                            # Custom weight optimization
-                            'pos_seq_2__f1_custom_weight',
-                            'neg_seq_2__f1_custom_weight',
-                            # Class 2 only (ignore others)
-                            'pos_seq_2__f1_only',
-                            'neg_seq_2__f1_only',
-
-                            # Class 3 focus with penalty
-                            'pos_seq_3__f1_penalty_others',
-                            'neg_seq_3__f1_penalty_others',
-                            # Class 3 focus with weighted penalty
-                            'pos_seq_3__f1_weighted_penalty',
-                            'neg_seq_3__f1_weighted_penalty',
-                            # Custom weight optimization
-                            'pos_seq_3__f1_custom_weight',
-                            'neg_seq_3__f1_custom_weight',
-                            # Class 3 only (ignore others)
-                            'pos_seq_3__f1_only',
-                            'neg_seq_3__f1_only',
-                        ],
+    parser.add_argument('--optimize_target', type=str, default='seq__f1', choices=['seq__f1'],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds')
@@ -684,18 +480,6 @@ if __name__ == "__main__":
     parser.add_argument('--objective_name', type=str, default='base_configuration',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
                         help='Select the objective function logic by name')
-
-    # --- Class Optimization Weights ---
-    parser.add_argument('--class_0_weight', type=float, default=1.0,
-                        help='Weight for class 0 in optimization (higher = more focus on class 0)')
-    parser.add_argument('--class_1_weight', type=float, default=1.0,
-                        help='Weight for class 1 in optimization (higher = more focus on class 1)')
-    parser.add_argument('--class_2_weight', type=float, default=1.0,
-                        help='Weight for class 2 in optimization (higher = more focus on class 2)')
-    parser.add_argument('--class_3_weight', type=float, default=1.0,
-                        help='Weight for class 3 in optimization (higher = more focus on class 3)')
-    parser.add_argument('--other_classes_penalty', type=float, default=0.0,
-                        help='Penalty multiplier for other classes (0 = no penalty, 1 = full penalty)')
 
     # --- EMA Optimization Search Space ---
     parser.add_argument('--max_ema_slots', type=int, default=2)
