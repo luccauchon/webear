@@ -1,4 +1,4 @@
-source ~/miniconda3/etc/profile.d/conda.sh
+source /home/ubuntu/miniconda3/etc/profile.d/conda.sh
 conda activate PY312_HT
 cd ../../..
 cd src/runners
