@@ -18,5 +18,5 @@ python MMI_hyperparameter_search_optuna.py \
     --mmi_trend_max_max 20 \
     --lookahead_min 1 \
     --lookahead_max 1 \
-    --study_name 0_03__month__la1
+    --study_name 0_03__week__la1
 read
