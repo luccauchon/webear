@@ -28,6 +28,7 @@ CONFIGURATION_FOR_MMI_NEXT_WEEEK = Namespace(
         return_threshold=0.03,
         use_ema=True,
         verbose=False,
+        filter_open_gaps=False,
     )
 
 
