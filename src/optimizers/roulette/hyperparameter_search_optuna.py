@@ -90,12 +90,12 @@ def get_unique_combinations(min_val, max_val, max_slots, _cache, _step):
     return all_combos
 
 
-def objective(trial, configuration_specified, args):
+def objective_fct(trial, configuration_specified, args):
     """Optuna objective function with class 0 focus and penalty options."""
     # Create configuration for this trial
     configuration = configuration_specified(args, trial=trial)
     try:
-        f1_scores = roulette_realtime_and_backtest(configuration)
+        f1_scores, acc_scores = roulette_realtime_and_backtest(configuration)
     except ValueError:
         return 0.0
     except Exception as e:
@@ -104,9 +104,12 @@ def objective(trial, configuration_specified, args):
             print(f"Trial {trial.number} failed: {e}")
             traceback.print_exc()
         return 0.0
-
+    score = 0.
     # Select optimization target
-    score = f1_scores
+    if args.optimize_target == 'seq__f1':
+        score = f1_scores
+    elif args.optimize_target == 'seq__precision':
+        score = acc_scores
 
     return score
 
@@ -174,7 +177,7 @@ def main(args):
 
     # Run Optimization with Parallelism
     study.optimize(
-        lambda trial: objective(trial, selected_objective, args),
+        lambda trial: objective_fct(trial, selected_objective, args),
         n_trials=args.n_trials,
         n_jobs=args.n_jobs,
         show_progress_bar=True,

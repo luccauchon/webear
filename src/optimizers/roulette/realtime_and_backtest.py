@@ -821,7 +821,7 @@ def main(args):
     # CLASSIFICATION TRAINING
     # -------------------------------------------------------------------------
     if args.verbose:
-        print(f"\nBuilding classification model...")
+        print(f"\nBuilding classification model with {args.base_models}...")
 
     # Parse model overrides
     try:
@@ -1120,7 +1120,7 @@ def main(args):
         return np.mean(f1_scores), np.mean(acc_scores), avg_precision, \
             avg_recall, avg_f1
 
-    return np.mean(f1_scores)
+    return np.mean(f1_scores), np.mean(acc_scores)
 
 # =============================================================================
 # ARGUMENT PARSER
