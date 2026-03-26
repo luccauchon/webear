@@ -46,14 +46,14 @@ def parse_arguments():
     parser.add_argument(
         "--base-dir",
         type=str,
-        default=r"/gpfs/home/cj3272/14b/cj3272/experiences/" if IS_RUNNING_ON_CASIR else r"D:\Temp2\use_case",
+        required=True,
         help="The root directory containing the experience folders. (Default: D:\\Temp2\\use_case)"
     )
 
     parser.add_argument(
         "--experience-id",
         type=str,
-        default="alpha_3",
+        required=True,
         help="The specific experience ID subfolder to process within the base directory. (Default: alpha_3)"
     )
 
@@ -95,8 +95,7 @@ def main():
 
     # Construct the full path to the experience directory
     # Using pathlib for robust path handling across OS
-    base_path = Path(args.base_dir)
-    target_directory = base_path / args.experience_id
+    target_directory = os.path.join(args.base_dir, args.experience_id)
 
     # Validate directory existence before proceeding
     if not target_directory.exists():

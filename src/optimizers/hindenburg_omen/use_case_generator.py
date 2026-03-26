@@ -75,14 +75,14 @@ Examples:
     exp_group.add_argument(
         "--experience-id",
         type=str,
-        default="alpha_2",
+        required=True,
         help="Unique identifier for this experiment run. Used for naming output directories."
     )
     exp_group.add_argument(
         "--output-dir",
         type=str,
-        default=None,
-        help="Directory to save results. If not provided, auto-generated based on experience-id and environment."
+        required=True,
+        help="Directory to save results."
     )
 
     # --- Hyperparameter Grid ---
@@ -165,15 +165,7 @@ def main(args):
             timeout = 120
 
     # 2. Resolve Output Directory
-    if args.output_dir:
-        output_dir = args.output_dir
-    else:
-        if IS_RUNNING_ON_CASIR:
-            output_dir = os.path.join("/gpfs/home/cj3272/14b/cj3272/experiences/", args.experience_id)
-        else:
-            # Windows path example from original script
-            output_dir = os.path.join(rf"D:\Temp2\use_case", args.experience_id)
-
+    output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
     # 3. Resolve Hyperparameter Grids
@@ -198,10 +190,7 @@ def main(args):
                 # Original: Negative -> 'drop', Positive -> 'upper' (though 2nd loop was commented out)
                 mode = 'drop' if a_threshold < 0 else 'upper'
 
-                output_filename = os.path.join(
-                    output_dir,
-                    f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json"
-                )
+                output_filename = os.path.join(output_dir, args.experience_id,f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json")
                 configuration_experimentation = argparse.Namespace(
                     dataset_id="day",
                     softer_penalty_for_low_events=None,
