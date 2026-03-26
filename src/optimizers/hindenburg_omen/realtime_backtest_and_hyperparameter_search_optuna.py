@@ -847,7 +847,7 @@ def run_realtime_only(params_file, verbose):
             # 4. SÉCURITÉ : On invalide les dernières lignes (données incomplètes)
             df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
 
-    event_direction = "drop" if args.mode == "drop" else "spike"
+    event_direction = "drop" if best_params['mode'] == "drop" else "spike"
     target = df["Is_Event"]
     valid_mask = df["Target_Pct_Change"].notna()
 
