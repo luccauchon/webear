@@ -33,6 +33,9 @@ from utils import str2bool, DATASET_AVAILABLE, format_execution_time
 from sklearn.model_selection import ParameterGrid, ParameterSampler
 import time
 
+# Optuna : CategoricalDistribution does not support dynamic value space
+BASE_SIGNALS__BECAUSE_OF_OPTUNA = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
 # =========================================================
@@ -124,11 +127,11 @@ def run_professional_optimization(args):
         MIN_SIGNALS_REQUIRED = args.min_signals_required
     else:
         MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
-    base_signals_list_1 = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
-    base_signals_list_2 = list(set(str(args.base_signals).split(",")))
+    # base_signals_list_1 = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+    # base_signals_list_2 = list(set(str(args.base_signals).split(",")))
     # base_signals = list(set(str(args.base_signals).split(",")))
-    base_signals   = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
-    base_signals   = base_signals_list_2
+    base_signals   = BASE_SIGNALS__BECAUSE_OF_OPTUNA # ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+    # base_signals   = base_signals_list_2
     if args.verbose:
         if args.disable_ema_stretch:
             print(f"Disabling EMA strech indicator")
@@ -960,12 +963,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Do not use the Stochastic indicator"
     )
-    strat_group.add_argument(
-        "--base-signals",
-        type=str,
-        default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
-        help="Different startegies for the creation of the base signal."
-    )
+    # strat_group.add_argument(
+    #     "--base-signals",
+    #     type=str,
+    #     default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
+    #     help="Different startegies for the creation of the base signal."
+    # )
 
     bound_group = parser.add_argument_group("Bound Parameters")
     bound_group.add_argument("--sma-len-params", type=str, default="2,100,false,1", )
