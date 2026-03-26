@@ -49,6 +49,7 @@ CONFIGURATION_FOR_MMI_NEXT_DAY = Namespace(
         return_threshold=0.0125,
         use_ema=False,
         verbose=False,
+        filter_open_gaps=False,
     )
 
 
