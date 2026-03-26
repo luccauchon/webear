@@ -236,6 +236,7 @@ def main(args):
                     ema_stretch_params_stretch_treshold="0.01,0.08,false,0.01",
                     cluster_window_params="2,120,false,1",
                     cluster_threshold_params="2,120,false,1",
+                    storage=None,
                 )
                 use_cases.append(configuration_experimentation)
     total_estimated_time = len(use_cases) * timeout / nb_workers
