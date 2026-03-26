@@ -459,7 +459,7 @@ def run_professional_optimization(args):
             storage_url = f"sqlite:///{storage_url}"
 
         if args.verbose:
-            print(f"\n💾 Using Persistent Storage: {storage_url}")
+            print(f"💾 Using Persistent Storage: {storage_url}")
             print(f"📛 Study Name: {args.study_name}")
 
         # Create or Load Study
@@ -474,9 +474,28 @@ def run_professional_optimization(args):
 
         # Run Optimization (Continues from last trial if exists)
         if args.verbose:
-            print(f"\nStarting Optimization: {args.trials} trials (or {args.timeout}s timeout)...")
+            print(f"Starting Optimization: {args.trials} trials (or {args.timeout}s timeout)...")
             existing_trials = len(study.trials)
             print(f"Found {existing_trials} existing trials in storage.")
+
+            # Added Optimization Status Information ---
+            if existing_trials > 0:
+                print(f"🔄 Resuming existing study...")
+            complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
+            fail_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.FAIL]
+
+            print(f"📊 Trial Status: {len(complete_trials)} Complete, {len(pruned_trials)} Pruned, {len(fail_trials)} Failed")
+
+            if len(complete_trials) > 0:
+                print(f"🏆 Current Best Value: {study.best_value:.4f}")
+            # Optional: Uncomment below to see best params on resume
+            # print(f"🏆 Current Best Params: {study.best_params}")
+            else:
+                print(f"⚠️ No complete trials found yet in storage (all pending/pruned).")
+        else:
+            print(f"🆕 Starting fresh study (no existing trials found).")
+        # -----------------------------------------------
 
         study.optimize(objective, n_trials=args.trials, timeout=args.timeout,
                        show_progress_bar=True if args.verbose else False,

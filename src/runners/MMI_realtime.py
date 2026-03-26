@@ -99,7 +99,7 @@ def main(args):
             print(f"🔧 Filtered {rows_removed} rows due to Open gaps (Open > Prev High or Open < Prev Low).")
         elif args.verbose:
             print(f"🔧 Gap filter activated (0 rows removed).")
-
+    actual_date = close_prices.index[:-1]
     if not args.keep_last_step:
         close_prices = close_prices.iloc[:-1]
         open_prices  = open_prices.iloc[:-1]
@@ -146,6 +146,7 @@ def main(args):
         "prices": close_prices.iloc[-1],
         "mmi": mmi_val,
         "ma_slope": ma_slope,
+        "actual_date": actual_date,
     }
 
 
