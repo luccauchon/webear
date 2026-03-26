@@ -126,7 +126,7 @@ def main():
 
     results = []
     for file in iterator:
-        info = run_realtime_only(file, args.run_flag)
+        info = run_realtime_only(params_file=file, verbose=args.run_flag)
 
         is_active_now = info["is_active_now"]
 
