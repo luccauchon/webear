@@ -863,6 +863,7 @@ def run_realtime_only(params_file, verbose):
     info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=best_params['cluster_mode'], params=best_params,
                        target=target,valid_mask=valid_mask, baseline=baseline,forward_days=FORWARD_DAYS, threshold=THRESHOLD,
                        mode=best_params['mode'], verbose = verbose,)
+    info.update({"total_days": total_days, "total_events": total_events})
     return info
 
 
