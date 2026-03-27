@@ -108,12 +108,6 @@ Examples:
         default=None,
         help="List of penalty factor values for low events (space separated). e.g., 0.5 0.75 0.98"
     )
-    grid_group.add_argument(
-        "--base-signals",
-        type=str,
-        default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
-        help="Different startegies for the creation of the base signal."
-    )
 
     return parser.parse_args()
 
@@ -219,7 +213,6 @@ def main(args):
                     disable_rsi=False,
                     disable_macd=False,
                     disable_stochastic=False,
-                    base_signals=args.base_signals,
                     sma_len_params="2,100,false,1",
                     ema_stretch_params_ema_len="2,200,false,1",
                     ema_stretch_params_stretch_treshold="0.01,0.08,false,0.01",
