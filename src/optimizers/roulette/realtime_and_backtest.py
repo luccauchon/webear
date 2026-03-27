@@ -704,9 +704,14 @@ def main(args):
                     print(f"Kept only specified classes {args.specific_wanted_class}. Samples remaining: {len(the_y_data)}")
 
         # Make sure the labels are from 0 to num_classes-1
-        my_label_encoder = LabelEncoder()
-        the_y_data  = my_label_encoder.fit_transform(the_y_data)
-        num_classes = len(np.unique(the_y_data))
+        if args.real_time_only:
+            the_y_data = None
+            assert args.real_time_only_num_classes
+            num_classes = args.real_time_only_num_classes
+        else:
+            my_label_encoder = LabelEncoder()
+            the_y_data  = my_label_encoder.fit_transform(the_y_data)
+            num_classes = len(np.unique(the_y_data))
         # Save dataset and exit if requested
         if args.save_dataset_to_file_and_exit is not None:
             if args.verbose:
@@ -726,6 +731,8 @@ def main(args):
             if args.verbose:
                 print(f"Saved to {args.save_dataset_to_file_and_exit}")
             return
+        assert len(the_x_data) == len(the_d_data) == len(the_y_data)
+        assert num_classes > 1 and np.max(the_y_data) <= num_classes
     else:
         # Load compiled dataset if provided
         data = np.load(args.compiled_dataset_filename, allow_pickle=True)
@@ -750,17 +757,15 @@ def main(args):
                 print(f"\t    {arg:.<40} {value}")
             print("-" * 80, flush=True)
 
-        unique_classes_new, counts_new = np.unique(
-            the_y_data, return_counts=True
-        )
-        print(f"Unique classes after filtering: "
-              f"{unique_classes_new} ({num_classes})")
-        print("Count per class:")
-        for cls, cnt in zip(unique_classes_new, counts_new):
-            if cls is not None:
-                print(f"  Class {int(cls)}: {int(cnt)} samples")
-    assert len(the_x_data) == len(the_d_data) == len(the_y_data)
-    assert num_classes > 1 and np.max(the_y_data) <= num_classes
+        if the_y_data is not None:
+            if len(the_y_data.shape) > 0:
+                unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
+                print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
+                print("Count per class:")
+                for cls, cnt in zip(unique_classes_new, counts_new):
+                    if cls is not None:
+                        print(f"  Class {int(cls)}: {int(cnt)} samples")
+
     # -------------------------------------------------------------------------
     # LOAD MODEL AND PREDICT (Real-time inference)
     # -------------------------------------------------------------------------
@@ -770,10 +775,7 @@ def main(args):
             print("🔮 LOADING MODEL FOR REAL-TIME PREDICTION")
             print("=" * 80)
 
-        model_data = load_model_for_inference(
-            args.load_model_path, verbose=args.verbose
-        )
-
+        model_data = load_model_for_inference(args.load_model_path, verbose=args.verbose)
         assert len(the_x_data) == len(the_d_data)
 
         # Get the latest data point
@@ -814,8 +816,7 @@ def main(args):
             print(f"  Models in Ensemble: {list(model_data['models'].keys())}")
             print("=" * 80)
 
-        return predicted_classes[0], prediction_probabilities[0], \
-            date_of_data_point, model_data
+        return predicted_classes[0], prediction_probabilities[0], date_of_data_point, model_data
 
     # -------------------------------------------------------------------------
     # CLASSIFICATION TRAINING
