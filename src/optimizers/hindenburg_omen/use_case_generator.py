@@ -165,7 +165,7 @@ def main(args):
             timeout = 120
 
     # 2. Resolve Output Directory
-    output_dir = args.output_dir
+    output_dir = os.path.join(args.output_dir, args.experience_id)
     os.makedirs(output_dir, exist_ok=True)
 
     # 3. Resolve Hyperparameter Grids
@@ -190,7 +190,7 @@ def main(args):
                 # Original: Negative -> 'drop', Positive -> 'upper' (though 2nd loop was commented out)
                 mode = 'drop' if a_threshold < 0 else 'upper'
 
-                output_filename = os.path.join(output_dir, args.experience_id,f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json")
+                output_filename = os.path.join(output_dir, f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json")
                 configuration_experimentation = argparse.Namespace(
                     dataset_id="day",
                     softer_penalty_for_low_events=None,
