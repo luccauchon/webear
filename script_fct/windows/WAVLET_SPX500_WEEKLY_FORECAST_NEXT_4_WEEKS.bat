@@ -1,6 +1,7 @@
 @echo off
 call conda activate PY312_HT
-python "D:\PyCharmProjects\webear\src\runners\wavelet_realtime.py" ^
+cd ..\..\src\runners
+python wavelet_realtime.py ^
   --ticker "^GSPC" ^
   --col "Close" ^
   --verbose True ^
