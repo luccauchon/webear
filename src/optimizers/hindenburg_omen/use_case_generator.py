@@ -54,14 +54,14 @@ Examples:
     res_group.add_argument(
         "--nb-workers",
         type=int,
-        default=None,
-        help="Number of parallel worker processes. (Default: 12 locally, 35 on CASIR)"
+        required=True,
+        help="Number of parallel worker processes."
     )
     res_group.add_argument(
         "--timeout",
         type=int,
-        default=None,
-        help="Timeout per trial in seconds. (Default: 120 locally, 7200 on CASIR)"
+        required=True,
+        help="Timeout per trial in seconds."
     )
     res_group.add_argument(
         "--dry-run",

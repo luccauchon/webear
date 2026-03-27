@@ -588,7 +588,7 @@ def run_professional_optimization(args):
     info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, mode=args.mode, verbose=args.verbose)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
-                        'penalty': study.best_trial.user_attrs['penalty']})
+                        'penalty': study.best_trial.user_attrs['penalty'], 'total_events': total_events, 'total_days': total_days})
     if args.verbose:
         print(f"Infos extra: {study.best_trial.user_attrs}")
         # How many trials had statistically significant results?
