@@ -1211,3 +1211,28 @@ def abrupt_growth(x, y_min=0.1, y_max=10.0, sharpness=5):
     # Note: This might not hit 1.0 at exactly 20 unless we solve for
     # the specific 'sharpness' that passes through (20, 1).
     return y_min + (y_max - y_min) * curve
+
+
+def get_weekday_range(input_date):
+    """
+    Given any date, returns a tuple of (Monday, Friday) for that specific week.
+
+    Args:
+        input_date (str | date | datetime | pd.Timestamp): The date to check.
+
+    Returns:
+        tuple: (str, str) in YYYY-MM-DD format representing Monday and Friday.
+    """
+    # Normalize input to a datetime object
+    if isinstance(input_date, str):
+        dt = pd.to_datetime(input_date)
+    elif isinstance(input_date, (date, datetime)):
+        dt = pd.to_datetime(input_date)
+    else:
+        dt = input_date
+
+    # dt.weekday() returns 0 for Monday, 4 for Friday
+    monday = dt - pd.Timedelta(days=dt.weekday())
+    friday = monday + pd.Timedelta(days=4)
+
+    return (monday.strftime('%Y-%m-%d'), friday.strftime('%Y-%m-%d'))
