@@ -67,10 +67,21 @@ def main(args):
         master_data_cache = master_data_cache.sort_index()
 
     close_col = (args.col, args.ticker)
-    close_prices = master_data_cache[close_col]
-    open_prices = master_data_cache[("Open", args.ticker)]
-    low_prices = master_data_cache[("Low", args.ticker)]
-    high_prices = master_data_cache[("High", args.ticker)]
+    close_prices = master_data_cache[close_col].copy()
+    open_prices  = master_data_cache[("Open", args.ticker)].copy()
+    low_prices   = master_data_cache[("Low", args.ticker)].copy()
+    high_prices  = master_data_cache[("High", args.ticker)].copy()
+
+    # =========================
+    # Modify closing price
+    # =========================
+    old_last_closing_price, new_closing_price = None, None
+    try:
+        old_last_closing_price = close_prices.iloc[-1]
+        close_prices.iloc[-1] = float(args.modify_closing_price) * close_prices.iloc[-1]
+        new_closing_price = close_prices.iloc[-1]
+    except:
+        pass
 
     # =========================
     # Filter Open Gaps
@@ -139,7 +150,7 @@ def main(args):
     prices_threshold = [close_prices.iloc[-1] * (1 + -args.return_threshold), close_prices.iloc[-1] * (1 + args.return_threshold)]
     prices_threshold = [None, prices_threshold[1]] if signal == 'Bull' else prices_threshold
     prices_threshold = [prices_threshold[0], None] if signal == 'Bear' else prices_threshold
-    return {
+    return {"var_closing_prices": (old_last_closing_price, new_closing_price),
         "date": close_prices.index[-1],
         "signal": signal,
         "prices_threshold": prices_threshold,
