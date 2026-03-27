@@ -98,11 +98,11 @@ def main():
     target_directory = os.path.join(args.base_dir, args.experience_id)
 
     # Validate directory existence before proceeding
-    if not target_directory.exists():
+    if not os.path.exists(target_directory):
         print(f"Error: Directory not found: {target_directory}")
         sys.exit(1)
 
-    if not target_directory.is_dir():
+    if not os.path.isdir(target_directory):
         print(f"Error: Path is not a directory: {target_directory}")
         sys.exit(1)
 
@@ -111,7 +111,7 @@ def main():
 
     # Collect all files to process
     # We filter to ensure we only process actual files, not subdirectories
-    all_files_to_process = [file for file in target_directory.iterdir() if file.is_file()]
+    all_files_to_process = [file for file in Path(target_directory).iterdir() if file.is_file()]
 
     if not all_files_to_process:
         print("No files found to process.")
