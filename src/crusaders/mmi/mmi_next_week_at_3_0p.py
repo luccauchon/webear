@@ -18,13 +18,13 @@ from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # ===== BEST PARAMETERS =====
-# {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.03, 'MMI_TREND_MAX': 10, 'MMI_PERIOD': 8, 'SMA_PERIOD': 1}
-# Best Score: 0.87242679
-CONFIGURATION_FOR_MMI_NEXT_WEEEK = Namespace(
+DDD = {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.03, 'MMI_TREND_MAX': 10, 'MMI_PERIOD': 8, 'SMA_PERIOD': 1}
+BEST_SCORE = 0.87242679
+CONFIGURATION_FOR_MMI_NEXT_WEEK = Namespace(
         dataset_id="week", older_dataset=None,
-        mmi_period=8,
-        mmi_trend_max=10,
-        sma_period=1,
+        mmi_period=DDD['MMI_PERIOD'],
+        mmi_trend_max=DDD['MMI_TREND_MAX'],
+        sma_period=DDD['SMA_PERIOD'],
         return_threshold=0.03,
         use_ema=True,
         verbose=False,
@@ -35,9 +35,9 @@ CONFIGURATION_FOR_MMI_NEXT_WEEEK = Namespace(
 def main(args):
     if args.verbose:
         print("\n" + "=" * 80)
-        print(f"Historical performance of 87.2427% (overall accuracy)")
+        print(f"Historical performance of {BEST_SCORE*100}% (overall accuracy)")
         print("=" * 80)
-    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_WEEEK)
+    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_WEEK)
     config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, 'older_dataset': args.older_dataset, 'keep_last_step': args.keep_last_step })
     configuration = Namespace(**config_dict)
     return MMI_next(configuration)

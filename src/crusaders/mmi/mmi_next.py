@@ -27,11 +27,15 @@ def main(configuration):
         assert False
     if result['signal'] == "Choppy":
         lower, upper = result['prices_threshold'][0], result['prices_threshold'][1]
+        result["date_prediction_step"] = prediction_date
         if configuration.verbose:
             if configuration.dataset_id == "day":
                 print(f"Last date in data frame: {result['date'].strftime('%Y-%m-%d')}  ({get_weekday_name(result['date'])})      Price of last time step: {result['prices']:0.0f}")
             else:
                 print(f"Last date in data frame: {result['date'].strftime('%Y-%m-%d')}   Price of last time step: {result['prices']:0.0f}")
             print(f"[{result['signal']}] For the closing price on {prediction_date}, price should be between {lower:0.0f} and {upper:0.0f}.")
+    else:
+        print("TODO")
+        print(f"[{result['signal']}]")
     return result
 
