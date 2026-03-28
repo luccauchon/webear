@@ -17,7 +17,8 @@ from  runners.VIX_realtime_and_backtest import main as VIX_realtime_and_backtest
 #
 # 🏆 Optimization Finished!
 #
-# Best Score (put): 0.98647757
+BEST_SCORE = 0.98647757
+TYPE_OF = "PUT"
 # Best Parameters:
 #
 #     ema_short............................... 17
@@ -42,12 +43,12 @@ def main(args):
         use_directional_var=True,
         use_directional_var__vix3m=False,
         upper_side_scale_factor=1., lower_side_scale_factor=1.,
-        adj_balanced=False,
+        adj_balanced=False, sharpen_x_side_scale_factor=False,
         adj_call__sma=True, adj_call__sma_factor=1.01, adj_put__sma=True,  adj_put__sma_factor=0.99, sma_period=25,
         adj_call_and_put__contango=True, adj_call_and_put__contango_factor=0.01
     )
     print("*" * 80, flush=True)
-    print(f" Best Score (put): 0.98647757")
+    print(f" Best Score ({TYPE_OF}): {BEST_SCORE*100:.1f}%")
     VIX_realtime_and_backtest(configuration)
     print("*" * 80, flush=True)
 
