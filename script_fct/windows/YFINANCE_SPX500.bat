@@ -1,4 +1,5 @@
 @echo off
-call conda activate PY311_HT
-python "D:\PyCharmProjects\webear\src\fetchers\sp500_download.py"
+call conda activate PY312_HT
+cd ..\..\src\fetchers
+python sp500_download.py
 pause

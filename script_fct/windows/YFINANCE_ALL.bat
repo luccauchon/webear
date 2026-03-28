@@ -1,4 +1,5 @@
 @echo off
-call conda activate PY311_HT
-python "D:\PyCharmProjects\webear\src\fetchers\serialize_fyahoo.py" --all-tickers
+call conda activate PY312_HT
+cd ..\..\src\fetchers
+python serialize_fyahoo.py --all-tickers
 pause
