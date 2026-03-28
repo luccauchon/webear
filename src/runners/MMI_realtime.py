@@ -73,17 +73,6 @@ def main(args):
     high_prices  = master_data_cache[("High", args.ticker)].copy()
 
     # =========================
-    # Modify closing price
-    # =========================
-    old_last_closing_price, new_closing_price = None, None
-    try:
-        old_last_closing_price = close_prices.iloc[-1]
-        close_prices.iloc[-1] = float(args.modify_closing_price) * close_prices.iloc[-1]
-        new_closing_price = close_prices.iloc[-1]
-    except:
-        pass
-
-    # =========================
     # Filter Open Gaps
     # =========================
     if args.filter_open_gaps:
@@ -116,6 +105,18 @@ def main(args):
         open_prices  = open_prices.iloc[:-1]
         low_prices   = low_prices.iloc[:-1]
         high_prices  = high_prices.iloc[:-1]
+
+    # =========================
+    # Modify closing price, if required
+    # =========================
+    old_last_closing_price, new_closing_price = None, None
+    try:
+        old_last_closing_price = close_prices.iloc[-1]
+        close_prices.iloc[-1] = float(args.modify_closing_price) * close_prices.iloc[-1]
+        new_closing_price = close_prices.iloc[-1]
+    except:
+        pass
+
     # =========================
     # Indicators
     # =========================

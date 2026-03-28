@@ -32,7 +32,7 @@ def main(args):
 
     # Create Table
     tt1, tt2 = get_weekday_range(date_prediction_step)
-    table = Table(title=f"Sensitivity {args.ticker} for next week ({tt1}:{tt2})", box=box.ROUNDED, header_style="bold cyan")
+    table = Table(title=f"3% Sensitivity {args.ticker} for week ({tt1}:{tt2})", box=box.ROUNDED, header_style="bold cyan")
     table.add_column("Sensitivity", justify="right", style="cyan")
     table.add_column("Old Price", justify="right", style="orange_red1")
     table.add_column("New Price", justify="right", style="orange_red1")
