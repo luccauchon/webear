@@ -152,7 +152,7 @@ def main():
                 f"[{event_direction}]    "
                 f"{BOLD}{edge_color}Edge: {edge:.2f}%{RESET}   "
                 f"{BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   "
-                f"Baseline: {info['baseline']:.2f}%   ({info['total_days']} / {info['total_events']})"
+                f"Baseline: {info['baseline']:.2f}%   ({info['total_events']} / {info['total_days']})"
             )
 
             result_str = (
