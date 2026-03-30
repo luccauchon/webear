@@ -35,6 +35,7 @@ import time
 
 # Optuna : CategoricalDistribution does not support dynamic value space
 BASE_SIGNALS__BECAUSE_OF_OPTUNA = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+FIRST_SET_OF_BASE_SIGNALS__BECAUSE_OF_OPTUNA = ["simple_ma"]
 
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
@@ -130,7 +131,7 @@ def run_professional_optimization(args):
     # base_signals_list_1 = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
     # base_signals_list_2 = list(set(str(args.base_signals).split(",")))
     # base_signals = list(set(str(args.base_signals).split(",")))
-    base_signals   = BASE_SIGNALS__BECAUSE_OF_OPTUNA # ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
+    base_signals   = FIRST_SET_OF_BASE_SIGNALS__BECAUSE_OF_OPTUNA # ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
     # base_signals   = base_signals_list_2
     if args.verbose:
         if args.disable_ema_stretch:
