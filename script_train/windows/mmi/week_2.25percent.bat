@@ -8,5 +8,6 @@ python .\MMI_hyperparameter_search_optuna.py --dataset_id week --step_back_range
 --sma_period_max 60 --mmi_period_max 60 ^
 --lookahead_min 1 --lookahead_max 1 ^
 --mmi_trend_max_max 60 ^
---study_name 0_025__week__la1
+--study_name 0_025__week__la1 ^
+--storage sqlite:///mmi_optuna_w225p.db
 pause

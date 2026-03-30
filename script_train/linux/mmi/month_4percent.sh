@@ -18,5 +18,6 @@ python MMI_hyperparameter_search_optuna.py \
     --mmi_trend_max_max 100 \
     --lookahead_min 1 \
     --lookahead_max 1 \
-    --study_name 0_04__month__la1
+    --study_name 0_04__month__la1 \
+    --storage sqlite:///mmi_optuna_m400p.db
 read
