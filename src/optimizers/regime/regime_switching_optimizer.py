@@ -874,7 +874,7 @@ def entry_main(args):
         sampler=TPESampler(seed=random_seed),
         pruner=MedianPruner(n_startup_trials=10),
         storage=storage_url,
-        load_if_exists=True
+        load_if_exists=True,
     )
 
     # ===== DB Resume Verification =====
