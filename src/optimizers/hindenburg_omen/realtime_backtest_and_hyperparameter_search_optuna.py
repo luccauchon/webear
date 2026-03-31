@@ -33,10 +33,6 @@ from utils import str2bool, DATASET_AVAILABLE, format_execution_time
 from sklearn.model_selection import ParameterGrid, ParameterSampler
 import time
 
-# Optuna : CategoricalDistribution does not support dynamic value space
-BASE_SIGNALS__BECAUSE_OF_OPTUNA = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
-FIRST_SET_OF_BASE_SIGNALS__BECAUSE_OF_OPTUNA = ["simple_ma"]
-
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
 # =========================================================
@@ -128,11 +124,7 @@ def run_professional_optimization(args):
         MIN_SIGNALS_REQUIRED = args.min_signals_required
     else:
         MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
-    # base_signals_list_1 = ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
-    # base_signals_list_2 = list(set(str(args.base_signals).split(",")))
-    # base_signals = list(set(str(args.base_signals).split(",")))
-    base_signals   = FIRST_SET_OF_BASE_SIGNALS__BECAUSE_OF_OPTUNA # ["simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout"]
-    # base_signals   = base_signals_list_2
+
     if args.verbose:
         if args.disable_ema_stretch:
             print(f"Disabling EMA strech indicator")
@@ -148,11 +140,9 @@ def run_professional_optimization(args):
             print(f"Disabling MACD indicator")
         if args.disable_stochastic:
             print(f"Disabling Stochastic indicator")
-        print(f"Using base signals: {base_signals}")
     df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id)
     if args.verbose:
-        print(f"Data loaded: {len(df)} rows | "
-              f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
+        print(f"Data loaded: {len(df)} rows | {df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
     df_open, df_low, df_high  = df['Open'], df['Low'], df['High']
     use_closing_price_strategy = False
@@ -234,7 +224,18 @@ def run_professional_optimization(args):
               f"{' | Use Z-Score boost' if improve_score_function else ''} | "
               f"Optimizing Edge")
     def objective(trial):
-        # New boolean toggle via Optuna
+        base_signal = None
+        use_simple_ma = trial.suggest_categorical("use_simple_ma", [True, False])
+        if use_simple_ma:
+            base_signal = "simple_ma"
+        else:
+            use_slope = trial.suggest_categorical("use_slope_3days", [True, False])
+            if use_slope:
+                base_signal = "slope_3days"
+            else:
+                base_signal = "slope_3days"
+        assert base_signal is not None
+
         use_ema_stretch = trial.suggest_categorical("use_ema_stretch", [True, False]) if not args.disable_ema_stretch else False
         use_volatility_compression = trial.suggest_categorical("use_volatility_compression", [True, False]) if not args.disable_volatility_compression else False
         use_market_breadth_proxy = trial.suggest_categorical("use_market_breadth_proxy", [True, False]) if not args.disable_market_breadth_proxy else False
@@ -243,7 +244,6 @@ def run_professional_optimization(args):
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False]) if not args.disable_macd else False
         use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False]) if not args.disable_stochastic else False
 
-        base_signal = trial.suggest_categorical("base_signal", base_signals)
         p1, p2 , p3, p4 = int(str(args.cluster_window_params).split(",")[0]), int(str(args.cluster_window_params).split(",")[1]), bool(str(args.cluster_window_params).split(",")[2]), int(str(args.cluster_window_params).split(",")[3])
         cluster_window = trial.suggest_int(name="cluster_window", low=p1, high=p2, log=p3, step=p4)
         p1, p2, p3, p4 = int(str(args.cluster_threshold_params).split(",")[0]), int(str(args.cluster_threshold_params).split(",")[1]), bool(str(args.cluster_threshold_params).split(",")[2]), int(str(args.cluster_threshold_params).split(",")[3])
@@ -253,25 +253,19 @@ def run_professional_optimization(args):
         cond_price = None
         if base_signal in ["simple_ma", "ecart_type", "slope_3days", "bull_market_global"]:
             sma_len_min, sma_len_max, sma_len_log, sma_len_step = int(str(args.sma_len_params).split(",")[0]), int(str(args.sma_len_params).split(",")[1]), bool(str(args.sma_len_params).split(",")[2]), int(str(args.sma_len_params).split(",")[3])
+            sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
+            sma = ta.sma(close, length=sma_len)
             if base_signal == "simple_ma":
-                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
-                sma = ta.sma(close, length=sma_len)
                 cond_price = close > sma
             elif base_signal == "ecart_type":
                 # Calcule à combien d'écarts-types le prix se trouve de la moyenne
-                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
-                sma = ta.sma(close, length=sma_len)
                 std = close.rolling(window=sma_len).std()
                 z_score = (close - sma) / std
                 cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
             elif base_signal == "slope_3days":
-                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
-                sma = ta.sma(close, length=sma_len)
                 sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
                 cond_price = (close > sma) & (sma_slope > 0)
             elif base_signal == "bull_market_global":
-                sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
-                sma = ta.sma(close, length=sma_len)
                 cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
                 cond_price = (close > sma) & cond_regime
         elif base_signal == "breakout":
@@ -614,7 +608,8 @@ def run_professional_optimization(args):
 def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, mode):
     event_direction = "drop" if mode == "drop" else "upper"
     # 1. Base Signal Logic
-    base_signal = params["base_signal"]
+    base_signal = "simple_ma" if "use_simple_ma" in params and params["use_simple_ma"] else None
+    base_signal = "slope_3days" if "use_slope_3days" in params and params["use_slope_3days"] else base_signal
     cond_price = None
     if base_signal == "simple_ma":
         sma = ta.sma(df_data, length=params["sma_len"])
@@ -984,12 +979,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Do not use the Stochastic indicator"
     )
-    # strat_group.add_argument(
-    #     "--base-signals",
-    #     type=str,
-    #     default="simple_ma,ecart_type,slope_3days,bull_market_global,breakout",
-    #     help="Different startegies for the creation of the base signal."
-    # )
 
     bound_group = parser.add_argument_group("Bound Parameters")
     bound_group.add_argument("--sma-len-params", type=str, default="2,100,false,1", )
