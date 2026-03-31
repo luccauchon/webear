@@ -80,15 +80,8 @@ def create_configuration___2026_02_20__1pct(args, trial):
     If trial is None, uses args/hardcoded defaults.
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
 
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
@@ -154,15 +147,8 @@ def create_configuration___2026_02_20__2pct(args, trial):
     """
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
 
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
@@ -228,15 +214,8 @@ def create_configuration___2026_02_20__0_5pct(args, trial):
     """
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
 
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
@@ -366,15 +345,8 @@ def create_configuration___2026_02_20__0_0pct(args, trial):
     """
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
 
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
@@ -440,15 +412,8 @@ def create_configuration___2026_02_20__0_25pct_balanced(args, trial):
     """
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
 
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
@@ -513,10 +478,6 @@ def create_configuration___2026_02_20__0_25pct_balanced(args, trial):
 def create_configuration___2026_02_20__0_5pct_balanced(args, trial):
     """
     """
-
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
 
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
@@ -588,15 +549,8 @@ def create_configuration___2026_02_20__1pct_balanced(args, trial):
     """
     """
 
-    # Helper for Optuna suggestions
-    def suggest_bool(name, default):
-        return trial.suggest_categorical(name, [True, False])
-
     def suggest_int(name, low, high, default):
         return trial.suggest_int(name, low, high)
-
-    def suggest_float(name, low, high, default, step=None):
-        return trial.suggest_float(name, low, high, step=step)
 
     # --- Base Config ---
     # Note: We always calculate both put and call to allow switching targets without re-running,
@@ -675,31 +629,54 @@ def main(args):
     if args.verbose:
         print("🔧 Arguments:")
         for arg, value in vars(args).items():
-            if arg == 'storage' and not IS_RUNNING_ON_CASIR:
-                continue
             print(f"    {arg:.<40} {value}")
         print("-" * 80, flush=True)
 
-    if not OPTUNA_AVAILABLE:
-        print("⚠️  Optuna not available. Running single backtest with default parameters.")
+    print(f"💾 Using Storage: {args.storage}")
+    print(f"📛 Study Name: {args.study_name}")
+
+    # --- Display Existing Study Information (if present) ---
+    try:
+        existing_study = optuna.load_study(
+            study_name=args.study_name,
+            storage=f"sqlite:///{args.storage}"
+        )
+        n_completed = len([t for t in existing_study.trials if t.state.is_finished()])
+        if n_completed > 0:
+            print(f"\n📊 Existing Study Found: '{args.study_name}'")
+            print(f"   Completed Trials: {n_completed}")
+            print(f"   Best Value So Far: {existing_study.best_value:.8f}")
+            print(f"   Best Params: {existing_study.best_params}")
+            print("-" * 80)
+        else:
+            print(f"\n📊 Study '{args.study_name}' exists but has no completed trials yet.")
+    except Exception as e:
+        print(f"\n📊 Creating new study: '{args.study_name}'")
+    # -------------------------------------------------------
 
     timeout_str = f"{args.timeout}s" if args.timeout else "None"
     print(f"🚀 Starting Optuna Optimization (Target: {args.optimize_target}, Trials: {args.n_trials}, Timeout: {timeout_str})...")
 
     if args.objective_name in ["2026_02_20__0_0pct"]:
         print(f" Attention! no optimization will take place! This is the baseline. Program will exit after one pass. Change the objective_name if you want to optimize.")
+
     selected_objective = CONFIGURATION_FUNCTIONS[args.objective_name]
-    # Run Optimization
-    if IS_RUNNING_ON_CASIR and False:
-        print(f"Using 4 cores")
-        # Create Study
-        study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization",storage=f"sqlite:///{args.storage}")
-        with parallel_backend("multiprocessing"):
-            study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=4, show_progress_bar=True, timeout=args.timeout)
-    else:
-        # Create Study
-        study = optuna.create_study(direction="maximize", study_name="VIX_Strategy_Optimization")
-        study.optimize(lambda trial: objective(trial, selected_objective, args), n_trials=args.n_trials, n_jobs=1, show_progress_bar=True, timeout=args.timeout)
+
+    # Create Study
+    study = optuna.create_study(
+        direction="maximize",
+        study_name=args.study_name,
+        storage=f"sqlite:///{args.storage}",
+        load_if_exists=True,
+    )
+
+    study.optimize(
+        lambda trial: objective(trial, selected_objective, args),
+        n_trials=args.n_trials,
+        n_jobs=1,
+        show_progress_bar=True,
+        timeout=args.timeout
+    )
 
     # Print Best Results
     print("\n" + "=" * 80)
@@ -720,26 +697,28 @@ if __name__ == "__main__":
     parser.add_argument('--ticker', type=str, default='^GSPC')
     parser.add_argument('--col', type=str, default='Close',
                         choices=['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
-    parser.add_argument('--look_ahead', type=int, default=1)
-    parser.add_argument('--step_back_range', type=int, default=99999)
+    parser.add_argument('--look-ahead', type=int, default=1)
+    parser.add_argument('--step-back-range', type=int, default=99999)
     parser.add_argument('--verbose', type=str2bool, default=True)
 
     # --- Optuna Args ---
-    parser.add_argument('--n_trials', type=int, default=99999,
+    parser.add_argument('--n-trials', type=int, default=99999,
                         help='Number of trials for Optuna (default: 99999)')
-    parser.add_argument('--optimize_target', type=str, default='put',
+    parser.add_argument('--optimize-target', type=str, default='put',
                         choices=['put', 'call', 'average', 'iron_condor'],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds (None = no limit)')
-    parser.add_argument('--storage', type=str, default='example.db',
-                        help='Database storage path (CASIR)')
-    parser.add_argument("--lower_side_scale_factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the lower side price")
-    parser.add_argument("--upper_side_scale_factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the upper side price")
-    parser.add_argument('--sharpen_x_side_scale_factor', type=str2bool, default=False,
+    parser.add_argument('--storage', type=str, default='vix_storage.db',
+                        help='Database storage path')
+    parser.add_argument('--study-name', type=str, default="VIX_Strategy_Optimization",
+                        help='Unique name for the study within the storage. Use same name to resume.')
+    parser.add_argument("--lower-side-scale-factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the lower side price")
+    parser.add_argument("--upper-side-scale-factor", type=float, default=1., help="Gets multiplied againts the current price to obtain the upper side price")
+    parser.add_argument('--sharpen-x-side-scale-factor', type=str2bool, default=False,
                         help="Sharpen the factor wrt the VIX")
     # --- New Argument: Objective Function Selection ---
-    parser.add_argument('--objective_name', type=str, default='2026_02_20__0_0pct',
+    parser.add_argument('--objective-name', type=str, default='2026_02_20__0_0pct',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
                         help='Select the objective function logic by name (determine by its configuration). Default: 2026_02_20__0_0pct')
 
