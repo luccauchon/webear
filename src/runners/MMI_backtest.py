@@ -61,7 +61,6 @@ def main(args):
             keep_last_step=True,
             verbose=False,
             filter_open_gaps=args.filter_open_gaps,
-            filter_inside_open=args.filter_inside_open,
         )
         _result       = MMI_realtime(configuration)
         close_col     = (args.col, args.ticker)
@@ -106,6 +105,7 @@ def main(args):
 
     # --- Filter DataFrame based on new option ---
     eval_df = _results_df
+    length_of_eval_before_filtering = len(eval_df)
     if args.filter_inside_open:
         eval_df = _results_df[_results_df['is_inside_open'] == True]
 
@@ -146,7 +146,8 @@ def main(args):
     # Optional: print or return detailed metrics
     if args.verbose:
         filter_note = " (Filtered: Inside Open)" if args.filter_inside_open else ""
-        print(f"Overall Accuracy{filter_note}: {overall_accuracy:.4f} ({len(eval_df)}) samples")
+        _tmp_str_3 = f' (down from {length_of_eval_before_filtering})' if args.filter_inside_open else ""
+        print(f"Overall Accuracy{filter_note}: {overall_accuracy:.4f} ({len(eval_df)}) samples{_tmp_str_3}")
         print(f"Bull Accuracy (when GT=Bull){filter_note}: {bull_accuracy:.4f} ({bull_mask.sum()} samples)")
         print(f"Bear Accuracy (when GT=Bear){filter_note}: {bear_accuracy:.4f} ({bear_mask.sum()} samples)")
         if args.filter_inside_open:

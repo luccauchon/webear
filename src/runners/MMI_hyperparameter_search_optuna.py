@@ -100,13 +100,14 @@ def main(args):
     # =========================
     print(f"\n💾 Using Storage: {args.storage}")
     print(f"📛 Study Name: {args.study_name}")
-
+    timeout_str = f"{args.timeout}s" if args.timeout else "None"
+    print(f"🚀 Starting Optuna Optimization (Trials: {args.n_trials}, Timeout: {timeout_str})...")
     try:
         study = optuna.create_study(
             direction="maximize",
             storage=args.storage,
             study_name=args.study_name,
-            load_if_exists=True  # Crucial: Loads existing study if name matches
+            load_if_exists=True,
         )
         if len(study.trials) > 0:
             print(f"⏩ Resuming existing study. Completed trials so far: {len(study.trials)}")
@@ -152,7 +153,7 @@ def main(args):
 
     # Create a callback to print progress occasionally if needed,
     # but show_progress_bar handles most of it.
-    study.optimize(objective, n_trials=trials_to_run, show_progress_bar=True)
+    study.optimize(objective, n_trials=trials_to_run, show_progress_bar=True, timeout=args.timeout)
 
     # Output best results
     print("\n===== BEST PARAMETERS =====")
@@ -200,10 +201,12 @@ if __name__ == "__main__":
                         help="Identifier for dataset frequency (e.g., 'day', 'hour')")
 
     # Optimization control
-    parser.add_argument('--step_back_range', type=int, default=15000,
+    parser.add_argument('--step-back-range', type=int, default=15000,
                         help="Number of historical data points to consider during backtest")
-    parser.add_argument('--n_trials', type=int, default=1500,
+    parser.add_argument('--n-trials', type=int, default=1500,
                         help="Total target number of Optuna trials")
+    parser.add_argument('--timeout', type=int, default=None,
+                        help='Maximum optimization time in seconds (None = no limit)')
 
     # === Persistence Args ===
     parser.add_argument('--storage', type=str, default='sqlite:///mmi_optuna_study.db',
