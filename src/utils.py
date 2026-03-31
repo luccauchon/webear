@@ -1236,3 +1236,48 @@ def get_weekday_range(input_date):
     friday = monday + pd.Timedelta(days=4)
 
     return (monday.strftime('%Y-%m-%d'), friday.strftime('%Y-%m-%d'))
+
+
+def get_month_weekday_range(input_date):
+    """
+    Given any date, returns a tuple of (first_weekday, last_weekday)
+    for that specific month (Mon–Fri only).
+
+    Args:
+        input_date (str | date | datetime | pd.Timestamp): The date to check.
+
+    Returns:
+        tuple: (str, str) in YYYY-MM-DD format representing
+               first weekday and last weekday of the month.
+    """
+    # Normalize input to a datetime object
+    if isinstance(input_date, str):
+        dt = pd.to_datetime(input_date)
+    elif isinstance(input_date, (date, datetime)):
+        dt = pd.to_datetime(input_date)
+    else:
+        dt = input_date
+
+    # First day of the month
+    first_day = dt.replace(day=1)
+
+    # Adjust to first weekday (Mon–Fri)
+    if first_day.weekday() >= 5:  # Saturday=5, Sunday=6
+        first_weekday = first_day + pd.Timedelta(days=(7 - first_day.weekday()))
+    else:
+        first_weekday = first_day
+
+    # Last day of the month
+    next_month = first_day + pd.offsets.MonthBegin(1)
+    last_day = next_month - pd.Timedelta(days=1)
+
+    # Adjust to last weekday (Mon–Fri)
+    if last_day.weekday() >= 5:
+        last_weekday = last_day - pd.Timedelta(days=(last_day.weekday() - 4))
+    else:
+        last_weekday = last_day
+
+    return (
+        first_weekday.strftime('%Y-%m-%d'),
+        last_weekday.strftime('%Y-%m-%d')
+    )
