@@ -684,10 +684,9 @@ def main(args):
                     the_x_data = the_x_data[mask, :] if the_x_data.ndim > 1 else the_x_data[mask]
                     the_y_data = the_y_data[mask]
                     the_d_data = the_d_data[mask]
+                    unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
                     if args.verbose:
                         print(f"Removed {np.sum(~mask)} samples. Remaining: {len(the_y_data)}")
-                    if args.verbose:
-                        unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
                         print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
                         print("Count per class:")
                         for cls, cnt in zip(unique_classes_new, counts_new):
@@ -742,6 +741,7 @@ def main(args):
         num_classes = data['num_classes']
         Xs = data['xs']
         Ys = data['ys']
+        unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
         label_encoder, my_label_encoder, tuple_to_class = data['tuple_to_class'], data['class_to_tuple'], data['class_to_tuple']
         if the_d_data.dtype == 'datetime64[ns]':
             the_d_data = pd.to_datetime(the_d_data)
@@ -756,15 +756,18 @@ def main(args):
                     continue
                 print(f"\t    {arg:.<40} {value}")
             print("-" * 80, flush=True)
-
+            print(f"Data Length: {len(the_x_data)}")
+        assert len(the_x_data) == len(the_d_data)
         if the_y_data is not None:
-            if len(the_y_data.shape) > 0:
-                unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
-                print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
-                print("Count per class:")
-                for cls, cnt in zip(unique_classes_new, counts_new):
-                    if cls is not None:
-                        print(f"  Class {int(cls)}: {int(cnt)} samples")
+            if args.verbose:
+                if len(the_y_data.shape) > 0:
+                    assert len(the_x_data) == len(the_y_data)
+                    unique_classes_new, counts_new = np.unique(the_y_data, return_counts=True)
+                    print(f"Unique classes after filtering: {unique_classes_new} ({num_classes})")
+                    print("Count per class:")
+                    for cls, cnt in zip(unique_classes_new, counts_new):
+                        if cls is not None:
+                            print(f"  Class {int(cls)}: {int(cnt)} samples")
 
     # -------------------------------------------------------------------------
     # LOAD MODEL AND PREDICT (Real-time inference)
@@ -828,7 +831,7 @@ def main(args):
     try:
         model_overrides = json.loads(args.model_overrides)
     except json.JSONDecodeError:
-        raise ValueError("Invalid JSON for --model_overrides.")
+        raise ValueError("Invalid JSON for --model-overrides.")
 
     # Define base classification configs
     def get_base_config(model_name, model_class, params_template):
@@ -864,7 +867,7 @@ def main(args):
         "cat": get_base_config("cat", CatBoostClassifier, {
             'iterations': 500, 'depth': 6, 'learning_rate': 0.05,
             'random_seed': 42, 'verbose': False,
-            'loss_function': 'MultiClass', 'classes_count': num_classes,
+            'loss_function': 'MultiClass', 'classes_count': int(num_classes),
             'eval_metric': 'MultiClass',
         }),
         "hgb": get_base_config("hgb", HistGradientBoostingClassifier, {
@@ -907,7 +910,7 @@ def main(args):
     # Apply JSON overrides
     for model_name, override_params in model_overrides.items():
         if model_name in classification_model_configs:
-            deep_update(classification_model_configs[model_name], override_params)
+            deep_update(classification_model_configs[model_name]["params"], override_params)
             if args.verbose:
                 print(f"⚙️ Applied overrides for {model_name}: {override_params}")
         else:
@@ -918,13 +921,13 @@ def main(args):
     fold_precision_scores_per_class = []
     fold_recall_scores_per_class = []
     fold_f1_scores_per_class = []
-
+    model_configuration_has_been_printed = False
     # Time Series Cross-Validation
     tscv = TimeSeriesSplit(n_splits=5)
     for fold, (train_idx, val_idx) in enumerate(tscv.split(the_x_data)):
         X_train, X_val = copy.deepcopy(the_x_data[train_idx]), copy.deepcopy(the_x_data[val_idx])
         y_train, y_val = copy.deepcopy(the_y_data[train_idx]), copy.deepcopy(the_y_data[val_idx])
-
+        assert len(X_train) == len(y_train) and len(X_val) == len(y_val)
         # Flatten and convert labels to integers
         y_train = y_train.ravel().astype(int)
         y_val = y_val.ravel().astype(int)
@@ -938,6 +941,8 @@ def main(args):
         for model_name in args.base_models:
             try:
                 cfg = classification_model_configs[model_name]
+                if args.verbose and not model_configuration_has_been_printed:
+                    print(cfg)
                 model = cfg["class"](**cfg["params"])  # New model
 
                 fit_kwargs_init = {}
@@ -956,7 +961,7 @@ def main(args):
             except Exception as e:
                 print(e)
                 traceback.print_exc()
-
+        model_configuration_has_been_printed = True
         # Ensemble averaging
         avg_proba = np.mean(fold_predictions_proba, axis=0)
         y_pred_final = np.argmax(avg_proba, axis=1)
@@ -973,32 +978,32 @@ def main(args):
         fold_f1_scores_per_class.append(f1_per_class)
 
         if args.verbose:
+            print(f"Trained with {args.base_models} for Fold {fold + 1} , using {len(X_train)} train data ([{train_idx[0]}]...{train_idx[-2:]}) and {len(X_val)} val data (from {val_idx[:1]}...{val_idx[-2:]}).")
             print(f"Fold {fold + 1}: Acc={acc:.4f}, F1={f1:.4f}")
             f1_str = ", ".join([f"{i}:{v:.3f}" for i, v in enumerate(f1_per_class)])
             print(f"  Per-Class F1: [{f1_str}]")
 
         acc_scores.append(acc)
         f1_scores.append(f1)
+    # Average per-class scores
+    avg_precision = np.mean(fold_precision_scores_per_class, axis=0)
+    avg_recall = np.mean(fold_recall_scores_per_class, axis=0)
+    avg_f1 = np.mean(fold_f1_scores_per_class, axis=0)
     if args.verbose:
         print(f"\nAverage Accuracy: {np.mean(acc_scores):.4f}")
         print(f"Average Weighted F1: {np.mean(f1_scores):.4f}")
         print(f"Precision\nTP / (TP + FP)\n\tOf all the instances I predicted as positive, how many were actually positive?")
         print(f"Recall\nTP / (TP + FN)\n\tOf all the actual positive instances, how many did I correctly identify?")
         print("Accuracy\nAccuracy = (True Positives + True Negatives) / Total Predictions\n         = (TP + TN) / (TP + TN + FP + FN)")
-        # Average per-class scores
-        avg_precision = np.mean(fold_precision_scores_per_class, axis=0)
-        avg_recall = np.mean(fold_recall_scores_per_class, axis=0)
-        avg_f1 = np.mean(fold_f1_scores_per_class, axis=0)
-
-        print(f"\nAverage Per-Class Validation Scores "
-              f"({len(fold_f1_scores_per_class)} folds):")
-        print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
-        print("-" * 44)
-        real__2__tx = dict(zip(my_label_encoder.classes_, my_label_encoder.transform(my_label_encoder.classes_)))
-        tx__2__real = dict(zip(my_label_encoder.transform(my_label_encoder.classes_), my_label_encoder.classes_))
-        for c in range(num_classes):
-            cc = str(decode_tuple_target(tx__2__real[c], class_to_tuple))
-            print(f"{cc:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
+        if args.compiled_dataset_filename is None:  # my_label_encoder is not well serialized/deserialized. To investiguate.
+            print(f"\nAverage Per-Class Validation Scores ({len(fold_f1_scores_per_class)} folds):")
+            print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
+            print("-" * 44)
+            real__2__tx = dict(zip(my_label_encoder.classes_, my_label_encoder.transform(my_label_encoder.classes_)))
+            tx__2__real = dict(zip(my_label_encoder.transform(my_label_encoder.classes_), my_label_encoder.classes_))
+            for c in range(num_classes):
+                cc = str(decode_tuple_target(tx__2__real[c], class_to_tuple))
+                print(f"{cc:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
 
     # -------------------------------------------------------------------------
     # SAVE MODEL
@@ -1033,26 +1038,22 @@ def main(args):
             final_models[model_name] = model
 
         # Prepare metadata for inference
+        include_preprocessing_configuration = False
         model_metadata = {
             'scaler': final_scaler,
             'models': final_models,
             'feature_list': Xs,
-            'feature_names': [f"{col[0]}_{col[1]}" if isinstance(col, tuple)
-                              else str(col) for col in Xs],
+            'feature_names': [f"{col[0]}_{col[1]}" if isinstance(col, tuple) else str(col) for col in Xs],
             'num_classes': num_classes,
             'target_type': 'tuple',
             'target_columns': Ys,
             'class_to_tuple': class_to_tuple,
             'tuple_to_class': tuple_to_class,
             'args': vars(args),
-            'class_distribution': {int(cls): int(cnt)
-                                   for cls, cnt in zip(unique_classes_new,
-                                                       counts_new)},
+            'class_distribution': {int(cls): int(cnt) for cls, cnt in zip(unique_classes_new, counts_new)},
             'training_date_range': {
-                'start': the_d_data[0].strftime('%Y-%m-%d') if hasattr(
-                    the_d_data[0], 'strftime') else str(the_d_data[0]),
-                'end': the_d_data[-1].strftime('%Y-%m-%d') if hasattr(
-                    the_d_data[-1], 'strftime') else str(the_d_data[-1])
+                'start': the_d_data[0].strftime('%Y-%m-%d') if hasattr(the_d_data[0], 'strftime') else str(the_d_data[0]),
+                'end': the_d_data[-1].strftime('%Y-%m-%d')  if hasattr(the_d_data[-1], 'strftime') else str(the_d_data[-1])
             },
             'cv_scores': {
                 'accuracy_mean': float(np.mean(acc_scores)),
@@ -1064,8 +1065,7 @@ def main(args):
                 'per_class_recall_mean': avg_recall.tolist(),
             },
             'preprocessing_config': {
-                'convert_price_level_with_baseline':
-                    args.convert_price_level_with_baseline,
+                'convert_price_level_with_baseline': args.convert_price_level_with_baseline,
                 'enable_ema': args.enable_ema,
                 'enable_sma': args.enable_sma,
                 'enable_rsi': args.enable_rsi,
@@ -1076,22 +1076,16 @@ def main(args):
                 'ema_windows': args.ema_windows,
                 'sma_windows': args.sma_windows,
                 'rsi_windows': args.rsi_windows,
-                'macd_params': macd_params if 'macd_params' in locals()
-                else args.macd_params,
+                'macd_params': macd_params if 'macd_params' in locals() else args.macd_params,
                 'vwap_window': args.vwap_window,
-                'add_only_vwap_z_and_vwap_triggers':
-                    args.add_only_vwap_z_and_vwap_triggers,
+                'add_only_vwap_z_and_vwap_triggers':args.add_only_vwap_z_and_vwap_triggers,
                 'epsilon': args.epsilon,
                 'look_ahead': args.look_ahead,
-            }
+            } if include_preprocessing_configuration  else {}
         }
 
         # Save using pickle
-        os.makedirs(
-            os.path.dirname(args.save_model_path) if
-            os.path.dirname(args.save_model_path) else '.',
-            exist_ok=True
-        )
+        os.makedirs(os.path.dirname(args.save_model_path) if args.save_model_path and os.path.dirname(args.save_model_path) else '.',exist_ok=True)
 
         with open(args.save_model_path, 'wb') as f:
             pickle.dump(model_metadata, f)
@@ -1105,21 +1099,17 @@ def main(args):
             print(f"   Models saved: {list(final_models.keys())}")
             print(f"   Features: {len(Xs)}")
             print(f"   Classes: {num_classes}")
-            print(f"   CV Accuracy: {np.mean(acc_scores):.4f} "
-                  f"(+/- {np.std(acc_scores):.4f})")
-            print(f"   CV F1-Score: {np.mean(f1_scores):.4f} "
-                  f"(+/- {np.std(f1_scores):.4f})")
+            print(f"   CV Accuracy: {np.mean(acc_scores):.4f} (+/- {np.std(acc_scores):.4f})")
+            print(f"   CV F1-Score: {np.mean(f1_scores):.4f}  (+/- {np.std(f1_scores):.4f})")
             print("\n📊 Per-Class CV Performance:")
-            print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} "
-                  f"{'F1-Score':<12}")
+            print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
             print("-" * 44)
             for c in range(num_classes):
                 print(f"{c:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} "
                       f"{avg_f1[c]:<12.4f}")
             print("=" * 80)
 
-        return np.mean(f1_scores), np.mean(acc_scores), avg_precision, \
-            avg_recall, avg_f1
+        return np.mean(f1_scores), np.mean(acc_scores), avg_precision,  avg_recall, avg_f1
 
     return np.mean(f1_scores), np.mean(acc_scores)
 
@@ -1217,15 +1207,15 @@ if __name__ == "__main__":
                         help="Specific classes to keep")
 
     # Model arguments
-    parser.add_argument("--base_models", type=str, nargs="+", default=["xgb"],
+    parser.add_argument("--base-models", type=str, nargs="+", default=["xgb"],
                         choices=["xgb", "lgb", "cat", "hgb", "rf", "et",
                                  "svm", "knn", "mlp", "lr", "dt"],
                         help="Base models for ensemble")
-    parser.add_argument('--save_model_path', type=str, default=None,
+    parser.add_argument('--save-model-path', type=str, default=None,
                         help="Path to save trained model")
-    parser.add_argument('--load_model_path', type=str, default=None,
+    parser.add_argument('--load-model-path', type=str, default=None,
                         help="Path to load saved model for inference")
-    parser.add_argument('--model_overrides', type=str, default='{}',
+    parser.add_argument('--model-overrides', type=str, default='{}',
                         help='JSON overrides for model parameters')
     parser.add_argument("--shift_seq_col", type=int, default=3,
                         help="Number of shifted sequence columns")

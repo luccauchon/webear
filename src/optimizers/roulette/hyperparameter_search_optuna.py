@@ -1,3 +1,5 @@
+import json
+
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -18,7 +20,9 @@ np.seterr(invalid='ignore')
 import sys
 import pathlib
 import argparse
+import json
 import numpy as np
+import os
 import warnings
 import traceback
 import itertools
@@ -125,6 +129,10 @@ def main(args):
         print("⚠️  Optuna not available. Running single backtest with default parameters.")
         return
 
+    if args.compiled_dataset_filename is not None and os.path.exists(args.compiled_dataset_filename):
+        print(f"🚀 Optimizing only the model, using pre compiled dataset {args.compiled_dataset_filename}")
+        print(f"    Please ignore the parameters since the dataset is already built.")
+
     # --- Storage Configuration ---
     storage_url = None
     load_if_exists = False
@@ -160,7 +168,7 @@ def main(args):
             storage=storage_url,
             load_if_exists=load_if_exists,
             sampler=optuna.samplers.TPESampler(),
-            pruner=pruner
+            pruner=pruner,
         )
 
         # Inform user about resume status
@@ -277,41 +285,53 @@ def main(args):
         print(_tmp_str)
 
 
-def get_default_namespace(args):
-    return argparse.Namespace(
-        dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
-        look_ahead=args.look_ahead, verbose=args.verbose_debug,
-        convert_price_level_with_baseline='fraction',
-        sma_windows=[],
-        ema_windows=[],
-        shift_sma_col=[],
-        shift_ema_col=[],
-        shift_rsi_col=[],
-        shift_macd_col=[],
-        rsi_windows=[],
-        macd_params=[],
-        enable_macd=False,
-        enable_sma=False,
-        enable_ema=False,
-        enable_vwap=False,
-        enable_rsi=False,
-        enable_day_data=True,
-        shift_seq_col=1,
-        step_back_range=args.step_back_range,
-        epsilon=args.epsilon,
-        compiled_dataset_filename=None,
-        save_dataset_to_file_and_exit=None,
-        min_percentage_to_keep_class=args.min_percentage_to_keep_class,
-        specific_wanted_class=args.specific_wanted_class,
-        base_models=args.base_models,
-        save_model_path=None,
-        model_overrides='{}',
-        add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
-        add_close_diff=args.add_close_diff,
-        drop_when_out_of_range=args.drop_when_out_of_range,
-        real_time_only=False,
-        load_model_path=None,
-    )
+def get_default_namespace(args, dataset_provided=False):
+    if not dataset_provided:
+        assert args.compiled_dataset_filename is None
+        return argparse.Namespace(
+            dataset_id=args.dataset_id, col=args.col, ticker=args.ticker,
+            look_ahead=args.look_ahead, verbose=args.verbose_debug,
+            convert_price_level_with_baseline='fraction',
+            sma_windows=[],
+            ema_windows=[],
+            shift_sma_col=[],
+            shift_ema_col=[],
+            shift_rsi_col=[],
+            shift_macd_col=[],
+            rsi_windows=[],
+            macd_params=[],
+            enable_macd=False,
+            enable_sma=False,
+            enable_ema=False,
+            enable_vwap=False,
+            enable_rsi=False,
+            enable_day_data=True,
+            shift_seq_col=1,
+            step_back_range=args.step_back_range,
+            epsilon=args.epsilon,
+            compiled_dataset_filename=None,
+            save_dataset_to_file_and_exit=None,
+            min_percentage_to_keep_class=args.min_percentage_to_keep_class,
+            specific_wanted_class=args.specific_wanted_class,
+            base_models=args.base_models,
+            save_model_path=None,
+            model_overrides=args.model_overrides,
+            add_only_vwap_z_and_vwap_triggers=args.add_only_vwap_z_and_vwap_triggers,
+            add_close_diff=args.add_close_diff,
+            drop_when_out_of_range=args.drop_when_out_of_range,
+            real_time_only=False,
+            load_model_path=None,
+        )
+    else:
+        assert os.path.exists(args.compiled_dataset_filename)
+        return argparse.Namespace(
+            compiled_dataset_filename=args.compiled_dataset_filename,
+            model_overrides=args.model_overrides,
+            base_models=args.base_models,
+            load_model_path=None,
+            save_model_path=None,
+            verbose=args.verbose_debug,
+        )
 
 
 def _set_cfg(cfg):
@@ -320,7 +340,7 @@ def _set_cfg(cfg):
     ONE_CONFIGURATION_TO_ACCESS_FIXED_VALUES = cfg
 
 
-def create_base_configuration(args, trial):
+def create__base_configuration(args, trial):
     """
     Creates the configuration Namespace.
     Ensures unique values in windows and shifts.
@@ -430,9 +450,87 @@ def create_base_configuration(args, trial):
     return configuration
 
 
+def create__optimize_only_models_configuration(args, trial):
+    configuration = get_default_namespace(args, dataset_provided=True)
+
+    models_choices = ["xgb", "lgb", "cat", "hgb", "rf", "et", "svm", "knn", "mlp", "lr", "dt"]
+    # Create an empty list to store selected models
+    selected_models = []
+    for model_name in models_choices:
+        # Ask Optuna: "Should we include this model?"
+        if trial.suggest_categorical(f"use_{model_name}", [True, False]):
+            selected_models.append(model_name)
+    # Ensure at least one model is selected (to prevent errors)
+    if not selected_models:
+        # Default to a safe choice or force one selection
+        selected_models = ["knn"]
+    configuration.base_models = selected_models
+
+    model_overrides = {}
+    if "xgb" in configuration.base_models:
+        model_overrides.update({"xgb": {}})
+        model_overrides["xgb"].update({"learning_rate": trial.suggest_float("xgb__learning_rate", 0.001, 0.5, log=True)})
+        model_overrides["xgb"].update({"n_estimators": trial.suggest_int("xgb__n_estimators", 100, 500)})
+        model_overrides["xgb"].update({"max_depth": trial.suggest_int("xgb__max_depth", 3, 8)})
+        model_overrides["xgb"].update({"subsample": trial.suggest_float("xgb__subsample", 0.7, 1.0)})
+        model_overrides["xgb"].update({"colsample_bytree": trial.suggest_float("xgb__colsample_bytree", 0.7, 1.0)})
+    if "rf" in configuration.base_models:
+        model_overrides.update({"rf": {}})
+        model_overrides["rf"].update({"n_estimators": trial.suggest_int("rf__n_estimators", 100, 2000)})
+        model_overrides["rf"].update({"max_depth": trial.suggest_int("rf__max_depth", 1, 9)})
+    if "lgb" in configuration.base_models:
+        model_overrides.update({"lgb": {}})
+        model_overrides["lgb"].update({"n_estimators": trial.suggest_int("lgb__n_estimators", 200, 400)})
+        model_overrides["lgb"].update({"max_depth":  trial.suggest_int("lgb__max_depth", 1, 9)})
+        model_overrides["lgb"].update({"learning_rate": trial.suggest_float("lgb__learning_rate", 0.001, 0.5, log=True)})
+        model_overrides["lgb"].update({"subsample": trial.suggest_float("lgb__subsample", 0.1, 0.9)})
+        model_overrides["lgb"].update({"colsample_bytree": trial.suggest_float("lgb__colsample_bytree", 0.1, 0.9)})
+    if "cat" in configuration.base_models:
+        model_overrides.update({"cat": {}})
+        model_overrides["cat"].update({"iterations": trial.suggest_int("cat__iterations", 300, 500)})
+        model_overrides["cat"].update({"depth": trial.suggest_int("cat__depth", 1, 9)})
+        model_overrides["cat"].update({"learning_rate": trial.suggest_float("cat__learning_rate", 0.001, 0.5, log=True)})
+    if "hgb" in configuration.base_models:
+        model_overrides.update({"hgb": {}})
+        model_overrides["hgb"].update({"max_iter": trial.suggest_int("hgb__max_iter", 10, 1000)})
+        model_overrides["hgb"].update({"max_depth": trial.suggest_int("hgb__max_depth", 1, 9)})
+        model_overrides["hgb"].update({"learning_rate": trial.suggest_float("hgb__learning_rate", 0.001, 0.5, log=True)})
+    if "et" in configuration.base_models:
+        model_overrides.update({"et": {}})
+        model_overrides["et"].update({"n_estimators": trial.suggest_int("et__n_estimators", 200, 400)})
+        model_overrides["et"].update({"max_depth": trial.suggest_int("et__max_depth", 1, 9)})
+    if "svm" in configuration.base_models:
+        model_overrides.update({"svm": {}})
+        model_overrides["svm"].update({"C": trial.suggest_float("svm__C", 1e-2, 1e3, log=True)})
+    if "knn" in configuration.base_models:
+        model_overrides.update({"knn": {}})
+        model_overrides["knn"].update({"n_neighbors": trial.suggest_int("knn__n_neighbors", 3, 15)})
+    #if "mlp" in configuration.base_models:
+        # model_overrides.update({"mlp": {"n_neighbors": trial.suggest_int("knn__n_neighbors", 1, 20)}})
+    #     "": get_base_config("mlp", MLPClassifier, {
+    #         'hidden_layer_sizes': (100, 50), 'activation': 'relu',
+    #         'solver': 'adam', 'alpha': 0.0001, 'batch_size': 'auto',
+    #         'learning_rate': 'adaptive', 'learning_rate_init': 0.05,
+    #         'max_iter': 500, 'early_stopping': False,
+    #         'validation_fraction': 0.1, 'n_iter_no_change': 20,
+    #         'random_state': 42,
+    #     }),
+    if "lr" in configuration.base_models:
+        model_overrides.update({"lr": {}})
+        model_overrides["lr"].update({"C": trial.suggest_float("lr__C", 1e-2, 1e3, log=True)})
+    if "dt" in configuration.base_models:
+        model_overrides.update({"dt": {}})
+        model_overrides["dt"].update({"max_depth": trial.suggest_int("dt__max_depth", 1, 9)})
+
+    configuration.model_overrides = json.dumps(model_overrides)
+    _set_cfg(configuration)
+    return configuration
+
+
 # --- Objective Function Registry ---
 CONFIGURATION_FUNCTIONS = {
-    "base_configuration": create_base_configuration,
+    "base_configuration": create__base_configuration,
+    "optimize_only_models_configuration": create__optimize_only_models_configuration,
 }
 
 
@@ -452,7 +550,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', type=str2bool, default=True)
     parser.add_argument('--verbose_info_score', type=str2bool, default=False,
                         help='Print info about score while doing optimization')
-    parser.add_argument('--verbose_debug', type=str2bool, default=False,
+    parser.add_argument('--verbose-debug', type=str2bool, default=False,
                         help='Whether to enable verbose debugging or not in the realtime-backtest module')
 
     parser.add_argument('--drop_when_out_of_range', type=str2bool, default=False)
@@ -464,18 +562,18 @@ if __name__ == "__main__":
     parser.add_argument('--add_only_vwap_z_and_vwap_triggers', type=str2bool, default=False)
 
     # --- Optuna Args ---
-    parser.add_argument('--n_trials', type=int, default=99999,
+    parser.add_argument('--n_trials', type=int, default=999999,
                         help='Number of trials for Optuna')
     parser.add_argument('--n_jobs', type=int, default=1,
                         help='Number of parallel jobs. -1 means all CPUs. (Critical for speed)')
-    parser.add_argument('--optimize_target', type=str, default='seq__f1', choices=['seq__f1', 'seq__precision'],
+    parser.add_argument('--optimize-target', type=str, default='seq__f1', choices=['seq__f1', 'seq__precision'],
                         help='Which score to maximize')
     parser.add_argument('--timeout', type=int, default=None,
                         help='Maximum optimization time in seconds')
     parser.add_argument("--epsilon", type=float, default=0.,
                         help="Threshold for neutral returns.")
 
-    parser.add_argument('--objective_name', type=str, default='base_configuration',
+    parser.add_argument('--objective-name', type=str, default='base_configuration',
                         choices=list(CONFIGURATION_FUNCTIONS.keys()),
                         help='Select the objective function logic by name')
 
@@ -525,14 +623,17 @@ if __name__ == "__main__":
     parser.add_argument('--add_close_diff', type=str2bool, default=True)
     parser.add_argument('--skip_optimization', type=str2bool, default=False)
     parser.add_argument(
-        "--base_models",
+        "--base-models",
         type=str,
         nargs="+",
         default=["xgb"],
         choices=["xgb", "lgb", "cat", "hgb", "rf", "et", "svm", "knn", "mlp", "lr", "dt"],
         help="Base model(s) to use for training."
     )
-
+    parser.add_argument('--model-overrides', type=str, default='{}',
+                        help='JSON overrides for model parameters')
+    parser.add_argument('--compiled-dataset-filename', type=str, default=None,
+                        help="Load pre-compiled dataset")
     # --- Storage & Resume Args ---
     parser.add_argument('--storage', type=str, default=None,
                         help='Path to SQLite DB for persistence (e.g., "optuna_study.db"). Enables resume capability.')
