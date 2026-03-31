@@ -20,6 +20,6 @@ python MMI_hyperparameter_search_optuna.py \
     --lookahead_min 1 \
     --lookahead_max 1 \
     --study_name 0_03__week__la1 \
-    --storage sqlite:///mmi_optuna_w300p.db \
+    --storage sqlite:///mmi_optuna_w300p_fog.db \
     --filter-open-gaps true \
 read
