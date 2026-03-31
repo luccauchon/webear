@@ -250,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument('--use_vix', type=str2bool)
     parser.add_argument('--filter-open-gaps', type=str2bool, default=False,
                         help="Remove rows where Open > Prev High or Open < Prev Low")
-    parser.add_argument('--filter_inside_open', type=str2bool,
+    parser.add_argument('--filter-inside-open', type=str2bool,
                         help="Compute accuracy only if Current Open is between Precedent Day's Low and High")
     args = parser.parse_args()
 
