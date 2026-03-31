@@ -8,6 +8,7 @@ python .\VIX_hyperparameter_search_optuna.py \
     --optimize-target iron_condor \
     --timeout 200000 \
     --step-back-range 99999 \
+    --look-ahead 1 \
     --storage 1day_ic_vix.db \
     --study-name sn_1day_ic_vix
 read
