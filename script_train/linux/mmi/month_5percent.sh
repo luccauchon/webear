@@ -7,6 +7,7 @@ python MMI_hyperparameter_search_optuna.py \
     --dataset_id month \
     --step_back_range 99999 \
     --n_trials 99999 \
+    --timeout 86400 \
     --use_ema true \
     --return_threshold_min 0.05 \
     --return_threshold_max 0.05 \
