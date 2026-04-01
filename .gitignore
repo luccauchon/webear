@@ -11,3 +11,8 @@
 /src/runners/mmi_optuna_study.db
 /src/runners/1day_call_vix.db
 /src/runners/1day_call_balanced_vix.db
+/src/optimizers/roulette/toto.npz
+/src/optimizers/roulette/toto.db
+/src/optimizers/roulette/roulette.db
+/src/optimizers/roulette/my_storage_roulette
+/src/optimizers/roulette/dataset.2026.03.30.npz
