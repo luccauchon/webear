@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
+from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR
 import sys
 import re
 from types import SimpleNamespace
@@ -16,6 +17,8 @@ from datetime import datetime, timedelta, date
 import random
 from pathlib import Path
 import copy
+from collections import defaultdict
+from tqdm import tqdm
 
 
 os_name = platform.system()
@@ -176,6 +179,54 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
     # merged_df[float_cols] = merged_df[float_cols].astype(int)
 
     return copy.deepcopy(merged_df), f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
+
+
+def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_trading_hours=True, verbose=False):
+    # Group files by date
+    files_by_date = defaultdict(list)
+
+    for file in glob.glob(os.path.join(BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, '*.pkl')):
+        filename = os.path.basename(file)
+        if "__SPY" in filename and not SPY:
+            continue
+        if "__NDX" in filename and not NDX:
+            continue
+        if "__VIX" in filename and not VIX:
+            continue
+        if "__SPX" in filename and not SPX:
+            continue
+        date = filename.split('_')[0]  # "2026-03-31"
+        files_by_date[date].append(file)
+
+    merged_all = []
+
+    # Merge all symbols per day
+    trq = tqdm(files_by_date.items()) if verbose else files_by_date.items()
+    for date, files in trq:
+        dfs = [pd.read_pickle(f) for f in files]
+
+        # Outer merge all DataFrames for that day
+        merged_day = dfs[0]
+        for df in dfs[1:]:
+            merged_day = pd.merge(
+                merged_day, df,
+                left_index=True,
+                right_index=True,
+                how='outer'  # IMPORTANT
+            )
+
+        merged_all.append(merged_day)
+
+    # Combine all days
+    merged_df = pd.concat(merged_all)
+
+    # Remove duplicates just in case
+    merged_df = merged_df[~merged_df.index.duplicated()]
+    merged_df = merged_df.sort_index()
+    if only_active_trading_hours:
+        merged_df = merged_df.between_time("09:30", "16:00").dropna()
+    if verbose:
+        print(f"{merged_df.index[0]} → {merged_df.index[-1]} | rows: {len(merged_df)}")
 
 
 def _get_root_dir():
