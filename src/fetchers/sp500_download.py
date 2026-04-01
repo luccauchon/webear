@@ -90,8 +90,7 @@ if __name__ == "__main__":
     if data_dict:
         combined_df = pd.concat(data_dict, names=['Ticker', 'Date'])
         # Save DataFrame to Parquet
-        output_filename = f'newversion.{FYAHOO_SPX500__OUTPUTFILENAME}'
-        combined_df.to_parquet(output_filename, engine='pyarrow', compression='snappy')
-        print(f"\nAll data saved to {output_filename}")
+        combined_df.to_parquet(FYAHOO_SPX500__OUTPUTFILENAME, engine='pyarrow', compression='snappy')
+        print(f"\nAll data saved to {FYAHOO_SPX500__OUTPUTFILENAME}")
     else:
         print("No data downloaded.")
