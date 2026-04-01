@@ -16,3 +16,4 @@
 /src/optimizers/roulette/roulette.db
 /src/optimizers/roulette/my_storage_roulette
 /src/optimizers/roulette/dataset.2026.03.30.npz
+/src/optimizers/roulette/catboost_info/
