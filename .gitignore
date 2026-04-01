@@ -6,3 +6,8 @@
 /src/sandbox/.ipynb_checkpoints/
 /src/optimizers/hindenburg_omen/param_importances.png
 /src/optimizers/hindenburg_omen/optimization_history.png
+/src/runners/vix_storage.db
+/src/runners/mmi_optuna_study_test.db
+/src/runners/mmi_optuna_study.db
+/src/runners/1day_call_vix.db
+/src/runners/1day_call_balanced_vix.db
