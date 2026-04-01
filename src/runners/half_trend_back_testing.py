@@ -255,7 +255,7 @@ def _worker_processor(stocks__shared, master_cmd__shared, out__shared, configura
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Your script description')
+    parser = argparse.ArgumentParser(description='')
     # Compute default config path relative to this script's directory
     script_dir = pathlib.Path(__file__).resolve().parent.parent
     default_config = os.path.join(script_dir, "config", "half_trend", "default.json")
