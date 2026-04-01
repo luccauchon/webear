@@ -74,8 +74,8 @@ if __name__ == "__main__":
     # Save this web-page to data
     # https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
     from pathlib import Path
-    html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.html').resolve()
-    # html_file = r'..\..\data\List of S&P 500 companies - Wikipedia.html'
+    html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.2026.03.31.html').resolve()
+    print(f"Reading file {html_file}")
 
     if not os.path.exists(html_file):
         raise FileNotFoundError(f"HTML file not found: {html_file}")
@@ -90,7 +90,8 @@ if __name__ == "__main__":
     if data_dict:
         combined_df = pd.concat(data_dict, names=['Ticker', 'Date'])
         # Save DataFrame to Parquet
-        combined_df.to_parquet(FYAHOO_SPX500__OUTPUTFILENAME, engine='pyarrow', compression='snappy')
-        print(f"\nAll data saved to {FYAHOO_SPX500__OUTPUTFILENAME}")
+        output_filename = f'newversion.{FYAHOO_SPX500__OUTPUTFILENAME}'
+        combined_df.to_parquet(output_filename, engine='pyarrow', compression='snappy')
+        print(f"\nAll data saved to {output_filename}")
     else:
         print("No data downloaded.")
