@@ -77,10 +77,13 @@ def get_df_SPY_and_VIX_virgin_at_minutes():
     df_spy       = yf.download("SPY", period="max", interval='1m', auto_adjust=False)
     df_spy.index = df_spy.index.tz_convert('US/Eastern')
 
-    df_spx = yf.download("^GSPC", period="max", interval='1m', auto_adjust=False)
+    df_spx       = yf.download("^GSPC", period="max", interval='1m', auto_adjust=False)
     df_spx.index = df_spx.index.tz_convert('US/Eastern')
 
-    return  df_spy, df_spx, df_vix
+    df_ndx       = yf.download("^NDX", period="max", interval='1m', auto_adjust=False)
+    df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
+
+    return  df_spy, df_spx, df_vix, df_ndx
 
 
 def get_df_SPY_and_VIX_virgin_at_30minutes():
@@ -98,7 +101,10 @@ def get_df_SPY_and_VIX_virgin_at_30minutes():
     df_spx       = yf.download("^GSPC", start=start_date, end=end_date, interval='30m', auto_adjust=False)
     df_spx.index = df_spx.index.tz_convert('US/Eastern')
 
-    return  df_spy, df_spx, df_vix
+    df_ndx       = yf.download("^NDX", start=start_date, end=end_date, interval='30m', auto_adjust=False)
+    df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
+
+    return  df_spy, df_spx, df_vix, df_ndx
 
 
 def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2,3,4,5)):
