@@ -40,7 +40,7 @@ def main(args):
     config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_DAY)
     config_dict.update({'ticker': args.ticker,'col': args.col,'verbose': args.verbose, 'keep_last_step': args.keep_last_step,})
     configuration = Namespace(**config_dict)
-    return MMI_next(configuration, lookahead=2)
+    return MMI_next(configuration, lookahead=BEST_PARAMETERS['LOOKAHEAD'])
 
 
 if __name__ == "__main__":
