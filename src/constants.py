@@ -1,10 +1,10 @@
 import os
 try:
-    IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else -1
+    IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else False
 except:
     IS_RUNNING_ON_CASIR = False
 try:
-    IS_RUNNING_ON_LINUX_VMWARE = True if 4 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else -1
+    IS_RUNNING_ON_LINUX_VMWARE = True if 4 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else False
 except:
     IS_RUNNING_ON_LINUX_VMWARE = False
 # Determine base finance data directory based on drive availability
