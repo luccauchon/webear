@@ -1197,7 +1197,7 @@ if __name__ == "__main__":
         help="Database URL: sqlite:///path.db or postgresql://..."
     )
     parser.add_argument(
-        "--max-n-trials", type=int, default=99999,
+        "--max-n-trials", type=int, default=999999,
         help="Maximum Optuna trials to run"
     )
     parser.add_argument(
