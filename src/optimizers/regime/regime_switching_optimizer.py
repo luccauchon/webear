@@ -40,7 +40,7 @@ import sys
 import warnings
 from pathlib import Path
 from datetime import datetime
-
+import shutil
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
@@ -50,6 +50,11 @@ from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.cluster import (
+    KMeans, AgglomerativeClustering, DBSCAN,
+    Birch, OPTICS
+)
+from sklearn.neighbors import NearestNeighbors  # For DBSCAN prediction
 
 # Optimization
 import optuna
@@ -69,6 +74,38 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # =========================================================
 DEFAULT_RANDOM_SEED = 42
 DEFAULT_MIN_N_IN_CLUSTER = 160
+
+
+class ClusterWithNeighbors:
+    """Wrapper for clustering algorithms without predict() method"""
+
+    def __init__(self, clusterer):
+        self.clusterer = clusterer
+        self.nn = None
+        self.X_fit = None
+
+    def fit_predict(self, X):
+        self.X_fit = X
+        labels = self.clusterer.fit_predict(X)
+
+        # Train nearest neighbors for prediction
+        from sklearn.neighbors import NearestNeighbors
+        self.nn = NearestNeighbors(n_neighbors=5, metric='euclidean')
+
+        # Only use non-noise points for training
+        mask = labels != -1
+        if mask.sum() > 0:
+            self.nn.fit(X[mask])
+        return labels
+
+    def predict(self, X):
+        if self.nn is None:
+            return np.full(len(X), -1)
+
+        # Find nearest neighbors and assign their cluster
+        distances, indices = self.nn.kneighbors(X)
+        labels = self.clusterer.labels_[indices[:, 0]]
+        return labels
 
 
 # =========================================================
@@ -233,7 +270,7 @@ def print_all_cluster_characteristics(_stats, _features, _model, _scaler, _n_clu
 # =========================================================
 # TRADE DECISION HELPER - Credit Spread Expectancy Filter
 # =========================================================
-def should_trade_credit_spread(_regime_stats, _credit_received, _max_loss, _min_edge_ratio=0.05):
+def should_trade_credit_spread(_regime_stats, _credit_received, _max_loss, _min_edge_ratio):
     """
     Evaluate whether a credit spread trade has positive expectancy given regime probabilities.
 
@@ -246,7 +283,7 @@ def should_trade_credit_spread(_regime_stats, _credit_received, _max_loss, _min_
     _max_loss : float
         Max loss per share if spread expires ITM (spread_width - credit)
     _min_edge_ratio : float, default=0.05
-        Minimum edge per dollar risked to approve trade (5%)
+        Minimum edge per dollar risked to approve trade
 
     Returns:
     --------
@@ -713,17 +750,6 @@ def run_real_time_inference(args):
     print()
     print(f"🎯 DECISION: {trade_decision['message']}")
 
-    # 8. Save Updated Context (Optional: Update timestamp)
-    if trade_decision['trade']:
-        print(f"\n💾 Updating model timestamp...")
-        model_data['metadata']['last_inference'] = datetime.now()
-        model_data['trade_context']['last_evaluated'] = datetime.now()
-        with open(model_filename, "wb") as f:
-            pickle.dump(model_data, f)
-        print(f"✅ Model metadata updated.")
-    else:
-        print(f"\n⚠️  Trade not approved. Model not updated.")
-
     print("\n" + "═" * 60)
     print("✨ INFERENCE COMPLETE")
     print("═" * 60 + "\n")
@@ -888,6 +914,32 @@ def entry_main(args):
                 random_state=random_seed,
                 verbose=0
             )
+        elif _clustering_algo == 'dbscan':
+            # DBSCAN: Density-based, finds arbitrary shapes, handles outliers
+            _eps = trial.suggest_float("dbscan_eps", 0.1, 2.0, log=True)
+            _min_samples = trial.suggest_int("dbscan_min_samples", 3, 20)
+
+            base_model = DBSCAN(eps=_eps, min_samples=_min_samples, n_jobs=-1)
+            _model = ClusterWithNeighbors(base_model)
+            # Note: DBSCAN doesn't have predict() method for new points
+            # Need to fit_predict on full data or use NearestNeighbors wrapper
+        elif _clustering_algo == 'agglomerative':
+            _linkage = trial.suggest_categorical("agg_linkage", ['ward', 'complete', 'average', 'single'])
+            _distance_threshold = trial.suggest_float("agg_distance", 0.5, 5.0)
+
+            _model = AgglomerativeClustering(n_clusters=None,  # Use distance threshold instead
+                distance_threshold=_distance_threshold,linkage=_linkage,compute_full_tree=True)
+        elif _clustering_algo == 'birch':
+            _threshold = trial.suggest_float("birch_threshold", 0.1, 1.0, log=True)
+            _branching_factor = trial.suggest_int("birch_branching", 20, 100)
+
+            _model = Birch(threshold=_threshold,branching_factor=_branching_factor,n_clusters=_n_clusters)
+        elif _clustering_algo == 'optics':
+            _min_samples = trial.suggest_int("optics_min_samples", 5, 30)
+            _xi = trial.suggest_float("optics_xi", 0.01, 0.2)
+            _min_cluster_size = trial.suggest_int("optics_min_cluster", 0.05, 0.3)
+
+            _model = OPTICS(min_samples=_min_samples,xi=_xi,min_cluster_size=_min_cluster_size,metric='euclidean')
         else:
             raise ValueError(f"Unknown algorithm: {_clustering_algo}")
 
@@ -1086,12 +1138,26 @@ def entry_main(args):
         _model = GaussianMixture(
             n_components=_n_clusters,
             random_state=random_seed,
-            n_init=20,  # ← MATCHES objective() - FIX APPLIED
+            n_init=20,  # ← MATCHES objective()
             covariance_type='full',
-            max_iter=100,  # ← MATCHES objective() - FIX APPLIED
+            max_iter=100,  # ← MATCHES objective()
             tol=1e-3,
-            reg_covar=1e-5
+            reg_covar=1e-5,
+            init_params = 'k-means++',
         )
+    elif _clustering_algo == 'dbscan':
+        _eps = best_params.get('dbscan_eps', 0.5)
+        _min_samples = best_params.get('dbscan_min_samples', 5)
+        base_model = DBSCAN(eps=_eps, min_samples=_min_samples, n_jobs=-1)
+        _model = ClusterWithNeighbors(base_model)
+    elif _clustering_algo == 'agglomerative':
+        _linkage = best_params.get('agg_linkage', 'ward')
+        _distance = best_params.get('agg_distance', 1.0)
+        _model = AgglomerativeClustering(n_clusters=None,distance_threshold=_distance,linkage=_linkage)
+    elif _clustering_algo == 'birch':
+        _threshold = best_params.get('birch_threshold', 0.5)
+        _branching = best_params.get('birch_branching', 50)
+        _model = Birch(threshold=_threshold,branching_factor=_branching,n_clusters=_n_clusters)
     else:
         raise ValueError(f"Unknown algorithm: {_clustering_algo}")
 
@@ -1132,21 +1198,10 @@ def entry_main(args):
         return
 
     # Show ALL cluster characteristics
-    print_all_cluster_characteristics(
-        _stats=_stats,
-        _features=features,
-        _model=_model,
-        _scaler=_scaler,
-        _n_clusters=_n_clusters
-    )
+    print_all_cluster_characteristics(_stats=_stats, _features=features, _model=_model, _scaler=_scaler, _n_clusters=_n_clusters)
 
     # ===== Predict Latest Regime =====
-    result = predict_latest(
-        _features=features,
-        _model=_model,
-        _scaler=_scaler,
-        _stats=_stats
-    )
+    result = predict_latest(_features=features, _model=_model, _scaler=_scaler, _stats=_stats)
 
     if result is None:
         print("⚠️  Could not predict regime for latest data point")
@@ -1155,12 +1210,7 @@ def entry_main(args):
     regime, regime_stats = result
 
     # ===== Print Analysis Report =====
-    print_report(
-        _regime=regime,
-        _stats=regime_stats,
-        _strike_distance=strike_distance,
-        _spread_type=spread_type
-    )
+    print_report(_regime=regime, _stats=regime_stats, _strike_distance=strike_distance, _spread_type=spread_type)
 
     # ===== TRADE EVALUATION =====
     print("💰 TRADE DECISION EVALUATION")
@@ -1168,12 +1218,7 @@ def entry_main(args):
 
     max_loss = spread_width - credit_received
 
-    trade_decision = should_trade_credit_spread(
-        _regime_stats=regime_stats,
-        _credit_received=credit_received,
-        _max_loss=max_loss,
-        _min_edge_ratio=min_edge_ratio
-    )
+    trade_decision = should_trade_credit_spread(_regime_stats=regime_stats, _credit_received=credit_received, _max_loss=max_loss, _min_edge_ratio=min_edge_ratio)
 
     print(f"Spread Configuration:")
     print(f"   • Width:           ${spread_width:.2f}")
@@ -1188,64 +1233,61 @@ def entry_main(args):
     print()
     print(f"🎯 DECISION: {trade_decision['message']}")
 
-    # ===== Save Model (Only If Trade Approved) =====
-    if trade_decision['trade']:
-        print(f"\n💾 Saving model artifacts...")
+    # ===== Save Model =====
+    print(f"\n💾 Saving model artifacts...")
 
-        # Generate unique, descriptive filename
-        model_filename = generate_model_filename(
-            _ticker=ticker,
-            _study_name=study_name,
-            _params=best_params,
-            _metadata_extra={
-                'spread_type': spread_type,
-                'strike_distance': strike_distance,
-                'forward_days': forward_days
+    # Generate unique, descriptive filename
+    model_filename = generate_model_filename(
+        _ticker=ticker,
+        _study_name=study_name,
+        _params=best_params,
+        _metadata_extra={
+            'spread_type': spread_type,
+            'strike_distance': strike_distance,
+            'forward_days': forward_days
+        }
+    )
+    model_path = f"models/{model_filename}"
+
+    with open(model_path, "wb") as f:
+        pickle.dump({
+            "model": _model,
+            "scaler": _scaler,
+            "stats": _stats,
+            "params": best_params,
+            "metadata": {
+                "ticker": ticker,
+                "spread_type": spread_type,
+                "strike_distance": strike_distance,
+                "forward_days": forward_days,
+                "clustering_algo": _clustering_algo,
+                "timestamp": datetime.now(),
+                "study_name": study_name,
+                "best_score": study.best_value,
+                "model_filename": model_filename  # ← Store filename for easy retrieval
+            },
+            "trade_context": {
+                "credit_received": credit_received,
+                "spread_width": spread_width,
+                "max_loss": max_loss,
+                "edge_ratio": trade_decision['edge_ratio'],
+                "expectancy": trade_decision['expectancy'],
+                "evaluated_at": datetime.now()
             }
-        )
-        model_path = f"models/{model_filename}"
+        }, f)
 
-        with open(model_path, "wb") as f:
-            pickle.dump({
-                "model": _model,
-                "scaler": _scaler,
-                "stats": _stats,
-                "params": best_params,
-                "metadata": {
-                    "ticker": ticker,
-                    "spread_type": spread_type,
-                    "strike_distance": strike_distance,
-                    "forward_days": forward_days,
-                    "clustering_algo": _clustering_algo,
-                    "timestamp": datetime.now(),
-                    "study_name": study_name,
-                    "best_score": study.best_value,
-                    "model_filename": model_filename  # ← Store filename for easy retrieval
-                },
-                "trade_context": {
-                    "credit_received": credit_received,
-                    "spread_width": spread_width,
-                    "max_loss": max_loss,
-                    "edge_ratio": trade_decision['edge_ratio'],
-                    "expectancy": trade_decision['expectancy'],
-                    "evaluated_at": datetime.now()
-                }
-            }, f)
+    print(f"✅ Model saved to: {model_path}")
 
-        print(f"✅ Model saved to: {model_path}")
-
-        # Optional: Create/update a "latest" symlink for convenience
-        latest_link = f"models/{ticker.replace('^', '')}_regime_model_latest.pkl"
-        if os.path.islink(latest_link) or os.path.exists(latest_link):
+    # Create/update a "latest" symlink for convenience
+    latest_link = f"models/{ticker.replace('^', '')}_regime_model_latest.pkl"
+    try:
+        # Check if the destination already exists and remove it to avoid errors
+        if os.path.exists(latest_link):
             os.remove(latest_link)
-        try:
-            os.symlink(model_path, latest_link)
-            print(f"🔗 Created symlink: {latest_link} → {model_filename}")
-        except (OSError, NotImplementedError):
-            # Windows may not support symlinks without admin rights
-            pass
-    else:
-        print(f"\n⚠️  Model NOT saved (trade not approved per edge criteria)")
+        shutil.copy2(model_path, latest_link)
+        print(f"💾 Created copy: {latest_link} (from {model_filename})")
+    except (OSError, IOError) as e:
+        print(f"❌ Failed to copy model: {e}")
 
     print("\n" + "═" * 60)
     print("✨ PIPELINE COMPLETE")
