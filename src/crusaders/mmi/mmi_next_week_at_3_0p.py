@@ -18,14 +18,14 @@ from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # ===== BEST PARAMETERS =====
-DDD = {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.03, 'MMI_TREND_MAX': 10, 'MMI_PERIOD': 8, 'SMA_PERIOD': 1}
-BEST_SCORE = 0.87242679
+BEST_PARAMETERS = {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.03, 'MMI_TREND_MAX': 8, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
+BEST_SCORE = 0.87409551
 CONFIGURATION_FOR_MMI_NEXT_WEEK = Namespace(
         dataset_id="week", older_dataset=None,
-        mmi_period=DDD['MMI_PERIOD'],
-        mmi_trend_max=DDD['MMI_TREND_MAX'],
-        sma_period=DDD['SMA_PERIOD'],
-        return_threshold=0.03,
+        mmi_period=BEST_PARAMETERS['MMI_PERIOD'],
+        mmi_trend_max=BEST_PARAMETERS['MMI_TREND_MAX'],
+        sma_period=BEST_PARAMETERS['SMA_PERIOD'],
+        return_threshold=BEST_PARAMETERS['RETURN_THRESHOLD'],
         use_ema=True,
         verbose=False,
         filter_open_gaps=False,

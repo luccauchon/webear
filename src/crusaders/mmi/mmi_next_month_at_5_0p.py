@@ -18,9 +18,9 @@ from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # ===== BEST PARAMETERS =====
-BEST_PARAMETERS = {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.04, 'MMI_TREND_MAX': 50, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
-BEST_SCORE = 0.68513854
-CONFIGURATION_FOR_MMI_NEXT_MONTH = Namespace(
+BEST_PARAMETERS = {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.05, 'MMI_TREND_MAX': 11, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
+BEST_SCORE = 0.77959698
+CONFIGURATION_FOR_MMI_NEXT_WEEK = Namespace(
         dataset_id="month", older_dataset=None,
         mmi_period=BEST_PARAMETERS['MMI_PERIOD'],
         mmi_trend_max=BEST_PARAMETERS['MMI_TREND_MAX'],
@@ -37,7 +37,7 @@ def main(args):
         print("\n" + "=" * 80)
         print(f"Historical performance of {BEST_SCORE*100}% (overall accuracy)")
         print("=" * 80)
-    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_MONTH)
+    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_WEEK)
     config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, 'older_dataset': args.older_dataset, 'keep_last_step': args.keep_last_step })
     configuration = Namespace(**config_dict)
     return MMI_next(configuration)

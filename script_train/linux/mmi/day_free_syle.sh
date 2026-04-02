@@ -4,12 +4,12 @@ conda activate PY312_HT
 cd ../../..
 cd src/runners
 python MMI_hyperparameter_search_optuna.py \
-    --dataset_id week \
+    --dataset_id day \
     --step-back-range 99999 \
-    --n-trials 99999 \
-    --timeout 432000 \
+    --n-trials 999999 \
+    --timeout 86400 \
     --use_ema true \
-    --return_threshold_min 0.03 \
+    --return_threshold_min 0.02 \
     --return_threshold_max 0.04 \
     --sma_period_min 1 \
     --sma_period_max 20 \
@@ -18,7 +18,7 @@ python MMI_hyperparameter_search_optuna.py \
     --mmi_trend_max_min 1 \
     --mmi_trend_max_max 20 \
     --lookahead_min 1 \
-    --lookahead_max 2 \
-    --study_name freestyle__week__ \
-    --storage sqlite:///mmi_optuna_week_freestyle.db
+    --lookahead_max 20 \
+    --study_name freestyle__day__ \
+    --storage sqlite:///mmi_optuna_day_freestyle.db
 read

@@ -18,10 +18,10 @@ from crusaders.mmi.mmi_next import main as MMI_next
 
 
 # ===== BEST PARAMETERS =====
-BEST_PARAMETERS = {'LOOKAHEAD': 1, 'RETURN_THRESHOLD': 0.04, 'MMI_TREND_MAX': 50, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
-BEST_SCORE = 0.68513854
-CONFIGURATION_FOR_MMI_NEXT_MONTH = Namespace(
-        dataset_id="month", older_dataset=None,
+BEST_PARAMETERS = {'LOOKAHEAD': 3, 'RETURN_THRESHOLD': 0.02, 'MMI_TREND_MAX': 8, 'MMI_PERIOD': 2, 'SMA_PERIOD': 1}
+BEST_SCORE = 0.80928949
+CONFIGURATION_FOR_MMI_NEXT_DAY = Namespace(
+        dataset_id="day", older_dataset=None,
         mmi_period=BEST_PARAMETERS['MMI_PERIOD'],
         mmi_trend_max=BEST_PARAMETERS['MMI_TREND_MAX'],
         sma_period=BEST_PARAMETERS['SMA_PERIOD'],
@@ -35,19 +35,18 @@ CONFIGURATION_FOR_MMI_NEXT_MONTH = Namespace(
 def main(args):
     if args.verbose:
         print("\n" + "=" * 80)
-        print(f"Historical performance of {BEST_SCORE*100}% (overall accuracy)")
+        print(f"Historical performance of {BEST_SCORE*100:.1f}% (overall accuracy)")
         print("=" * 80)
-    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_MONTH)
-    config_dict.update({'ticker': args.ticker, 'col': args.col, 'verbose': args.verbose, 'older_dataset': args.older_dataset, 'keep_last_step': args.keep_last_step })
+    config_dict = vars(CONFIGURATION_FOR_MMI_NEXT_DAY)
+    config_dict.update({'ticker': args.ticker,'col': args.col,'verbose': args.verbose, 'keep_last_step': args.keep_last_step,})
     configuration = Namespace(**config_dict)
-    return MMI_next(configuration)
+    return MMI_next(configuration, lookahead=BEST_PARAMETERS['LOOKAHEAD'])
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument("--col", type=str, default='Close')
-    parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument('--keep_last_step', type=str2bool, default=True)
     parser.add_argument('--verbose', type=str2bool, default=True)
     args = parser.parse_args()
