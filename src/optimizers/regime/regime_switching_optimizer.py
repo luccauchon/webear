@@ -72,6 +72,56 @@ DEFAULT_MIN_N_IN_CLUSTER = 160
 
 
 # =========================================================
+# MODEL NAMING HELPER
+# =========================================================
+def generate_model_filename(_ticker, _study_name, _params, _metadata_extra=None):
+    """
+    Generate a unique, descriptive model filename based on experiment configuration.
+
+    Parameters:
+    -----------
+    _ticker : str
+        Asset ticker symbol
+    _study_name : str
+        Optuna study name
+    _params : dict
+        Best parameters from optimization
+    _metadata_extra : dict, optional
+        Additional metadata to include in filename
+
+    Returns:
+    --------
+    str : Safe filename for model storage
+    """
+    import re
+    from datetime import datetime
+
+    # Base components
+    ticker_clean = re.sub(r'[^\w\-]', '', _ticker.replace('^', ''))
+    study_clean = re.sub(r'[^\w\-]', '', _study_name)
+
+    # Key experiment identifiers
+    algo = _params.get('clustering_algo', 'unknown')
+    n_clusters = _params.get('n_clusters', 'NA')
+    spread_type = _metadata_extra.get('spread_type', 'put') if _metadata_extra else 'put'
+    strike_dist = _metadata_extra.get('strike_distance', 0.03) if _metadata_extra else 0.03
+    forward = _metadata_extra.get('forward_days', 20) if _metadata_extra else 20
+
+    # Timestamp for uniqueness within same config
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Build filename (keep it readable but under ~200 chars for filesystem compatibility)
+    filename = (
+        f"{ticker_clean}__{study_clean}__"
+        f"{algo}c{n_clusters}__"
+        f"{spread_type}_sd{int(strike_dist * 100)}pct_dte{forward}__"
+        f"{timestamp}.pkl"
+    )
+
+    return filename
+
+
+# =========================================================
 #
 # =========================================================
 def compute_oos_regime_stats(_model, _scaler, _features_test, _target_test, _n_clusters, min_n):
@@ -523,8 +573,53 @@ def run_real_time_inference(args):
     print("-" * 60)
 
     ticker = args.ticker
-    model_filename = f"models/{ticker.replace('^', '')}_regime_model.pkl"
+    # Handle --list-models flag
+    if getattr(args, 'list_models', False):
+        models_dir = Path("models")
+        if not models_dir.exists():
+            print("📁 No models directory found.")
+            return
+        pattern = f"{ticker.replace('^', '')}__*.pkl"
+        models = list(models_dir.glob(pattern))
+        if not models:
+            print(f"🔍 No models found matching: {pattern}")
+            return
+        print(f"\n📦 Available models for {ticker}:")
+        print("─" * 70)
+        for m in sorted(models, key=lambda x: x.stat().st_mtime, reverse=True):
+            stat = m.stat()
+            print(f"• {m.name}")
+            print(f"  └─ Modified: {datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')} | Size: {stat.st_size / 1024:.1f} KB")
+        print("─" * 70)
+        print("\n💡 Use --model-filename <name> to load a specific model")
+        return
 
+    # Determine model path to load
+    if getattr(args, 'model_filename', None):
+        # User specified exact filename
+        model_path = f"models/{args.model_filename}"
+        if not os.path.exists(model_path):
+            print(f"❌ ERROR: Model file not found: {model_path}")
+            return
+        print(f"📂 Loading specified model: {model_path}")
+    else:
+        # Auto-detect: try latest symlink first, then most recent matching file
+        latest_link = f"models/{ticker.replace('^', '')}_regime_model_latest.pkl"
+        if os.path.islink(latest_link) or os.path.exists(latest_link):
+            model_path = latest_link
+            print(f"📂 Loading latest model symlink: {latest_link}")
+        else:
+            # Fallback: find most recent model for this ticker
+            models_dir = Path("models")
+            pattern = f"{ticker.replace('^', '')}__*.pkl"
+            models = list(models_dir.glob(pattern))
+            if not models:
+                print(f"❌ ERROR: No models found for ticker {ticker}")
+                print("   → Run optimization first without --real-time to generate a model.")
+                return
+            model_path = str(max(models, key=lambda x: x.stat().st_mtime))
+            print(f"📂 Loading most recent model: {os.path.basename(model_path)}")
+    model_filename = model_path
     # 1. Load Saved Model
     if not os.path.exists(model_filename):
         print(f"❌ ERROR: Model file not found: {model_filename}")
@@ -1096,7 +1191,19 @@ def entry_main(args):
     # ===== Save Model (Only If Trade Approved) =====
     if trade_decision['trade']:
         print(f"\n💾 Saving model artifacts...")
-        model_path = f"models/{ticker.replace('^', '')}_regime_model.pkl"
+
+        # Generate unique, descriptive filename
+        model_filename = generate_model_filename(
+            _ticker=ticker,
+            _study_name=study_name,
+            _params=best_params,
+            _metadata_extra={
+                'spread_type': spread_type,
+                'strike_distance': strike_distance,
+                'forward_days': forward_days
+            }
+        )
+        model_path = f"models/{model_filename}"
 
         with open(model_path, "wb") as f:
             pickle.dump({
@@ -1112,7 +1219,8 @@ def entry_main(args):
                     "clustering_algo": _clustering_algo,
                     "timestamp": datetime.now(),
                     "study_name": study_name,
-                    "best_score": study.best_value
+                    "best_score": study.best_value,
+                    "model_filename": model_filename  # ← Store filename for easy retrieval
                 },
                 "trade_context": {
                     "credit_received": credit_received,
@@ -1125,6 +1233,17 @@ def entry_main(args):
             }, f)
 
         print(f"✅ Model saved to: {model_path}")
+
+        # Optional: Create/update a "latest" symlink for convenience
+        latest_link = f"models/{ticker.replace('^', '')}_regime_model_latest.pkl"
+        if os.path.islink(latest_link) or os.path.exists(latest_link):
+            os.remove(latest_link)
+        try:
+            os.symlink(model_path, latest_link)
+            print(f"🔗 Created symlink: {latest_link} → {model_filename}")
+        except (OSError, NotImplementedError):
+            # Windows may not support symlinks without admin rights
+            pass
     else:
         print(f"\n⚠️  Model NOT saved (trade not approved per edge criteria)")
 
@@ -1157,6 +1276,16 @@ if __name__ == "__main__":
 
     # Quick test run:
     python script.py --max-n-trials 10 --timeout 300 --study-name test_run
+    
+    # List available models for SPY:
+    python script.py --ticker SPY --list-models
+
+    # Run inference with a specific experiment:
+    python script.py --ticker SPY --real-time \\
+                     --model-filename "SPY__my_study__kmeansc4__put_sd3pct_dte20__20260402_143022.pkl"
+
+    # Use the latest model (default behavior):
+    python script.py --ticker SPY --real-time
     """
 
     parser = argparse.ArgumentParser(
@@ -1260,6 +1389,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--real-time", action="store_true",
         help="Load saved model and run inference on latest data (skip optimization)"
+    )
+    parser.add_argument(
+        "--model-filename", type=str, default=None,
+        help="Specific model filename to load for inference (overrides auto-detection)"
+    )
+    parser.add_argument(
+        "--list-models", action="store_true",
+        help="List available trained models for this ticker and exit"
     )
 
     # ─────────────────────────────────────────────────────
