@@ -708,10 +708,7 @@ def entry_main(args):
         _rsi_length = trial.suggest_int("rsi_length", 10, 20)
 
         # FIX: Suggest clustering algorithm as part of optimization
-        _clustering_algo = trial.suggest_categorical(
-            "clustering_algo",
-            ["kmeans", "gaussian_mixture"]
-        )
+        _clustering_algo = trial.suggest_categorical("clustering_algo",["kmeans", "gaussian_mixture"])
 
         # ===== 1. TIME-SERIES SPLIT (RAW DATA) =====
         # Split BEFORE feature engineering to prevent leakage in rolling windows/targets
