@@ -1148,9 +1148,8 @@ if __name__ == "__main__":
     # Optimize put spreads on SPY with 30 DTE:
     python script.py --ticker SPY --spread-type put --forward-days 30
 
-    # Use Gaussian Mixture clustering with PostgreSQL storage:
-    python script.py --clustering-algo gaussian_mixture \\
-                     --storage-url "postgresql://user:pass@localhost/db" \\
+    # Use PostgreSQL storage:
+    python script.py --storage-url "postgresql://user:pass@localhost/db" \\
                      --max-n-trials 200
 
     # Conservative trade filtering:
