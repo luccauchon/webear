@@ -14,14 +14,18 @@ from runners.MMI_realtime import main as MMI_realtime
 from utils import get_weekday_name, next_weekday
 
 
-def main(configuration):
+def main(configuration, lookahead=1):
     result = MMI_realtime(configuration)
     prediction_date = None
     if configuration.dataset_id == "day":
-        prediction_date = next_weekday(result['date']).strftime('%Y-%m-%d')
+        prediction_date = result['date'].strftime('%Y-%m-%d')
+        for _ in range(lookahead):
+            prediction_date = next_weekday(datetime.strptime(prediction_date, "%Y-%m-%d")).strftime('%Y-%m-%d')
     elif configuration.dataset_id == "week":
+        assert lookahead==1
         prediction_date = (result['date'] + timedelta(weeks=1)).strftime('%Y-%m-%d')
     elif configuration.dataset_id == "month":
+        assert lookahead == 1
         prediction_date = (result['date'] + timedelta(weeks=4)).strftime('%Y-%m-%d')
     else:
         assert False
