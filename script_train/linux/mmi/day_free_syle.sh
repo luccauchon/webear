@@ -7,7 +7,7 @@ python MMI_hyperparameter_search_optuna.py \
     --dataset_id day \
     --step-back-range 99999 \
     --n-trials 999999 \
-    --timeout 86400 \
+    --timeout 432000 \
     --use_ema true \
     --return_threshold_min 0.02 \
     --return_threshold_max 0.04 \
