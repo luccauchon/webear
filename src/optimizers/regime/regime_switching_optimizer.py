@@ -780,6 +780,8 @@ def entry_main(args):
         print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
         df = df.iloc[-cutoff:].copy()
     minimum_train_data, minimum_test_data = 1000, 200
+    if args.dataset_id == 'week':
+        minimum_train_data, minimum_test_data = minimum_train_data // 5, minimum_test_data // 5
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     # =========================================================
