@@ -280,7 +280,23 @@ def main(args):
         _tmp_str += f"--add_only_vwap_z_and_vwap_triggers {args.add_only_vwap_z_and_vwap_triggers} "
 
         _tmp_str += f"--add_close_diff {args.add_close_diff} "
+        # Add model_overrides
+        # Reconstruct model_overrides from best_params (for optimize_only_models_configuration)
+        VALID_MODEL_NAMES = ["xgb", "lgb", "cat", "hgb", "rf", "et", "svm", "knn", "mlp", "lr", "dt"]
+        reconstructed_model_overrides = {}
+        for key, value in best_params.items():
+            if "__" in key:
+                parts = key.split("__", 1)
+                if len(parts) == 2:
+                    model_name, param_name = parts
+                    if model_name in VALID_MODEL_NAMES:
+                        if model_name not in reconstructed_model_overrides:
+                            reconstructed_model_overrides[model_name] = {}
+                        reconstructed_model_overrides[model_name][param_name] = value
 
+        if len(reconstructed_model_overrides) > 0:
+            model_overrides_json = json.dumps(reconstructed_model_overrides)
+            _tmp_str += f"--model-overrides '{model_overrides_json}' "
         print(f"To run the best experiment (roulette):")
         print(_tmp_str)
 
