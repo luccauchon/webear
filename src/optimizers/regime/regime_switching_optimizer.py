@@ -44,7 +44,7 @@ import shutil
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
-
+from utils import DATASET_AVAILABLE
 # Machine Learning
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
@@ -774,8 +774,11 @@ def entry_main(args):
 
     # Load data
     df = load_data(_ticker=ticker, _dataset_id=dataset_id)
-    if args.dataset_cutoff > 0:
-        df = df.iloc[-args.dataset_cutoff:].copy()
+    if args.lookback_years > 0:
+        rows_per_year = {'day': 252, 'week': 52, 'month': 12, 'quarter': 4, 'year': 1}.get(args.dataset_id)
+        cutoff = args.lookback_years * rows_per_year
+        print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
+        df = df.iloc[-cutoff:].copy()
     minimum_train_data, minimum_test_data = 1000, 200
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
@@ -803,7 +806,7 @@ def entry_main(args):
         _rsi_length = trial.suggest_int("rsi_length", 10, 20)
 
         # Suggest clustering algorithm as part of optimization
-        _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture", "birch"])
+        _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture"])  # ["kmeans", "gaussian_mixture", "birch"])
 
         # ===== 1. TIME-SERIES SPLIT (RAW DATA) =====
         # Split BEFORE feature engineering to prevent leakage in rolling windows/targets
@@ -1296,12 +1299,12 @@ if __name__ == "__main__":
         help="Ticker symbol to analyze (e.g., ^GSPC, SPY, QQQ)"
     )
     parser.add_argument(
-        "--dataset-id", type=str, default="day",
-        help="Dataset frequency: 'day', 'hour', 'week', etc."
+        "--dataset-id", type=str, default="day", choices=DATASET_AVAILABLE,
+        help=f"Dataset frequency: {DATASET_AVAILABLE}"
     )
     parser.add_argument(
-        "--dataset-cutoff", type=int, default=0,
-        help="If greater than 0, apply df.iloc[-dataset-cutoff:] to reduce the size"
+        "--lookback-years", type=int, default=15,
+        help="Years of historical data to use (0 = full history). Recommended: 10-15 for daily data"
     )
 
     # ─────────────────────────────────────────────────────
