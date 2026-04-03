@@ -76,38 +76,6 @@ DEFAULT_RANDOM_SEED = 42
 DEFAULT_MIN_N_IN_CLUSTER = 160
 
 
-class ClusterWithNeighbors:
-    """Wrapper for clustering algorithms without predict() method"""
-
-    def __init__(self, clusterer):
-        self.clusterer = clusterer
-        self.nn = None
-        self.X_fit = None
-
-    def fit_predict(self, X):
-        self.X_fit = X
-        labels = self.clusterer.fit_predict(X)
-
-        # Train nearest neighbors for prediction
-        from sklearn.neighbors import NearestNeighbors
-        self.nn = NearestNeighbors(n_neighbors=5, metric='euclidean')
-
-        # Only use non-noise points for training
-        mask = labels != -1
-        if mask.sum() > 0:
-            self.nn.fit(X[mask])
-        return labels
-
-    def predict(self, X):
-        if self.nn is None:
-            return np.full(len(X), -1)
-
-        # Find nearest neighbors and assign their cluster
-        distances, indices = self.nn.kneighbors(X)
-        labels = self.clusterer.labels_[indices[:, 0]]
-        return labels
-
-
 # =========================================================
 # MODEL NAMING HELPER
 # =========================================================
@@ -175,7 +143,7 @@ def compute_oos_regime_stats(_model, _scaler, _features_test, _target_test, _n_c
         if len(subset) >= min_n:
             prob = subset.mean()
             ci_low, ci_upp = proportion_confint(subset.sum(), len(subset), method='wilson')
-            stats_oos[r] = {'prob_otm_oos': prob, 'ci_lower_oos': ci_low, 'ci_upper_oos': ci_upp, 'n_oos': len(subset)}
+            stats_oos[r] = {'prob_otm': prob, 'prob_itm': 1-prob, 'count': len(subset), 'ci_lower_oos': ci_low, 'ci_upper_oos': ci_upp}
     return stats_oos
 
 
@@ -394,8 +362,7 @@ def load_data(_ticker, _dataset_id):
 # =========================================================
 # FEATURE ENGINEERING
 # =========================================================
-def build_features(_df, _pct1=5, _pct2=10, _pct3=20, _vol1=10, _vol2=20, _vol3=60,
-                   _rsi_length=14, _ema1=50, _ema2=200, _atr_period=14):
+def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3, _rsi_length, _ema1, _ema2, _atr_period):
     """
     Build technical features for regime classification.
 
@@ -683,6 +650,10 @@ def run_real_time_inference(args):
         print(f"❌ ERROR loading data: {e}")
         return
 
+    required_feature_params = ['pct1', 'pct2', 'pct3', 'vol1', 'vol2', 'vol3', 'rsi_length', 'ema1', 'ema2', 'atr_period']
+    for param in required_feature_params:
+        if param not in _params:
+            raise ValueError(f"Missing required param '{param}' in saved model")
     # 3. Build Features using SAVED Hyperparameters
     # Crucial: Must use the same params used during training
     print("🔧 Engineering features with saved hyperparameters...")
@@ -796,15 +767,18 @@ def entry_main(args):
 
     print(f"🚀 Starting Credit Spread Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
-    print(f"   Spread: {spread_type} @ {strike_distance * 100:.1f}% | DTE: {forward_days}")
+    print(f"   Spread: {spread_type} @{strike_distance * 100:.1f}% | DTE: {forward_days}")
     print(f"   Min samples/cluster: {min_n_in_cluster} | Trials: {max_n_trials} | Timeout: {timeout} seconds")
     print(f"   Forward : {forward_days} {dataset_id}")
     print("-" * 60)
 
     # Load data
     df = load_data(_ticker=ticker, _dataset_id=dataset_id)
+    if args.dataset_cutoff > 0:
+        df = df.iloc[-args.dataset_cutoff:].copy()
+    minimum_train_data, minimum_test_data = 1000, 200
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
-
+    assert len(df) > minimum_train_data + minimum_test_data
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
@@ -828,15 +802,15 @@ def entry_main(args):
         _atr_period = trial.suggest_int("atr_period", 2, 21)
         _rsi_length = trial.suggest_int("rsi_length", 10, 20)
 
-        # FIX: Suggest clustering algorithm as part of optimization
-        _clustering_algo = trial.suggest_categorical("clustering_algo",["kmeans", "gaussian_mixture"])
+        # Suggest clustering algorithm as part of optimization
+        _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture", "birch"])
 
         # ===== 1. TIME-SERIES SPLIT (RAW DATA) =====
         # Split BEFORE feature engineering to prevent leakage in rolling windows/targets
         split_idx = int(len(df) * 0.8)
 
         df_train_raw = df.iloc[:split_idx].copy()
-        df_test_raw = df.iloc[split_idx:].copy()
+        df_test_raw  = df.iloc[split_idx:].copy()
 
         # ===== 2. Build Features & Target (Separately for Train & Test) =====
         # Train Set
@@ -874,14 +848,14 @@ def entry_main(args):
         # ===== 3. Align & Clean Data =====
         # Align features and targets within their respective sets
         _train_aligned = pd.concat([_features_train, _target_train.rename('target')], axis=1)
-        _test_aligned  = pd.concat([_features_test, _target_test.rename('target')], axis=1)
+        _test_aligned  = pd.concat([_features_test,  _target_test.rename('target')], axis=1)
 
         # Drop NaNs (Resulting from rolling windows & forward-looking targets)
         train_data = _train_aligned.dropna().copy()
-        test_data = _test_aligned.dropna().copy()
+        test_data  = _test_aligned.dropna().copy()
 
         # Validate minimum data requirements
-        if len(train_data) < 1000 or len(test_data) < 200:
+        if len(train_data) < minimum_train_data or len(test_data) < minimum_test_data:
             return 0.0
 
         # ===== 4. Feature Scaling =====
@@ -914,32 +888,11 @@ def entry_main(args):
                 random_state=random_seed,
                 verbose=0
             )
-        elif _clustering_algo == 'dbscan':
-            # DBSCAN: Density-based, finds arbitrary shapes, handles outliers
-            _eps = trial.suggest_float("dbscan_eps", 0.1, 2.0, log=True)
-            _min_samples = trial.suggest_int("dbscan_min_samples", 3, 20)
-
-            base_model = DBSCAN(eps=_eps, min_samples=_min_samples, n_jobs=-1)
-            _model = ClusterWithNeighbors(base_model)
-            # Note: DBSCAN doesn't have predict() method for new points
-            # Need to fit_predict on full data or use NearestNeighbors wrapper
-        elif _clustering_algo == 'agglomerative':
-            _linkage = trial.suggest_categorical("agg_linkage", ['ward', 'complete', 'average', 'single'])
-            _distance_threshold = trial.suggest_float("agg_distance", 0.5, 5.0)
-
-            _model = AgglomerativeClustering(n_clusters=None,  # Use distance threshold instead
-                distance_threshold=_distance_threshold,linkage=_linkage,compute_full_tree=True)
         elif _clustering_algo == 'birch':
             _threshold = trial.suggest_float("birch_threshold", 0.1, 1.0, log=True)
             _branching_factor = trial.suggest_int("birch_branching", 20, 100)
 
             _model = Birch(threshold=_threshold,branching_factor=_branching_factor,n_clusters=_n_clusters)
-        elif _clustering_algo == 'optics':
-            _min_samples = trial.suggest_int("optics_min_samples", 5, 30)
-            _xi = trial.suggest_float("optics_xi", 0.01, 0.2)
-            _min_cluster_size = trial.suggest_int("optics_min_cluster", 0.05, 0.3)
-
-            _model = OPTICS(min_samples=_min_samples,xi=_xi,min_cluster_size=_min_cluster_size,metric='euclidean')
         else:
             raise ValueError(f"Unknown algorithm: {_clustering_algo}")
 
@@ -1145,15 +1098,6 @@ def entry_main(args):
             reg_covar=1e-5,
             init_params = 'k-means++',
         )
-    elif _clustering_algo == 'dbscan':
-        _eps = best_params.get('dbscan_eps', 0.5)
-        _min_samples = best_params.get('dbscan_min_samples', 5)
-        base_model = DBSCAN(eps=_eps, min_samples=_min_samples, n_jobs=-1)
-        _model = ClusterWithNeighbors(base_model)
-    elif _clustering_algo == 'agglomerative':
-        _linkage = best_params.get('agg_linkage', 'ward')
-        _distance = best_params.get('agg_distance', 1.0)
-        _model = AgglomerativeClustering(n_clusters=None,distance_threshold=_distance,linkage=_linkage)
     elif _clustering_algo == 'birch':
         _threshold = best_params.get('birch_threshold', 0.5)
         _branching = best_params.get('birch_branching', 50)
@@ -1354,6 +1298,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset-id", type=str, default="day",
         help="Dataset frequency: 'day', 'hour', 'week', etc."
+    )
+    parser.add_argument(
+        "--dataset-cutoff", type=int, default=0,
+        help="If greater than 0, apply df.iloc[-dataset-cutoff:] to reduce the size"
     )
 
     # ─────────────────────────────────────────────────────
