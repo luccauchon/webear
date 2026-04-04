@@ -73,7 +73,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # GLOBAL CONFIGURATION
 # =========================================================
 DEFAULT_RANDOM_SEED = 42
-DEFAULT_MIN_N_IN_CLUSTER = 160
 
 
 # =========================================================
@@ -601,14 +600,14 @@ def run_real_time_inference(args):
     # Determine model path to load
     if getattr(args, 'model_filename', None):
         # User specified exact filename
-        model_path = f"models/{args.model_filename}"
+        model_path = f"{args.output_dir}/{args.model_filename}"
         if not os.path.exists(model_path):
             print(f"❌ ERROR: Model file not found: {model_path}")
             return
         print(f"📂 Loading specified model: {model_path}")
     else:
         # Auto-detect: try latest symlink first, then most recent matching file
-        latest_link = f"models/{ticker.replace('^', '')}_regime_model_latest.pkl"
+        latest_link = f"{args.output_dir}/{ticker.replace('^', '')}_regime_model_latest.pkl"
         if os.path.islink(latest_link) or os.path.exists(latest_link):
             model_path = latest_link
             print(f"📂 Loading latest model symlink: {latest_link}")
@@ -748,7 +747,7 @@ def entry_main(args):
     n_jobs = getattr(args, 'n_jobs', 1)
     random_seed = getattr(args, 'random_seed', DEFAULT_RANDOM_SEED)
 
-    min_n_in_cluster = getattr(args, 'min_n_in_cluster', DEFAULT_MIN_N_IN_CLUSTER)
+    min_n_in_cluster = getattr(args, 'min_n_in_cluster', 160)
 
     spread_type = getattr(args, 'spread_type', 'put')
     strike_distance = getattr(args, 'strike_distance', 0.03)
@@ -762,8 +761,7 @@ def entry_main(args):
     np.random.seed(random_seed)
 
     # Ensure output directories exist
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     print(f"🚀 Starting Credit Spread Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
@@ -771,7 +769,7 @@ def entry_main(args):
     print(f"   Min samples/cluster: {min_n_in_cluster} | Trials: {max_n_trials} | Timeout: {timeout} seconds")
     print(f"   Forward : {forward_days} {dataset_id}")
     print("-" * 60)
-
+    assert args.dataset_id in ['day', 'week', 'month']
     # Load data
     df = load_data(_ticker=ticker, _dataset_id=dataset_id)
     if args.lookback_years > 0:
@@ -782,6 +780,8 @@ def entry_main(args):
     minimum_train_data, minimum_test_data = 1000, 200
     if args.dataset_id == 'week':
         minimum_train_data, minimum_test_data = minimum_train_data // 5, minimum_test_data // 5
+    if args.dataset_id == 'month':
+        minimum_train_data, minimum_test_data = minimum_train_data // 20, minimum_test_data // 20
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     # =========================================================
@@ -795,17 +795,42 @@ def entry_main(args):
         to prevent look-ahead bias in rolling indicators and target calculation.
         """
         # ===== Suggest Hyperparameters =====
-        _n_clusters = trial.suggest_int("n_clusters", 3, 6)
-        _pct1 = trial.suggest_int("pct1", 1, 5)
-        _pct2 = trial.suggest_int("pct2", 5, 10)
-        _pct3 = trial.suggest_int("pct3", 10, 20)
-        _vol1 = trial.suggest_int("vol1", 1, 10)
-        _vol2 = trial.suggest_int("vol2", 10, 20)
-        _vol3 = trial.suggest_int("vol3", 20, 60)
-        _ema1 = trial.suggest_int("ema1", 40, 60)
-        _ema2 = trial.suggest_int("ema2", 180, 220)
-        _atr_period = trial.suggest_int("atr_period", 2, 21)
-        _rsi_length = trial.suggest_int("rsi_length", 10, 20)
+        if args.dataset_id == 'day':
+            _n_clusters = trial.suggest_int("n_clusters", 3, 6)
+            _pct1 = trial.suggest_int("pct1", 1, 5)
+            _pct2 = trial.suggest_int("pct2", 5, 10)
+            _pct3 = trial.suggest_int("pct3", 10, 20)
+            _vol1 = trial.suggest_int("vol1", 1, 10)
+            _vol2 = trial.suggest_int("vol2", 10, 20)
+            _vol3 = trial.suggest_int("vol3", 20, 60)
+            _ema1 = trial.suggest_int("ema1", 40, 60)
+            _ema2 = trial.suggest_int("ema2", 180, 220)
+            _atr_period = trial.suggest_int("atr_period", 2, 21)
+            _rsi_length = trial.suggest_int("rsi_length", 10, 20)
+        if args.dataset_id == 'week':
+            _n_clusters = trial.suggest_int("n_clusters", 3, 6)
+            _pct1 = trial.suggest_int("pct1", 1, 3)
+            _pct2 = trial.suggest_int("pct2", 3, 8)
+            _pct3 = trial.suggest_int("pct3", 8, 16)
+            _vol1 = trial.suggest_int("vol1", 1, 10)
+            _vol2 = trial.suggest_int("vol2", 10, 20)
+            _vol3 = trial.suggest_int("vol3", 20, 30)
+            _ema1 = trial.suggest_int("ema1", 8, 14)
+            _ema2 = trial.suggest_int("ema2", 40, 44)
+            _atr_period = trial.suggest_int("atr_period", 4, 12)
+            _rsi_length = trial.suggest_int("rsi_length", 6, 14)
+        if args.dataset_id == 'month':
+            _n_clusters = trial.suggest_int("n_clusters", 3, 5)
+            _pct1 = trial.suggest_int("pct1", 1, 2)
+            _pct2 = trial.suggest_int("pct2", 2, 4)
+            _pct3 = trial.suggest_int("pct3", 4, 8)
+            _vol1 = trial.suggest_int("vol1", 1, 3)
+            _vol2 = trial.suggest_int("vol2", 3, 6)
+            _vol3 = trial.suggest_int("vol3", 6, 18)
+            _ema1 = trial.suggest_int("ema1", 2, 6)
+            _ema2 = trial.suggest_int("ema2", 12, 24)
+            _atr_period = trial.suggest_int("atr_period", 3, 8)
+            _rsi_length = trial.suggest_int("rsi_length", 4, 10)
 
         # Suggest clustering algorithm as part of optimization
         _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture"])  # ["kmeans", "gaussian_mixture", "birch"])
@@ -1196,7 +1221,7 @@ def entry_main(args):
             'forward_days': forward_days
         }
     )
-    model_path = f"models/{model_filename}"
+    model_path = f"{args.output_dir}/{model_filename}"
 
     with open(model_path, "wb") as f:
         pickle.dump({
@@ -1228,7 +1253,7 @@ def entry_main(args):
     print(f"✅ Model saved to: {model_path}")
 
     # Create/update a "latest" symlink for convenience
-    latest_link = f"models/{ticker.replace('^', '')}_regime_model_latest.pkl"
+    latest_link = f"{args.output_dir}/{ticker.replace('^', '')}_regime_model_latest.pkl"
     try:
         # Check if the destination already exists and remove it to avoid errors
         if os.path.exists(latest_link):
@@ -1308,6 +1333,10 @@ if __name__ == "__main__":
         "--lookback-years", type=int, default=15,
         help="Years of historical data to use (0 = full history). Recommended: 10-15 for daily data"
     )
+    parser.add_argument(
+        "--output-dir", type=str, default="models",
+        help=f"Directory where to save the model"
+    )
 
     # ─────────────────────────────────────────────────────
     # OPTUNA OPTIMIZATION CONFIGURATION
@@ -1317,7 +1346,7 @@ if __name__ == "__main__":
         help="Unique Optuna study name (for DB persistence)"
     )
     parser.add_argument(
-        "--storage-url", type=str, default="sqlite:///spx_study__target_OTM.db",
+        "--storage-url", type=str, default=None,
         help="Database URL: sqlite:///path.db or postgresql://..."
     )
     parser.add_argument(
@@ -1341,7 +1370,7 @@ if __name__ == "__main__":
     # CLUSTERING / REGIME MODEL CONFIGURATION
     # ─────────────────────────────────────────────────────
     parser.add_argument(
-        "--min-n-in-cluster", type=int, default=DEFAULT_MIN_N_IN_CLUSTER,
+        "--min-n-in-cluster", type=int, default=160,
         help="Minimum samples per cluster to be considered valid"
     )
 
@@ -1359,7 +1388,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--forward-days", type=int, default=20,
-        help="Days to expiration / holding period"
+        help="Days to expiration / holding period. Could be week or month, depends on dataset-id."
     )
 
     # ─────────────────────────────────────────────────────
@@ -1400,8 +1429,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Ensure models directory exists
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     try:
         if args.real_time:
