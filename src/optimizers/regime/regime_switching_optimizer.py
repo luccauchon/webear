@@ -900,7 +900,7 @@ def entry_main(args):
                 n_clusters=_n_clusters,
                 init='k-means++',
                 n_init=10,
-                max_iter=300,
+                max_iter=900,
                 tol=1e-4,
                 random_state=random_seed,
                 algorithm='lloyd',
@@ -912,7 +912,7 @@ def entry_main(args):
                 covariance_type='full',
                 tol=1e-3,
                 reg_covar=1e-5,
-                max_iter=100,
+                max_iter=900,
                 n_init=20,
                 init_params='k-means++',
                 random_state=random_seed,
@@ -953,7 +953,7 @@ def entry_main(args):
             consistency = 1 - (prob_otm * (1 - prob_otm))
 
             # 3. Sample size bonus: More data = more reliable estimate
-            sample_bonus = np.clip(len(subset) / 500, 0, 1)
+            sample_bonus = np.clip(len(subset) / (2 * min_n_in_cluster), 0, 1)
 
             # 4. Separation: How distinct is this regime from others?
             other_probs = [
@@ -1039,23 +1039,6 @@ def entry_main(args):
     for k, v in study.best_params.items():
         print(f"   • {k}: {v}")
 
-    # ===== Top Combinations Analysis =====
-    df_trials = study.trials_dataframe()
-    if not df_trials.empty:
-        param_cols = [c for c in df_trials.columns if c.startswith('params_')]
-        summary = df_trials[['value'] + param_cols].sort_values('value', ascending=False)
-
-        print("\n" + "─" * 60)
-        print("🏅 TOP 5 HYPERPARAMETER COMBINATIONS")
-        print("─" * 60)
-        print(summary.head(5).to_string(index=False))
-
-        # Parameter range analysis for top performers
-        top_20 = summary.head(int(len(summary) * 0.2))
-        if len(top_20) > 1:
-            print("\n📈 Parameter Ranges in Top 20% Trials:")
-            print(top_20[param_cols].describe().loc[['min', 'max', 'mean']].round(2))
-
     # =========================================================
     # RETRAIN WITH BEST PARAMETERS
     # =========================================================
@@ -1114,7 +1097,7 @@ def entry_main(args):
             random_state=random_seed,
             n_init=10,
             algorithm='lloyd',
-            max_iter=300,
+            max_iter=900,
             tol=1e-4
         )
     elif _clustering_algo == 'gaussian_mixture':
@@ -1123,7 +1106,7 @@ def entry_main(args):
             random_state=random_seed,
             n_init=20,  # ← MATCHES objective()
             covariance_type='full',
-            max_iter=100,  # ← MATCHES objective()
+            max_iter=900,  # ← MATCHES objective()
             tol=1e-3,
             reg_covar=1e-5,
             init_params = 'k-means++',
