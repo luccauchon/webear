@@ -608,8 +608,7 @@ def run_professional_optimization(args):
 def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, mode):
     event_direction = "drop" if mode == "drop" else "upper"
     # 1. Base Signal Logic
-    base_signal = "simple_ma" if "use_simple_ma" in params and params["use_simple_ma"] else None
-    base_signal = "slope_3days" if "use_slope_3days" in params and params["use_slope_3days"] else base_signal
+    base_signal = params["base_signal"]
     cond_price = None
     if base_signal == "simple_ma":
         sma = ta.sma(df_data, length=params["sma_len"])
