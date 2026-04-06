@@ -6,7 +6,7 @@ python .\hyperparameter_search_optuna.py ^
 --look_ahead 1 ^
 --dataset_id day ^
 --timeout 500000 ^
---optimize_target seq__f1 ^
+--optimize-target seq__f1 ^
 --activate_sma_space_search true ^
 --activate_sma_space_search true ^
 --activate_ema_space_search true ^
