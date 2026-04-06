@@ -1077,6 +1077,16 @@ if __name__ == "__main__":
     else:
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
+    if args.verbose:
+        print(f"===== BASELINE =====")
+        print(f"What it is: The natural frequency of your target event occurring in the data, expressed as a percentage."
+              f"Example: If SPX drops ≥3% within 20 days on 150 out of 1000 valid days → baseline = 15.0%"
+              f"Interpretation: \"If I randomly picked days (or always predicted 'drop'), I'd be right ~15% of the time.\"")
+        print(f"===== WIN RATE =====")
+        print(f"What it is: The percentage of your model's signals that correctly predicted an event."
+              f"Example: Your strategy generated 80 signals; 40 of them were followed by a ≥3% drop → win_rate = 50.0%"
+              f"Interpretation: \"When my model says 'drop coming', it's correct 50% of the time.\"")
+
     # =========================================================
     # EXECUTION ROUTING
     # =========================================================
