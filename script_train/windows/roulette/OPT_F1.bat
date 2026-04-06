@@ -2,7 +2,7 @@
 call conda activate PY312_HT
 cd ..\..\..\src\optimizers\roulette
 python .\hyperparameter_search_optuna.py ^
---step_back_range 1111 ^
+--step_back_range 3333 ^
 --look_ahead 1 ^
 --dataset_id day ^
 --timeout 500000 ^
@@ -15,6 +15,6 @@ python .\hyperparameter_search_optuna.py ^
 --activate_vwap_space_search true ^
 --add_only_vwap_z_and_vwap_triggers false ^
 --min_percentage_to_keep_class 4.0 ^
---storage my_storage_roulette ^
+--storage my_storage_roulette_2 ^
 --study_name opt_f1
 pause
