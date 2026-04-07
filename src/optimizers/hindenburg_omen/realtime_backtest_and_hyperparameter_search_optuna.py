@@ -647,8 +647,6 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         lookback = params["breakout_lookback"]
         resistance = df_data.rolling(lookback).max().shift(1)
         cond_price = df_data > resistance  # Price breaks above recent high
-    if cond_price is None:  # Backward compatibility. To be removed.
-        cond_price = params["base_signal"]
     assert cond_price is not None
     base_signal = cond_price
 
