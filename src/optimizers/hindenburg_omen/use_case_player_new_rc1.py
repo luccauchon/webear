@@ -147,30 +147,6 @@ def create_visualization(results, save_path=None):
     ax2.set_title('Baseline vs Time Horizon', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3)
 
-    # Plot 3: Edge (Win Rate - Baseline) vs Time Horizon
-    ax3 = axes[1, 0]
-    colors_edge = ['green' if e > 0 else 'red' for e in edges]
-    bars = ax3.bar(days, edges, color=colors_edge, alpha=0.7, edgecolor='black')
-    ax3.axhline(y=0, color='black', linestyle='-', linewidth=1)
-    ax3.set_xlabel('Prediction Horizon (Days)', fontsize=11)
-    ax3.set_ylabel('Edge (%)', fontsize=11)
-    ax3.set_title('Edge (Win Rate - Baseline)', fontsize=12, fontweight='bold')
-    ax3.grid(True, alpha=0.3, axis='y')
-
-    # Plot 4: Win Rate over Time (Dates)
-    ax4 = axes[1, 1]
-    date_nums = mdates.date2num(dates)
-    scatter4 = ax4.scatter(date_nums, win_rates, c=colors, s=100, alpha=0.7, edgecolors='black')
-    ax4.plot(date_nums, win_rates, 'o-', linewidth=2, alpha=0.5)
-    ax4.axhline(y=50, color='gray', linestyle='--', alpha=0.5)
-    ax4.set_xlabel('Date', fontsize=11)
-    ax4.set_ylabel('Win Rate (%)', fontsize=11)
-    ax4.set_title('Win Rate over Time', fontsize=12, fontweight='bold')
-    ax4.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax4.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.setp(ax4.xaxis.get_majorticklabels(), rotation=45, ha='right')
-    ax4.grid(True, alpha=0.3)
-
     plt.tight_layout()
 
     # Save or show
