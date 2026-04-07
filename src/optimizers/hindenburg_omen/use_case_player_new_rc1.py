@@ -231,10 +231,7 @@ def main():
             current_count = info["current_count"]
             cluster_threshold = info["cluster_threshold"]
 
-            # Extract prediction days from the info
-            # This assumes the filename or info contains the days
-            # You may need to adjust this based on your actual data structure
-            prediction_days = current_count  # or extract from filename
+            prediction_days = info["forward_days"]
 
             direction_word = "DROP" if event_direction == "drop" else "SPIKE"
 

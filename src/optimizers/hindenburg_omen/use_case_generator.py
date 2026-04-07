@@ -181,8 +181,7 @@ def main(args):
         for a_threshold in thresholds_list:
             for a_threshold_penalty_for_low_events in penalties_list:
                 # Determine mode based on threshold sign (mimicking original logic)
-                # Original: Negative -> 'drop', Positive -> 'upper' (though 2nd loop was commented out)
-                mode = 'drop' if a_threshold < 0 else 'upper'
+                mode = 'drop' if a_threshold < 0 else 'spike'
 
                 output_filename = os.path.join(output_dir, f"use_case__{mode}_{a_forward_days}_{a_threshold}_{a_threshold_penalty_for_low_events}.json")
                 configuration_experimentation = argparse.Namespace(

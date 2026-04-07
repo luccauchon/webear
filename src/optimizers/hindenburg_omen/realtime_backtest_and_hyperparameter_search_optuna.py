@@ -112,7 +112,7 @@ def run_professional_optimization(args):
     CLUSTER_MODE = args.cluster_mode
     TICKER = args.ticker
     RANDOM_SEED = args.seed
-    assert (args.mode == "drop" and args.threshold < 0) or (args.mode == "upper" and args.threshold > 0)
+    assert (args.mode == "drop" and args.threshold < 0) or (args.mode == "spike" and args.threshold > 0)
 
     # Set seeds based on args
     random.seed(RANDOM_SEED)
@@ -177,8 +177,8 @@ def run_professional_optimization(args):
             # Si FORWARD_DAYS = 10, les 10 dernières lignes n'ont pas assez de futur pour être valides
             df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
 
-    else:  # upper mode
-        # # Upper mode: look for maximum price in forward window
+    else:  # spike mode
+        # # spike mode: look for maximum price in forward window
         if use_closing_price_strategy:
             future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
             df["Target_Pct_Change"] = (future_extreme - close) / close
@@ -223,6 +223,7 @@ def run_professional_optimization(args):
               f"Penalty threshold @ {args.threshold_penalty_for_low_events}"
               f"{' | Use Z-Score boost' if improve_score_function else ''} | "
               f"Optimizing Edge")
+    assert event_direction in ['drop', 'spike']
     def objective(trial):
         base_signal = None
         use_simple_ma = trial.suggest_categorical("use_simple_ma", [True, False])
@@ -256,7 +257,10 @@ def run_professional_optimization(args):
             sma_len = trial.suggest_int(name="sma_len", low=sma_len_min, high=sma_len_max, log=sma_len_log, step=sma_len_step)
             sma = ta.sma(close, length=sma_len)
             if base_signal == "simple_ma":
-                cond_price = close > sma
+                if event_direction == 'drop':
+                    cond_price = close > sma
+                else:
+                    cond_price = close < sma
             elif base_signal == "ecart_type":
                 # Calcule à combien d'écarts-types le prix se trouve de la moyenne
                 std = close.rolling(window=sma_len).std()
@@ -264,7 +268,10 @@ def run_professional_optimization(args):
                 cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
             elif base_signal == "slope_3days":
                 sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
-                cond_price = (close > sma) & (sma_slope > 0)
+                if event_direction == 'drop':
+                    cond_price = (close > sma) & (sma_slope > 0)
+                else:
+                    cond_price = (close < sma) & (sma_slope < 0)
             elif base_signal == "bull_market_global":
                 cond_regime = ta.sma(close, 50) > ta.sma(close, 200)
                 cond_price = (close > sma) & cond_regime
@@ -281,7 +288,7 @@ def run_professional_optimization(args):
             rsi_thresh = trial.suggest_int("rsi_thresh", 60, 75)
             rsi_lookback = trial.suggest_int("rsi_lookback", 3, 10)
             rsi = ta.rsi(close, length=rsi_len)
-            if args.mode == "upper":
+            if args.mode == "spike":
                 # Momentum without overextension
                 cond_rsi = (rsi > 50) & (rsi < rsi_thresh)
             else:
@@ -298,7 +305,7 @@ def run_professional_optimization(args):
             macd_line = macd.iloc[:, 0]
             macd_sig = macd.iloc[:, 1]
             # Mode-aware MACD
-            if args.mode == "upper":
+            if args.mode == "spike":
                 cond_macd = macd_line > macd_sig  # Bullish crossover
             else:
                 cond_macd = macd_line < macd_sig  # Bearish crossover
@@ -350,7 +357,7 @@ def run_professional_optimization(args):
             stoch_k_line = stoch.iloc[:, 0]  # %K
             stoch_d_line = stoch.iloc[:, 1]  # %D
 
-            if args.mode == "upper":
+            if args.mode == "spike":
                 # Bullish: Stochastic rising from oversold or %K > %D in neutral zone
                 cond_stoch = ((stoch_k_line > stoch_oversold) & (stoch_k_line < stoch_overbought) &
                               (stoch_k_line > stoch_d_line))
@@ -606,13 +613,17 @@ def run_professional_optimization(args):
 # VERIFICATION & REAL-TIME PREDICTION
 # =========================================================
 def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, mode):
-    event_direction = "drop" if mode == "drop" else "upper"
+    event_direction = "drop" if mode == "drop" else "spike"
     # 1. Base Signal Logic
-    base_signal = params["base_signal"]
+    base_signal = "simple_ma" if 'use_simple_ma' in params and params['use_simple_ma'] else ""
+    base_signal = "slope_3days" if 'use_slope_3days' in params and params['use_slope_3days'] else base_signal
     cond_price = None
     if base_signal == "simple_ma":
         sma = ta.sma(df_data, length=params["sma_len"])
-        cond_price = df_data > sma
+        if event_direction == 'drop':
+            cond_price = df_data > sma
+        else:
+            cond_price = df_data < sma
     elif base_signal == "ecart_type":
         # Calcule à combien d'écarts-types le prix se trouve de la moyenne
         sma_len = params["sma_len"]
@@ -623,7 +634,10 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
     elif base_signal == "slope_3days":
         sma = ta.sma(df_data, length=params["sma_len"])
         sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
-        cond_price = (df_data > sma) & (sma_slope > 0)
+        if event_direction == 'drop':
+            cond_price = (df_data > sma) & (sma_slope > 0)
+        else:
+            cond_price = (df_data < sma) & (sma_slope < 0)
     elif base_signal == "bull_market_global":
         # On ne prend des signaux d'achat que si on est en "Bull Market" global
         sma = ta.sma(df_data, length=params["sma_len"])
@@ -639,7 +653,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
     # 2. Calculate Indicators
     if params.get("use_rsi_indicator"):
         rsi = ta.rsi(df_data, length=params["rsi_len"])
-        if mode == "upper":
+        if mode == "spike":
             # Momentum without overextension
             cond_rsi = (rsi > 50) & (rsi < params["rsi_thresh"])
         else:
@@ -653,7 +667,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         macd_line = macd.iloc[:, 0]
         macd_sig = macd.iloc[:, 1]
         # Mode-aware MACD
-        if mode == "upper":
+        if mode == "spike":
             cond_macd = macd_line > macd_sig  # Bullish crossover
         else:
             cond_macd = macd_line < macd_sig  # Bearish crossover
@@ -688,7 +702,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
             stoch_k_line = stoch.iloc[:, 0]
             stoch_d_line = stoch.iloc[:, 1]
 
-        if params.get("mode") == "upper":
+        if params.get("mode") == "spike":
             cond_stoch = ((stoch_k_line > params["stoch_oversold"]) &
                           (stoch_k_line < params["stoch_overbought"]) &
                           (stoch_k_line > stoch_d_line))
@@ -773,7 +787,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         print("=" * 40)
 
     return {'win_rate': win_rate, 'baseline': baseline, 'last_date': last_date, 'current_count': current_count, 'cluster_threshold':params['cluster_threshold'],
-            'is_active_now': is_active_now, 'event_direction': event_direction, 'threshold': threshold , 'is_active_str': _tmp_is_active_str}
+            'is_active_now': is_active_now, 'event_direction': event_direction, 'threshold': threshold , 'is_active_str': _tmp_is_active_str, 'forward_days': forward_days}
 
 
 # =========================================================
@@ -823,8 +837,8 @@ def run_realtime_only(params_file, verbose):
             # 4. SÉCURITÉ : Invalider les dernières lignes
             # Si FORWARD_DAYS = 10, les 10 dernières lignes n'ont pas assez de futur pour être valides
             df.loc[df.index[-FORWARD_DAYS:], "Is_Event"] = 0
-    else:  # upper mode
-        # # Upper mode: look for maximum price in forward window
+    else:  # spike mode
+        # # Spike mode: look for maximum price in forward window
         if use_closing_price_strategy:
             future_extreme = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
             df["Target_Pct_Change"] = (future_extreme - close) / close
@@ -902,7 +916,7 @@ if __name__ == "__main__":
         default=-0.03,
         help="Percentage threshold for event classification. "
              "For --mode drop: use negative value (e.g., -0.03 for 3%% drop). "
-             "For --mode upper: use positive value (e.g., 0.03 for 3%% spike)."
+             "For --mode spike: use positive value (e.g., 0.03 for 3%% spike)."
     )
     # Keep backward compatibility alias
     strat_group.add_argument(
@@ -938,10 +952,10 @@ if __name__ == "__main__":
     strat_group.add_argument(
         "--mode",
         type=str,
-        choices=["drop", "upper"],
+        choices=["drop", "spike"],
         default="drop",
         help="Prediction mode: 'drop' for downward movements (price decreases), "
-             "'upper' for upward spikes (price increases). Threshold sign should match mode."
+             "'spike' for upward spikes (price increases). Threshold sign should match mode."
     )
     strat_group.add_argument(
         "--disable-ema-stretch",
@@ -1068,8 +1082,8 @@ if __name__ == "__main__":
     # Validate threshold sign matches mode
     if args.mode == "drop" and args.threshold > 0:
         parser.error(f"--mode 'drop' requires negative threshold, got {args.threshold}")
-    if args.mode == "upper" and args.threshold < 0:
-        parser.error(f"--mode 'upper' requires positive threshold, got {args.threshold}")
+    if args.mode == "spike" and args.threshold < 0:
+        parser.error(f"--mode 'spike' requires positive threshold, got {args.threshold}")
 
     # Handle Optuna Logging Verbosity
     if args.optuna_verbose:
@@ -1080,12 +1094,12 @@ if __name__ == "__main__":
     if args.verbose:
         print(f"===== BASELINE =====")
         print(f"What it is: The natural frequency of your target event occurring in the data, expressed as a percentage."
-              f"Example: If SPX drops ≥3% within 20 days on 150 out of 1000 valid days → baseline = 15.0%"
-              f"Interpretation: \"If I randomly picked days (or always predicted 'drop'), I'd be right ~15% of the time.\"")
+              f"\nExample: If SPX drops ≥3% within 20 days on 150 out of 1000 valid days → baseline = 15.0%"
+              f"\nInterpretation: \"If I randomly picked days (or always predicted 'drop'), I'd be right ~15% of the time.\"")
         print(f"===== WIN RATE =====")
         print(f"What it is: The percentage of your model's signals that correctly predicted an event."
-              f"Example: Your strategy generated 80 signals; 40 of them were followed by a ≥3% drop → win_rate = 50.0%"
-              f"Interpretation: \"When my model says 'drop coming', it's correct 50% of the time.\"")
+              f"\nExample: Your strategy generated 80 signals; 40 of them were followed by a ≥3% drop → win_rate = 50.0%"
+              f"\nInterpretation: \"When my model says 'drop coming', it's correct 50% of the time.\"")
 
     # =========================================================
     # EXECUTION ROUTING
