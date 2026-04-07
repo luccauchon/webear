@@ -121,17 +121,16 @@ def create_visualization(results, save_path=None):
     directions = [r[1]['event_direction'] for r in sorted_results]
 
     # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
     fig.suptitle('Hindenburg Omen Backtest Results', fontsize=16, fontweight='bold')
 
     # Colors based on direction
     colors = ['red' if d == 'drop' else 'green' for d in directions]
 
     # Plot 1: Win Rate vs Time Horizon (Days)
-    ax1 = axes[0, 0]
+    ax1 = axes[0]
     scatter1 = ax1.scatter(days, win_rates, c=colors, s=100, alpha=0.7, edgecolors='black')
     ax1.plot(days, win_rates, 'o-', linewidth=2, alpha=0.5)
-    ax1.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='Random (50%)')
     ax1.set_xlabel('Prediction Horizon (Days)', fontsize=11)
     ax1.set_ylabel('Win Rate (%)', fontsize=11)
     ax1.set_title('Win Rate vs Time Horizon', fontsize=12, fontweight='bold')
@@ -139,9 +138,10 @@ def create_visualization(results, save_path=None):
     ax1.grid(True, alpha=0.3)
 
     # Plot 2: Baseline vs Time Horizon
-    ax2 = axes[0, 1]
+    ax2 = axes[1]
     scatter2 = ax2.scatter(days, baselines, c=colors, s=100, alpha=0.7, edgecolors='black')
     ax2.plot(days, baselines, 's-', linewidth=2, alpha=0.5, color='orange')
+    ax2.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='Random (50%)')
     ax2.set_xlabel('Prediction Horizon (Days)', fontsize=11)
     ax2.set_ylabel('Baseline (%)', fontsize=11)
     ax2.set_title('Baseline vs Time Horizon', fontsize=12, fontweight='bold')
