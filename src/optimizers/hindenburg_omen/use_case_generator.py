@@ -233,6 +233,7 @@ def main(args):
                     cluster_threshold_params="2,120,false,1",
                     storage=None,
                     lookback_years=args.lookback_years,
+                    base_signals=args.base_signals,
                 )
                 use_cases.append(configuration_experimentation)
     total_estimated_time = len(use_cases) * timeout / nb_workers
