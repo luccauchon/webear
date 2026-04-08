@@ -84,6 +84,10 @@ Examples:
         required=True,
         help="Directory to save results."
     )
+    parser.add_argument(
+        "--lookback-years", type=int, default=15,
+        help="Years of historical data to use (0 = full history)"
+    )
 
     # --- Hyperparameter Grid ---
     grid_group = parser.add_argument_group("Hyperparameter Grid")
@@ -107,6 +111,16 @@ Examples:
         nargs="+",
         default=None,
         help="List of penalty factor values for low events (space separated). e.g., 0.5 0.75 0.98"
+    )
+    grid_group.add_argument(
+        "--base-signals",
+        type=str,
+        default=['simple_ma','hull_ma_cross','supertrend','atr_expansion','bb_extreme'],
+        help="Comma-separated list of base signals to include in optimization. "
+             "Options: simple_ma, ecart_type, slope_3days, bull_market_global, breakout, "
+             "hull_ma_cross, supertrend, linreg_slope, roc_momentum, donchian, atr_expansion, "
+             "bb_extreme, keltner_squeeze, ichimoku_cloud, vwap_deviation. "
+             "If None, uses default subset: simple_ma,hull_ma_cross,supertrend,atr_expansion,bb_extreme"
     )
 
     return parser.parse_args()
@@ -218,6 +232,7 @@ def main(args):
                     cluster_window_params="2,120,false,1",
                     cluster_threshold_params="2,120,false,1",
                     storage=None,
+                    lookback_years=args.lookback_years,
                 )
                 use_cases.append(configuration_experimentation)
     total_estimated_time = len(use_cases) * timeout / nb_workers
