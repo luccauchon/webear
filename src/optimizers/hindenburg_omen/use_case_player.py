@@ -46,15 +46,23 @@ def parse_arguments():
     parser.add_argument(
         "--base-dir",
         type=str,
-        required=True,
+        required=False,
         help="The root directory containing the experience folders. (Default: D:\\Temp2\\use_case)"
     )
 
     parser.add_argument(
         "--experience-id",
         type=str,
-        required=True,
+        required=False,
         help="The specific experience ID subfolder to process within the base directory. (Default: alpha_3)"
+    )
+
+    parser.add_argument(
+        "--experience-dir",
+        type=str,
+        required=False,
+        default=None,
+        help="The specific experience folder. Override base-dir/experience-id"
     )
 
     # Execution Flags
@@ -95,7 +103,10 @@ def main():
 
     # Construct the full path to the experience directory
     # Using pathlib for robust path handling across OS
-    target_directory = os.path.join(args.base_dir, args.experience_id)
+    if args.experience_dir:
+        target_directory = args.experience_dir
+    else:
+        target_directory = os.path.join(args.base_dir, args.experience_id)
 
     # Validate directory existence before proceeding
     if not os.path.exists(target_directory):
