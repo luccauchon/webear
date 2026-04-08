@@ -98,7 +98,7 @@ def validate_base_signals(signal_list: list) -> list:
 # =========================================================
 # DATA LOADING
 # =========================================================
-def load_data(_ticker, _dataset_choice, _lookback_years):
+def load_data(_ticker, _dataset_choice, _lookback_years, _verbose):
     from utils import get_filename_for_dataset
     filename = get_filename_for_dataset(dataset_choice=_dataset_choice, older_dataset=None)
     with open(filename, "rb") as f:
@@ -114,7 +114,8 @@ def load_data(_ticker, _dataset_choice, _lookback_years):
     if _lookback_years > 0:
         rows_per_year = {'day': 252, 'week': 52, 'month': 12, 'quarter': 4, 'year': 1}.get(_dataset_choice)
         cutoff = _lookback_years * rows_per_year
-        print(f"📅 Using {_lookback_years}-year lookback: ~{cutoff} rows")
+        if _verbose:
+            print(f"📅 Using {_lookback_years}-year lookback: ~{cutoff} rows")
         df = df.iloc[-cutoff:].copy()
 
     return df
@@ -154,7 +155,7 @@ def run_professional_optimization(args):
             print(f"Disabling MACD indicator")
         if args.disable_stochastic:
             print(f"Disabling Stochastic indicator")
-    df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id, _lookback_years=args.lookback_years)
+    df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id, _lookback_years=args.lookback_years, _verbose=args.verbose)
     if args.verbose:
         print(f"Data loaded: {len(df)} rows | {df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
@@ -1048,7 +1049,7 @@ def run_realtime_only(params_file, verbose):
     best_params = load_best_params(params_file, verbose)
 
     # Load data
-    df = load_data(_ticker=best_params['ticker'], _dataset_choice=best_params['dataset_id'], _lookback_years=best_params['lookback_years'])
+    df = load_data(_ticker=best_params['ticker'], _dataset_choice=best_params['dataset_id'], _lookback_years=best_params['lookback_years'], _verbose=verbose)
     if verbose:
         print(f"Data loaded: {len(df)} rows | "
               f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
