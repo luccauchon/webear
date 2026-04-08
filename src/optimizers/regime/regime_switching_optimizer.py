@@ -44,7 +44,7 @@ import shutil
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
-from utils import DATASET_AVAILABLE
+from utils import DATASET_AVAILABLE, next_weekday
 # Machine Learning
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
@@ -536,7 +536,7 @@ def predict_latest(_features, _model, _scaler, _stats):
 # =========================================================
 # REPORT PRINTING
 # =========================================================
-def print_report(_regime, _stats, _strike_distance, _spread_type):
+def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=None, _latest_close_value=None):
     """Print formatted regime analysis report."""
     print("\n" + "=" * 60)
     print(" " * 15 + "CREDIT SPREAD REGIME ANALYSIS")
@@ -544,11 +544,27 @@ def print_report(_regime, _stats, _strike_distance, _spread_type):
 
     print(f"📊 Detected Regime:          #{_regime}")
     print(f"📈 Spread Type:              {_spread_type.upper()}")
-    print(f"🎯 Short Strike Distance:    {_strike_distance * 100:.1f}% from current price")
+    if _latest_date is None:
+        print(f"🎯 Short Strike Distance:    {_strike_distance * 100:.1f}% from current price , forward {_stats['forward_days']} {_stats['dataset_id']}")
+    else:
+        assert 'day' == _stats['dataset_id']
+        _tmp_str_position = ""
+        if _spread_type.upper() in ["PUT", "CALL"]:
+            _strike_price = _latest_close_value * (1 + _strike_distance) if "CALL" == _spread_type.upper() else _latest_close_value * (1 - _strike_distance)
+            if _spread_type.upper() == "PUT":
+                _tmp_str_position = f"@[{_strike_price:.0f} :: -1]"
+            else:
+                _tmp_str_position = f"@[-1 :: {_strike_price:.0f}]"
+        else:
+            _strike_price_low  = _latest_close_value * (1 - _strike_distance)
+            _strike_price_high = _latest_close_value * (1 + _strike_distance)
+            _tmp_str_position = f"@[{_strike_price_low:.0f} :: {_strike_price_high:.0f}]"
+        _next_ = next_weekday(_latest_date, _stats['forward_days'])
+        print(f"🎯 Short Strike Distance:    {_strike_distance * 100:.1f}% from current price , forward {_stats['forward_days']} {_stats['dataset_id']} -> take position on {_next_.strftime('%Y-%m-%d')} {_tmp_str_position}")
     print()
 
     print("📋 Regime Statistics:")
-    print(f"   • Historical Samples:      {_stats['count']}")
+    print(f"   • Historical Samples:      {_stats['count']} (out of {_stats['total_count']})")
     print(f"   • OTM Probability:         {_stats['prob_otm'] * 100:.2f}%")
     print(f"   • ITM Probability:         {_stats['prob_itm'] * 100:.2f}%")
     print()
@@ -655,7 +671,7 @@ def run_real_time_inference(args):
             raise ValueError(f"Missing required param '{param}' in saved model")
     # 3. Build Features using SAVED Hyperparameters
     # Crucial: Must use the same params used during training
-    print("🔧 Engineering features with saved hyperparameters...")
+    print(f"🔧 Engineering features with saved hyperparameters: {_params}")
     features = build_features(
         _df=df,
         _pct1=_params.get('pct1', 5),
@@ -678,8 +694,9 @@ def run_real_time_inference(args):
 
     latest_date = valid_features.index[-1]
     latest_row = valid_features.iloc[[-1]]
-
-    print(f"📅 Analyzing latest data point: {latest_date.strftime('%Y-%m-%d')}")
+    assert df.index[-1] == latest_date
+    latest_close_value = df['Close'].iloc[-1]
+    print(f"📅 Analyzing latest data point: {latest_date.strftime('%Y-%m-%d')}  (close value @{latest_close_value:.0f})")
 
     # 5. Scale and Predict
     X_latest = _scaler.transform(latest_row)
@@ -698,7 +715,7 @@ def run_real_time_inference(args):
         _regime=regime,
         _stats=regime_stats,
         _strike_distance=args.strike_distance,
-        _spread_type=args.spread_type
+        _spread_type=args.spread_type, _latest_date=latest_date, _latest_close_value=latest_close_value,
     )
 
     # 7. Evaluate Trade Decision
@@ -784,6 +801,7 @@ def entry_main(args):
         minimum_train_data, minimum_test_data = minimum_train_data // 20, minimum_test_data // 20
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
+    total_number_of_rows = len(df)
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
@@ -1142,12 +1160,15 @@ def entry_main(args):
 
         _stats[r] = {
             "count": n,
+            "total_count": total_number_of_rows,
             "prob_otm": prob_otm,
             "prob_itm": 1 - prob_otm,
             "win_rate": prob_otm,
             "std_outcome": np.sqrt(prob_otm * (1 - prob_otm)),  # Bernoulli std
             "ci_95_lower": ci_low,
             "ci_95_upper": ci_upp,
+            "forward_days": forward_days,
+            "dataset_id": dataset_id,
         }
 
     if not _stats:

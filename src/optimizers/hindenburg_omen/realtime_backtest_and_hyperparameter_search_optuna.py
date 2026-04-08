@@ -81,10 +81,24 @@ def load_best_params(filepath: str, verbose: bool) -> dict:
     return params
 
 
+def validate_base_signals(signal_list: list) -> list:
+    """Validate and return a cleaned list of base signal names."""
+    ALL_BASE_SIGNALS = [
+        "simple_ma", "ecart_type", "slope_3days", "bull_market_global", "breakout",
+        "hull_ma_cross", "supertrend", "linreg_slope", "roc_momentum", "donchian",
+        "atr_expansion", "bb_extreme", "keltner_squeeze", "ichimoku_cloud", "vwap_deviation"
+    ]
+    cleaned = [s.strip().lower() for s in signal_list]
+    invalid = set(cleaned) - set(ALL_BASE_SIGNALS)
+    if invalid:
+        raise ValueError(f"Unknown base_signal(s): {invalid}. Valid options: {ALL_BASE_SIGNALS}")
+    return cleaned
+
+
 # =========================================================
 # DATA LOADING
 # =========================================================
-def load_data(_ticker, _dataset_choice):
+def load_data(_ticker, _dataset_choice, _lookback_years):
     from utils import get_filename_for_dataset
     filename = get_filename_for_dataset(dataset_choice=_dataset_choice, older_dataset=None)
     with open(filename, "rb") as f:
@@ -96,6 +110,12 @@ def load_data(_ticker, _dataset_choice):
 
     df = df.sort_index()
     df = df.dropna(subset=["Close"])
+
+    if _lookback_years > 0:
+        rows_per_year = {'day': 252, 'week': 52, 'month': 12, 'quarter': 4, 'year': 1}.get(args.dataset_id)
+        cutoff = args.lookback_years * rows_per_year
+        print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
+        df = df.iloc[-cutoff:].copy()
 
     return df
 
@@ -119,12 +139,6 @@ def run_professional_optimization(args):
     np.random.seed(RANDOM_SEED)
     os.environ["PYTHONHASHSEED"] = str(RANDOM_SEED)
 
-    # Min signals logic based on cluster mode
-    if args.min_signals_required:
-        MIN_SIGNALS_REQUIRED = args.min_signals_required
-    else:
-        MIN_SIGNALS_REQUIRED = 50 if CLUSTER_MODE == "crossover" else 250
-
     if args.verbose:
         if args.disable_ema_stretch:
             print(f"Disabling EMA strech indicator")
@@ -140,11 +154,11 @@ def run_professional_optimization(args):
             print(f"Disabling MACD indicator")
         if args.disable_stochastic:
             print(f"Disabling Stochastic indicator")
-    df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id)
+    df = load_data(_ticker=TICKER, _dataset_choice=args.dataset_id, _lookback_years=args.lookback_years)
     if args.verbose:
         print(f"Data loaded: {len(df)} rows | {df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
-    df_open, df_low, df_high  = df['Open'], df['Low'], df['High']
+    df_open, df_low, df_high, df_volume  = df['Open'], df['Low'], df['High'], df['Volume']
     use_closing_price_strategy = False
     if args.verbose:
         print(f"Using the {'close-to-close stability' if use_closing_price_strategy else 'intra-day sensitivity'} to compute the target")
@@ -216,7 +230,14 @@ def run_professional_optimization(args):
                 return 1.0
             return 0.5 + 0.5 * (n / args.threshold_penalty_for_low_events)  # 0.5→1.0 range
     improve_score_function = args.use_z_score_boost
+    if args.base_signals:
+        base_signal_options = validate_base_signals(args.base_signals.split(","))
+    else:
+        base_signal_options = ["simple_ma", "hull_ma_cross", "supertrend", "atr_expansion", "bb_extreme"]
+    # Min signals logic based on cluster mode
+    min_signals_required = int(0.05 * total_events)
     if args.verbose:
+        print(f"Using base signals: {base_signal_options}")
         print(f"\nMode: {event_direction.upper()} | Forward {FORWARD_DAYS} {args.dataset_id} | "
               f"Threshold: {THRESHOLD * 100:+.1f}% | "
               f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days}) | "
@@ -225,16 +246,7 @@ def run_professional_optimization(args):
               f"Optimizing Edge")
     assert event_direction in ['drop', 'spike']
     def objective(trial):
-        base_signal = None
-        use_simple_ma = trial.suggest_categorical("use_simple_ma", [True, False])
-        if use_simple_ma:
-            base_signal = "simple_ma"
-        else:
-            use_slope = trial.suggest_categorical("use_slope_3days", [True, False])
-            if use_slope:
-                base_signal = "slope_3days"
-            else:
-                base_signal = "slope_3days"
+        base_signal = trial.suggest_categorical("base_signal", base_signal_options)
         assert base_signal is not None
 
         use_ema_stretch = trial.suggest_categorical("use_ema_stretch", [True, False]) if not args.disable_ema_stretch else False
@@ -279,6 +291,127 @@ def run_professional_optimization(args):
             lookback = trial.suggest_int("breakout_lookback", 10, 50, log=False, step=1)
             resistance = close.rolling(lookback).max().shift(1)
             cond_price = close > resistance  # Price breaks above recent high
+        elif base_signal == "hull_ma_cross":
+            hull_len = trial.suggest_int("hull_len", 10, 50)
+            hull = ta.hma(close, length=hull_len)
+            hull_prev = hull.shift(1)
+            if event_direction == 'drop':
+                cond_price = (close < hull) & (hull < hull_prev)  # Price below + Hull turning down
+            else:
+                cond_price = (close > hull) & (hull > hull_prev)  # Price above + Hull turning up
+        elif base_signal == "supertrend":
+            st_period = trial.suggest_int("st_period", 7, 14)
+            st_multiplier = trial.suggest_float("st_multiplier", 1.5, 3.0)
+            st = ta.supertrend(df_high, df_low, close, period=st_period, multiplier=st_multiplier)
+            st_direction = st.iloc[:, 1]  # 1 = bullish, -1 = bearish
+            cond_price = st_direction == (-1 if event_direction == 'drop' else 1)
+        elif base_signal == "linreg_slope":
+            lr_len = trial.suggest_int("lr_len", 10, 30)
+            lr = ta.linreg(close, length=lr_len)
+            lr_slope = ta.linreg(close, length=lr_len, slope=True)
+            slope_thresh = trial.suggest_float("slope_thresh", 0.0, 0.02)
+            if event_direction == 'drop':
+                cond_price = (close > lr) & (lr_slope < -slope_thresh)  # Price above mean but slope negative
+            else:
+                cond_price = (close < lr) & (lr_slope > slope_thresh)  # Price below mean but slope positive
+        elif base_signal == "roc_momentum":
+            roc_len = trial.suggest_int("roc_len", 5, 20)
+            roc_thresh = trial.suggest_float("roc_thresh", 0.01, 0.05)
+            roc = ta.roc(close, length=roc_len)
+            if event_direction == 'drop':
+                cond_price = roc < -roc_thresh  # Negative momentum accelerating
+            else:
+                cond_price = roc > roc_thresh  # Positive momentum accelerating
+        elif base_signal == "donchian":
+            dc_len = trial.suggest_int("dc_len", 10, 50)
+            upper = df_high.rolling(dc_len).max()
+            lower = df_low.rolling(dc_len).min()
+            if event_direction == 'drop':
+                cond_price = close < lower.shift(1)  # Break below recent low
+            else:
+                cond_price = close > upper.shift(1)  # Break above recent high
+        elif base_signal == "atr_expansion":
+            atr_len = trial.suggest_int("atr_len", 10, 20)
+            expand_ratio = trial.suggest_float("expand_ratio", 1.2, 2.0)
+            atr = ta.atr(df_high, df_low, close, length=atr_len)
+            atr_ma = atr.rolling(atr_len).mean()
+            vol_expansion = atr > (atr_ma * expand_ratio)
+            # Combine with price direction
+            price_momentum = close.diff(3)
+            if event_direction == 'drop':
+                cond_price = vol_expansion & (price_momentum < 0)
+            else:
+                cond_price = vol_expansion & (price_momentum > 0)
+        elif base_signal == "bb_extreme":
+            bb_len = trial.suggest_int("bb_len", 15, 30)
+            bb_std = trial.suggest_int("bb_std", 2, 3)
+            bb = ta.bbands(close, length=bb_len, std=bb_std)
+            upper, lower = bb.iloc[:, 2], bb.iloc[:, 0]
+            if event_direction == 'drop':
+                cond_price = close > upper  # Overbought extreme → mean reversion down
+            else:
+                cond_price = close < lower  # Oversold extreme → mean reversion up
+        elif base_signal == "keltner_squeeze":
+            kc_len = trial.suggest_int("kc_len", 10, 25)
+            kc_mult = trial.suggest_float("kc_mult", 1.0, 2.0)
+            kc = ta.kc(close, df_high, df_low, length=kc_len, scalar=kc_mult)
+            upper, lower = kc.iloc[:, 2], kc.iloc[:, 0]
+            # Price at extreme + channel narrowing
+            channel_width = (upper - lower) / close
+            width_thresh = trial.suggest_float("width_thresh", 0.03, 0.10)
+            squeeze = channel_width < width_thresh
+            if event_direction == 'drop':
+                cond_price = squeeze & (close > upper.shift(1))  # Breakout above compressed channel → reversal down
+            else:
+                cond_price = squeeze & (close < lower.shift(1))  # Breakout below → reversal up
+        elif base_signal == "vwap_deviation":
+            vwap = ta.vwap(df_high, df_low, close, df['Volume'])
+            dev_thresh = trial.suggest_float("dev_thresh", 0.01, 0.03)
+            vol_ratio = trial.suggest_float("vol_ratio", 1.2, 2.5)
+            volume_ma = df['Volume'].rolling(20).mean()
+            high_volume = df['Volume'] > (volume_ma * vol_ratio)
+            deviation = (close - vwap) / vwap
+            if event_direction == 'drop':
+                cond_price = (deviation > dev_thresh) & high_volume  # Overextended + volume confirmation
+            else:
+                cond_price = (deviation < -dev_thresh) & high_volume
+        elif base_signal == "ichimoku_cloud":
+            conv_len = trial.suggest_int("conv_len", 7, 12)
+            base_len = trial.suggest_int("base_len", 20, 30)
+            span_b_len = trial.suggest_int("span_b_len", 40, 60)
+
+            # ta.ichimoku returns tuple: (df_visible, df_forward)
+            # df_visible contains: ISA_*, ISB_*, ITS_*, IKS_*, (ICS_*)
+            ichi_result = ta.ichimoku(df_high, df_low, close,
+                                      conversion_line=conv_len,
+                                      base_line=base_len,
+                                      leading_span_b=span_b_len)
+
+            # Safety check: ensure we got valid output
+            if ichi_result is None or len(ichi_result) < 2:
+                return -10
+
+            ichi_df, _ = ichi_result  # We only need the visible-period DataFrame
+
+            if ichi_df is None or ichi_df.empty or len(ichi_df.columns) < 2:
+                return -10
+
+            # Extract Span A and Span B (first two columns of the visible DataFrame)
+            # Column names are dynamic: ISA_{tenkan}, ISB_{kijun}
+            span_a = ichi_df.iloc[:, 0]  # Span A (Senkou Span A)
+            span_b = ichi_df.iloc[:, 1]  # Span B (Senkou Span B)
+
+            # Create cloud boundaries (Kumo)
+            cloud_df = pd.concat([span_a, span_b], axis=1)
+            cloud_top = cloud_df.max(axis=1)
+            cloud_bottom = cloud_df.min(axis=1)
+
+            if event_direction == 'drop':
+                # Mean reversion: price extended above cloud → potential rejection down
+                cond_price = close > cloud_top
+            else:
+                # Mean reversion: price extended below cloud → potential bounce up
+                cond_price = close < cloud_bottom
         assert cond_price is not None, f"Unknown base signal: {base_signal}"
         base_signal = cond_price
 
@@ -379,10 +512,9 @@ def run_professional_optimization(args):
         # Only evaluate signals where the outcome is actually known
         # valid_mask is defined in the parent scope run_professional_optimization
         valid_signal_indices = signal_dates.intersection(valid_mask[valid_mask].index)
-        if len(valid_signal_indices) < MIN_SIGNALS_REQUIRED: return -10
         cluster_targets = target.loc[valid_signal_indices]
         # Safety check again after filtering
-        if len(cluster_targets) < MIN_SIGNALS_REQUIRED: return -10
+        if len(cluster_targets) < min_signals_required: return -10
         win_rate = cluster_targets.mean() * 100
         n = len(cluster_targets)
         penalty = penalty_for_having_low_number_of_events(n)
@@ -587,8 +719,8 @@ def run_professional_optimization(args):
     best_params = dict(study.best_params)
     best_params.update({'threshold': THRESHOLD, 'ticker': args.ticker, 'dataset_id': args.dataset_id, 'forward_days': FORWARD_DAYS, 'cluster_mode': CLUSTER_MODE,
                         'mode': args.mode, 'use_closing_price_strategy': use_closing_price_strategy})
-    info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
-                       forward_days=FORWARD_DAYS, threshold=THRESHOLD, mode=args.mode, verbose=args.verbose)
+    info = verify_best(df_close=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
+                       forward_days=FORWARD_DAYS, threshold=THRESHOLD, mode=args.mode, verbose=args.verbose, df_volume=df_volume)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
                         'penalty': study.best_trial.user_attrs['penalty'], 'total_events': total_events, 'total_days': total_days, 'edge': info["win_rate"] - info["baseline"]})
     if args.verbose:
@@ -612,47 +744,160 @@ def run_professional_optimization(args):
 # =========================================================
 # VERIFICATION & REAL-TIME PREDICTION
 # =========================================================
-def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, mode):
+def verify_best(df_close, df_open, df_low, df_high, df_volume, cluster_mode, params, target, valid_mask, baseline, forward_days, threshold, verbose, mode):
     event_direction = "drop" if mode == "drop" else "spike"
     # 1. Base Signal Logic
-    base_signal = "simple_ma" if 'use_simple_ma' in params and params['use_simple_ma'] else ""
-    base_signal = "slope_3days" if 'use_slope_3days' in params and params['use_slope_3days'] else base_signal
+    base_signal = params['base_signal']
     cond_price = None
     if base_signal == "simple_ma":
-        sma = ta.sma(df_data, length=params["sma_len"])
+        sma = ta.sma(df_close, length=params["sma_len"])
         if event_direction == 'drop':
-            cond_price = df_data > sma
+            cond_price = df_close > sma
         else:
-            cond_price = df_data < sma
+            cond_price = df_close < sma
     elif base_signal == "ecart_type":
         # Calcule à combien d'écarts-types le prix se trouve de la moyenne
         sma_len = params["sma_len"]
-        sma = ta.sma(df_data, length=sma_len)
-        std = df_data.rolling(window=sma_len).std()
-        z_score = (df_data - sma) / std
+        sma = ta.sma(df_close, length=sma_len)
+        std = df_close.rolling(window=sma_len).std()
+        z_score = (df_close - sma) / std
         cond_price = z_score > 2.0  # Le prix est "étiré" vers le haut
     elif base_signal == "slope_3days":
-        sma = ta.sma(df_data, length=params["sma_len"])
+        sma = ta.sma(df_close, length=params["sma_len"])
         sma_slope = sma.diff(3)  # Pente sur les 3 derniers jours
         if event_direction == 'drop':
-            cond_price = (df_data > sma) & (sma_slope > 0)
+            cond_price = (df_close > sma) & (sma_slope > 0)
         else:
-            cond_price = (df_data < sma) & (sma_slope < 0)
+            cond_price = (df_close < sma) & (sma_slope < 0)
     elif base_signal == "bull_market_global":
         # On ne prend des signaux d'achat que si on est en "Bull Market" global
-        sma = ta.sma(df_data, length=params["sma_len"])
-        cond_regime = ta.sma(df_data, 50) > ta.sma(df_data, 200)
-        cond_price = (df_data > sma) & cond_regime
+        sma = ta.sma(df_close, length=params["sma_len"])
+        cond_regime = ta.sma(df_close, 50) > ta.sma(df_close, 200)
+        cond_price = (df_close > sma) & cond_regime
     elif base_signal == "breakout":
         lookback = params["breakout_lookback"]
-        resistance = df_data.rolling(lookback).max().shift(1)
-        cond_price = df_data > resistance  # Price breaks above recent high
+        resistance = df_close.rolling(lookback).max().shift(1)
+        cond_price = df_close > resistance  # Price breaks above recent high
+    elif base_signal == "hull_ma_cross":
+        hull_len = params["hull_len"]
+        hull = ta.hma(df_close, length=hull_len)
+        hull_prev = hull.shift(1)
+        if event_direction == 'drop':
+            cond_price = (df_close < hull) & (hull < hull_prev)  # Price below + Hull turning down
+        else:
+            cond_price = (df_close > hull) & (hull > hull_prev)  # Price above + Hull turning up
+    elif base_signal == "supertrend":
+        st_period = params["st_period"]
+        st_multiplier = params["st_multiplier"]
+        st = ta.supertrend(df_high, df_low, df_close, period=st_period, multiplier=st_multiplier)
+        st_direction = st.iloc[:, 1]  # 1 = bullish, -1 = bearish
+        cond_price = st_direction == (-1 if event_direction == 'drop' else 1)
+    elif base_signal == "linreg_slope":
+        lr_len = params["lr_len"]
+        lr = ta.linreg(df_close, length=lr_len)
+        lr_slope = ta.linreg(df_close, length=lr_len, slope=True)
+        slope_thresh = params["slope_thresh"]
+        if event_direction == 'drop':
+            cond_price = (df_close > lr) & (lr_slope < -slope_thresh)  # Price above mean but slope negative
+        else:
+            cond_price = (df_close < lr) & (lr_slope > slope_thresh)  # Price below mean but slope positive
+    elif base_signal == "roc_momentum":
+        roc_len = params["roc_len"]
+        roc_thresh = params["roc_thresh"]
+        roc = ta.roc(df_close, length=roc_len)
+        if event_direction == 'drop':
+            cond_price = roc < -roc_thresh  # Negative momentum accelerating
+        else:
+            cond_price = roc > roc_thresh  # Positive momentum accelerating
+    elif base_signal == "donchian":
+        dc_len = params["dc_len"]
+        upper = df_high.rolling(dc_len).max()
+        lower = df_low.rolling(dc_len).min()
+        if event_direction == 'drop':
+            cond_price = df_close < lower.shift(1)  # Break below recent low
+        else:
+            cond_price = df_close > upper.shift(1)  # Break above recent high
+    elif base_signal == "atr_expansion":
+        atr_len = params["atr_len"]
+        expand_ratio = params["expand_ratio"]
+        atr = ta.atr(df_high, df_low, df_close, length=atr_len)
+        atr_ma = atr.rolling(atr_len).mean()
+        vol_expansion = atr > (atr_ma * expand_ratio)
+        # Combine with price direction
+        price_momentum = df_close.diff(3)
+        if event_direction == 'drop':
+            cond_price = vol_expansion & (price_momentum < 0)
+        else:
+            cond_price = vol_expansion & (price_momentum > 0)
+    elif base_signal == "bb_extreme":
+        bb_len = params["bb_len"]
+        bb_std = params["bb_std"]
+        bb = ta.bbands(df_close, length=bb_len, std=bb_std)
+        upper, lower = bb.iloc[:, 2], bb.iloc[:, 0]
+        if event_direction == 'drop':
+            cond_price = df_close > upper  # Overbought extreme → mean reversion down
+        else:
+            cond_price = df_close < lower  # Oversold extreme → mean reversion up
+    elif base_signal == "keltner_squeeze":
+        kc_len = params["kc_len"]
+        kc_mult = params["kc_mult"]
+        kc = ta.kc(df_close, df_high, df_low, length=kc_len, scalar=kc_mult)
+        upper, lower = kc.iloc[:, 2], kc.iloc[:, 0]
+        # Price at extreme + channel narrowing
+        channel_width = (upper - lower) / df_close
+        width_thresh = params["width_thresh"]
+        squeeze = channel_width < width_thresh
+        if event_direction == 'drop':
+            cond_price = squeeze & (df_close > upper.shift(1))  # Breakout above compressed channel → reversal down
+        else:
+            cond_price = squeeze & (df_close < lower.shift(1))  # Breakout below → reversal up
+    elif base_signal == "vwap_deviation":
+        vwap = ta.vwap(df_high, df_low, df_close, df_volume)
+        dev_thresh = params["dev_thresh"]
+        vol_ratio = params["vol_ratio"]
+        volume_ma = df_volume.rolling(20).mean()
+        high_volume = df_volume > (volume_ma * vol_ratio)
+        deviation = (df_close - vwap) / vwap
+        if event_direction == 'drop':
+            cond_price = (deviation > dev_thresh) & high_volume  # Overextended + volume confirmation
+        else:
+            cond_price = (deviation < -dev_thresh) & high_volume
+    elif base_signal == "ichimoku_cloud":
+        conv_len = params["conv_len"]
+        base_len = params["base_len"]
+        span_b_len = params["span_b_len"]
+
+        # ta.ichimoku returns tuple: (df_visible, df_forward)
+        # df_visible contains: ISA_*, ISB_*, ITS_*, IKS_*, (ICS_*)
+        ichi_result = ta.ichimoku(df_high, df_low, df_close,
+                                  conversion_line=conv_len,
+                                  base_line=base_len,
+                                  leading_span_b=span_b_len)
+
+        ichi_df, _ = ichi_result  # We only need the visible-period DataFrame
+
+        # Extract Span A and Span B (first two columns of the visible DataFrame)
+        # Column names are dynamic: ISA_{tenkan}, ISB_{kijun}
+        span_a = ichi_df.iloc[:, 0]  # Span A (Senkou Span A)
+        span_b = ichi_df.iloc[:, 1]  # Span B (Senkou Span B)
+
+        # Create cloud boundaries (Kumo)
+        cloud_df = pd.concat([span_a, span_b], axis=1)
+        cloud_top = cloud_df.max(axis=1)
+        cloud_bottom = cloud_df.min(axis=1)
+
+        if event_direction == 'drop':
+            # Mean reversion: price extended above cloud → potential rejection down
+            cond_price = df_close > cloud_top
+        else:
+            # Mean reversion: price extended below cloud → potential bounce up
+            cond_price = df_close < cloud_bottom
     assert cond_price is not None
     base_signal = cond_price
 
     # 2. Calculate Indicators
     if params.get("use_rsi_indicator"):
-        rsi = ta.rsi(df_data, length=params["rsi_len"])
+        rsi = ta.rsi(df_close, length=params["rsi_len"])
         if mode == "spike":
             # Momentum without overextension
             cond_rsi = (rsi > 50) & (rsi < params["rsi_thresh"])
@@ -663,7 +908,7 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         base_signal = base_signal & cond_rsi
 
     if params.get("use_macd_indicator"):
-        macd = ta.macd(df_data, fast=params["macd_fast"], slow=params["macd_slow"], signal=params["macd_signal"])
+        macd = ta.macd(df_close, fast=params["macd_fast"], slow=params["macd_slow"], signal=params["macd_signal"])
         macd_line = macd.iloc[:, 0]
         macd_sig = macd.iloc[:, 1]
         # Mode-aware MACD
@@ -674,30 +919,30 @@ def verify_best(df_data, df_open, df_low, df_high, cluster_mode, params, target,
         base_signal = base_signal & cond_macd
 
     if params.get("use_ema_stretch"):
-        ema = ta.ema(df_data, length=params["ema_len"])
-        stretch = (df_data - ema) / ema
+        ema = ta.ema(df_close, length=params["ema_len"])
+        stretch = (df_close - ema) / ema
         base_signal &= (stretch > params["stretch_thresh"])
 
     if params.get("use_volatility_compression"):
-        bb = ta.bbands(df_data, length=params["bb_len"])
-        bb_width = (bb.iloc[:, 2] - bb.iloc[:, 0]) / df_data
+        bb = ta.bbands(df_close, length=params["bb_len"])
+        bb_width = (bb.iloc[:, 2] - bb.iloc[:, 0]) / df_close
         base_signal &= (bb_width < params["bb_width_thresh"])
 
     if params.get("use_market_breadth_proxy"):
-        roc = ta.roc(df_data, length=params["roc_len"])
+        roc = ta.roc(df_close, length=params["roc_len"])
         cond_roc = roc < params["roc_thresh"]
         base_signal &= cond_roc
 
     if params.get("use_trend_regime_filter"):
-        ema200 = ta.ema(df_data, length=200)
-        bull_regime = df_data > ema200
+        ema200 = ta.ema(df_close, length=200)
+        bull_regime = df_close > ema200
         base_signal &= bull_regime
 
     if params.get("use_stochastic_indicator"):
-        stoch = ta.stoch(close=df_data,high=df_high,low=df_low,k=params["stoch_k"], d=params["stoch_d"], smooth_k=params["stoch_len"])
+        stoch = ta.stoch(close=df_close, high=df_high, low=df_low, k=params["stoch_k"], d=params["stoch_d"], smooth_k=params["stoch_len"])
         if stoch is None or stoch.empty:
-            stoch_k_line = pd.Series(50, index=df_data.index)  # Fallback neutral
-            stoch_d_line = pd.Series(50, index=df_data.index)
+            stoch_k_line = pd.Series(50, index=df_close.index)  # Fallback neutral
+            stoch_d_line = pd.Series(50, index=df_close.index)
         else:
             stoch_k_line = stoch.iloc[:, 0]
             stoch_d_line = stoch.iloc[:, 1]
@@ -807,7 +1052,7 @@ def run_realtime_only(params_file, verbose):
         print(f"Data loaded: {len(df)} rows | "
               f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
-    df_open, df_low, df_high = df['Open'], df['Low'], df['High']
+    df_open, df_low, df_high, df_volume = df['Open'], df['Low'], df['High'], df['Volume']
 
     # Calculate target for verification (historical performance only)
     FORWARD_DAYS = best_params['forward_days']
@@ -869,9 +1114,9 @@ def run_realtime_only(params_file, verbose):
               f"Baseline event probability: {baseline:.2f}%   ({total_events} / {total_days})")
 
     # Run verification with loaded params
-    info = verify_best(df_data=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=best_params['cluster_mode'], params=best_params,
-                       target=target,valid_mask=valid_mask, baseline=baseline,forward_days=FORWARD_DAYS, threshold=THRESHOLD,
-                       mode=best_params['mode'], verbose = verbose,)
+    info = verify_best(df_close=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=best_params['cluster_mode'], params=best_params,
+                       target=target, valid_mask=valid_mask, baseline=baseline, forward_days=FORWARD_DAYS, threshold=THRESHOLD,
+                       mode=best_params['mode'], verbose=verbose, df_volume=df_volume,)
     info.update({"total_days": total_days, "total_events": total_events})
     return info
 
@@ -900,6 +1145,10 @@ if __name__ == "__main__":
         type=int,
         default=42,
         help="Random seed for reproducibility (Python, Numpy, Optuna)."
+    )
+    parser.add_argument(
+        "--lookback-years", type=int, default=15,
+        help="Years of historical data to use (0 = full history)"
     )
 
     # --- Strategy Parameters ---
@@ -931,12 +1180,6 @@ if __name__ == "__main__":
         choices=["every_day", "crossover"],
         default="every_day",
         help="Logic for signal clustering. 'every_day' checks threshold daily, 'crossover' checks when threshold is crossed."
-    )
-    strat_group.add_argument(
-        "--min-signals-required",
-        type=int,
-        default=None,
-        help="Minimum number of signals required to validate a trial. If None, defaults to 50 (crossover) or 250 (every_day)."
     )
     strat_group.add_argument(
         "--threshold-penalty-for-low-events",
@@ -991,6 +1234,16 @@ if __name__ == "__main__":
         "--disable-stochastic",
         action="store_true",
         help="Do not use the Stochastic indicator"
+    )
+    strat_group.add_argument(
+        "--base-signals",
+        type=str,
+        default=None,
+        help="Comma-separated list of base signals to include in optimization. "
+             "Options: simple_ma, ecart_type, slope_3days, bull_market_global, breakout, "
+             "hull_ma_cross, supertrend, linreg_slope, roc_momentum, donchian, atr_expansion, "
+             "bb_extreme, keltner_squeeze, ichimoku_cloud, vwap_deviation. "
+             "If None, uses default subset: simple_ma,hull_ma_cross,supertrend,atr_expansion,bb_extreme"
     )
 
     bound_group = parser.add_argument_group("Bound Parameters")

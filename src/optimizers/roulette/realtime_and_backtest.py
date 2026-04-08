@@ -233,7 +233,7 @@ def predict_with_saved_model(model_data, X_new, verbose=True):
     models = model_data['models']
     num_classes = model_data['num_classes']
     feature_list = model_data['feature_list']
-    class_to_tuple = model_data.get('class_to_tuple', None)
+    class_id_pred__2__tuple = model_data.get('class_id_pred__2__tuple', None)
 
     # Ensure X_new is numpy array
     if hasattr(X_new, 'values'):
@@ -265,8 +265,8 @@ def predict_with_saved_model(model_data, X_new, verbose=True):
 
     # Decode tuples if mapping exists
     decoded_tuples = None
-    if class_to_tuple is not None:
-        decoded_tuples = [class_to_tuple.get(cls, (0, 0)) for cls in predicted_classes]
+    if class_id_pred__2__tuple is not None:
+        decoded_tuples = [class_id_pred__2__tuple.get(cls, (0, 0)) for cls in predicted_classes]
 
     if verbose:
         print(f"Made predictions for {len(predicted_classes)} samples")
@@ -279,7 +279,6 @@ def predict_with_saved_model(model_data, X_new, verbose=True):
 # =============================================================================
 # MAIN FUNCTION
 # =============================================================================
-
 def main(args):
     """
     Main function for training classification models on POS/NEG sequence data.
@@ -715,12 +714,10 @@ def main(args):
         if args.save_dataset_to_file_and_exit is not None:
             if args.verbose:
                 print("Saving data arrays to disk...")
-                print(f"  the_x_data shape: {the_x_data.shape}, "
-                      f"dtype: {the_x_data.dtype}")
-                print(f"  the_y_data shape: {the_y_data.shape}, "
-                      f"dtype: {the_y_data.dtype}")
-                print(f"  the_d_data shape: {the_d_data.shape}, "
-                      f"dtype: {the_d_data.dtype}")
+                print(f"  the_x_data shape: {the_x_data.shape},  dtype: {the_x_data.dtype}")
+                if the_y_data is not None:
+                    print(f"  the_y_data shape: {the_y_data.shape},  dtype: {the_y_data.dtype}")
+                print(f"  the_d_data shape: {the_d_data.shape},  dtype: {the_d_data.dtype}")
 
             args_array = np.array(vars(args), dtype=object)
             np.savez_compressed(args.save_dataset_to_file_and_exit,
@@ -804,9 +801,8 @@ def main(args):
             print("\nClass Probabilities:")
             for i, prob in enumerate(prediction_probabilities[0]):
                 if prob > 0.01:
-                    decoded = model_data['class_to_tuple'].get(i, (0, 0))
-                    print(f"  Class {i} → {decoded}: {prob:.4f} "
-                          f"({prob * 100:.2f}%)")
+                    decoded = model_data['class_id_pred__2__tuple'].get(i, (0, 0))
+                    print(f"  Class {i} → {decoded}: {prob:.4f} ({prob * 100:.2f}%)")
             print("\n📦 Model Information:")
             print(f"  Training Period: "
                   f"{model_data['training_date_range']['start']} to "
@@ -1004,6 +1000,9 @@ def main(args):
             for c in range(num_classes):
                 cc = str(decode_tuple_target(tx__2__real[c], class_to_tuple))
                 print(f"{cc:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
+    class_id_pred__2__tuple = {}
+    for c in range(num_classes):
+        class_id_pred__2__tuple.update({c: decode_tuple_target(tx__2__real[c], class_to_tuple)})
 
     # -------------------------------------------------------------------------
     # SAVE MODEL
@@ -1036,7 +1035,7 @@ def main(args):
 
             model.fit(X_full_scaled, y_full, **fit_kwargs)
             final_models[model_name] = model
-
+        print(f"{class_to_tuple=}\n\n{tuple_to_class=}\n\n{class_id_pred__2__tuple=}")
         # Prepare metadata for inference
         include_preprocessing_configuration = False
         model_metadata = {
@@ -1047,8 +1046,7 @@ def main(args):
             'num_classes': num_classes,
             'target_type': 'tuple',
             'target_columns': Ys,
-            'class_to_tuple': class_to_tuple,
-            'tuple_to_class': tuple_to_class,
+            'class_id_pred__2__tuple': class_id_pred__2__tuple,
             'args': vars(args),
             'class_distribution': {int(cls): int(cnt) for cls, cnt in zip(unique_classes_new, counts_new)},
             'training_date_range': {
