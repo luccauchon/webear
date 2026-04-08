@@ -113,8 +113,8 @@ def load_data(_ticker, _dataset_choice, _lookback_years):
 
     if _lookback_years > 0:
         rows_per_year = {'day': 252, 'week': 52, 'month': 12, 'quarter': 4, 'year': 1}.get(_dataset_choice)
-        cutoff = args.lookback_years * rows_per_year
-        print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
+        cutoff = _lookback_years * rows_per_year
+        print(f"📅 Using {_lookback_years}-year lookback: ~{cutoff} rows")
         df = df.iloc[-cutoff:].copy()
 
     return df
