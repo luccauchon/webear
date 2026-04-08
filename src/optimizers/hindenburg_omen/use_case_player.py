@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hindenburg Omen Realtime Backtest Runner
+Hindenburg Omen Realtime Backtest Runner with Visualization
 
 This script iterates through files in a specified experience directory,
 runs a realtime backtest optimization on each file, and reports active signals
@@ -39,30 +39,22 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Run realtime backtest and hyperparameter search on Hindenburg Omen data files.",
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog="Example:\n  python script.py --base-dir 'D:\\Temp2\\use_case' --experience-id 'alpha_3' --verbose"
+        epilog="Example:\n  python script.py --base-dir 'D:\\Temp2\\use_case' --experience-id 'alpha_3' --visualize"
     )
 
     # Directory Configuration
     parser.add_argument(
         "--base-dir",
         type=str,
-        required=False,
-        help="The root directory containing the experience folders. (Default: D:\\Temp2\\use_case)"
+        required=True,
+        help="The root directory containing the experience folders."
     )
 
     parser.add_argument(
         "--experience-id",
         type=str,
-        required=False,
-        help="The specific experience ID subfolder to process within the base directory. (Default: alpha_3)"
-    )
-
-    parser.add_argument(
-        "--experience-dir",
-        type=str,
-        required=False,
-        default=None,
-        help="The specific experience folder. Override base-dir/experience-id"
+        required=True,
+        help="The specific experience ID subfolder to process within the base directory."
     )
 
     # Execution Flags
@@ -77,17 +69,92 @@ def parse_arguments():
         "--run-flag",
         action="store_true",
         default=False,
-        help="Secondary boolean flag passed to run_realtime_only(). Use this if the underlying function requires a specific mode. (Default: False)"
+        help="Secondary boolean flag passed to run_realtime_only(). (Default: False)"
     )
 
     parser.add_argument(
         "--disable-progress",
         action="store_true",
         default=False,
-        help="Disable tqdm progress bars. Useful when logging output to a file. (Default: False)"
+        help="Disable tqdm progress bars. (Default: False)"
+    )
+
+    # Visualization Options
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        default=False,
+        help="Generate visualization plots instead of text output. (Default: False)"
+    )
+
+    parser.add_argument(
+        "--save-plot",
+        type=str,
+        default=None,
+        help="Save the plot to this file path (e.g., 'results.png'). If not specified, shows interactively."
     )
 
     return parser.parse_args()
+
+
+def create_visualization(results, save_path=None):
+    """
+    Create matplotlib visualization of the backtest results.
+
+    Args:
+        results: List of tuples (edge, result_dict)
+        save_path: Optional path to save the plot
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from datetime import datetime
+
+    # Extract data from results
+    # Sort by days (extract from filename or use the prediction horizon)
+    sorted_results = sorted(results, key=lambda x: x[1]['prediction_days'])
+
+    days = [r[1]['prediction_days'] for r in sorted_results]
+    win_rates = [r[1]['win_rate'] for r in sorted_results]
+    baselines = [r[1]['baseline'] for r in sorted_results]
+    edges = [r[1]['win_rate'] - r[1]['baseline'] for r in sorted_results]
+    dates = [r[1]['last_date'] for r in sorted_results]
+    directions = [r[1]['event_direction'] for r in sorted_results]
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+    fig.suptitle('Hindenburg Omen Backtest Results', fontsize=16, fontweight='bold')
+
+    # Colors based on direction
+    colors = ['red' if d == 'drop' else 'green' for d in directions]
+
+    # Plot 1: Win Rate vs Time Horizon (Days)
+    ax1 = axes[0]
+    scatter1 = ax1.scatter(days, win_rates, c=colors, s=100, alpha=0.7, edgecolors='black')
+    ax1.plot(days, win_rates, 'o-', linewidth=2, alpha=0.5)
+    ax1.set_xlabel('Prediction Horizon (Days)', fontsize=11)
+    ax1.set_ylabel('Win Rate (%)', fontsize=11)
+    ax1.set_title('Win Rate vs Time Horizon', fontsize=12, fontweight='bold')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Plot 2: Baseline vs Time Horizon
+    ax2 = axes[1]
+    scatter2 = ax2.scatter(days, baselines, c=colors, s=100, alpha=0.7, edgecolors='black')
+    ax2.plot(days, baselines, 's-', linewidth=2, alpha=0.5, color='orange')
+    ax2.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='Random (50%)')
+    ax2.set_xlabel('Prediction Horizon (Days)', fontsize=11)
+    ax2.set_ylabel('Baseline (%)', fontsize=11)
+    ax2.set_title('Baseline vs Time Horizon', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    # Save or show
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"\nPlot saved to: {save_path}")
+    else:
+        plt.show()
 
 
 def main():
@@ -96,17 +163,13 @@ def main():
     1. Parses arguments.
     2. Constructs the target directory path.
     3. Iterates through files and runs the backtest.
-    4. Prints signal information if active.
+    4. Prints signal information if active OR creates visualization.
     """
     # Parse command-line arguments
     args = parse_arguments()
 
     # Construct the full path to the experience directory
-    # Using pathlib for robust path handling across OS
-    if args.experience_dir:
-        target_directory = args.experience_dir
-    else:
-        target_directory = os.path.join(args.base_dir, args.experience_id)
+    target_directory = os.path.join(args.base_dir, args.experience_id)
 
     # Validate directory existence before proceeding
     if not os.path.exists(target_directory):
@@ -121,7 +184,6 @@ def main():
     print("-" * 50)
 
     # Collect all files to process
-    # We filter to ensure we only process actual files, not subdirectories
     all_files_to_process = [file for file in Path(target_directory).iterdir() if file.is_file()]
 
     if not all_files_to_process:
@@ -129,13 +191,12 @@ def main():
         return
 
     # Configure tqdm (progress bar)
-    # If --disable-progress is set, we use a simple iterator instead of tqdm wrapper
     iterator = all_files_to_process
     if not args.disable_progress:
         iterator = tqdm(all_files_to_process, desc="Processing Files")
-    _tmp_str_result = ''
 
     results = []
+
     for file in iterator:
         info = run_realtime_only(params_file=file, verbose=args.run_flag)
 
@@ -146,9 +207,11 @@ def main():
             current_count = info["current_count"]
             cluster_threshold = info["cluster_threshold"]
 
+            prediction_days = info["forward_days"]
+
             direction_word = "DROP" if event_direction == "drop" else "SPIKE"
 
-            # ✅ Correct colors
+            # Colors
             RED = "\033[91m"
             GREEN = "\033[92m"
             BOLD = "\033[1m"
@@ -156,30 +219,51 @@ def main():
 
             edge = info['win_rate'] - info['baseline']
             edge_color = GREEN if edge > 0 else RED
-            _tmp_str = f"SIGNAL ACTIVE: YES - PREDICTING {direction_word}"
-            _tmp_str2 = f"{current_count} / {cluster_threshold}"
 
-            _tmp_str3 = (
-                f"[{event_direction}]    "
-                f"{BOLD}{edge_color}Edge: {edge:.2f}%{RESET}   "
-                f"{BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   "
-                f"Baseline: {info['baseline']:.2f}%   ({info['total_events']} / {info['total_days']})"
-            )
+            if not args.visualize:
+                # Text output mode (original behavior)
+                _tmp_str = f"SIGNAL ACTIVE: YES - PREDICTING {direction_word}"
+                _tmp_str2 = f"{current_count} / {cluster_threshold}"
 
-            result_str = (
-                f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})\n"
-                f"\t{info['is_active_str']}  {_tmp_str3}\n\n"
-            )
+                _tmp_str3 = (
+                    f"[{event_direction}]    "
+                    f"{BOLD}{edge_color}Edge: {edge:.2f}%{RESET}   "
+                    f"{BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   "
+                    f"Baseline: {info['baseline']:.2f}%   ({info['total_events']} / {info['total_days']})"
+                )
 
-            # ✅ store (edge, string)
-            results.append((edge, result_str))
+                result_str = (
+                    f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})\n"
+                    f"\t{info['is_active_str']}  {_tmp_str3}\n\n"
+                )
 
-    # ✅ Sort by edge
-    results.sort(key=lambda x: x[0], reverse=False)
+                results.append((edge, result_str))
+            else:
+                # Visualization mode - store structured data
+                results.append((edge, {
+                    'filename': file.name,
+                    'last_date': info['last_date'],
+                    'prediction_days': prediction_days,
+                    'win_rate': info['win_rate'],
+                    'baseline': info['baseline'],
+                    'edge': edge,
+                    'event_direction': event_direction,
+                    'total_events': info['total_events'],
+                    'total_days': info['total_days']
+                }))
 
-    # ✅ Print
-    for _, res in results:
-        print(res)
+    if args.visualize:
+        # Create visualization
+        if results:
+            create_visualization(results, save_path=args.save_plot)
+        else:
+            print("No active signals found to visualize.")
+    else:
+        # Sort and print text results (original behavior)
+        results.sort(key=lambda x: x[0], reverse=False)
+
+        for _, res in results:
+            print(res)
 
     print("-" * 50)
     print("Processing complete.")
@@ -196,4 +280,7 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}")
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
