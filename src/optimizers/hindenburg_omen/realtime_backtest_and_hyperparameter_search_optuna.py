@@ -112,7 +112,7 @@ def load_data(_ticker, _dataset_choice, _lookback_years):
     df = df.dropna(subset=["Close"])
 
     if _lookback_years > 0:
-        rows_per_year = {'day': 252, 'week': 52, 'month': 12, 'quarter': 4, 'year': 1}.get(args.dataset_id)
+        rows_per_year = {'day': 252, 'week': 52, 'month': 12, 'quarter': 4, 'year': 1}.get(_dataset_choice)
         cutoff = args.lookback_years * rows_per_year
         print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
         df = df.iloc[-cutoff:].copy()
@@ -722,7 +722,8 @@ def run_professional_optimization(args):
     info = verify_best(df_close=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=CLUSTER_MODE, params=best_params, target=target, valid_mask=valid_mask, baseline=baseline,
                        forward_days=FORWARD_DAYS, threshold=THRESHOLD, mode=args.mode, verbose=args.verbose, df_volume=df_volume)
     best_params.update({'win_rate': info["win_rate"], 'baseline': info["baseline"], 'threshold_penalty_for_low_events': args.threshold_penalty_for_low_events,
-                        'penalty': study.best_trial.user_attrs['penalty'], 'total_events': total_events, 'total_days': total_days, 'edge': info["win_rate"] - info["baseline"]})
+                        'penalty': study.best_trial.user_attrs['penalty'], 'total_events': total_events, 'total_days': total_days, 'edge': info["win_rate"] - info["baseline"],
+                        'lookback_years': args.lookback_years})
     if args.verbose:
         print(f"Infos extra: {study.best_trial.user_attrs}")
         # How many trials had statistically significant results?
@@ -1047,7 +1048,7 @@ def run_realtime_only(params_file, verbose):
     best_params = load_best_params(params_file, verbose)
 
     # Load data
-    df = load_data(_ticker=best_params['ticker'], _dataset_choice=best_params['dataset_id'])
+    df = load_data(_ticker=best_params['ticker'], _dataset_choice=best_params['dataset_id'], _lookback_years=best_params['lookback_years'])
     if verbose:
         print(f"Data loaded: {len(df)} rows | "
               f"{df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
