@@ -14,8 +14,8 @@ python .\hyperparameter_search_optuna.py ^
 --activate_macd_space_search true ^
 --activate_vwap_space_search true ^
 --add_only_vwap_z_and_vwap_triggers false ^
---min_percentage_to_keep_class 1.0 ^
---epsilon 0.01 ^
+--min-percentage-to-keep-class 1.0 ^
+--epsilon 0.001 ^
 --storage my_storage_roulette_4_mp ^
 --study_name opt_f1 ^
 --max-ema-slots 6 ^
@@ -31,7 +31,7 @@ python .\hyperparameter_search_optuna.py ^
 --max-rsi-shift-slots 5 ^
 --rsi-shift-min 1 ^
 --rsi-shift-max 10 ^
---base-models lgb ^
+--base-models lgb xgb ^
 --verbose-debug false
 pause
 

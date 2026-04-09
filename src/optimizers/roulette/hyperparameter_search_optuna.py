@@ -633,7 +633,7 @@ if __name__ == "__main__":
     parser.add_argument('--shift_seq_col_min', type=int, default=1)
     parser.add_argument('--shift_seq_col_max', type=int, default=3)
 
-    parser.add_argument('--min_percentage_to_keep_class', type=float, default=-1)
+    parser.add_argument('--min-percentage-to-keep-class', type=float, default=-1)
     parser.add_argument("--specific_wanted_class", type=int, nargs='+', default=[])
 
     parser.add_argument('--add_close_diff', type=str2bool, default=True)
