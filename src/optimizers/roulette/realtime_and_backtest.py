@@ -975,6 +975,8 @@ def main(args):
     avg_precision = np.mean(fold_precision_scores_per_class, axis=0)
     avg_recall = np.mean(fold_recall_scores_per_class, axis=0)
     avg_f1 = np.mean(fold_f1_scores_per_class, axis=0)
+    real__2__tx = dict(zip(my_label_encoder.classes_, my_label_encoder.transform(my_label_encoder.classes_)))
+    tx__2__real = dict(zip(my_label_encoder.transform(my_label_encoder.classes_), my_label_encoder.classes_))
     if args.verbose:
         print(f"\nAverage Accuracy: {np.mean(acc_scores):.4f}")
         print(f"Average Weighted F1: {np.mean(f1_scores):.4f}")
@@ -985,8 +987,6 @@ def main(args):
             print(f"\nAverage Per-Class Validation Scores ({len(fold_f1_scores_per_class)} folds):")
             print(f"{'Class':<8} {'Precision':<12} {'Recall':<12} {'F1-Score':<12}")
             print("-" * 44)
-            real__2__tx = dict(zip(my_label_encoder.classes_, my_label_encoder.transform(my_label_encoder.classes_)))
-            tx__2__real = dict(zip(my_label_encoder.transform(my_label_encoder.classes_), my_label_encoder.classes_))
             for c in range(num_classes):
                 cc = str(decode_tuple_target(tx__2__real[c], class_to_tuple))
                 print(f"{cc:<8} {avg_precision[c]:<12.4f} {avg_recall[c]:<12.4f} {avg_f1[c]:<12.4f}")
