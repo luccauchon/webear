@@ -157,7 +157,7 @@ def calculate_rsi(series, window=14):
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
     rs = gain / loss
     rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return rsi.copy()
 
 
 def calculate_macd(series, fast=12, slow=26, signal=9):
@@ -178,7 +178,7 @@ def calculate_macd(series, fast=12, slow=26, signal=9):
     macd_line = exp1 - exp2
     signal_line = macd_line.ewm(span=signal, adjust=False).mean()
     histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
+    return macd_line.copy(), signal_line.copy(), histogram.copy()
 
 
 def load_model_for_inference(model_path, verbose=True):
@@ -386,16 +386,12 @@ def main(args):
                 if w == 0:
                     continue
                 rsi_col_name = (f'RSI_{w}', args.ticker)
-                master_data_cache[rsi_col_name] = calculate_rsi(
-                    master_data_cache[close_col], window=w
-                )
+                master_data_cache[rsi_col_name] = calculate_rsi(master_data_cache[close_col], window=w)
                 for sw in args.shift_rsi_col:
                     if sw == 0:
                         continue
                     shift_rsi_col_name = (f'SHIFTED_RSI{w}_{sw}', args.ticker)
-                    master_data_cache[shift_rsi_col_name] = (
-                        master_data_cache[rsi_col_name].shift(sw)
-                    )
+                    master_data_cache[shift_rsi_col_name] = master_data_cache[rsi_col_name].shift(sw).copy()
 
         # Add MACD
         if args.enable_macd:
@@ -413,9 +409,7 @@ def main(args):
                 for base_name in macd_base_cols:
                     base_col_name = (base_name, args.ticker)
                     shift_macd_col_name = (f'SHIFTED_{base_name}_{sw}', args.ticker)
-                    master_data_cache[shift_macd_col_name] = (
-                        master_data_cache[base_col_name].shift(sw)
-                    )
+                    master_data_cache[shift_macd_col_name] = master_data_cache[base_col_name].shift(sw).copy()
 
         # Add VWAP
         if args.enable_vwap:
@@ -475,12 +469,8 @@ def main(args):
             for plm in range(1, args.shift_seq_col + 1):
                 _shift_pos_base_col = (f'SHIFTED_{plm}_POS_SEQ', args.ticker)
                 _shift_neg_base_col = (f'SHIFTED_{plm}_NEG_SEQ', args.ticker)
-                master_data_cache[_shift_pos_base_col] = (
-                    master_data_cache[_pos_base_col].shift(plm)
-                )
-                master_data_cache[_shift_neg_base_col] = (
-                    master_data_cache[_neg_base_col].shift(plm)
-                )
+                master_data_cache[_shift_pos_base_col] = master_data_cache[_pos_base_col].shift(plm).copy()
+                master_data_cache[_shift_neg_base_col] = master_data_cache[_neg_base_col].shift(plm).copy()
                 SHIFTED_SEQ_COLS.append(_shift_pos_base_col)
                 SHIFTED_SEQ_COLS.append(_shift_neg_base_col)
 

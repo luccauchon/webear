@@ -564,7 +564,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_id", type=str, default="day", choices=DATASET_AVAILABLE)
     parser.add_argument('--step_back_range', type=int, default=99999)
     parser.add_argument('--verbose', type=str2bool, default=True)
-    parser.add_argument('--verbose_info_score', type=str2bool, default=False,
+    parser.add_argument('--verbose-info-score', type=str2bool, default=False,
                         help='Print info about score while doing optimization')
     parser.add_argument('--verbose-debug', type=str2bool, default=False,
                         help='Whether to enable verbose debugging or not in the realtime-backtest module')

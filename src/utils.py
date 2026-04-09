@@ -1217,7 +1217,7 @@ def add_vwap_with_bands(
             df[col_dict[f'vwap_above_sigma_{b}']] = df[close_col] > df[col_dict[f'vwap_uband_{b}']]
             df[col_dict[f'vwap_below_sigma_{b}']] = df[close_col] < df[col_dict[f'vwap_lband_{b}']]
 
-    return df, col_dict
+    return df.copy(), col_dict
 
 
 def get_growth_function(y_min, y_max):
