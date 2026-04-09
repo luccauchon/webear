@@ -31,7 +31,7 @@ python .\hyperparameter_search_optuna.py ^
 --max-rsi-shift-slots 5 ^
 --rsi-shift-min 1 ^
 --rsi-shift-max 10 ^
---base-models lgb
+--base-models lgb ^
 --verbose-debug false
 pause
 
