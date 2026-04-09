@@ -594,13 +594,13 @@ if __name__ == "__main__":
                         help='Select the objective function logic by name')
 
     # --- EMA Optimization Search Space ---
-    parser.add_argument('--max_ema_slots', type=int, default=2)
-    parser.add_argument('--ema_min', type=int, default=5)
-    parser.add_argument('--ema_max', type=int, default=20)
-    parser.add_argument('--ema_step', type=int, default=2)
-    parser.add_argument('--max_ema_shift_slots', type=int, default=1)
-    parser.add_argument('--ema_shift_min', type=int, default=1)
-    parser.add_argument('--ema_shift_max', type=int, default=3)
+    parser.add_argument('--max-ema-slots', type=int, default=2)
+    parser.add_argument('--ema-min', type=int, default=5)
+    parser.add_argument('--ema-max', type=int, default=20)
+    parser.add_argument('--ema-step', type=int, default=2)
+    parser.add_argument('--max-ema-shift-slots', type=int, default=1)
+    parser.add_argument('--ema-shift-min', type=int, default=1)
+    parser.add_argument('--ema-shift-max', type=int, default=3)
 
     # --- SMA Optimization Search Space ---
     parser.add_argument('--max_sma_slots', type=int, default=2)
@@ -612,12 +612,12 @@ if __name__ == "__main__":
     parser.add_argument('--sma_shift_max', type=int, default=3)
 
     # --- RSI Optimization Search Space ---
-    parser.add_argument('--max_rsi_slots', type=int, default=1)
-    parser.add_argument('--rsi_min', type=int, default=2)
-    parser.add_argument('--rsi_max', type=int, default=14)
-    parser.add_argument('--max_rsi_shift_slots', type=int, default=1)
-    parser.add_argument('--rsi_shift_min', type=int, default=1)
-    parser.add_argument('--rsi_shift_max', type=int, default=3)
+    parser.add_argument('--max-rsi-slots', type=int, default=1)
+    parser.add_argument('--rsi-min', type=int, default=2)
+    parser.add_argument('--rsi-max', type=int, default=14)
+    parser.add_argument('--max-rsi-shift-slots', type=int, default=1)
+    parser.add_argument('--rsi-shift-min', type=int, default=1)
+    parser.add_argument('--rsi-shift-max', type=int, default=3)
 
     # --- MACD Optimization Search Space ---
     parser.add_argument('--macd_fast_min', type=int, default=8)
