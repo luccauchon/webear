@@ -18,14 +18,14 @@ python .\hyperparameter_search_optuna.py ^
 --epsilon 0.001 ^
 --storage my_storage_roulette_4_mp ^
 --study_name opt_f1 ^
---max-ema-slots 6 ^
+--max-ema-slots 4 ^
 --ema-min 2 ^
 --ema-max 80 ^
 --ema-step 2 ^
 --max-ema-shift-slots 5 ^
 --ema-shift-min 1 ^
 --ema-shift-max 10 ^
---max-rsi-slots 10 ^
+--max-rsi-slots 4 ^
 --rsi-min 2 ^
 --rsi-max 28 ^
 --max-rsi-shift-slots 5 ^
