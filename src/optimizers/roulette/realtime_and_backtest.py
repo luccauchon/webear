@@ -957,10 +957,10 @@ def main(args):
         f1 = f1_score(y_val, y_pred_final, average='weighted')
 
         # Per-class scores
-        precision, recall, f1_per_class, support = precision_recall_fscore_support(y_val, y_pred_final, labels=range(num_classes), zero_division=0)
+        precision_per_class, recall_per_class, f1_per_class, support_per_class = precision_recall_fscore_support(y_val, y_pred_final, labels=range(num_classes), zero_division=0, average=None,)
 
-        fold_precision_scores_per_class.append(precision)
-        fold_recall_scores_per_class.append(recall)
+        fold_precision_scores_per_class.append(precision_per_class)
+        fold_recall_scores_per_class.append(recall_per_class)
         fold_f1_scores_per_class.append(f1_per_class)
 
         if args.verbose:
@@ -968,6 +968,8 @@ def main(args):
             print(f"Fold {fold + 1}: Acc={acc:.4f}, F1={f1:.4f}")
             f1_str = ", ".join([f"{i}:{v:.3f}" for i, v in enumerate(f1_per_class)])
             print(f"  Per-Class F1: [{f1_str}]")
+            acc_str = ", ".join([f"{i}:{v:.3f}" for i, v in enumerate(precision_per_class)])
+            print(f"  Per-Class ACC: [{acc_str}]")
 
         acc_scores.append(acc)
         f1_scores.append(f1)
