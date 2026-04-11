@@ -76,6 +76,99 @@ DEFAULT_RANDOM_SEED = 42
 
 
 # =========================================================
+# ALL REGIMES SUMMARY - For Real-Time Mode
+# =========================================================
+def print_all_regimes_summary(_stats, _n_clusters, _spread_type, _strike_distance, _forward_days):
+    """Print a concise summary table of ALL regimes for quick comparison."""
+    print("\n" + "═" * 80)
+    print(" " * 25 + "📊 ALL REGIMES SUMMARY")
+    print("═" * 80 + "\n")
+
+    print(f"Spread: {_spread_type.upper()} | Strike: {_strike_distance * 100:.1f}% | DTE: {_forward_days}\n")
+
+    # Table header
+    print(f"{'Regime':<8} {'Samples':>10} {'OTM Prob':>12} {'95% CI Lower':>14} {'95% CI Upper':>14} {'EV/$1':>10} {'Recommendation':>18}")
+    print("─" * 80)
+
+    for r in range(_n_clusters):
+        if r not in _stats:
+            print(f"{r:<8} {'--':>10} {'--':>12} {'--':>14} {'--':>14} {'--':>10} {'(insufficient data)':>18}")
+            continue
+
+        stats = _stats[r]
+        prob_otm = stats['prob_otm']
+        ci_low = stats['ci_95_lower']
+        ci_upp = stats['ci_95_upper']
+        ev = prob_otm - (1 - prob_otm)  # EV per $1 risked
+
+        # Simple recommendation logic + filter awareness
+        rec = "✅ FAVORABLE"
+        if args.min_prob_otm and prob_otm < args.min_prob_otm:
+            rec = "❌ <min-prob-otm"
+        elif args.max_prob_itm and (1 - prob_otm) > args.max_prob_itm:
+            rec = "❌ >max-prob-itm"
+        elif args.min_ev_per_dollar and ev < args.min_ev_per_dollar:
+            rec = "❌ <min-EV"
+        elif prob_otm <= 0.45:
+            rec = "❌ AVOID"
+        elif prob_otm <= 0.60:
+            rec = "⚠️ NEUTRAL"
+
+        print(f"{r:<8} {stats['count']:>10,} {prob_otm * 100:>11.2f}% {ci_low * 100:>13.2f}% {ci_upp * 100:>13.2f}% {ev:>+9.3f} {rec:>18}")
+
+    print("─" * 80)
+    print("💡 Tip: Use regime ID with custom logic to filter trades by regime profile.\n")
+
+
+# =========================================================
+# REGIME FILTERING HELPER
+# =========================================================
+def regime_passes_filters(_regime_id, _regime_stats, _args, _n_clusters):
+    """
+    Check if a regime passes all user-specified filtering criteria.
+
+    Returns:
+    --------
+    tuple: (passes: bool, reason: str or None)
+    """
+    # 1. Check explicit allow/exclude lists first
+    if _args.exclude_regimes:
+        excluded = [int(r.strip()) for r in _args.exclude_regimes.split(',') if r.strip()]
+        if _regime_id in excluded:
+            return False, f"Regime #{_regime_id} explicitly excluded via --exclude-regimes"
+
+    if _args.allowed_regimes:
+        allowed = [int(r.strip()) for r in _args.allowed_regimes.split(',') if r.strip()]
+        if _regime_id not in allowed:
+            return False, f"Regime #{_regime_id} not in allowed list --allowed-regimes={_args.allowed_regimes}"
+
+    # 2. Check statistical thresholds
+    prob_otm = _regime_stats.get('prob_otm')
+    prob_itm = _regime_stats.get('prob_itm', 1 - prob_otm if prob_otm else None)
+    n_samples = _regime_stats.get('count', 0)
+    ev_per_dollar = prob_otm - prob_itm if prob_otm is not None and prob_itm is not None else None
+
+    if _args.min_prob_otm is not None and prob_otm is not None:
+        if prob_otm < _args.min_prob_otm:
+            return False, f"OTM prob {prob_otm * 100:.2f}% < minimum {_args.min_prob_otm * 100:.1f}%"
+
+    if _args.max_prob_itm is not None and prob_itm is not None:
+        if prob_itm > _args.max_prob_itm:
+            return False, f"ITM prob {prob_itm * 100:.2f}% > maximum {_args.max_prob_itm * 100:.1f}%"
+
+    if _args.min_regime_samples is not None:
+        if n_samples < _args.min_regime_samples:
+            return False, f"Samples {n_samples} < minimum {_args.min_regime_samples}"
+
+    if _args.min_ev_per_dollar is not None and ev_per_dollar is not None:
+        if ev_per_dollar < _args.min_ev_per_dollar:
+            return False, f"EV/${ev_per_dollar:+.3f} < minimum ${_args.min_ev_per_dollar:+.3f}"
+
+    # All filters passed
+    return True, None
+
+
+# =========================================================
 # MODEL NAMING HELPER
 # =========================================================
 def generate_model_filename(_ticker, _study_name, _params, _metadata_extra=None):
@@ -718,24 +811,65 @@ def run_real_time_inference(args):
         _spread_type=args.spread_type, _latest_date=latest_date, _latest_close_value=latest_close_value,
     )
 
+    # ─────────────────────────────────────────────────────
+    # 6b. Apply Regime Filters (if any specified)
+    # ─────────────────────────────────────────────────────
+    regime_filter_passed = True
+    filter_reason = None
+
+    if args.real_time and any([
+        args.min_prob_otm, args.max_prob_itm, args.min_regime_samples,
+        args.allowed_regimes, args.exclude_regimes, args.min_ev_per_dollar
+    ]):
+        regime_filter_passed, filter_reason = regime_passes_filters(
+            _regime_id=regime,
+            _regime_stats=regime_stats,
+            _args=args,
+            _n_clusters=_params.get('n_clusters', 3)
+        )
+
+        if not regime_filter_passed:
+            print(f"⚠️  REGIME FILTER: {filter_reason}")
+            print("   → Trade blocked by regime filtering criteria\n")
+
     # 7. Evaluate Trade Decision
     print("💰 TRADE DECISION EVALUATION")
     print("─" * 40)
-    max_loss = args.spread_width - args.credit_received
-    trade_decision = should_trade_credit_spread(
-        _regime_stats=regime_stats,
-        _credit_received=args.credit_received,
-        _max_loss=max_loss,
-        _min_edge_ratio=args.min_edge_ratio
-    )
+    if not regime_filter_passed:
+        print(f"🎯 DECISION: ⛔ SKIP (Regime filter failed: {filter_reason})")
+    else:
+        max_loss = args.spread_width - args.credit_received
+        trade_decision = should_trade_credit_spread(
+            _regime_stats=regime_stats,
+            _credit_received=args.credit_received,
+            _max_loss=max_loss,
+            _min_edge_ratio=args.min_edge_ratio
+        )
 
-    print(f"Spread Configuration:")
-    print(f"   • Width:           ${args.spread_width:.2f}")
-    print(f"   • Credit Received: ${args.credit_received:.2f}")
-    print(f"   • Max Loss:        ${max_loss:.2f}")
-    print(f"   • Min Edge Ratio:  {args.min_edge_ratio * 100:.1f}%")
-    print()
-    print(f"🎯 DECISION: {trade_decision['message']}")
+        print(f"Spread Configuration:")
+        print(f"   • Width:           ${args.spread_width:.2f}")
+        print(f"   • Credit Received: ${args.credit_received:.2f}")
+        print(f"   • Max Loss:        ${max_loss:.2f}")
+        print(f"   • Min Edge Ratio:  {args.min_edge_ratio * 100:.1f}%")
+        print()
+        print(f"Regime-Based Metrics:")
+        print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
+        print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
+        print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
+        print()
+        print(f"🎯 DECISION: {trade_decision['message']}")
+
+    # ─────────────────────────────────────────────────────
+    # OPTIONAL: Show ALL regimes summary if flag is set
+    # ─────────────────────────────────────────────────────
+    if getattr(args, 'show_regime_stats', False):
+        print_all_regimes_summary(
+            _stats=_stats,
+            _n_clusters=_params.get('n_clusters', 3),
+            _spread_type=args.spread_type,
+            _strike_distance=args.strike_distance,
+            _forward_days=args.forward_days
+        )
 
     print("\n" + "═" * 60)
     print("✨ INFERENCE COMPLETE")
@@ -1417,6 +1551,37 @@ if __name__ == "__main__":
     parser.add_argument(
         "--real-time", action="store_true",
         help="Load saved model and run inference on latest data (skip optimization)"
+    )
+    parser.add_argument(
+        "--show-regime-stats", action="store_true",
+        help="When used with --real-time, display statistics for ALL regimes (not just the predicted one)"
+    )
+    # ─────────────────────────────────────────────────────
+    # REGIME FILTERING OPTIONS (Real-Time Mode Only)
+    # ─────────────────────────────────────────────────────
+    parser.add_argument(
+        "--min-prob-otm", type=float, default=None,
+        help="Minimum OTM probability required for a regime to be tradeable (e.g., 0.60 = 60%%)"
+    )
+    parser.add_argument(
+        "--max-prob-itm", type=float, default=None,
+        help="Maximum ITM probability allowed for a regime to be tradeable (e.g., 0.40 = 40%%)"
+    )
+    parser.add_argument(
+        "--min-regime-samples", type=int, default=None,
+        help="Minimum historical samples required for a regime to be considered valid"
+    )
+    parser.add_argument(
+        "--allowed-regimes", type=str, default=None,
+        help="Comma-separated list of regime IDs to ALLOW (e.g., '0,2,4'). All others rejected."
+    )
+    parser.add_argument(
+        "--exclude-regimes", type=str, default=None,
+        help="Comma-separated list of regime IDs to EXCLUDE (e.g., '1,3'). Takes precedence over --allowed-regimes."
+    )
+    parser.add_argument(
+        "--min-ev-per-dollar", type=float, default=None,
+        help="Minimum expected value per $1 risked to approve trade (e.g., 0.10 = +$0.10 EV per $1)"
     )
     parser.add_argument(
         "--model-filename", type=str, default=None,
