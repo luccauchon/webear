@@ -44,7 +44,7 @@ import shutil
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
-from utils import DATASET_AVAILABLE, next_weekday
+from utils import DATASET_AVAILABLE, next_weekday, next_week, next_month
 # Machine Learning
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
@@ -640,7 +640,6 @@ def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=N
     if _latest_date is None:
         print(f"🎯 Short Strike Distance:    {_strike_distance * 100:.1f}% from current price , forward {_stats['forward_days']} {_stats['dataset_id']}")
     else:
-        assert 'day' == _stats['dataset_id']
         _tmp_str_position = ""
         if _spread_type.upper() in ["PUT", "CALL"]:
             _strike_price = _latest_close_value * (1 + _strike_distance) if "CALL" == _spread_type.upper() else _latest_close_value * (1 - _strike_distance)
@@ -652,7 +651,18 @@ def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=N
             _strike_price_low  = _latest_close_value * (1 - _strike_distance)
             _strike_price_high = _latest_close_value * (1 + _strike_distance)
             _tmp_str_position = f"@[{_strike_price_low:.0f} :: {_strike_price_high:.0f}]"
-        _next_ = next_weekday(_latest_date, _stats['forward_days'])
+        if 'day' == _stats['dataset_id']:
+            _next_ = next_weekday(_latest_date, _stats['forward_days'])
+        elif 'week' == _stats['dataset_id']:
+            _next_ = next_week(_latest_date)
+            for u in range(1, _stats['forward_days']):
+                _next_ = next_week(_next_)
+        elif 'month' == _stats['dataset_id']:
+            _next_ = next_month(_latest_date)
+            for u in range(1, _stats['forward_days']):
+                _next_ = next_week(_next_)
+        else:
+            assert False, f"Implement for {_stats['dataset_id']}"
         print(f"🎯 Short Strike Distance:    {_strike_distance * 100:.1f}% from current price , forward {_stats['forward_days']} {_stats['dataset_id']} -> take position on {_next_.strftime('%Y-%m-%d')} {_tmp_str_position}")
     print()
 
@@ -865,11 +875,17 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     if getattr(args, 'show_regime_stats', False):
         print_all_regimes_summary(
             _stats=_stats,
-            _n_clusters=_params.get('n_clusters', 3),
+            _n_clusters=_params['n_clusters'],
             _spread_type=_metadata['spread_type'],
             _strike_distance=_metadata['strike_distance'],
             _forward_days=_metadata['forward_days']
         )
+
+    regime__2__otm = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
+    is_best = all(regime__2__otm[regime] >= v for v in regime__2__otm.values())
+    is_second = regime__2__otm[regime] == sorted(regime__2__otm.values())[-2]
+    is_third = regime__2__otm[regime] == sorted(regime__2__otm.values())[-3]
+    print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , [{is_best}/{is_second}/{is_third}]")
 
     print("\n" + "═" * 60)
     print("✨ INFERENCE COMPLETE")
