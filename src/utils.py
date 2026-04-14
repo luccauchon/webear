@@ -1338,3 +1338,70 @@ def get_month_weekday_range(input_date):
         first_weekday.strftime('%Y-%m-%d'),
         last_weekday.strftime('%Y-%m-%d')
     )
+
+
+def compute_ichimoku(_df, close_col, high_col, low_col, period_tenkan_sen=9, period_kijun_sen=26, senkou_span_a=26, senkou_span_b=52, chikou_span=26):
+    """
+    Returns:
+        df with Ichimoku columns added
+    """
+
+    high = _df[high_col]
+    low = _df[low_col]
+    close = _df[close_col]
+
+    # Tenkan-sen (9)
+    tenkan_high = high.rolling(window=period_tenkan_sen).max()
+    tenkan_low = low.rolling(window=period_tenkan_sen).min()
+    _df['tenkan_sen'] = (tenkan_high + tenkan_low) / 2
+
+    # Kijun-sen (26)
+    kijun_high = high.rolling(window=period_kijun_sen).max()
+    kijun_low = low.rolling(window=period_kijun_sen).min()
+    _df['kijun_sen'] = (kijun_high + kijun_low) / 2
+
+    # Senkou Span A (shifted forward 26)
+    _df['senkou_span_a'] = ((_df['tenkan_sen'] + _df['kijun_sen']) / 2).shift(senkou_span_a)
+
+    # Senkou Span B (52, shifted forward 26)
+    span_b_high = high.rolling(window=senkou_span_b).max()
+    span_b_low = low.rolling(window=senkou_span_b).min()
+    _df['senkou_span_b'] = ((span_b_high + span_b_low) / 2).shift(senkou_span_b//2)
+
+    # Chikou Span (lagging)
+    _df['chikou_span'] = close.shift(-chikou_span)
+
+    return _df
+
+
+def generate_ichimoku_signals(_df, close_col):
+    _df = _df.copy()
+
+    # Trend filter
+    _df['above_cloud'] = (
+            (_df[close_col] > _df['senkou_span_a']) &
+            (_df[close_col] > _df['senkou_span_b'])
+    )
+
+    _df['below_cloud'] = (
+            (_df[close_col] < _df['senkou_span_a']) &
+            (_df[close_col] < _df['senkou_span_b'])
+    )
+
+    # Tenkan / Kijun crossover
+    _df['tk_cross'] = np.where(_df['tenkan_sen'] > _df['kijun_sen'], 1, -1)
+
+    _df['tk_cross_signal'] = _df['tk_cross'].diff()
+
+    # +2 → bullish cross, -2 → bearish cross
+    _df['long_signal'] = (
+            (_df['tk_cross_signal'] == 2) &
+            (_df['above_cloud'])
+    )
+
+    _df['short_signal'] = (
+            (_df['tk_cross_signal'] == -2) &
+            (_df['below_cloud'])
+    )
+
+    return _df
