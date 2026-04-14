@@ -677,16 +677,15 @@ def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=N
 # =========================================================
 # REAL-TIME INFERENCE FUNCTION
 # =========================================================
-def run_real_time_inference(args):
+def run_real_time_inference(args, ticker, list_models, model_filename):
     """
     Load a saved model and run inference on the latest data point.
     """
     print("⚡ REAL-TIME INFERENCE MODE")
     print("-" * 60)
 
-    ticker = args.ticker
     # Handle --list-models flag
-    if getattr(args, 'list_models', False):
+    if list_models:
         models_dir = Path("models")
         if not models_dir.exists():
             print("📁 No models directory found.")
@@ -707,7 +706,7 @@ def run_real_time_inference(args):
         return
 
     # Determine model path to load
-    if getattr(args, 'model_filename', None):
+    if model_filename:
         # User specified exact filename
         model_path = f"{args.output_dir}/{args.model_filename}"
         if not os.path.exists(model_path):
@@ -747,12 +746,13 @@ def run_real_time_inference(args):
     _stats = model_data["stats"]
     _params = model_data["params"]
     _metadata = model_data.get("metadata", {})
-
+    _trade_context = model_data["trade_context"]
+    assert ticker == _metadata['ticker']
     print(f"✅ Model loaded successfully (Created: {_metadata.get('timestamp', 'N/A')})")
 
     # 2. Load Latest Data
     try:
-        df = load_data(_ticker=ticker, _dataset_id=args.dataset_id)
+        df = load_data(_ticker=ticker, _dataset_id=_metadata['dataset_id'])
         print(f"📦 Loaded {len(df)} rows for {ticker}")
     except Exception as e:
         print(f"❌ ERROR loading data: {e}")
@@ -807,8 +807,8 @@ def run_real_time_inference(args):
     print_report(
         _regime=regime,
         _stats=regime_stats,
-        _strike_distance=args.strike_distance,
-        _spread_type=args.spread_type, _latest_date=latest_date, _latest_close_value=latest_close_value,
+        _strike_distance=_metadata['strike_distance'],
+        _spread_type=_metadata['spread_type'], _latest_date=latest_date, _latest_close_value=latest_close_value,
     )
 
     # ─────────────────────────────────────────────────────
@@ -838,17 +838,17 @@ def run_real_time_inference(args):
     if not regime_filter_passed:
         print(f"🎯 DECISION: ⛔ SKIP (Regime filter failed: {filter_reason})")
     else:
-        max_loss = args.spread_width - args.credit_received
+        max_loss = _trade_context['spread_width'] - _trade_context['credit_received']
         trade_decision = should_trade_credit_spread(
             _regime_stats=regime_stats,
-            _credit_received=args.credit_received,
+            _credit_received=_trade_context['credit_received'],
             _max_loss=max_loss,
             _min_edge_ratio=args.min_edge_ratio
         )
 
         print(f"Spread Configuration:")
-        print(f"   • Width:           ${args.spread_width:.2f}")
-        print(f"   • Credit Received: ${args.credit_received:.2f}")
+        print(f"   • Width:           ${_trade_context['spread_width']:.2f}")
+        print(f"   • Credit Received: ${_trade_context['credit_received']:.2f}")
         print(f"   • Max Loss:        ${max_loss:.2f}")
         print(f"   • Min Edge Ratio:  {args.min_edge_ratio * 100:.1f}%")
         print()
@@ -866,9 +866,9 @@ def run_real_time_inference(args):
         print_all_regimes_summary(
             _stats=_stats,
             _n_clusters=_params.get('n_clusters', 3),
-            _spread_type=args.spread_type,
-            _strike_distance=args.strike_distance,
-            _forward_days=args.forward_days
+            _spread_type=_metadata['spread_type'],
+            _strike_distance=_metadata['strike_distance'],
+            _forward_days=_metadata['forward_days']
         )
 
     print("\n" + "═" * 60)
@@ -1376,7 +1376,8 @@ def entry_main(args):
                 "timestamp": datetime.now(),
                 "study_name": study_name,
                 "best_score": study.best_value,
-                "model_filename": model_filename  # ← Store filename for easy retrieval
+                "model_filename": model_filename,
+                "dataset_id": args.dataset_id
             },
             "trade_context": {
                 "credit_received": credit_received,
@@ -1603,7 +1604,7 @@ if __name__ == "__main__":
     try:
         if args.real_time:
             # Run Inference Mode
-            run_real_time_inference(args)
+            run_real_time_inference(args, ticker=args.ticker, list_models=args.list_models, model_filename=args.model_filename)
         else:
             # Run Optimization Mode
             entry_main(args)
