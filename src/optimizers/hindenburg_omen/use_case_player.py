@@ -219,7 +219,7 @@ def main():
 
             edge = info['win_rate'] - info['baseline']
             edge_color = GREEN if edge > 0 else RED
-
+            win_rate = info['win_rate']
             if not args.visualize:
                 # Text output mode (original behavior)
                 _tmp_str = f"SIGNAL ACTIVE: YES - PREDICTING {direction_word}"
@@ -240,11 +240,11 @@ def main():
                 results.append((edge, result_str))
             else:
                 # Visualization mode - store structured data
-                results.append((edge, {
+                results.append((win_rate, {
                     'filename': file.name,
                     'last_date': info['last_date'],
                     'prediction_days': prediction_days,
-                    'win_rate': info['win_rate'],
+                    'win_rate': win_rate,
                     'baseline': info['baseline'],
                     'edge': edge,
                     'event_direction': event_direction,
