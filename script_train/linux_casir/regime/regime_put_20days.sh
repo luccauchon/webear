@@ -1,6 +1,6 @@
 #!/bin/bash
 cd ../../../src/optimizers/regime
-export WEBEAR__TIMEOUT=12000
+export WEBEAR__TIMEOUT=80000
 python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__1.db \
     --study-name put_20_days \
     --timeout $WEBEAR__TIMEOUT \
