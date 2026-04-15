@@ -27,6 +27,7 @@ from tqdm import tqdm
 from constants import IS_RUNNING_ON_CASIR
 # Import the core logic function from the optimizer module
 from optimizers.hindenburg_omen.realtime_backtest_and_hyperparameter_search_optuna import run_realtime_only
+from utils import next_weekday
 
 
 def parse_arguments():
@@ -233,7 +234,7 @@ def main():
                 )
 
                 result_str = (
-                    f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})\n"
+                    f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})  {next_weekday(info['last_date'], int(prediction_days))}\n"
                     f"\t{info['is_active_str']}  {_tmp_str3}\n\n"
                 )
 
