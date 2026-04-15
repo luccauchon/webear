@@ -1,9 +1,9 @@
 #!/bin/bash
 cd ../../../src/optimizers/regime
-
+export WEBEAR__TIMEOUT=12000
 python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__1.db \
     --study-name put_20_days \
-    --timeout 80000 \
+    --timeout $WEBEAR__TIMEOUT \
     --spread-type put \
     --strike-distance 0.03 \
     --forward-days 20 \
@@ -12,7 +12,7 @@ PID1=$!
 
 python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__2.db \
     --study-name put_20_days \
-    --timeout 80000 \
+    --timeout $WEBEAR__TIMEOUT \
     --spread-type put \
     --strike-distance 0.04 \
     --forward-days 20 \
@@ -21,7 +21,7 @@ PID2=$!
 
 python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__3.db \
     --study-name put_20_days \
-    --timeout 80000 \
+    --timeout $WEBEAR__TIMEOUT \
     --spread-type put \
     --strike-distance 0.05 \
     --forward-days 20 \
