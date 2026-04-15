@@ -237,7 +237,7 @@ def main():
                     f"\t{info['is_active_str']}  {_tmp_str3}\n\n"
                 )
 
-                results.append((edge, result_str))
+                results.append((win_rate, result_str))
             else:
                 # Visualization mode - store structured data
                 results.append((win_rate, {
