@@ -872,21 +872,26 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     # ─────────────────────────────────────────────────────
     # OPTIONAL: Show ALL regimes summary if flag is set
     # ─────────────────────────────────────────────────────
-    if getattr(args, 'show_regime_stats', False):
-        print_all_regimes_summary(
-            _stats=_stats,
-            _n_clusters=_params['n_clusters'],
-            _spread_type=_metadata['spread_type'],
-            _strike_distance=_metadata['strike_distance'],
-            _forward_days=_metadata['forward_days']
-        )
+    print_all_regimes_summary(
+        _stats=_stats,
+        _n_clusters=_params['n_clusters'],
+        _spread_type=_metadata['spread_type'],
+        _strike_distance=_metadata['strike_distance'],
+        _forward_days=_metadata['forward_days']
+    )
 
     regime__2__otm = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
-    is_best = all(regime__2__otm[regime] >= v for v in regime__2__otm.values())
-    is_second = regime__2__otm[regime] == sorted(regime__2__otm.values())[-2]
-    is_third = regime__2__otm[regime] == sorted(regime__2__otm.values())[-3]
-    print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , [{is_best}/{is_second}/{is_third}]")
-
+    sorted_regime_desc = dict(sorted(regime__2__otm.items(), key=lambda item: item[1], reverse=True))
+    parts = []
+    for k, v in sorted_regime_desc.items():
+        formatted_val = f"{k}:{v:.1%}"
+        if k == regime:
+            parts.append(f"\033[1m**{formatted_val}**\033[0m")
+        else:
+            parts.append(formatted_val)
+    result_string = f"[{','.join(parts)}]"
+    print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , {result_string}")
+    print(f"🎯 Short Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price , forward {regime_stats['forward_days']} {regime_stats['dataset_id']}")
     print("\n" + "═" * 60)
     print("✨ INFERENCE COMPLETE")
     print("═" * 60 + "\n")
@@ -1568,10 +1573,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--real-time", action="store_true",
         help="Load saved model and run inference on latest data (skip optimization)"
-    )
-    parser.add_argument(
-        "--show-regime-stats", action="store_true",
-        help="When used with --real-time, display statistics for ALL regimes (not just the predicted one)"
     )
     # ─────────────────────────────────────────────────────
     # REGIME FILTERING OPTIONS (Real-Time Mode Only)
