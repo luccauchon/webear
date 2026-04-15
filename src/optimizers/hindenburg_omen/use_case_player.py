@@ -232,10 +232,10 @@ def main():
                     f"{BOLD}{GREEN}Win Rate: {info['win_rate']:.2f}%{RESET}   "
                     f"Baseline: {info['baseline']:.2f}%   ({info['total_events']} / {info['total_days']})"
                 )
-
+                estimated_due_date = f"{next_weekday(info['last_date'], int(prediction_days)).strftime('%Y-%m-%d')}"
                 result_str = (
-                    f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})  {next_weekday(info['last_date'], int(prediction_days))}\n"
-                    f"\t{info['is_active_str']}  {_tmp_str3}\n\n"
+                    f"{file.name} {info['last_date'].strftime('%Y-%m-%d')}  {_tmp_str} ({_tmp_str2})\n"
+                    f"\t{info['is_active_str']} [{estimated_due_date}] {_tmp_str3}\n\n"
                 )
 
                 results.append((win_rate, result_str))
