@@ -331,11 +331,11 @@ def main(args):
         low_col = ("Low", args.ticker)
         close_col = ("Close", args.ticker)
         volume_col = ("Volume", args.ticker)
-
+        master_data_cache = master_data_cache[args.ticker].sort_index().copy()
         # Add POS/NEG sequence columns
         assert args.epsilon >= 0.
         master_data_cache = add_sequence_columns_vectorized(
-            df=master_data_cache[args.ticker].sort_index(),
+            df=master_data_cache,
             col_name=close_col,
             ticker_name=args.ticker,
             epsilon=args.epsilon
