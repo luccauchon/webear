@@ -14,36 +14,36 @@ from utils import str2bool
 from  runners.VIX_realtime_and_backtest import main as VIX_realtime_and_backtest
 
 # ================================================================================
-# python .\VIX_hyperparameter_search_optuna.py --objective-name 2026_02_20__1pct_balanced --optimize-target iron_condor --timeout 200000 --step-back-range 999
+#
 # 🏆 Optimization Finished!
 #
-BEST_SCORE = 0.81581582
+BEST_SCORE = 0.886424
 TYPE_OF = "IRON_CONDOR"
 # Best Parameters:
-#     ema_short............................... 31
+#     ema_short............................... 12
 #     ema_long................................ 200
-#     sma_period.............................. 38
-#     rsi_period.............................. 6
-#     macd_fast_period........................ 8
-#     macd_slow_period........................ 20
-#     macd_signal_period...................... 6
+#     sma_period.............................. 24
+#     rsi_period.............................. 5
+#     macd_fast_period........................ 5
+#     macd_slow_period........................ 29
+#     macd_signal_period...................... 5
 #
 # ================================================================================
 
 def main(args):
     configuration = Namespace(
-        ticker='^GSPC', col='Close', look_ahead=1, dataset_id='day',
+        ticker='^GSPC', col='Close', look_ahead=20, dataset_id='day',
         step_back_range=0,
-        adj_call__ema=True, adj_put__ema=True, ema_short=31, ema_long=200, adj_call__ema_factor=1.01, adj_put__ema_factor=0.99,
-        adj_call__rsi=True, adj_put__rsi=True, rsi_period=6, adj_call__rsi_factor=1.01, adj_put__rsi_factor=0.99,
-        adj_call__macd=True, adj_put__macd=True, macd_fast_period=8, macd_slow_period=20, macd_signal_period=6, adj_call__macd_factor=1.01, adj_put__macd_factor=0.99,
+        adj_call__ema=True, adj_put__ema=True, ema_short=12, ema_long=200, adj_call__ema_factor=1.01, adj_put__ema_factor=0.99,
+        adj_call__rsi=True, adj_put__rsi=True, rsi_period=5, adj_call__rsi_factor=1.01, adj_put__rsi_factor=0.99,
+        adj_call__macd=True, adj_put__macd=True, macd_fast_period=5, macd_slow_period=29, macd_signal_period=5, adj_call__macd_factor=1.01, adj_put__macd_factor=0.99,
         verbose_arguments=False, verbose=False, verbose_results=True,
         put=False, call=False, iron_condor=True,
         use_directional_var=True,
         use_directional_var__vix3m=False,
         upper_side_scale_factor=1., lower_side_scale_factor=1.,
         adj_balanced=False, sharpen_x_side_scale_factor=False,
-        adj_call__sma=True, adj_call__sma_factor=1.01, adj_put__sma=True,  adj_put__sma_factor=0.99, sma_period=38,
+        adj_call__sma=True, adj_call__sma_factor=1.01, adj_put__sma=True,  adj_put__sma_factor=0.99, sma_period=24,
         adj_call_and_put__contango=True, adj_call_and_put__contango_factor=0.01
     )
     print("*" * 80, flush=True)
