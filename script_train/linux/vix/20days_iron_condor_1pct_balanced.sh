@@ -9,6 +9,6 @@ python VIX_hyperparameter_search_optuna.py \
     --timeout 200000 \
     --step-back-range 99999 \
     --look-ahead 20 \
-    --storage 20day_ic_vix.db \
-    --study-name sn_20day_ic_vix
+    --storage 20days_ic_vix.db \
+    --study-name sn_20days_ic_vix
 read
