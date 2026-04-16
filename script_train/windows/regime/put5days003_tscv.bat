@@ -6,7 +6,8 @@ python .\regime_switching_optimizer_tscv.py ^
 --forward-days 5 ^
 --dataset-id day ^
 --strike-distance 0.03 ^
---timeout 500000 ^
+--timeout 256000 ^
 --spread-type put ^
---storage-url sqlite:///put5days003_tscv.db
+--storage-url sqlite:///put5days003_tscv.db ^
+--study-name put5days003_tscv
 pause
