@@ -89,10 +89,6 @@ def entry(
         data_cache = {}
         for ticker in tqdm(tickers, desc="Daily"):
             data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
-            # if 0 == len(data):
-            #     print(f"WARNING: --> For {ticker} ,end date is yesterday")
-            #     data = yf.download(ticker, start=daily_start, end=(datetime.today() - timedelta(days=1)).strftime('%Y-%m-%d'),
-            #                        interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
             data_cache[ticker] = data
         with open(FYAHOO__OUTPUTFILENAME_DAY, 'wb') as f:
             pickle.dump(data_cache, f)
@@ -110,14 +106,23 @@ def entry(
         data_cache = {}
         for ticker in tqdm(tickers, desc="Weekly"):
             df = daily_data_cache[ticker]
-            resampled = df.resample('W-FRI').agg({
+            if ticker == '^VIX':
+                agg_logic = {
+                    ('Open', ticker): 'mean',
+                    ('High', ticker): 'mean',
+                    ('Low', ticker): 'mean',
+                    ('Close', ticker): 'mean',
+                    ('Volume', ticker): 'sum'
+                }
+                data_cache['^VIX_MEAN'] = df.resample('ME').agg(agg_logic).copy()
+            agg_logic = df.resample('W-FRI').agg({
                 ('Open', ticker): 'first',
                 ('High', ticker): 'max',
                 ('Low', ticker): 'min',
                 ('Close', ticker): 'last',
                 ('Volume', ticker): 'sum'
-            })
-            data_cache[ticker] = resampled
+            }).copy()
+            data_cache[ticker] = agg_logic
         with open(FYAHOO__OUTPUTFILENAME_WEEK, 'wb') as f:
             pickle.dump(data_cache, f)
         print(f"Weekly data saved to {FYAHOO__OUTPUTFILENAME_WEEK}")
@@ -129,13 +134,22 @@ def entry(
         data_cache = {}
         for ticker in tqdm(tickers, desc="Monthly"):
             df = daily_data_cache[ticker]
+            if ticker == '^VIX':
+                agg_logic = {
+                    ('Open', ticker): 'mean',
+                    ('High', ticker): 'mean',
+                    ('Low', ticker): 'mean',
+                    ('Close', ticker): 'mean',
+                    ('Volume', ticker): 'sum'
+                }
+                data_cache['^VIX_MEAN'] = df.resample('ME').agg(agg_logic).copy()
             resampled = df.resample('ME').agg({
                 ('Open', ticker): 'first',
                 ('High', ticker): 'max',
                 ('Low', ticker): 'min',
                 ('Close', ticker): 'last',
                 ('Volume', ticker): 'sum'
-            })
+            }).copy()
             data_cache[ticker] = resampled
         with open(FYAHOO__OUTPUTFILENAME_MONTH, 'wb') as f:
             pickle.dump(data_cache, f)
