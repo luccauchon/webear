@@ -4,9 +4,9 @@ cd ..\..\..\src\optimizers\regime
 python .\regime_switching_optimizer_tscv.py ^
 --lookback-years 99999 ^
 --forward-days 4 ^
---dataset_id week ^
+--dataset-id week ^
 --strike-distance 0.05 ^
 --timeout 500000 ^
 --spread-type put ^
---storage-url sqlite:///put4weeks005_tscv.db ^
+--storage-url sqlite:///put4weeks005_tscv.db
 pause
