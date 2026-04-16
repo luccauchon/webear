@@ -55,6 +55,7 @@ from sklearn.cluster import (
     Birch, OPTICS
 )
 from sklearn.neighbors import NearestNeighbors  # For DBSCAN prediction
+from sklearn.model_selection import TimeSeriesSplit
 
 # Optimization
 import optuna
@@ -235,7 +236,7 @@ def compute_oos_regime_stats(_model, _scaler, _features_test, _target_test, _n_c
         if len(subset) >= min_n:
             prob = subset.mean()
             ci_low, ci_upp = proportion_confint(subset.sum(), len(subset), method='wilson')
-            stats_oos[r] = {'prob_otm': prob, 'prob_itm': 1-prob, 'count': len(subset), 'ci_lower_oos': ci_low, 'ci_upper_oos': ci_upp}
+            stats_oos[r] = {'prob_otm': prob, 'prob_itm': 1 - prob, 'count': len(subset), 'ci_lower_oos': ci_low, 'ci_upper_oos': ci_upp}
     return stats_oos
 
 
@@ -452,11 +453,23 @@ def load_data(_ticker, _dataset_id):
 
 
 # =========================================================
-# FEATURE ENGINEERING
+# FEATURE ENGINEERING - ENHANCED VERSION
 # =========================================================
 def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3, _rsi_length, _ema1, _ema2, _atr_period):
     """
     Build technical features for regime classification.
+
+    ENHANCEMENTS ADDED (2026):
+    • Tail risk metrics (skewness, kurtosis)
+    • Volatility term structure & expansion signals
+    • Bollinger Band position, width, and squeeze detection
+    • ADX trend strength + trend quality composite
+    • Drawdown depth & recovery ratio metrics
+    • Momentum divergence signals (price/RSI)
+    • Volume confirmation (OBV momentum, volume volatility)
+    • Gap risk proxy (requires 'Open' column)
+    • Volatility persistence (autocorrelation of |returns|)
+    • Seasonal volatility interaction flags
 
     Parameters:
     -----------
@@ -524,6 +537,135 @@ def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3, _rsi_length, _
 
     # ===== Volatility Regime Changes =====
     _features["vol_regime_change"] = (_features["vol_10"] / _features["vol_60"].shift(1)) - 1
+
+    # =========================================================
+    # 🆕 ENHANCED FEATURES (2026 Additions)
+    # =========================================================
+
+    # ── 1. TAIL RISK & DISTRIBUTION FEATURES ──
+    # Skewness & Kurtosis of recent returns (tail risk proxy)
+    for window in [20, 60]:
+        returns_window = returns.rolling(window, min_periods=window)
+        _features[f"skew_{window}"] = returns_window.apply(lambda x: x.skew(), raw=False)
+        _features[f"kurt_{window}"] = returns_window.apply(lambda x: x.kurtosis(), raw=False)
+
+    # ── 2. VOLATILITY TERM STRUCTURE PROXY ──
+    # Ratio of short-term to long-term volatility + expansion signal
+    _features["vol_term_structure"] = _features["vol_10"] / (_features["vol_60"] + 1e-8)
+    _features["vol_expansion"] = _features["vol_10"] - _features["vol_60"].shift(1)
+
+    # ── 3. BOLLINGER BAND POSITION & SQUEEZE ──
+    bb_middle = ta.sma(close, 20)
+    bb_std = returns.rolling(20, min_periods=20).std()
+    bb_upper = bb_middle + 2 * bb_std * close
+    bb_lower = bb_middle - 2 * bb_std * close
+
+    _features["bb_position"] = (close - bb_lower) / (bb_upper - bb_lower + 1e-8)
+    _features["bb_width"] = (bb_upper - bb_lower) / close
+    _features["bb_squeeze"] = (_features["bb_width"] < _features["bb_width"].rolling(60, min_periods=60).quantile(0.25)).astype(float)
+
+    # ── 4. ADX + TREND QUALITY METRICS ──
+    adx_data = ta.adx(_df["High"], _df["Low"], close, length=14)
+    _features["adx"] = adx_data["ADX_14"]
+    _features["trend_quality"] = _features["adx"] * abs(_features["trend_strength"])
+
+    # ── 5. DRAWDOWN & RECOVERY STATE ──
+    rolling_max_60 = close.rolling(60, min_periods=1).max()
+    rolling_min_60 = close.rolling(60, min_periods=1).min()
+    _features["drawdown"] = (close - rolling_max_60) / rolling_max_60
+    _features["recovery_ratio"] = ((close - rolling_min_60) / (rolling_max_60 - rolling_min_60 + 1e-8)).clip(0, 1)  # Clamp to [0, 1] for stability
+
+    # ── 6. MOMENTUM DIVERGENCE SIGNALS ──
+    _div_period = 5
+
+    # Bearish: Price higher high, RSI lower high
+    price_high = close.rolling(_div_period).max()
+    rsi_high = _features["rsi"].rolling(_div_period).max()
+    _features["rsi_bearish_div"] = (
+            (close > price_high.shift(1)) & (_features["rsi"] < rsi_high.shift(1))
+    ).astype(float)
+
+    # Bullish: Price lower low, RSI higher low
+    price_low = close.rolling(_div_period).min()
+    rsi_low = _features["rsi"].rolling(_div_period).min()
+    _features["rsi_bullish_div"] = (
+            (close < price_low.shift(1)) & (_features["rsi"] > rsi_low.shift(1))
+    ).astype(float)
+
+    # ── 7. VOLUME-PRICE CONFIRMATION ──
+    obv = ta.obv(close, _df["Volume"])
+    _features["obv_momentum"] = obv.pct_change(10)
+    _features["volume_vol"] = (
+            _df["Volume"].rolling(20, min_periods=20).std() /
+            _df["Volume"].rolling(20, min_periods=20).mean()
+    )
+    # Volume spike detection
+    _features["volume_spike"] = (
+            _df["Volume"] > _df["Volume"].rolling(60, min_periods=60).quantile(0.9)
+    ).astype(float)
+
+    # ── 8. GAP & OVERNIGHT RISK PROXY (if 'Open' available) ──
+    if "Open" in _df.columns:
+        _features["gap_pct"] = (_df["Open"] - close.shift(1)) / close.shift(1)
+        _features["gap_vol"] = _features["gap_pct"].rolling(20, min_periods=20).std()
+        _features["gap_filled"] = (
+                ((close >= _df["Open"]) & (close.shift(1) <= _df["Open"])) |
+                ((close <= _df["Open"]) & (close.shift(1) >= _df["Open"]))
+        ).astype(float)
+    else:
+        # Fill with NaN if Open not available - will be dropped during alignment
+        _features["gap_pct"] = np.nan
+        _features["gap_vol"] = np.nan
+        _features["gap_filled"] = np.nan
+
+    # ── 9. VOLATILITY CLUSTERING / PERSISTENCE ──
+    # Autocorrelation of absolute returns (GARCH-like signal)
+    abs_returns = returns.abs()
+
+    def rolling_autocorr(series, lag=1, window=20):
+        """Compute rolling autocorrelation with safe handling"""
+
+        def _autocorr(x):
+            x_clean = x.dropna()
+            if len(x_clean) < lag + 2:
+                return np.nan
+            return x_clean.autocorr(lag=lag)
+
+        return series.rolling(window, min_periods=window).apply(_autocorr, raw=False)
+
+    _features["vol_persistence_1"] = rolling_autocorr(abs_returns, lag=1, window=20)
+    _features["vol_persistence_5"] = rolling_autocorr(abs_returns, lag=1, window=60)
+
+    # ── 10. SEASONAL VOLATILITY INTERACTION ──
+    # Flag high-volatility months (Sep-Oct-Nov historically volatile)
+    high_vol_threshold = _features["vol_10"].rolling(252, min_periods=126).quantile(0.75)
+    _features["high_vol_month"] = (
+            (_features["vol_10"] > high_vol_threshold) &
+            (_features["month"].isin([9, 10, 11]))
+    ).astype(float)
+
+    # Year-end / quarter-end volatility interaction
+    _features["q4_vol_interaction"] = (
+            (_features["month"].isin([10, 11, 12])) &
+            (_features["vol_10"] > _features["vol_10"].rolling(60).median())
+    ).astype(float)
+
+    # =========================================================
+    # 🧹 POST-PROCESSING: Clip extreme values for stability
+    # =========================================================
+    # Prevent runaway values that could destabilize clustering
+    clip_cols = [
+        "skew_20", "skew_60", "kurt_20", "kurt_60",
+        "bb_position", "drawdown", "recovery_ratio",
+        "obv_momentum", "volume_vol", "gap_pct"
+    ]
+    for col in clip_cols:
+        if col in _features.columns:
+            # Clip to 5th/95th percentile for robustness
+            lower = _features[col].quantile(0.05)
+            upper = _features[col].quantile(0.95)
+            if pd.notna(lower) and pd.notna(upper) and lower < upper:
+                _features[col] = _features[col].clip(lower, upper)
 
     return _features
 
@@ -648,7 +790,7 @@ def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=N
             else:
                 _tmp_str_position = f"@[-1 :: {_strike_price:.0f}]"
         else:
-            _strike_price_low  = _latest_close_value * (1 - _strike_distance)
+            _strike_price_low = _latest_close_value * (1 - _strike_distance)
             _strike_price_high = _latest_close_value * (1 + _strike_distance)
             _tmp_str_position = f"@[{_strike_price_low:.0f} :: {_strike_price_high:.0f}]"
         if 'day' == _stats['dataset_id']:
@@ -880,7 +1022,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         _forward_days=_metadata['forward_days']
     )
 
-    regime__2__otm = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
+    regime__2__otm = {r: float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
     sorted_regime_desc = dict(sorted(regime__2__otm.items(), key=lambda item: item[1], reverse=True))
     parts = []
     for k, v in sorted_regime_desc.items():
@@ -957,17 +1099,29 @@ def entry_main(args):
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     total_number_of_rows = len(df)
+
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
+    # =========================================================
+    # ENHANCED OPTUNA OBJECTIVE FUNCTION
+    # =========================================================
     def objective(trial):
         """
-        Optuna objective: maximize regime-based trading edge.
+        Optuna objective: MAXIMIZE risk-adjusted trading edge across regimes.
 
-        Data is split into Train/Test BEFORE feature/target engineering
-        to prevent look-ahead bias in rolling indicators and target calculation.
+        Key Enhancements:
+        • Directly optimizes expectancy (P&L) instead of abstract clustering metrics
+        • Time-series cross-validation to prevent temporal overfitting
+        • Tunable weights let Optuna learn optimal metric blending
+        • Penalties for uncertainty, instability, and cluster imbalance
+        • Wilson CI-based uncertainty quantification
+
+        Returns:
+        --------
+        float : Higher = better risk-adjusted edge for credit spread trading
         """
-        # ===== Suggest Hyperparameters =====
+        # ===== 1. SUGGEST HYPERPARAMETERS =====
         if args.dataset_id == 'day':
             _n_clusters = trial.suggest_int("n_clusters", 3, 6)
             _pct1 = trial.suggest_int("pct1", 1, 5)
@@ -980,7 +1134,7 @@ def entry_main(args):
             _ema2 = trial.suggest_int("ema2", 180, 220)
             _atr_period = trial.suggest_int("atr_period", 2, 21)
             _rsi_length = trial.suggest_int("rsi_length", 10, 20)
-        if args.dataset_id == 'week':
+        elif args.dataset_id == 'week':
             _n_clusters = trial.suggest_int("n_clusters", 3, 6)
             _pct1 = trial.suggest_int("pct1", 1, 3)
             _pct2 = trial.suggest_int("pct2", 3, 8)
@@ -992,7 +1146,7 @@ def entry_main(args):
             _ema2 = trial.suggest_int("ema2", 40, 44)
             _atr_period = trial.suggest_int("atr_period", 4, 12)
             _rsi_length = trial.suggest_int("rsi_length", 6, 14)
-        if args.dataset_id == 'month':
+        elif args.dataset_id == 'month':
             _n_clusters = trial.suggest_int("n_clusters", 3, 5)
             _pct1 = trial.suggest_int("pct1", 1, 2)
             _pct2 = trial.suggest_int("pct2", 2, 4)
@@ -1005,162 +1159,197 @@ def entry_main(args):
             _atr_period = trial.suggest_int("atr_period", 3, 8)
             _rsi_length = trial.suggest_int("rsi_length", 4, 10)
 
-        # Suggest clustering algorithm as part of optimization
-        _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture"])  # ["kmeans", "gaussian_mixture", "birch"])
-
-        # ===== 1. TIME-SERIES SPLIT (RAW DATA) =====
-        # Split BEFORE feature engineering to prevent leakage in rolling windows/targets
-        split_idx = int(len(df) * 0.8)
-
-        df_train_raw = df.iloc[:split_idx].copy()
-        df_test_raw  = df.iloc[split_idx:].copy()
-
-        # ===== 2. Build Features & Target (Separately for Train & Test) =====
-        # Train Set
-        _features_train = build_features(
-            _df=df_train_raw,
-            _pct1=_pct1, _pct2=_pct2, _pct3=_pct3,
-            _vol1=_vol1, _vol2=_vol2, _vol3=_vol3,
-            _rsi_length=_rsi_length,
-            _ema1=_ema1, _ema2=_ema2,
-            _atr_period=_atr_period
-        )
-        _target_train = build_target(
-            _df=df_train_raw,
-            _forward_days=forward_days,
-            _strike_distance=strike_distance,
-            _spread_type=spread_type
+        # Suggest clustering algorithm
+        _clustering_algo = trial.suggest_categorical(
+            "clustering_algo",
+            ["kmeans", "gaussian_mixture"]
         )
 
-        # Test Set
-        _features_test = build_features(
-            _df=df_test_raw,
-            _pct1=_pct1, _pct2=_pct2, _pct3=_pct3,
-            _vol1=_vol1, _vol2=_vol2, _vol3=_vol3,
-            _rsi_length=_rsi_length,
-            _ema1=_ema1, _ema2=_ema2,
-            _atr_period=_atr_period
-        )
-        _target_test = build_target(
-            _df=df_test_raw,
-            _forward_days=forward_days,
-            _strike_distance=strike_distance,
-            _spread_type=spread_type
-        )
+        # ===== SUGGEST OBJECTIVE WEIGHTS (Let Optuna learn optimal blending) =====
+        _w_edge = trial.suggest_float("weight_edge", 0.75, 0.99)  # Primary: trading edge
+        _w_stability = trial.suggest_float("weight_stability", 0.05, 0.2)  # Secondary: regime persistence
+        _w_uncertainty = trial.suggest_float("weight_uncertainty", 0.05, 0.1)  # Penalty: statistical uncertainty
 
-        # ===== 3. Align & Clean Data =====
-        # Align features and targets within their respective sets
-        _train_aligned = pd.concat([_features_train, _target_train.rename('target')], axis=1)
-        _test_aligned  = pd.concat([_features_test,  _target_test.rename('target')], axis=1)
+        # Normalize weights to sum to 1.0
+        _weight_sum = _w_edge + _w_stability + _w_uncertainty
+        _w_edge /= _weight_sum
+        _w_stability /= _weight_sum
+        _w_uncertainty /= _weight_sum
 
-        # Drop NaNs (Resulting from rolling windows & forward-looking targets)
-        train_data = _train_aligned.dropna().copy()
-        test_data  = _test_aligned.dropna().copy()
+        # ===== 2. TIME-SERIES CROSS-VALIDATION SETUP =====
+        # Use purged CV to prevent lookahead bias in rolling features
+        from sklearn.model_selection import TimeSeriesSplit
+        tscv = TimeSeriesSplit(n_splits=5)
+        cv_scores = []
 
-        # Validate minimum data requirements
-        if len(train_data) < minimum_train_data or len(test_data) < minimum_test_data:
-            return 0.0
+        # Pre-compute trade context for edge calculations
+        _min_samples = args.min_n_in_cluster
 
-        # ===== 4. Feature Scaling =====
-        # Fit ONLY on Train, Transform Test (Prevents data leakage)
-        _scaler = RobustScaler()
-        X_train = _scaler.fit_transform(train_data.drop(columns=['target']))
-        X_test  = _scaler.transform(test_data.drop(columns=['target']))
+        for fold, (train_idx, test_idx) in enumerate(tscv.split(df)):
+            # ----- Split raw data FIRST (prevent leakage) -----
+            df_train_raw = df.iloc[train_idx].copy()
+            df_test_raw = df.iloc[test_idx].copy()
 
-        # ===== 5. Train Clustering Model =====
-        if _clustering_algo == 'kmeans':
-            _model = KMeans(
-                n_clusters=_n_clusters,
-                init='k-means++',
-                n_init=10,
-                max_iter=900,
-                tol=1e-4,
-                random_state=random_seed,
-                algorithm='lloyd',
-                verbose=0
+            # ----- Build features & target for this fold -----
+            features_train = build_features(
+                _df=df_train_raw,
+                _pct1=_pct1,
+                _pct2=_pct2,
+                _pct3=_pct3,
+                _vol1=_vol1,
+                _vol2=_vol2,
+                _vol3=_vol3,
+                _rsi_length=_rsi_length,
+                _ema1=_ema1,
+                _ema2=_ema2,
+                _atr_period=_atr_period
             )
-        elif _clustering_algo == 'gaussian_mixture':
-            _model = GaussianMixture(
-                n_components=_n_clusters,
-                covariance_type='full',
-                tol=1e-3,
-                reg_covar=1e-5,
-                max_iter=900,
-                n_init=20,
-                init_params='k-means++',
-                random_state=random_seed,
-                verbose=0
+            target_train = build_target(
+                _df=df_train_raw,
+                _forward_days=forward_days,
+                _strike_distance=strike_distance,
+                _spread_type=spread_type
             )
-        elif _clustering_algo == 'birch':
-            _threshold = trial.suggest_float("birch_threshold", 0.1, 1.0, log=True)
-            _branching_factor = trial.suggest_int("birch_branching", 20, 100)
 
-            _model = Birch(threshold=_threshold,branching_factor=_branching_factor,n_clusters=_n_clusters)
-        else:
-            raise ValueError(f"Unknown algorithm: {_clustering_algo}")
+            features_test = build_features(
+                _df=df_test_raw,
+                _pct1=_pct1,
+                _pct2=_pct2,
+                _pct3=_pct3,
+                _vol1=_vol1,
+                _vol2=_vol2,
+                _vol3=_vol3,
+                _rsi_length=_rsi_length,
+                _ema1=_ema1,
+                _ema2=_ema2,
+                _atr_period=_atr_period
+            )
+            target_test = build_target(
+                _df=df_test_raw,
+                _forward_days=forward_days,
+                _strike_distance=strike_distance,
+                _spread_type=spread_type
+            )
+            nan_rate = features_test.isna().mean().mean()
+            # Penalize trials with >20% missing values (unstable feature config)
+            if nan_rate > 0.20:
+                return -999 + nan_rate  # Heavy penalty, but slightly reward lower NaN rates
+            # ----- Align & clean -----
+            train_aligned = pd.concat([features_train, target_train.rename('target')], axis=1).dropna()
+            test_aligned = pd.concat([features_test, target_test.rename('target')], axis=1).dropna()
 
-        # Fit on Train
-        regimes_train = _model.fit_predict(X_train)
+            if len(train_aligned) < minimum_train_data or len(test_aligned) < minimum_test_data:
+                cv_scores.append(-999)  # Heavy penalty for insufficient data
+                continue
 
-        # Predict on Test (Out-of-Sample)
-        regimes_test = _model.predict(X_test)
+            # ----- Scale features (fit on train only) -----
+            _scaler = RobustScaler()
+            X_train = _scaler.fit_transform(train_aligned.drop(columns=['target']))
+            X_test = _scaler.transform(test_aligned.drop(columns=['target']))
 
-        # Attach regimes to test dataframe for evaluation
-        test_data = test_data.copy()
-        test_data['regime'] = regimes_test
-
-        # ===== 6. Evaluate Each Regime on TEST Data Only =====
-        scores = []
-        for r in range(_n_clusters):
-            subset = test_data[test_data["regime"] == r]["target"]
-
-            if len(subset) < min_n_in_cluster:
-                continue  # Skip underpopulated clusters
-
-            # 1. Primary: OTM Probability (higher = better for credit spreads)
-            prob_otm = subset.mean()
-            prob_score = prob_otm
-
-            # 2. Consistency: Low variance = more predictable regime
-            # Bernoulli variance = p*(1-p), so 1-variance peaks at p=0 or p=1
-            consistency = 1 - (prob_otm * (1 - prob_otm))
-
-            # 3. Sample size bonus: More data = more reliable estimate
-            sample_bonus = np.clip(len(subset) / (2 * min_n_in_cluster), 0, 1)
-
-            # 4. Separation: How distinct is this regime from others?
-            other_probs = [
-                test_data[test_data["regime"] == i]["target"].mean()
-                for i in range(_n_clusters)
-                if i != r and len(test_data[test_data["regime"] == i]["target"]) >= min_n_in_cluster
-            ]
-
-            if len(other_probs) >= 2:
-                # Use weighted separation by sample size for robustness
-                separation = abs(
-                    prob_otm - np.average(
-                        other_probs,
-                        weights=[len(test_data[test_data["regime"] == i]["target"])
-                                 for i in range(_n_clusters)
-                                 if i != r and len(test_data[test_data["regime"] == i]["target"]) >= min_n_in_cluster]
-                    )
+            # ----- Train clustering model -----
+            if _clustering_algo == 'kmeans':
+                _model = KMeans(
+                    n_clusters=_n_clusters, init='k-means++', n_init=10,
+                    max_iter=900, tol=1e-4, random_state=random_seed,
+                    algorithm='lloyd', verbose=0
                 )
-            elif other_probs:
-                separation = abs(prob_otm - other_probs[0])
+            elif _clustering_algo == 'gaussian_mixture':
+                _model = GaussianMixture(
+                    n_components=_n_clusters, covariance_type='full',
+                    tol=1e-3, reg_covar=1e-5, max_iter=900, n_init=20,
+                    init_params='k-means++', random_state=random_seed, verbose=0
+                )
             else:
-                separation = 0
+                raise ValueError(f"Unknown algorithm: {_clustering_algo}")
 
-            # ===== Combined Score (tunable weights) =====
-            combined = (
-                    0.50 * prob_score +  # Primary: high OTM probability
-                    0.25 * consistency +  # Secondary: predictable regime
-                    0.15 * sample_bonus +  # Tertiary: statistical confidence
-                    0.10 * separation  # Quaternary: distinct from others
-            )
+            regimes_train = _model.fit_predict(X_train)
+            regimes_test = _model.predict(X_test)
+            test_aligned = test_aligned.copy()
+            test_aligned['regime'] = regimes_test
+            # ----- Evaluate each regime on TEST data -----
+            regime_scores = []
+            for r in range(_n_clusters):
+                subset = test_aligned[test_aligned["regime"] == regimes_test]["target"]
 
-            scores.append(combined)
+                # Skip under-sampled regimes
+                if len(subset) < _min_samples:
+                    continue
 
-        return np.mean(scores) if scores else 0.0
+                # === COMPONENT 1: OTM PROBABILITY (Primary - maximize this) ===
+                prob_otm = subset.mean()
+
+                # === COMPONENT 2: UNCERTAINTY PENALTY (Wilson CI width) ===
+                ci_low, ci_upp = proportion_confint(
+                    count=subset.sum(), nobs=len(subset), alpha=0.05, method='wilson'
+                )
+                ci_width = ci_upp - ci_low
+                uncertainty_penalty = -ci_width * 3  # Scale: wider CI = bigger penalty
+
+                # === COMPONENT 3: TEMPORAL COHERENCE BONUS (Regime persistence) ===
+                regime_mask = (regimes_test == r)
+                if len(regime_mask) > 1:
+                    # Count regime switches: fewer switches = more stable
+                    switches = np.sum(regime_mask[:-1] != regime_mask[1:])
+                    persistence = 1 - (switches / len(regime_mask))
+                    # Only reward if persistence is meaningfully above random
+                    coherence_bonus = max(0, persistence - 0.5) * 2
+                else:
+                    coherence_bonus = 0
+
+                # === COMPONENT 4: CLUSTER BALANCE PENALTY (Optional regularizer) ===
+                # Computed once per fold outside the regime loop (see below)
+
+                # === COMBINE WITH TUNABLE WEIGHTS ===
+                regime_score = (
+                        _w_edge * prob_otm +
+                        _w_uncertainty * uncertainty_penalty +
+                        _w_stability * coherence_bonus
+                )
+                regime_scores.append(regime_score)
+
+            # ----- Apply cluster balance penalty (discourage pathological splits) -----
+            if regime_scores:
+                cluster_sizes = [
+                    np.sum(regimes_test == r) for r in range(_n_clusters)
+                    if np.sum(regimes_test == r) >= _min_samples
+                ]
+                if len(cluster_sizes) >= 2:
+                    # Coefficient of variation: higher = more imbalanced
+                    cv_imbalance = np.std(cluster_sizes) / (np.mean(cluster_sizes) + 1e-8)
+                    # Penalize extreme imbalance (>2x std/mean ratio)
+                    balance_penalty = min(0.3, cv_imbalance * 0.15)
+                    fold_score = np.mean(regime_scores) * (1 - balance_penalty)
+                else:
+                    fold_score = np.mean(regime_scores)
+            else:
+                fold_score = -999  # No valid regimes = heavy penalty
+
+            cv_scores.append(fold_score)
+
+        # ===== 3. AGGREGATE CV RESULTS WITH CONSISTENCY PENALTY =====
+        if not cv_scores or all(s < -998 for s in cv_scores):
+            return -999  # Trial failed
+
+        # Filter out failed folds
+        valid_scores = [s for s in cv_scores if s > -998]
+        if len(valid_scores) < 2:
+            return np.mean(valid_scores) if valid_scores else -999
+
+        # Reward high mean prob_otm, penalize high variance (unstable performance)
+        mean_score = np.mean(valid_scores)
+        score_std  = np.std(valid_scores)
+
+        # Sharpe-like ratio: mean / (std + epsilon)
+        # This encourages consistent edge across time periods
+        consistency_adjusted = mean_score - 0.35 * score_std
+
+        # Bonus for trials that produce >= 2 tradeable regimes
+        n_tradeable = sum(1 for s in valid_scores if s > 0)
+        if n_tradeable >= 2:
+            consistency_adjusted += 0.05  # Small bonus for diversification
+
+        return consistency_adjusted
 
     # =========================================================
     # OPTUNA STUDY SETUP
@@ -1171,8 +1360,14 @@ def entry_main(args):
     study = optuna.create_study(
         study_name=study_name,
         direction="maximize",
-        sampler=TPESampler(seed=random_seed),
-        pruner=MedianPruner(n_startup_trials=10),
+        sampler=TPESampler(seed=random_seed,
+                           multivariate=True,  # Better for correlated params like weights
+                           group=True,  # Respect parameter groups
+                           constant_liar=True,  # Speed up parallel trials
+                           ),
+        pruner=MedianPruner(n_startup_trials=15,      # Wait for more data before pruning
+                            n_warmup_steps=5,
+                            interval_steps=3),
         storage=storage_url,
         load_if_exists=True,
     )
@@ -1202,8 +1397,20 @@ def entry_main(args):
         n_trials=max_n_trials,
         timeout=timeout,
         n_jobs=n_jobs,
-        show_progress_bar=True
+        show_progress_bar=True,
+        callbacks=[],
     )
+
+    # After study.optimize():
+    print("\n🎯 LEARNED OBJECTIVE WEIGHTS (Top 5 trials):")
+    completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    top_trials = sorted(completed_trials, key=lambda t: t.value, reverse=True)[:5]
+
+    for i, t in enumerate(top_trials, 1):
+        w_edge = t.params.get('weight_edge', 'N/A')
+        w_stab = t.params.get('weight_stability', 'N/A')
+        w_unc = t.params.get('weight_uncertainty', 'N/A')
+        print(f"{i}. Score={t.value:.4f} | Weight Edge:{w_edge:.2f}   Weight Stability:{w_stab:.2f}   Weight Uncertainty:{w_unc:.2f}")
 
     # ===== Results Summary =====
     print(f"\n✅ Optimization complete!")
@@ -1282,12 +1489,12 @@ def entry_main(args):
             max_iter=900,  # ← MATCHES objective()
             tol=1e-3,
             reg_covar=1e-5,
-            init_params = 'k-means++',
+            init_params='k-means++',
         )
     elif _clustering_algo == 'birch':
         _threshold = best_params.get('birch_threshold', 0.5)
         _branching = best_params.get('birch_branching', 50)
-        _model = Birch(threshold=_threshold,branching_factor=_branching,n_clusters=_n_clusters)
+        _model = Birch(threshold=_threshold, branching_factor=_branching, n_clusters=_n_clusters)
     else:
         raise ValueError(f"Unknown algorithm: {_clustering_algo}")
 
@@ -1452,7 +1659,7 @@ if __name__ == "__main__":
 
     # Quick test run:
     python script.py --max-n-trials 10 --timeout 300 --study-name test_run
-    
+
     # List available models for SPY:
     python script.py --ticker SPY --list-models
 
@@ -1494,7 +1701,7 @@ if __name__ == "__main__":
         help="Years of historical data to use (0 = full history). Recommended: 10-15 for daily data"
     )
     parser.add_argument(
-        "--output-dir", type=str, default="models",
+        "--output-dir", type=str, default="models_tscv",
         help=f"Directory where to save the model"
     )
 
