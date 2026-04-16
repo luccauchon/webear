@@ -4,7 +4,7 @@ cd ..\..\..\src\optimizers\regime
 python .\regime_switching_optimizer_tscv.py ^
 --lookback-years 99999 ^
 --forward-days 5 ^
---dataset-id week ^
+--dataset-id day ^
 --strike-distance 0.03 ^
 --timeout 500000 ^
 --spread-type put ^
