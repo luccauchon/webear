@@ -128,7 +128,7 @@ def parse_arguments():
         help="Strategy for iterating through feature combinations."
     )
     model_grp.add_argument(
-        "--max-random-iterations", "-mri", type=int, default=33333,
+        "--max-random-iterations", "-mri", type=int, default=99999,
         help="Maximum number of feature sets to evaluate when --training-mode is 'random'."
     )
 
