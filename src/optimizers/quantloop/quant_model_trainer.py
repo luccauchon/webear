@@ -166,7 +166,7 @@ def parse_arguments():
     return args
 
 
-def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi_lag, _look_head_for_prediction, _percentage_of_type_target, _type_of_target):
+def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi_lag, _look_head_for_prediction, _percentage_of_type_target, _type_of_target, _verbose):
     # 3. Création de Features Macro (Lags et Variations)
     _df_macro['Spread_10Y2Y'] = _df_macro['T10Y2Y'].shift(1)
     _df_macro['Fed_Rate_Diff'] = _df_macro['FEDFUNDS'].diff().shift(1)
@@ -198,7 +198,8 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
 
     monthly['Log_Close'] = np.log(monthly['Close'])
     monthly['Dist_from_ATH'] = (monthly['Close'] / monthly['Close'].cummax()) - 1
-    print(f"Dates in DF (before target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
+    if _verbose:
+        print(f"Dates in DF (before target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
 
     # --- Cible (Target) ---
     # Cast to int to ensure pandas shift() works correctly
@@ -224,6 +225,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         assert False, f"{_type_of_target}"
 
     monthly = monthly.dropna().copy()
+    print(f"Dates in DF (after target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
     return monthly
 
 
@@ -289,7 +291,7 @@ def entry_point(args):
         _rsi_window=rsi_window, _vix_lag=vix_lag, _rsi_lag=rsi_lag,
         _look_head_for_prediction=look_head_for_prediction,
         _percentage_of_type_target=percentage_of_type_target,
-        _type_of_target=type_of_target
+        _type_of_target=type_of_target, _verbose = args.verbose,
     )
 
     total_combinations = (2 ** len(features)) - 1
@@ -297,7 +299,6 @@ def entry_point(args):
         print(f"Nombre de features disponibles : {len(features)}")
         print(f"Total des combinaisons de features possibles : {total_combinations:,}  \n"
               f"Features: {features}")
-        print(f"Dates in DF (after target dropna):  {df.index[0].strftime('%Y-%m-%d')} :: {df.index[-1].strftime('%Y-%m-%d')}")
         print(f"N test: {n_test}   Target: {type_of_target} , {percentage_of_type_target}   Look Ahead: {look_head_for_prediction}   Scaler: {my_scaler.__name__}   "
               f"Estimator: {the_estimator.__name__}   Scorer: {the_scorer}   Training: {training_mode}")
 
@@ -420,7 +421,7 @@ def entry_point(args):
                 print("\n" + "═" * 60)
                 print(f"🎯 Best Parameters")
                 print("═" * 60)
-                print(f"Features: {selected_features}")
+                print(f"Features: {selected_features}   Scaler:{my_scaler}")
                 print(f"Meilleurs paramètres : {random_search.best_params_}")
                 print(f"{the_scorer} sur la période de test finale : {final_score:.2%}\n"
                       f"y    : {y_test_final.values}\n"
