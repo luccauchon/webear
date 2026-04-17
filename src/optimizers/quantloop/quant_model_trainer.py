@@ -19,7 +19,7 @@ import time
 import numpy as np
 import pandas as pd
 import warnings
-from sklearn.exceptions import ConvergenceWarning
+from sklearn.exceptions import ConvergenceWarning, EfficiencyWarning
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
@@ -123,12 +123,12 @@ def parse_arguments():
         help="Metric used for hyperparameter optimization and evaluation."
     )
     model_grp.add_argument(
-        "--training-mode", "-tm", type=str, default="exhaustive",
+        "--training-mode", "-tm", type=str, default="random",
         choices=["exhaustive", "random"],
         help="Strategy for iterating through feature combinations."
     )
     model_grp.add_argument(
-        "--max-random-iterations", "-mri", type=int, default=999999,
+        "--max-random-iterations", "-mri", type=int, default=33333,
         help="Maximum number of feature sets to evaluate when --training-mode is 'random'."
     )
 
@@ -369,11 +369,11 @@ def entry_point(args):
             }
         elif the_estimator == svm.LinearSVC:
             param_dist = {
-                'C': [0.01, 0.1, 1, 10, 100],
+                'C': [0.001, 0.01, 0.1, 1, 5, 10, 50, 100, 500, 1000],
                 'penalty': ['l2'],
                 'loss': ['hinge', 'squared_hinge'],
-                'tol': [1e-4, 1e-3],
-                'max_iter': [2000]
+                'tol': [1e-4, 1e-3, 1e-2],
+                'max_iter': [2000, 4000]
             }
         elif the_estimator == RandomForestClassifier:
             param_dist = {
