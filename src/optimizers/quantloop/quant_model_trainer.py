@@ -106,8 +106,8 @@ def parse_arguments():
     # ─────────────────────────────────────────────────────────────────────────
     model_grp = parser.add_argument_group("Model & Training Configuration")
     model_grp.add_argument(
-        "--scaler", "-s", type=str, default="RobustScaler",
-        choices=["RobustScaler", "StandardScaler"],
+        "--scaler", "-s", type=str, default="FunctionTransformer",
+        choices=["RobustScaler", "StandardScaler", "FunctionTransformer"],
         help="Feature scaling method applied before model training."
     )
     model_grp.add_argument(
@@ -152,7 +152,8 @@ def parse_arguments():
     # Map string choices to actual Python classes for downstream use
     scaler_map = {
         "RobustScaler": RobustScaler,
-        "StandardScaler": StandardScaler
+        "StandardScaler": StandardScaler,
+        "FunctionTransformer": FunctionTransformer,
     }
     estimator_map = {
         "RandomForestClassifier": RandomForestClassifier,
