@@ -8,12 +8,13 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+import os
 import argparse
 import itertools
 import pickle
 import random
 from datetime import datetime
-
+import time
 
 import numpy as np
 import pandas as pd
@@ -37,14 +38,14 @@ def parse_arguments():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         epilog="""
         Examples:
-          # Run with default settings (exhaustive feature search, RobustScaler, RandomForest)
+          # Run with default settings
           python train_model.py
+
+          # Run with a 10-minute time limit and save to custom directory
+          python train_model.py --time-limit 600 --output-dir ./my_models
 
           # Change target type, use random search, and limit iterations
           python train_model.py --target-type higher --training-mode random --max-random-iterations 500
-
-          # Use LinearSVC with StandardScaler and disable verbose output
-          python train_model.py --estimator LinearSVC --scaler StandardScaler --no-verbose
         """
     )
 
@@ -130,9 +131,18 @@ def parse_arguments():
     )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # OUTPUT & LOGGING
+    # EXECUTION & OUTPUT
     # ─────────────────────────────────────────────────────────────────────────
-    parser.add_argument(
+    exec_grp = parser.add_argument_group("Execution & Output")
+    exec_grp.add_argument(
+        "--time-limit", "-tl", type=float, default=None,
+        help="Maximum time in seconds for the search process. None = no limit."
+    )
+    exec_grp.add_argument(
+        "--output-dir", "-o", type=str, default="./output_models",
+        help="Directory to save the best model and training metadata."
+    )
+    exec_grp.add_argument(
         "--no-verbose", action="store_false", dest="verbose", default=True,
         help="Disable detailed console output and progress reports."
     )
@@ -193,7 +203,6 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     # Cast to int to ensure pandas shift() works correctly
     _look_head_for_prediction = int(_look_head_for_prediction)
     assert _look_head_for_prediction > 0
-    assert 0 < _look_head_for_prediction < 1 or _look_head_for_prediction == 1  # Relaxed assertion for safety
 
     if _type_of_target == 'higher':
         monthly["Target"] = (monthly["Close"].shift(-_look_head_for_prediction) > monthly["Close"]).astype(int)
@@ -217,8 +226,40 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     return monthly
 
 
+def save_best_model(best_setup, args, output_dir, verbose=True):
+    """Saves the best model configuration to a pickle file in the specified directory."""
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    est_name = args.the_estimator.__name__
+    target_name = args.target_type
+    filename = f"best_model_{est_name}_{target_name}_{timestamp}.pkl"
+    filepath = os.path.join(output_dir, filename)
+
+    # Keep only inference-ready & metadata objects to avoid bloating the file
+    save_data = {
+        'model': best_setup['model'],
+        'scaler': best_setup['scaler'],
+        'features': best_setup['features'],
+        'scorer': best_setup['scorer'],
+        'score': best_setup['score'],
+        'estimator': best_setup['estimator'],
+        'n_test': best_setup['n_test'],
+        'target_type': args.target_type,
+        'target_percentage': args.target_percentage,
+        'look_ahead': args.look_ahead,
+        'training_mode': args.training_mode,
+        'scaler_name': args.scaler,
+        'saved_at': datetime.now().isoformat()
+    }
+
+    with open(filepath, 'wb') as f:
+        pickle.dump(save_data, f)
+
+    if verbose:
+        print(f"\n💾 Best model successfully saved to: {filepath}")
+
+
 def entry_point(args):
-    # Unpack parsed arguments for cleaner reference
     n_test = args.n_test
     type_of_target = args.target_type
     percentage_of_type_target = args.target_percentage
@@ -234,6 +275,8 @@ def entry_point(args):
     training_mode = args.training_mode
     max_random_iterations = args.max_random_iterations
     final_dataset_filename = args.dataset
+    time_limit = args.time_limit
+    output_dir = args.output_dir
 
     with open(final_dataset_filename, 'rb') as f:
         loaded_data = pickle.load(f)
@@ -257,6 +300,9 @@ def entry_point(args):
         print(f"N test: {n_test}   Target: {type_of_target} , {percentage_of_type_target}   Look Ahead: {look_head_for_prediction}   Scaler: {my_scaler.__name__}   "
               f"Estimator: {the_estimator.__name__}   Scorer: {the_scorer}   Training: {training_mode}")
 
+    if time_limit and verbose:
+        print(f"⏱️ Time limit set to: {time_limit} seconds")
+
     def get_feature_combinations(_features, _mode):
         if _mode == "exhaustive":
             for r in range(1, len(_features) + 1):
@@ -274,10 +320,19 @@ def entry_point(args):
     feature_iterator = get_feature_combinations(_features=features, _mode=training_mode)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
 
-    best_setup_found = {'score': -1}
+    best_setup_found = None
     displayed_output_once = False
+    start_time = time.time()
 
-    for selected_features in tqdm(feature_iterator, total=total_to_process):
+    for selected_features in tqdm(feature_iterator, total=total_to_process, disable=not verbose):
+        # ─────────────────────────────────────────────────────────────────────
+        # ⏱️ Time limit check
+        # ─────────────────────────────────────────────────────────────────────
+        if time_limit and (time.time() - start_time) >= time_limit:
+            if verbose:
+                print(f"\n⏱️ Time limit of {time_limit} seconds reached. Stopping search gracefully...")
+            break
+
         X = df[selected_features].copy()
         y = df["Target"].copy()
 
@@ -348,16 +403,16 @@ def entry_point(args):
         final_preds = best_model.predict(X_test_scaled)
         final_score = scoring_sl2(y_test_final, final_preds, beta=0.5, zero_division=0)
 
-        if final_score > best_setup_found['score']:
+        if best_setup_found is None or final_score > best_setup_found['score']:
             assert len(selected_features) == len(list(set(selected_features)))
-            best_setup_found.update({
+            best_setup_found = {
                 'score': final_score, 'model': best_model, 'estimator': the_estimator,
                 'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
                 'X_train_full': X_train_full, 'X_train_scaled': X_train_scaled,
                 'y_train_full': y_train_full, 'X_test_final': X_test_final,
                 'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final,
                 'X': X, 'y': y, 'n_test': n_test
-            })
+            }
             if verbose or not displayed_output_once:
                 print("\n" + "═" * 60)
                 print(f"🎯 Best Parameters")
@@ -372,8 +427,16 @@ def entry_point(args):
                 print(confusion_matrix(y_test_final, final_preds))
         displayed_output_once = True
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # 💾 Save the best model after loop finishes or breaks
+    # ─────────────────────────────────────────────────────────────────────────
+    if best_setup_found is not None:
+        save_best_model(best_setup_found, args, output_dir, verbose)
+    else:
+        if verbose:
+            print("\n⚠️ No valid model was trained. Nothing to save.")
+
 
 if __name__ == "__main__":
-    # Parse command-line arguments and pass them to the main execution function
     parsed_args = parse_arguments()
     entry_point(parsed_args)
