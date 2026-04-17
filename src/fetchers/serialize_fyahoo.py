@@ -114,7 +114,7 @@ def entry(
                     ('Close', ticker): 'mean',
                     ('Volume', ticker): 'sum'
                 }
-                data_cache['^VIX_MEAN'] = df.resample('ME').agg(agg_logic).copy()
+                data_cache['^VIX_MEAN'] = df.resample('W-FRI').agg(agg_logic).copy()
             agg_logic = df.resample('W-FRI').agg({
                 ('Open', ticker): 'first',
                 ('High', ticker): 'max',

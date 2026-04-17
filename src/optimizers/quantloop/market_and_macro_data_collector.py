@@ -110,26 +110,27 @@ def entry_point(args: argparse.Namespace) -> None:
     # 1. Download market data (S&P 500 and VIX)
     print("📥 Downloading S&P 500 and VIX data from Yahoo Finance...")
     sp500 = yf.download("^GSPC ^VIX", period="max", interval="1d", auto_adjust=False)
-    data = sp500['Close'].copy()
+    online_data = sp500['Close'].copy()
 
     # 2. Resample to target frequency
     print(f"📊 Resampling to {freq_label.lower()} frequency ({pd_freq})...")
-    market_data = data['^GSPC'].resample(pd_freq).last().to_frame(name='Close')
-    market_data['VIX'] = data['^VIX'].resample(pd_freq).mean()
+    market_data = online_data['^GSPC'].resample(pd_freq).last().to_frame(name='Close')
+    market_data['VIX'] = online_data['^VIX'].resample(pd_freq).mean()
     if args.vix_method == "last":
-        market_data['VIX'] = data['^VIX'].resample(pd_freq).last()
+        market_data['VIX'] = online_data['^VIX'].resample(pd_freq).last()
 
     # Validation against cached monthly data (adjusted window size for frequency)
-    val_window = 33 if args.freq == "month" else 252  # ~1 year of periods
-    close_col = ('Close', '^GSPC')
+    val_window = 33 if args.freq == "month" else 8  # ~1 year of periods
+    spx_close_col = ('Close', '^GSPC')
     print(f"🔍 Validating downloaded data against cache (last {val_window} periods)...")
 
     # Safe slicing for validation
-    cached_spx = df_spx500[close_col].iloc[-val_window - 1:-1]
+    cached_spx = df_spx500[spx_close_col].iloc[-val_window - 1:-1]
     new_spx = market_data['Close'].iloc[-val_window - 1:-1]
     assert val_window == np.count_nonzero(cached_spx.values == new_spx.values), f"SPX validation failed for {freq_label}"
-
-    cached_vix = df_vix[('Close', '^VIX')].iloc[-val_window - 1:-1]
+    # df_vix[vix_close_col].index[-1], market_data['VIX'].index[-1]
+    vix_close_col = ('Close', '^VIX')
+    cached_vix = df_vix[vix_close_col].iloc[-val_window - 1:-1]
     new_vix = market_data['VIX'].iloc[-val_window - 1:-1]
     assert np.allclose(new_vix.values, cached_vix.values), f"VIX validation failed for {freq_label}"
 

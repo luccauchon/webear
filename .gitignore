@@ -28,3 +28,4 @@
 /src/optimizers/regime/logs/
 /src/optimizers/regime/models_tscv/
 /src/optimizers/quantloop/combined_monthly_macro.data
+/src/optimizers/quantloop/combined_weekly_macro.data

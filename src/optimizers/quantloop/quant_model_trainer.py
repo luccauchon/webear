@@ -18,9 +18,11 @@ import time
 
 import numpy as np
 import pandas as pd
-
+import warnings
+from sklearn.exceptions import ConvergenceWarning
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import (classification_report, confusion_matrix,
                              fbeta_score, make_scorer)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
@@ -112,7 +114,7 @@ def parse_arguments():
     )
     model_grp.add_argument(
         "--estimator", "-e", type=str, default="RandomForestClassifier",
-        choices=["RandomForestClassifier", "LinearSVC", "SVC"],
+        choices=["RandomForestClassifier", "LinearSVC", "SVC", "SGDClassifier"],  # <-- UPDATED
         help="Machine learning classifier to use for prediction."
     )
     model_grp.add_argument(
@@ -158,7 +160,8 @@ def parse_arguments():
     estimator_map = {
         "RandomForestClassifier": RandomForestClassifier,
         "LinearSVC": svm.LinearSVC,
-        "SVC": svm.SVC
+        "SVC": svm.SVC,
+        "SGDClassifier": SGDClassifier
     }
     args.my_scaler = scaler_map[args.scaler]
     args.the_estimator = estimator_map[args.estimator]
@@ -381,6 +384,17 @@ def entry_point(args):
                 'max_features': ['sqrt', 'log2', None],
                 'bootstrap': [True]
             }
+        elif the_estimator == SGDClassifier:
+            param_dist = {
+                'loss': ['hinge', 'log_loss', 'modified_huber', 'squared_hinge'],
+                'penalty': ['l2', 'l1', 'elasticnet'],
+                'alpha': [1e-5, 1e-4, 1e-3, 1e-2, 0.1],
+                'learning_rate': ['constant', 'optimal', 'invscaling', 'adaptive'],
+                'eta0': [1e-4, 1e-3, 1e-2, 0.1],
+                'max_iter': [8000, 16000],
+                'tol': [1e-3, 1e-2],
+                'class_weight': [None, 'balanced'],
+            }
         else:
             assert False, f"{the_estimator}"
 
@@ -389,12 +403,12 @@ def entry_point(args):
         if the_scorer == 'F0.5':
             scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=0.5, zero_division=0), fbeta_score
         assert scoring_sl1 is not None and scoring_sl2 is not None
-
+        warnings.filterwarnings("ignore", category=ConvergenceWarning)
         random_search = RandomizedSearchCV(
             estimator=the_estimator(random_state=1),
             param_distributions=param_dist,
             scoring=scoring_sl1,
-            n_iter=1,
+            n_iter=100,
             cv=tscv,
             n_jobs=-1,
             random_state=1,
