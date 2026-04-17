@@ -3,8 +3,8 @@
 Market & Macro Data Collector
 =============================
 Downloads S&P 500, VIX, and FRED macroeconomic indicators, resamples them to
-monthly frequency, validates against a cached dataset, and saves the combined
-result as a pickle file.
+the specified frequency (monthly or weekly), validates against a cached dataset,
+and saves the combined result as a pickle file.
 
 Usage:
     python script.py [OPTIONS]
@@ -40,15 +40,15 @@ def parse_args() -> argparse.Namespace:
         prog="market_macro_collector",
         description=(
             "Download, resample, and combine S&P 500, VIX, and FRED macroeconomic "
-            "data into a monthly dataset. Outputs a pickle file containing both market "
-            "and macro data aligned to month-end."
+            "data into a monthly or weekly dataset. Outputs a pickle file containing "
+            "both market and macro data aligned to period-end."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python script.py --output-dir ./data --start-date 2000-01-01\n"
-            "  python script.py -m FEDFUNDS,UNRATE,CPIAUCSL -e 2023-12-31\n"
-            "  python script.py -f my_dataset.pkl --vix-method last\n"
+            "  python script.py --freq month --output-dir ./data --start-date 2000-01-01\n"
+            "  python script.py --freq week -m FEDFUNDS,UNRATE,CPIAUCSL -e 2023-12-31\n"
+            "  python script.py --freq week --vix-method last\n"
         )
     )
 
@@ -69,12 +69,16 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated list of FRED macroeconomic indicators to download (default: FEDFUNDS,UNRATE,CPIAUCSL,T10Y2Y)"
     )
     parser.add_argument(
-        "-f", "--filename", type=str, default="combined_monthly_macro.data",
-        help="Name of the output pickle file (default: combined_monthly_macro.data)"
+        "-f", "--filename", type=str, default=None,
+        help="Name of the output pickle file (default: auto-generated based on frequency)"
+    )
+    parser.add_argument(
+        "--freq", type=str, choices=["month", "week"], default="month",
+        help="Resampling frequency: 'month' (month-end) or 'week' (Friday close) (default: month)"
     )
     parser.add_argument(
         "-v", "--vix-method", type=str, choices=["mean", "last"], default="mean",
-        help="VIX aggregation method: 'mean' for monthly average, 'last' for month-end close (default: mean)"
+        help="VIX aggregation method: 'mean' for period average, 'last' for period-end close (default: mean)"
     )
 
     return parser.parse_args()
@@ -82,18 +86,21 @@ def parse_args() -> argparse.Namespace:
 
 def entry_point(args: argparse.Namespace) -> None:
     """
-    Main execution flow: fetches market & macro data, resamples to monthly,
+    Main execution flow: fetches market & macro data, resamples to specified frequency,
     validates against a cached dataset, and saves the combined result.
 
     Args:
         args: Parsed command-line arguments from argparse.
     """
-    # Ensure output directory exists
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load cached master data for validation
-    one_dataset_filename = get_filename_for_dataset("month", older_dataset=None)
-    with open(one_dataset_filename, 'rb') as f:
+    # Map human-readable frequency to pandas offset alias
+    pd_freq = "ME" if args.freq == "month" else "W-FRI"
+    freq_label = "Monthly" if args.freq == "month" else "Weekly"
+    dataset_id = "month" if args.freq == "month" else "week"
+    # Load cached master data for validation (cache is expected to be monthly)
+    cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
+    with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     df_spx500 = master_data_cache["^GSPC"].sort_index()
     df_vix = master_data_cache["^VIX_MEAN"].sort_index()
@@ -105,16 +112,26 @@ def entry_point(args: argparse.Namespace) -> None:
     sp500 = yf.download("^GSPC ^VIX", period="max", interval="1d", auto_adjust=False)
     data = sp500['Close'].copy()
 
-    # 2. Resample to monthly frequency
-    print("📊 Resampling to monthly frequency...")
-    monthly = data['^GSPC'].resample('ME').last().to_frame(name='Close')
-    monthly['VIX'] = data['^VIX'].resample('ME').mean()
+    # 2. Resample to target frequency
+    print(f"📊 Resampling to {freq_label.lower()} frequency ({pd_freq})...")
+    market_data = data['^GSPC'].resample(pd_freq).last().to_frame(name='Close')
+    market_data['VIX'] = data['^VIX'].resample(pd_freq).mean()
+    if args.vix_method == "last":
+        market_data['VIX'] = data['^VIX'].resample(pd_freq).last()
 
-    # Validation against cached data
+    # Validation against cached monthly data (adjusted window size for frequency)
+    val_window = 33 if args.freq == "month" else 252  # ~1 year of periods
     close_col = ('Close', '^GSPC')
-    print("🔍 Validating downloaded data against cache...")
-    assert 132 == np.count_nonzero(df_spx500[close_col][-133:-1] == monthly['Close'][-133:-1]), "SPX validation failed"
-    assert np.allclose(monthly['VIX'].iloc[-133:-1].values, df_vix[('Close', '^VIX')].iloc[-133:-1].values), "VIX validation failed"
+    print(f"🔍 Validating downloaded data against cache (last {val_window} periods)...")
+
+    # Safe slicing for validation
+    cached_spx = df_spx500[close_col].iloc[-val_window - 1:-1]
+    new_spx = market_data['Close'].iloc[-val_window - 1:-1]
+    assert val_window == np.count_nonzero(cached_spx.values == new_spx.values), f"SPX validation failed for {freq_label}"
+
+    cached_vix = df_vix[('Close', '^VIX')].iloc[-val_window - 1:-1]
+    new_vix = market_data['VIX'].iloc[-val_window - 1:-1]
+    assert np.allclose(new_vix.values, cached_vix.values), f"VIX validation failed for {freq_label}"
 
     # Prepare date range
     start_date = args.start_date
@@ -126,30 +143,39 @@ def entry_point(args: argparse.Namespace) -> None:
     macro_data = web.DataReader(macro_indicators, 'fred', start_date, end_date, api_key=FRED_API_KEY)
 
     # 4. Resample and align macro data
-    macro_monthly = macro_data.resample('ME').last()
+    # .ffill() is added to propagate the last known value through weeks without releases
+    macro_resampled = macro_data.resample(pd_freq).last().ffill()
 
     # Combine datasets
     combined_data = {
-        "market_data": monthly,
-        "macro_data": macro_monthly
+        "market_data": market_data,
+        "macro_data": macro_resampled
     }
 
+    # Determine output filename
+    if args.filename:
+        final_dataset_filename = os.path.join(args.output_dir, args.filename)
+    else:
+        if args.freq == "week":
+            final_dataset_filename = os.path.join(args.output_dir, "combined_weekly_macro.data")
+        else:
+            final_dataset_filename = os.path.join(args.output_dir, "combined_monthly_macro.data")
+
     # Save combined dataset
-    final_dataset_filename = os.path.join(args.output_dir, args.filename)
     print(f"💾 Saving combined dataset to {final_dataset_filename}...")
     with open(final_dataset_filename, 'wb') as f:
         pickle.dump(combined_data, f)
 
-    print(f"✅ Données combinées sauvegardées avec succès dans : {final_dataset_filename}")
+    print(f"✅ {freq_label} data combined and saved successfully to: {final_dataset_filename}")
 
     # Verification load & print date ranges
     with open(final_dataset_filename, 'rb') as f:
         loaded_data = pickle.load(f)
 
-    df_monthly = loaded_data["market_data"]
+    df_market = loaded_data["market_data"]
     df_macro = loaded_data["macro_data"]
 
-    print(f"📅 Market Data Dates:  {df_monthly.index[0].strftime('%Y-%m-%d')} :: {df_monthly.index[-1].strftime('%Y-%m-%d')}")
+    print(f"📅 Market Data Dates:  {df_market.index[0].strftime('%Y-%m-%d')} :: {df_market.index[-1].strftime('%Y-%m-%d')}")
     print(f"📅 Macro Data Dates:   {df_macro.index[0].strftime('%Y-%m-%d')} :: {df_macro.index[-1].strftime('%Y-%m-%d')}")
 
 
