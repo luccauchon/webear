@@ -17,9 +17,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pandas_datareader.data as web
-import yfinance as yf
-from constants import FRED_API_KEY
+
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (classification_report, confusion_matrix,
@@ -27,8 +25,6 @@ from sklearn.metrics import (classification_report, confusion_matrix,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
 from tqdm import tqdm
-
-from utils import get_filename_for_dataset
 
 
 def parse_arguments():
