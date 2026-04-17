@@ -313,9 +313,11 @@ def entry_point(args):
             for _ in range(max_random_iterations):
                 k = random.randint(1, len(_features))
                 combo = tuple(sorted(set(random.sample(_features, k))))
-                if combo not in history:
-                    history.add(combo)
-                    yield list(combo)
+                while combo in history:
+                    k = random.randint(1, len(_features))
+                    combo = tuple(sorted(set(random.sample(_features, k))))
+                history.add(combo)
+                yield list(combo)
 
     feature_iterator = get_feature_combinations(_features=features, _mode=training_mode)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
