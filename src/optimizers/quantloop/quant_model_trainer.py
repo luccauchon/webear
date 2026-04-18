@@ -244,18 +244,7 @@ def save_best_model(best_setup, args, output_dir, verbose=True):
 
     # Keep only inference-ready & metadata objects to avoid bloating the file
     save_data = {
-        'model': best_setup['model'],
-        'scaler': best_setup['scaler'],
-        'features': best_setup['features'],
-        'scorer': best_setup['scorer'],
-        'score': best_setup['score'],
-        'estimator': best_setup['estimator'],
-        'n_test': best_setup['n_test'],
-        'target_type': args.target_type,
-        'target_percentage': args.target_percentage,
-        'look_ahead': args.look_ahead,
-        'training_mode': args.training_mode,
-        'scaler_name': args.scaler,
+        'best_setup': best_setup,
         'saved_at': datetime.now().isoformat()
     }
 
