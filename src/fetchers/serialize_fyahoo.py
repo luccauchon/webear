@@ -1,3 +1,12 @@
+# Try to import version; if not found, adjust sys.path
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
+
 import argparse
 import sys
 import os
@@ -12,15 +21,6 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 from curl_cffi.requests import Session
 from constants import IS_RUNNING_ON_LINUX_VMWARE
-
-# Try to import version; if not found, adjust sys.path
-try:
-    from version import sys__name, sys__version
-except ImportError:
-    current_dir = pathlib.Path(__file__).resolve()
-    parent_dir = current_dir.parent.parent
-    sys.path.insert(0, str(parent_dir))
-    from version import sys__name, sys__version
 
 from constants import (
     FYAHOO__OUTPUTFILENAME_YEAR,
