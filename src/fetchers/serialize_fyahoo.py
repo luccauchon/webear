@@ -214,12 +214,15 @@ def entry(
         print(f"{Fore.CYAN}{Style.BRIGHT}🚀 Starting Download Tracker...{Style.RESET_ALL}\n", flush=True)
         result = {}
         for ticker in tqdm(TOP10_SP500_TICKERS, desc="Economic"):
-            stock = yf.Ticker(ticker)
-            result[ticker] = {
-                'info': stock.info,
-                'earnings_dates': stock.earnings_dates,
-                'history': stock.history(period='2y')
-            }
+            if IS_RUNNING_ON_LINUX_VMWARE:
+                pass
+            else:
+                stock = yf.Ticker(ticker)
+                result[ticker] = {
+                    'info': stock.info,
+                    'earnings_dates': stock.earnings_dates,
+                    'history': stock.history(period='2y')
+                }
         with open(FYAHOO_TICKER__OUTPUTFILENAME, 'wb') as f:
             pickle.dump(result, f)
         print(f"{Fore.GREEN}✅ Data saved to {FYAHOO_TICKER__OUTPUTFILENAME}{Style.RESET_ALL}")
