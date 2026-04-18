@@ -10,6 +10,8 @@ import yfinance as yf
 import time
 from datetime import datetime, timedelta
 from tqdm import tqdm
+from curl_cffi.requests import Session
+from constants import IS_RUNNING_ON_LINUX_VMWARE
 
 # Try to import version; if not found, adjust sys.path
 try:
@@ -58,7 +60,8 @@ def entry(
     tickers = sorted(list(set(MY_TICKERS if use_all_tickers else MY_TICKERS_SMALL_SET)), reverse=True)
 
     print(f"{len(tickers)} tickers selected. Date range: {start_date} to {end_date}", flush=True)
-
+    session = Session()
+    session.verify = False
     ###########################################################################
     # 1 hour
     ###########################################################################
@@ -69,11 +72,19 @@ def entry(
         data_cache = {}
         for ticker in tqdm(tickers, desc="Hourly"):
             if ticker == '^SKEW':
-                data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1d',
-                                   auto_adjust=False, ignore_tz=True, progress=False)
+                if IS_RUNNING_ON_LINUX_VMWARE:
+                    data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1d',
+                                       auto_adjust=False, ignore_tz=True, progress=False, session=session)
+                else:
+                    data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1d',
+                                       auto_adjust=False, ignore_tz=True, progress=False)
             else:
-                data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1h',
-                                   auto_adjust=False, ignore_tz=True, progress=False)
+                if IS_RUNNING_ON_LINUX_VMWARE:
+                    data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1h',
+                                       auto_adjust=False, ignore_tz=True, progress=False, session=session)
+                else:
+                    data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1h',
+                                       auto_adjust=False, ignore_tz=True, progress=False)
             data_cache[ticker] = data
         with open(FYAHOO__OUTPUTFILENAME, 'wb') as f:
             pickle.dump(data_cache, f)
@@ -88,7 +99,10 @@ def entry(
         print(f"{len(tickers)} tickers, {daily_start=}, {daily_end=}, interval=1d", flush=True)
         data_cache = {}
         for ticker in tqdm(tickers, desc="Daily"):
-            data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
+            if IS_RUNNING_ON_LINUX_VMWARE:
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False, session=session)
+            else:
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
             data_cache[ticker] = data
         with open(FYAHOO__OUTPUTFILENAME_DAY, 'wb') as f:
             pickle.dump(data_cache, f)
