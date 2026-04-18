@@ -114,7 +114,7 @@ def parse_arguments():
     )
     model_grp.add_argument(
         "--estimator", "-e", type=str, default="RandomForestClassifier",
-        choices=["RandomForestClassifier", "LinearSVC", "SVC", "SGDClassifier"],  # <-- UPDATED
+        choices=["RandomForestClassifier", "LinearSVC", "SVC", "SGDClassifier"],
         help="Machine learning classifier to use for prediction."
     )
     model_grp.add_argument(
@@ -228,7 +228,8 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         assert False, f"{_type_of_target}"
 
     monthly = monthly.dropna().copy()
-    print(f"Dates in DF (after target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
+    if _verbose:
+        print(f"Dates in DF (after target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
     return monthly
 
 
@@ -327,10 +328,9 @@ def entry_point(args):
     feature_iterator = get_feature_combinations(_features=features, _mode=training_mode)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
 
-    best_setup_found = None
+    best_setup_found = {'train': {'train_score':0, 'test_score':0}, 'test': {'train_score':0, 'test_score':0}}
     displayed_output_once = False
     start_time = time.time()
-
     for selected_features in tqdm(feature_iterator, total=total_to_process, disable=not verbose):
         # ─────────────────────────────────────────────────────────────────────
         # ⏱️ Time limit check
@@ -339,7 +339,7 @@ def entry_point(args):
             if verbose:
                 print(f"\n⏱️ Time limit of {time_limit} seconds reached. Stopping search gracefully...")
             break
-
+        assert len(selected_features) == len(list(set(selected_features)))
         X = df[selected_features].copy()
         y = df["Target"].copy()
 
@@ -417,32 +417,56 @@ def entry_point(args):
 
         random_search.fit(X_train_scaled, y_train_full)
         best_model = random_search.best_estimator_
+        train_score = random_search.best_score_
+        test_preds = best_model.predict(X_test_scaled)
+        test_score = scoring_sl2(y_test_final, test_preds, beta=0.5, zero_division=0)
+        _tmp_update_snapshot, do_display = {'test_score': test_score, 'train_score': train_score,
+                                'model': best_model, 'estimator': the_estimator,
+                                'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
+                                'X_train_full__before_scaled': X_train_full, 'X_train_scaled': X_train_scaled,
+                                'y_train_full': y_train_full, 'X_test_final__before_scaled': X_test_final,
+                                'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final,
+                                'X': X, 'y': y, 'n_test': n_test}, False
+        if train_score >= best_setup_found['train']['train_score']:
+            cd1 = train_score > best_setup_found['train']['train_score']
+            cd2 = train_score == best_setup_found['train']['train_score'] and test_score > best_setup_found['train']['test_score']
+            if cd1 or cd2:
+                best_setup_found['train'], do_display = _tmp_update_snapshot, True
+        if test_score >= best_setup_found['test']['test_score']:
+            cd1 = test_score > best_setup_found['test']['test_score']
+            cd2 = test_score == best_setup_found['test']['test_score'] and train_score > best_setup_found['test']['train_score']
+            if cd1 or cd2:
+                best_setup_found['test'], do_display = _tmp_update_snapshot, True
+        if verbose and (not displayed_output_once or do_display):
+            for category in ['train', 'test']:
+                data = best_setup_found[category]
 
-        final_preds = best_model.predict(X_test_scaled)
-        final_score = scoring_sl2(y_test_final, final_preds, beta=0.5, zero_division=0)
+                print("\n" + "═" * 70)
+                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}")
+                print("═" * 70)
 
-        if best_setup_found is None or final_score > best_setup_found['score']:
-            assert len(selected_features) == len(list(set(selected_features)))
-            best_setup_found = {
-                'score': final_score, 'model': best_model, 'estimator': the_estimator,
-                'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
-                'X_train_full': X_train_full, 'X_train_scaled': X_train_scaled,
-                'y_train_full': y_train_full, 'X_test_final': X_test_final,
-                'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final,
-                'X': X, 'y': y, 'n_test': n_test
-            }
-            if verbose or not displayed_output_once:
-                print("\n" + "═" * 60)
-                print(f"🎯 Best Parameters")
-                print("═" * 60)
-                print(f"Features: {selected_features}   Scaler:{my_scaler}")
-                print(f"Meilleurs paramètres : {random_search.best_params_}")
-                print(f"{the_scorer} sur la période de test finale : {final_score:.2%}\n"
-                      f"y    : {y_test_final.values}\n"
-                      f"y_hat: {final_preds}\n")
-                print(classification_report(y_test_final, final_preds, zero_division=0))
-                print("Matrice de Confusion :")
-                print(confusion_matrix(y_test_final, final_preds))
+                # Accessing keys directly from the dictionary
+                print(f"Features         : {data['features']}")
+                print(f"Scaler           : {data['scaler']}")
+                print(f"Scorer           : {data['scorer']}")
+
+                # Displaying the scores saved in this specific snapshot
+                print(f"\nScores for this snapshot:")
+                print(f"  - Train {data['scorer']}: {data['train_score']:.2%}")
+                print(f"  - Test  {data['scorer']}: {data['test_score']:.2%}")
+
+                # We need to generate predictions using the saved model and scaled data
+                # to show the classification report for this specific 'best' setup
+                saved_preds = data['model'].predict(data['X_test_scaled'])
+
+                print(f"\nClassification Report ({category} snapshot):")
+                print(classification_report(data['y_test_final'], saved_preds, zero_division=0))
+                print(f"\n"
+                      f"y    : {data['y_test_final'].values}\n"
+                      f"y_hat: {saved_preds}\n")
+                print("Confusion Matrix:")
+                print(confusion_matrix(data['y_test_final'], saved_preds))
+                print("═" * 70)
         displayed_output_once = True
 
     # ─────────────────────────────────────────────────────────────────────────
