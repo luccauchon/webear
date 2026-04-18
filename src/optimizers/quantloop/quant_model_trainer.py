@@ -205,29 +205,48 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         print(f"Dates in DF (before target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
 
     # --- Cible (Target) ---
-    # Cast to int to ensure pandas shift() works correctly
+    # S'assurer que le décalage est un entier positif
     _look_head_for_prediction = int(_look_head_for_prediction)
     assert _look_head_for_prediction > 0
     assert 0 < _percentage_of_type_target < 1
+
+    # 1. On récupère le prix futur (M + N) pour toutes les comparaisons
+    future_close = monthly["Close"].shift(-_look_head_for_prediction)
+
+    # 2. Calcul des Targets selon le type
     if _type_of_target == 'higher':
-        monthly["Target"] = (monthly["Close"].shift(-_look_head_for_prediction) > monthly["Close"]).astype(int)
-    elif _type_of_target == 'soft_higher':
-        monthly["Return"] = monthly["Close"].pct_change().shift(-_look_head_for_prediction)
-        monthly["Target"] = (monthly["Return"] > _percentage_of_type_target).astype(int)
+        # Est-ce que le prix futur est strictement supérieur au prix actuel ?
+        monthly["Target"] = (future_close > monthly["Close"]).astype(int)
+
     elif _type_of_target == 'lower':
-        monthly["Target"] = (monthly["Close"].shift(-_look_head_for_prediction) < monthly["Close"]).astype(int)
+        # Est-ce que le prix futur est strictement inférieur au prix actuel ?
+        monthly["Target"] = (future_close < monthly["Close"]).astype(int)
+
+    elif _type_of_target == 'soft_higher':
+        # Rendement cumulé entre maintenant et le futur
+        # Formule : (Prix_Futur / Prix_Actuel) - 1
+        monthly["Return"] = (future_close / monthly["Close"]) - 1
+        monthly["Target"] = (monthly["Return"] > _percentage_of_type_target).astype(int)
+
     elif _type_of_target == 'soft_lower':
-        monthly["Return"] = monthly["Close"].pct_change().shift(-_look_head_for_prediction)
-        monthly["Target"] = (monthly["Return"] < _percentage_of_type_target).astype(int)
+        # Rendement cumulé entre maintenant et le futur
+        monthly["Return"] = (future_close / monthly["Close"]) - 1
+        # On compare à l'opposé du pourcentage (ex: < -0.05 pour une baisse de 5%)
+        monthly["Target"] = (monthly["Return"] < -_percentage_of_type_target).astype(int)
+
     elif _type_of_target == 'in_between':
-        future_close = monthly["Close"].shift(-_look_head_for_prediction)
+        # Tunnel de prix autour du prix actuel
         lower_bound = monthly["Close"] * (1 - _percentage_of_type_target)
         upper_bound = monthly["Close"] * (1 + _percentage_of_type_target)
         monthly["Target"] = ((future_close >= lower_bound) & (future_close <= upper_bound)).astype(int)
-    else:
-        assert False, f"{_type_of_target}"
 
-    monthly = monthly.dropna().copy()
+    else:
+        raise ValueError(f"Type de target inconnu : {_type_of_target}")
+
+    # 3. Nettoyage (Optionnel mais recommandé)
+    # Les dernières lignes seront des NaN à cause du shift() vers le futur.
+    # Il faut les supprimer pour ne pas fausser l'entraînement.
+    monthly.dropna(subset=["Target"], inplace=True)
     if _verbose:
         print(f"Dates in DF (after target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
     return monthly
