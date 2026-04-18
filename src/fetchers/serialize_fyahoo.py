@@ -1,3 +1,5 @@
+import pathlib
+import sys
 # Try to import version; if not found, adjust sys.path
 try:
     from version import sys__name, sys__version
@@ -10,7 +12,6 @@ except ImportError:
 import argparse
 import sys
 import os
-import pathlib
 from colorama import init, Fore, Style
 import pandas as pd
 import copy
