@@ -450,7 +450,7 @@ def entry_point(args):
                 data = best_setup_found[category]
                 _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher","lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target*100:.0f}%"
                 print("\n" + "═" * 70)
-                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  TARGET:{type_of_target}")
+                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  TARGET:{_type_target_str}")
                 print("═" * 70)
 
                 # Accessing keys directly from the dictionary
