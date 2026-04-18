@@ -429,7 +429,7 @@ def entry_point(args):
         test_preds = best_model.predict(X_test_scaled)
         test_score = scoring_sl2(y_test_final, test_preds, beta=0.5, zero_division=0)
         _tmp_update_snapshot, do_display = {'test_score': test_score, 'train_score': train_score,
-                                'model': best_model, 'estimator': the_estimator,
+                                'model': best_model, 'estimator': the_estimator, 'type_of_target': type_of_target,
                                 'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
                                 'X_train_full__before_scaled': X_train_full, 'X_train_scaled': X_train_scaled,
                                 'y_train_full': y_train_full, 'X_test_final__before_scaled': X_test_final,
@@ -448,9 +448,9 @@ def entry_point(args):
         if verbose and (not displayed_output_once or do_display):
             for category in ['train', 'test']:
                 data = best_setup_found[category]
-
+                _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher","lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target*100:.0f}%"
                 print("\n" + "═" * 70)
-                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}")
+                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  TARGET:{type_of_target}")
                 print("═" * 70)
 
                 # Accessing keys directly from the dictionary
