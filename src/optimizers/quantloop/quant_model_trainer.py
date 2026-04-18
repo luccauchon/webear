@@ -208,7 +208,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     # Cast to int to ensure pandas shift() works correctly
     _look_head_for_prediction = int(_look_head_for_prediction)
     assert _look_head_for_prediction > 0
-
+    assert 0 < _percentage_of_type_target < 1
     if _type_of_target == 'higher':
         monthly["Target"] = (monthly["Close"].shift(-_look_head_for_prediction) > monthly["Close"]).astype(int)
     elif _type_of_target == 'soft_higher':
