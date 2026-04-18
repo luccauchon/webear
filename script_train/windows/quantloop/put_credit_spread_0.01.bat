@@ -1,6 +1,6 @@
 @echo off
 call conda activate PY312_HT
-cd ..\..\..
+cd ..\..
 cd src\optimizers\qauntloop
 python .\quant_model_trainer.py --dataset .\combined_monthly_macro.data ^
 --target-type soft_higher ^
