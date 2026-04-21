@@ -78,7 +78,7 @@ DEFAULT_RANDOM_SEED = 42
 # =========================================================
 # ALL REGIMES SUMMARY - For Real-Time Mode
 # =========================================================
-def print_all_regimes_summary(_stats, _n_clusters, _spread_type, _strike_distance, _forward_days):
+def print_all_regimes_summary(_stats, _n_clusters, _spread_type, _strike_distance, _forward_days, _args):
     """Print a concise summary table of ALL regimes for quick comparison."""
     print("\n" + "═" * 80)
     print(" " * 25 + "📊 ALL REGIMES SUMMARY")
@@ -103,11 +103,11 @@ def print_all_regimes_summary(_stats, _n_clusters, _spread_type, _strike_distanc
 
         # Simple recommendation logic + filter awareness
         rec = "✅ FAVORABLE"
-        if args.min_prob_otm and prob_otm < args.min_prob_otm:
+        if _args.min_prob_otm and prob_otm < _args.min_prob_otm:
             rec = "❌ <min-prob-otm"
-        elif args.max_prob_itm and (1 - prob_otm) > args.max_prob_itm:
+        elif _args.max_prob_itm and (1 - prob_otm) > _args.max_prob_itm:
             rec = "❌ >max-prob-itm"
-        elif args.min_ev_per_dollar and ev < args.min_ev_per_dollar:
+        elif _args.min_ev_per_dollar and ev < _args.min_ev_per_dollar:
             rec = "❌ <min-EV"
         elif prob_otm <= 0.45:
             rec = "❌ AVOID"
@@ -1023,7 +1023,8 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
             _n_clusters=_params['n_clusters'],
             _spread_type=_metadata['spread_type'],
             _strike_distance=_metadata['strike_distance'],
-            _forward_days=_metadata['forward_days']
+            _forward_days=_metadata['forward_days'],
+            _args=args,
         )
 
     regime__2__otm = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
