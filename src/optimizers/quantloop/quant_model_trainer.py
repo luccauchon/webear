@@ -176,17 +176,19 @@ def parse_arguments():
     return args
 
 
-def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi_lag, _look_head_for_prediction, _percentage_of_type_target, _type_of_target, _verbose, create_target=True):
-    # 3. Création de Features Macro (Lags et Variations)
+def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi_lag,
+                              _look_head_for_prediction, _percentage_of_type_target,
+                              _type_of_target, _verbose, create_target=True):
+    # 1. Création de Features Macro (Lags et Variations)
     _df_macro['Spread_10Y2Y'] = _df_macro['T10Y2Y'].shift(1)
     _df_macro['Fed_Rate_Diff'] = _df_macro['FEDFUNDS'].diff().shift(1)
     _df_macro['Unrate_Diff'] = _df_macro['UNRATE'].diff().shift(1)
     _df_macro['Inflation_Rate'] = _df_macro['CPIAUCSL'].pct_change(12, fill_method=None).shift(1)
 
-    # 4. Fusion avec tes données S&P 500
+    # 2. Fusion avec tes données S&P 500
     monthly = _df_market.join(_df_macro[['Fed_Rate_Diff', 'Unrate_Diff', 'Inflation_Rate', 'Spread_10Y2Y']]).dropna()
 
-    # 3. Ajout de nouvelles "Features"
+    # 3. Ajout de nouvelles Features
     monthly['VIX_Ratio'] = monthly['VIX'] / monthly['VIX'].rolling(12).mean()
 
     delta = monthly['Close'].diff()
@@ -208,6 +210,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
 
     monthly['Log_Close'] = np.log(monthly['Close'])
     monthly['Dist_from_ATH'] = (monthly['Close'] / monthly['Close'].cummax()) - 1
+
     if _verbose:
         print(f"Dates in DF (before target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
 
@@ -239,20 +242,24 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
             raise ValueError(f"Type de target inconnu : {_type_of_target}")
 
         # 3. Nettoyage
-        monthly.dropna(subset=["Target"], inplace=True)
-        if _verbose:
-            print(f"Dates in DF (after target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
+        # 🔧 Pandas boolean comparisons with NaN evaluate to False -> 0 after astype(int).
+        # We explicitly restore NaNs where future_close is missing so dropna() works as expected.
+        monthly.loc[future_close.isna(), "Target"] = np.nan
+
+        # Drop only rows with invalid targets (preserves rows where other features might be NaN but you handle them elsewhere)
+        monthly = monthly.dropna(subset=["Target"])
     else:
         # Real-time mode: only drop rows with missing features
-        monthly.dropna(inplace=True)
-        if _verbose:
-            print(f"Dates in DF (features only): {monthly.index[0].strftime('%Y-%m-%d')} :: {monthly.index[-1].strftime('%Y-%m-%d')}")
+        monthly = monthly.dropna()
+
+    if _verbose:
+        print(f"Dates in DF (features only): {monthly.index[0].strftime('%Y-%m-%d')} :: {monthly.index[-1].strftime('%Y-%m-%d')}")
 
     return monthly
 
 
 def save_best_model(best_setup, args, output_dir, verbose=True):
-    """Saves the best model configuration to a pickle file in the specified directory."""
+    """Saves the best model configuration AND training parameters to a pickle file."""
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     est_name = args.the_estimator.__name__
@@ -262,7 +269,17 @@ def save_best_model(best_setup, args, output_dir, verbose=True):
 
     save_data = {
         'best_setup': best_setup,
-        'saved_at': datetime.now().isoformat()
+        'saved_at': datetime.now().isoformat(),
+        # Save feature engineering & target parameters for real-time consistency
+        'params': {
+            'rsi_window': args.rsi_window,
+            'vix_lag': args.vix_lag,
+            'rsi_lag': args.rsi_lag,
+            'look_ahead': args.look_ahead,
+            'target_percentage': args.target_percentage,
+            'target_type': args.target_type,
+            'dataset_filename': args.dataset,
+        }
     }
 
     with open(filepath, 'wb') as f:
@@ -287,15 +304,46 @@ def entry_point(args):
     the_scorer = args.scorer
     training_mode = args.training_mode
     max_random_iterations = args.max_random_iterations
-    final_dataset_filename = args.dataset
     time_limit = args.time_limit
     output_dir = args.output_dir
+    final_dataset_filename = args.dataset
     np.set_printoptions(linewidth=np.inf)
+    saved_data = None
+    # ─────────────────────────────────────────────────────────────────────────
+    # 🔄 LOAD SAVED PARAMETERS FIRST IF IN REAL-TIME MODE
+    # ─────────────────────────────────────────────────────────────────────────
+    if args.real_time:
+        model_path = args.model_path
+        if model_path is None:
+            os.makedirs(output_dir, exist_ok=True)
+            pkl_files = sorted([f for f in os.listdir(output_dir) if f.endswith('.pkl')])
+            if not pkl_files:
+                print("❌ No saved models found. Please train a model first or specify --model-path.")
+                return
+            model_path = os.path.join(output_dir, pkl_files[-1])
+
+        print(f"📦 Loading model and training parameters from: {model_path}")
+        with open(model_path, 'rb') as f:
+            saved_data = pickle.load(f)
+
+        # Override CLI args with saved training parameters
+        saved_params = saved_data.get('params', {})
+        rsi_window = saved_params.get('rsi_window', rsi_window)
+        vix_lag = saved_params.get('vix_lag', vix_lag)
+        rsi_lag = saved_params.get('rsi_lag', rsi_lag)
+        look_head_for_prediction = saved_params.get('look_ahead', look_head_for_prediction)
+        percentage_of_type_target = saved_params.get('target_percentage', percentage_of_type_target)
+        type_of_target = saved_params.get('target_type', type_of_target)
+        final_dataset_filename = saved_params.get('dataset_filename', final_dataset_filename)
+        print("✅ Using saved training parameters for real-time feature engineering.")
+    if verbose:
+        print(f"🔄 Loading data from <<{final_dataset_filename}>>")
     with open(final_dataset_filename, 'rb') as f:
         loaded_data = pickle.load(f)
     df_market = loaded_data["market_data"]
     df_macro = loaded_data["macro_data"]
 
+    # Build features & target (uses overridden params if real-time, else CLI args)
     df = build_features_and_target(
         _df_market=df_market, _df_macro=df_macro,
         _rsi_window=rsi_window, _vix_lag=vix_lag, _rsi_lag=rsi_lag,
@@ -316,20 +364,6 @@ def entry_point(args):
         last_date = df.index[-1].strftime('%Y-%m-%d')
         print(f"📅 Using last datapoint: {last_date}")
 
-        # Determine model path
-        model_path = args.model_path
-        if model_path is None:
-            os.makedirs(output_dir, exist_ok=True)
-            pkl_files = sorted([f for f in os.listdir(output_dir) if f.endswith('.pkl')])
-            if not pkl_files:
-                print("❌ No saved models found. Please train a model first or specify --model-path.")
-                return
-            model_path = os.path.join(output_dir, pkl_files[-1])
-
-        print(f"📦 Loading model from: {model_path}")
-        with open(model_path, 'rb') as f:
-            saved_data = pickle.load(f)
-
         best_setup = saved_data['best_setup']
         # Prefer 'test' setup (out-of-sample optimized), fallback to 'train'
         setup_to_use = best_setup.get('test', best_setup.get('train'))
@@ -349,12 +383,21 @@ def entry_point(args):
             proba = model.predict_proba(X_last_scaled)[0][1]
 
         print("\n" + "═" * 50)
-        print(f"🚀 REAL-TIME PREDICTION FOR NEXT MONTH")
+        print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} STEP")
         print(f"📅 Base Date       : {last_date}")
         print(f"📊 Prediction      : {'UP (1)' if pred == 1 else 'DOWN (0)'}")
         if proba is not None:
-            print(f"📈 Confidence    : {proba:.2%}")
+            print(f"📈 Confidence      : {proba:.2%}")
+        print("═" * 50)
         print(f"🔑 Features Used   : {feat_cols}")
+        print(f"   Scorer: {setup_to_use['scorer']}")
+        print(f"   Train/Test scores: {setup_to_use['train_score']:.2%}/{setup_to_use['test_score']:.2%}")
+        print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
+        print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
+              f"y    : {setup_to_use['y_test_final'].values}\n"
+              f"y_hat: {setup_to_use['y_hat_test_final']}")
+        print("Confusion Matrix:")
+        print(confusion_matrix(setup_to_use['y_test_final'], setup_to_use['y_hat_test_final']))
         print("═" * 50)
         return
 
@@ -398,11 +441,11 @@ def entry_point(args):
         # ─────────────────────────────────────────────────────────────────────
         # ⏱️ Time limit check
         # ─────────────────────────────────────────────────────────────────────
-        stop_search_time_limit_exceeeded = False
+        stop_search_time_limit_exceeded = False
         if time_limit and (time.time() - start_time) >= time_limit:
             if verbose:
                 print(f"\n⏱️ Time limit of {time_limit} seconds reached. Stopping search gracefully...")
-            stop_search_time_limit_exceeeded = True
+            stop_search_time_limit_exceeded = True
         assert len(selected_features) == len(list(set(selected_features)))
         X = df[selected_features].copy()
         y = df["Target"].copy()
@@ -488,8 +531,9 @@ def entry_point(args):
                                             'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
                                             'X_train_full__before_scaled': X_train_full, 'X_train_scaled': X_train_scaled,
                                             'y_train_full': y_train_full, 'X_test_final__before_scaled': X_test_final,
-                                            'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final,
-                                            'X': X, 'y': y, 'n_test': n_test}, False
+                                            'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final, 'y_hat_test_final': test_preds,
+                                            'X': X, 'y': y, 'n_test': n_test, 'train_t1': X_train_full.index[0].strftime('%Y-%m-%d'), 'train_t2': X_train_full.index[-1].strftime('%Y-%m-%d'),
+                                            'test_t1':X_test_final.index[0].strftime('%Y-%m-%d'), 'test_t2': X_test_final.index[-1].strftime('%Y-%m-%d')}, False
         if train_score >= best_setup_found['train']['train_score']:
             cd1 = train_score > best_setup_found['train']['train_score']
             cd2 = train_score == best_setup_found['train']['train_score'] and test_score > best_setup_found['train']['test_score']
@@ -500,7 +544,7 @@ def entry_point(args):
             cd2 = test_score == best_setup_found['test']['test_score'] and train_score > best_setup_found['test']['train_score']
             if cd1 or cd2:
                 best_setup_found['test'], do_display = _tmp_update_snapshot, True
-        if (verbose and (not displayed_output_once or do_display)) or stop_search_time_limit_exceeeded:
+        if (verbose and (not displayed_output_once or do_display)) or stop_search_time_limit_exceeded:
             for category in ['train', 'test']:
                 data = best_setup_found[category]
                 _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher", "lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target * 100:.2f}%"
@@ -517,7 +561,7 @@ def entry_point(args):
                 print(f"  - Test  {data['scorer']}: {data['test_score']:.2%}")
 
                 saved_preds = data['model'].predict(data['X_test_scaled'])
-
+                assert np.array_equal(saved_preds, data['y_hat_test_final']) , "Sanity check failed!"
                 print(f"\nClassification Report ({category} snapshot):")
                 print(classification_report(data['y_test_final'], saved_preds, zero_division=0))
                 print(f"\n"
@@ -527,7 +571,7 @@ def entry_point(args):
                 print(confusion_matrix(data['y_test_final'], saved_preds))
                 print("═" * 70)
         displayed_output_once = True
-        if stop_search_time_limit_exceeeded:
+        if stop_search_time_limit_exceeded:
             break
     # ─────────────────────────────────────────────────────────────────────────
     # 💾 Save the best model after loop finishes or breaks
