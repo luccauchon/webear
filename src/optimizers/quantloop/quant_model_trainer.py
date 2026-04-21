@@ -15,7 +15,7 @@ import pickle
 import random
 from datetime import datetime
 import time
-
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import warnings
@@ -537,7 +537,7 @@ def entry_point(args):
     else:
         if verbose:
             print("\n⚠️ No valid model was trained. Nothing to save.")
-
+    print(f"\nScript was executed in {Path.cwd()}")
 
 if __name__ == "__main__":
     parsed_args = parse_arguments()
