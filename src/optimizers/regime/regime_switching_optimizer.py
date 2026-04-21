@@ -1028,7 +1028,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
         )
 
     regime__2__otm   = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
-    regime__2__count = {r: float(_stats[r]['count']) for r in range(_params['n_clusters']) if r in _stats}
+    regime__2__count = {r: int(_stats[r]['count']) for r in range(_params['n_clusters']) if r in _stats}
     sorted_regime_desc = dict(sorted(regime__2__otm.items(), key=lambda item: item[1], reverse=True))
     parts = []
     for k, v in sorted_regime_desc.items():
