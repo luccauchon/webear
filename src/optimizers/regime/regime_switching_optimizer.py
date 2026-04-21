@@ -691,8 +691,10 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     """
     Load a saved model and run inference on the latest data point.
     """
-    print("⚡ REAL-TIME INFERENCE MODE")
-    print("-" * 60)
+    normal_verbose = not args.short_verbose
+    if normal_verbose:
+        print("⚡ REAL-TIME INFERENCE MODE")
+        print("-" * 60)
 
     # Handle --list-models flag
     if list_models:
@@ -747,7 +749,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         print("   → Run optimization first without --real-time to generate a model.")
         return
 
-    print(f"📂 Loading model: {model_filename}")
     with open(model_filename, "rb") as f:
         model_data = pickle.load(f)
 
@@ -814,12 +815,13 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     regime_stats = _stats[regime]
 
     # 6. Print Regime Report
-    print_report(
-        _regime=regime,
-        _stats=regime_stats,
-        _strike_distance=_metadata['strike_distance'],
-        _spread_type=_metadata['spread_type'], _latest_date=latest_date, _latest_close_value=latest_close_value,
-    )
+    if normal_verbose:
+        print_report(
+            _regime=regime,
+            _stats=regime_stats,
+            _strike_distance=_metadata['strike_distance'],
+            _spread_type=_metadata['spread_type'], _latest_date=latest_date, _latest_close_value=latest_close_value,
+        )
 
     # ─────────────────────────────────────────────────────
     # 6b. Apply Regime Filters (if any specified)
@@ -843,42 +845,44 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
             print("   → Trade blocked by regime filtering criteria\n")
 
     # 7. Evaluate Trade Decision
-    print("💰 TRADE DECISION EVALUATION")
-    print("─" * 40)
-    if not regime_filter_passed:
-        print(f"🎯 DECISION: ⛔ SKIP (Regime filter failed: {filter_reason})")
-    else:
-        max_loss = _trade_context['spread_width'] - _trade_context['credit_received']
-        trade_decision = should_trade_credit_spread(
-            _regime_stats=regime_stats,
-            _credit_received=_trade_context['credit_received'],
-            _max_loss=max_loss,
-            _min_edge_ratio=args.min_edge_ratio
-        )
+    if normal_verbose:
+        print("💰 TRADE DECISION EVALUATION")
+        print("─" * 40)
+        if not regime_filter_passed:
+            print(f"🎯 DECISION: ⛔ SKIP (Regime filter failed: {filter_reason})")
+        else:
+            max_loss = _trade_context['spread_width'] - _trade_context['credit_received']
+            trade_decision = should_trade_credit_spread(
+                _regime_stats=regime_stats,
+                _credit_received=_trade_context['credit_received'],
+                _max_loss=max_loss,
+                _min_edge_ratio=args.min_edge_ratio
+            )
 
-        print(f"Spread Configuration:")
-        print(f"   • Width:           ${_trade_context['spread_width']:.2f}")
-        print(f"   • Credit Received: ${_trade_context['credit_received']:.2f}")
-        print(f"   • Max Loss:        ${max_loss:.2f}")
-        print(f"   • Min Edge Ratio:  {args.min_edge_ratio * 100:.1f}%")
-        print()
-        print(f"Regime-Based Metrics:")
-        print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
-        print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
-        print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
-        print()
-        print(f"🎯 DECISION: {trade_decision['message']}")
+            print(f"Spread Configuration:")
+            print(f"   • Width:           ${_trade_context['spread_width']:.2f}")
+            print(f"   • Credit Received: ${_trade_context['credit_received']:.2f}")
+            print(f"   • Max Loss:        ${max_loss:.2f}")
+            print(f"   • Min Edge Ratio:  {args.min_edge_ratio * 100:.1f}%")
+            print()
+            print(f"Regime-Based Metrics:")
+            print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
+            print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
+            print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
+            print()
+            print(f"🎯 DECISION: {trade_decision['message']}")
 
     # ─────────────────────────────────────────────────────
     # OPTIONAL: Show ALL regimes summary if flag is set
     # ─────────────────────────────────────────────────────
-    print_all_regimes_summary(
-        _stats=_stats,
-        _n_clusters=_params['n_clusters'],
-        _spread_type=_metadata['spread_type'],
-        _strike_distance=_metadata['strike_distance'],
-        _forward_days=_metadata['forward_days']
-    )
+    if normal_verbose:
+        print_all_regimes_summary(
+            _stats=_stats,
+            _n_clusters=_params['n_clusters'],
+            _spread_type=_metadata['spread_type'],
+            _strike_distance=_metadata['strike_distance'],
+            _forward_days=_metadata['forward_days']
+        )
 
     regime__2__otm = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
     sorted_regime_desc = dict(sorted(regime__2__otm.items(), key=lambda item: item[1], reverse=True))
@@ -892,9 +896,10 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     result_string = f"[{','.join(parts)}]"
     print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , {result_string}")
     print(f"🎯 Short Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price , forward {regime_stats['forward_days']} {regime_stats['dataset_id']}")
-    print("\n" + "═" * 60)
-    print("✨ INFERENCE COMPLETE")
-    print("═" * 60 + "\n")
+    if normal_verbose:
+        print("\n" + "═" * 60)
+        print("✨ INFERENCE COMPLETE")
+        print("═" * 60 + "\n")
 
 
 # =========================================================
@@ -1573,6 +1578,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--real-time", action="store_true",
         help="Load saved model and run inference on latest data (skip optimization)"
+    )
+    parser.add_argument("--short-verbose", action="store_true",
+        help="In Real-Time mode only, display only the minimal information"
     )
     # ─────────────────────────────────────────────────────
     # REGIME FILTERING OPTIONS (Real-Time Mode Only)
