@@ -454,9 +454,21 @@ def load_data(_ticker, _dataset_id):
 # =========================================================
 # FEATURE ENGINEERING
 # =========================================================
-def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3, _rsi_length, _ema1, _ema2, _atr_period):
+def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3, _rsi_length, _ema1, _ema2, _atr_period, _add_enhanced_features):
     """
     Build technical features for regime classification.
+
+    ENHANCEMENTS ADDED (2026):
+    • Tail risk metrics (skewness, kurtosis)
+    • Volatility term structure & expansion signals
+    • Bollinger Band position, width, and squeeze detection
+    • ADX trend strength + trend quality composite
+    • Drawdown depth & recovery ratio metrics
+    • Momentum divergence signals (price/RSI)
+    • Volume confirmation (OBV momentum, volume volatility)
+    • Gap risk proxy (requires 'Open' column)
+    • Volatility persistence (autocorrelation of |returns|)
+    • Seasonal volatility interaction flags
 
     Parameters:
     -----------
@@ -524,6 +536,135 @@ def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3, _rsi_length, _
 
     # ===== Volatility Regime Changes =====
     _features["vol_regime_change"] = (_features["vol_10"] / _features["vol_60"].shift(1)) - 1
+
+    # =========================================================
+    # 🆕 ENHANCED FEATURES (2026 Additions)
+    # =========================================================
+    if _add_enhanced_features:
+        # ── 1. TAIL RISK & DISTRIBUTION FEATURES ──
+        # Skewness & Kurtosis of recent returns (tail risk proxy)
+        for window in [20, 60]:
+            returns_window = returns.rolling(window, min_periods=window)
+            _features[f"skew_{window}"] = returns_window.apply(lambda x: x.skew(), raw=False)
+            _features[f"kurt_{window}"] = returns_window.apply(lambda x: x.kurtosis(), raw=False)
+
+        # ── 2. VOLATILITY TERM STRUCTURE PROXY ──
+        # Ratio of short-term to long-term volatility + expansion signal
+        _features["vol_term_structure"] = _features["vol_10"] / (_features["vol_60"] + 1e-8)
+        _features["vol_expansion"] = _features["vol_10"] - _features["vol_60"].shift(1)
+
+        # ── 3. BOLLINGER BAND POSITION & SQUEEZE ──
+        bb_middle = ta.sma(close, 20)
+        bb_std = returns.rolling(20, min_periods=20).std()
+        bb_upper = bb_middle + 2 * bb_std * close
+        bb_lower = bb_middle - 2 * bb_std * close
+
+        _features["bb_position"] = (close - bb_lower) / (bb_upper - bb_lower + 1e-8)
+        _features["bb_width"] = (bb_upper - bb_lower) / close
+        _features["bb_squeeze"] = (_features["bb_width"] < _features["bb_width"].rolling(60, min_periods=60).quantile(0.25)).astype(float)
+
+        # ── 4. ADX + TREND QUALITY METRICS ──
+        adx_data = ta.adx(_df["High"], _df["Low"], close, length=14)
+        _features["adx"] = adx_data["ADX_14"]
+        _features["trend_quality"] = _features["adx"] * abs(_features["trend_strength"])
+
+        # ── 5. DRAWDOWN & RECOVERY STATE ──
+        rolling_max_60 = close.rolling(60, min_periods=1).max()
+        rolling_min_60 = close.rolling(60, min_periods=1).min()
+        _features["drawdown"] = (close - rolling_max_60) / rolling_max_60
+        _features["recovery_ratio"] = ((close - rolling_min_60) / (rolling_max_60 - rolling_min_60 + 1e-8)).clip(0, 1)  # Clamp to [0, 1] for stability
+
+        # ── 6. MOMENTUM DIVERGENCE SIGNALS ──
+        _div_period = 5
+
+        # Bearish: Price higher high, RSI lower high
+        price_high = close.rolling(_div_period).max()
+        rsi_high = _features["rsi"].rolling(_div_period).max()
+        _features["rsi_bearish_div"] = (
+                (close > price_high.shift(1)) & (_features["rsi"] < rsi_high.shift(1))
+        ).astype(float)
+
+        # Bullish: Price lower low, RSI higher low
+        price_low = close.rolling(_div_period).min()
+        rsi_low = _features["rsi"].rolling(_div_period).min()
+        _features["rsi_bullish_div"] = (
+                (close < price_low.shift(1)) & (_features["rsi"] > rsi_low.shift(1))
+        ).astype(float)
+
+        # ── 7. VOLUME-PRICE CONFIRMATION ──
+        obv = ta.obv(close, _df["Volume"])
+        _features["obv_momentum"] = obv.pct_change(10)
+        _features["volume_vol"] = (
+                _df["Volume"].rolling(20, min_periods=20).std() /
+                _df["Volume"].rolling(20, min_periods=20).mean()
+        )
+        # Volume spike detection
+        _features["volume_spike"] = (
+                _df["Volume"] > _df["Volume"].rolling(60, min_periods=60).quantile(0.9)
+        ).astype(float)
+
+        # ── 8. GAP & OVERNIGHT RISK PROXY (if 'Open' available) ──
+        if "Open" in _df.columns:
+            _features["gap_pct"] = (_df["Open"] - close.shift(1)) / close.shift(1)
+            _features["gap_vol"] = _features["gap_pct"].rolling(20, min_periods=20).std()
+            _features["gap_filled"] = (
+                    ((close >= _df["Open"]) & (close.shift(1) <= _df["Open"])) |
+                    ((close <= _df["Open"]) & (close.shift(1) >= _df["Open"]))
+            ).astype(float)
+        else:
+            # Fill with NaN if Open not available - will be dropped during alignment
+            _features["gap_pct"] = np.nan
+            _features["gap_vol"] = np.nan
+            _features["gap_filled"] = np.nan
+
+        # ── 9. VOLATILITY CLUSTERING / PERSISTENCE ──
+        # Autocorrelation of absolute returns (GARCH-like signal)
+        abs_returns = returns.abs()
+
+        def rolling_autocorr(series, lag=1, window=20):
+            """Compute rolling autocorrelation with safe handling"""
+
+            def _autocorr(x):
+                x_clean = x.dropna()
+                if len(x_clean) < lag + 2:
+                    return np.nan
+                return x_clean.autocorr(lag=lag)
+
+            return series.rolling(window, min_periods=window).apply(_autocorr, raw=False)
+
+        _features["vol_persistence_1"] = rolling_autocorr(abs_returns, lag=1, window=20)
+        _features["vol_persistence_5"] = rolling_autocorr(abs_returns, lag=1, window=60)
+
+        # ── 10. SEASONAL VOLATILITY INTERACTION ──
+        # Flag high-volatility months (Sep-Oct-Nov historically volatile)
+        high_vol_threshold = _features["vol_10"].rolling(252, min_periods=126).quantile(0.75)
+        _features["high_vol_month"] = (
+                (_features["vol_10"] > high_vol_threshold) &
+                (_features["month"].isin([9, 10, 11]))
+        ).astype(float)
+
+        # Year-end / quarter-end volatility interaction
+        _features["q4_vol_interaction"] = (
+                (_features["month"].isin([10, 11, 12])) &
+                (_features["vol_10"] > _features["vol_10"].rolling(60).median())
+        ).astype(float)
+
+        # =========================================================
+        # 🧹 POST-PROCESSING: Clip extreme values for stability
+        # =========================================================
+        # Prevent runaway values that could destabilize clustering
+        clip_cols = [
+            "skew_20", "skew_60", "kurt_20", "kurt_60",
+            "bb_position", "drawdown", "recovery_ratio",
+            "obv_momentum", "volume_vol", "gap_pct"
+        ]
+        for col in clip_cols:
+            if col in _features.columns:
+                # Clip to 5th/95th percentile for robustness
+                lower = _features[col].quantile(0.05)
+                upper = _features[col].quantile(0.95)
+                if pd.notna(lower) and pd.notna(upper) and lower < upper:
+                    _features[col] = _features[col].clip(lower, upper)
 
     return _features
 
@@ -787,7 +928,8 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         _rsi_length=_params.get('rsi_length', 14),
         _ema1=_params.get('ema1', 50),
         _ema2=_params.get('ema2', 200),
-        _atr_period=_params.get('atr_period', 14)
+        _atr_period=_params.get('atr_period', 14),
+        _add_enhanced_features=False,
     )
 
     # 4. Prepare Latest Data Point
@@ -1028,7 +1170,8 @@ def entry_main(args):
             _vol1=_vol1, _vol2=_vol2, _vol3=_vol3,
             _rsi_length=_rsi_length,
             _ema1=_ema1, _ema2=_ema2,
-            _atr_period=_atr_period
+            _atr_period=_atr_period,
+            _add_enhanced_features=False,
         )
         _target_train = build_target(
             _df=df_train_raw,
@@ -1044,7 +1187,8 @@ def entry_main(args):
             _vol1=_vol1, _vol2=_vol2, _vol3=_vol3,
             _rsi_length=_rsi_length,
             _ema1=_ema1, _ema2=_ema2,
-            _atr_period=_atr_period
+            _atr_period=_atr_period,
+            _add_enhanced_features=False,
         )
         _target_test = build_target(
             _df=df_test_raw,
@@ -1245,7 +1389,8 @@ def entry_main(args):
         _rsi_length=best_params.get('rsi_length', 14),
         _ema1=best_params.get('ema1', 50),
         _ema2=best_params.get('ema2', 200),
-        _atr_period=best_params.get('atr_period', 14)
+        _atr_period=best_params.get('atr_period', 14),
+        _add_enhanced_features = False,
     )
 
     # Build target
