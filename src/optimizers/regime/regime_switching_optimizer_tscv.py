@@ -949,7 +949,7 @@ if __name__ == "__main__":
     try:
         if args.real_time:
             # Run Inference Mode
-            run_real_time_inference(args, ticker=args.ticker, list_models=args.list_models, model_filename=args.model_filename)
+            run_real_time_inference(args, ticker=args.ticker, list_models=args.list_models, model_filename=args.model_filename, use_enhanced_features=True)
         else:
             # Run Optimization Mode
             entry_main(args)

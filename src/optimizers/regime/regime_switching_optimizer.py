@@ -828,7 +828,7 @@ def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=N
 # =========================================================
 # REAL-TIME INFERENCE FUNCTION
 # =========================================================
-def run_real_time_inference(args, ticker, list_models, model_filename):
+def run_real_time_inference(args, ticker, list_models, model_filename, use_enhanced_features):
     """
     Load a saved model and run inference on the latest data point.
     """
@@ -929,7 +929,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         _ema1=_params.get('ema1', 50),
         _ema2=_params.get('ema2', 200),
         _atr_period=_params.get('atr_period', 14),
-        _add_enhanced_features=False,
+        _add_enhanced_features=use_enhanced_features,
     )
 
     # 4. Prepare Latest Data Point
@@ -1774,7 +1774,7 @@ if __name__ == "__main__":
     try:
         if args.real_time:
             # Run Inference Mode
-            run_real_time_inference(args, ticker=args.ticker, list_models=args.list_models, model_filename=args.model_filename)
+            run_real_time_inference(args, ticker=args.ticker, list_models=args.list_models, model_filename=args.model_filename, use_enhanced_features=False)
         else:
             # Run Optimization Mode
             entry_main(args)
