@@ -1407,15 +1407,15 @@ def generate_ichimoku_signals(_df, close_col):
     return _df
 
 
-def get_next_step(dataset_id, nn):
+def get_next_step(the_date, dataset_id, nn):
     if 'day' == dataset_id:
-        _next_ = next_weekday(_latest_date, nn)
+        _next_ = next_weekday(the_date, nn)
     elif 'week' == dataset_id:
-        _next_ = next_week(_latest_date)
+        _next_ = next_week(the_date)
         for u in range(1, nn):
             _next_ = next_week(_next_)
     elif 'month' == dataset_id:
-        _next_ = next_month(_latest_date)
+        _next_ = next_month(the_date)
         for u in range(1, nn):
             _next_ = next_week(_next_)
     else:

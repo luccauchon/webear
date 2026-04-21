@@ -792,7 +792,7 @@ def print_report(_regime, _stats, _strike_distance, _spread_type, _latest_date=N
             _strike_price_low  = _latest_close_value * (1 - _strike_distance)
             _strike_price_high = _latest_close_value * (1 + _strike_distance)
             _tmp_str_position = f"@[{_strike_price_low:.0f} :: {_strike_price_high:.0f}]"
-        _next_ = get_next_step(dataset_id=_stats['dataset_id'], nn=_stats['forward_days'])
+        _next_ = get_next_step(the_date=_latest_date, dataset_id=_stats['dataset_id'], nn=_stats['forward_days'])
         print(f"🎯 Short Strike Distance:    {_strike_distance * 100:.1f}% from current price , forward {_stats['forward_days']} {_stats['dataset_id']} -> take position on {_next_.strftime('%Y-%m-%d')} {_tmp_str_position}")
     print()
 
@@ -1015,9 +1015,8 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
             _forward_days=_metadata['forward_days'],
             _args=args,
         )
-    print(f"📅 Analyzing latest data point: {latest_date.strftime('%Y-%m-%d')}  (close value @{latest_close_value:.0f})")
     _future_value__base_on__latest_close_value = latest_close_value * (1 + _metadata['strike_distance']) if "CALL" == _metadata['spread_type'].upper() else latest_close_value * (1 - _metadata['strike_distance'])
-    _due_date_ = get_next_step(dataset_id=regime_stats['dataset_id'], nn=regime_stats['forward_days'])
+    _due_date_ = get_next_step(the_date=latest_date, dataset_id=regime_stats['dataset_id'], nn=regime_stats['forward_days'])
     regime__2__otm   = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
     regime__2__count = {r: int(_stats[r]['count']) for r in range(_params['n_clusters']) if r in _stats}
     sorted_regime_desc = dict(sorted(regime__2__otm.items(), key=lambda item: item[1], reverse=True))
