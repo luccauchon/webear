@@ -340,8 +340,6 @@ def entry_point(args):
         percentage_of_type_target = saved_params.get('target_percentage', percentage_of_type_target)
         assert 'target_type' in saved_params
         type_of_target = saved_params.get('target_type', type_of_target)
-        assert 'dataset_filename' in saved_params
-        final_dataset_filename = saved_params.get('dataset_filename', final_dataset_filename)
         print("✅ Using saved training parameters for real-time feature engineering.")
     if verbose:
         print(f"🔄 Loading data from <<{final_dataset_filename}>>")
@@ -557,7 +555,7 @@ def entry_point(args):
                 data = best_setup_found[category]
                 _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher", "lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target * 100:.2f}%"
                 print("\n" + "═" * 70)
-                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  {_type_target_str}")
+                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  {_type_target_str}  |  LA:{look_head_for_prediction}  |  DF:{final_dataset_filename}")
                 print("═" * 70)
 
                 print(f"Features         : {data['features']}")
