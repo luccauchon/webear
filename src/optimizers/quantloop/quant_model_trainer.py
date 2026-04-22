@@ -328,12 +328,19 @@ def entry_point(args):
 
         # Override CLI args with saved training parameters
         saved_params = saved_data.get('params', {})
+        assert 'rsi_window' in saved_params
         rsi_window = saved_params.get('rsi_window', rsi_window)
+        assert 'vix_lag' in saved_params
         vix_lag = saved_params.get('vix_lag', vix_lag)
+        assert 'rsi_lag' in saved_params
         rsi_lag = saved_params.get('rsi_lag', rsi_lag)
+        assert 'look_ahead' in saved_params
         look_head_for_prediction = saved_params.get('look_ahead', look_head_for_prediction)
+        assert 'target_percentage' in saved_params
         percentage_of_type_target = saved_params.get('target_percentage', percentage_of_type_target)
+        assert 'target_type' in saved_params
         type_of_target = saved_params.get('target_type', type_of_target)
+        assert 'dataset_filename' in saved_params
         final_dataset_filename = saved_params.get('dataset_filename', final_dataset_filename)
         print("✅ Using saved training parameters for real-time feature engineering.")
     if verbose:
@@ -365,7 +372,7 @@ def entry_point(args):
         print(f"📅 Using last datapoint: {last_date}")
 
         best_setup = saved_data['best_setup']
-        # Prefer 'test' setup (out-of-sample optimized), fallback to 'train'
+        assert 'test' in best_setup
         setup_to_use = best_setup.get('test', best_setup.get('train'))
 
         scaler = setup_to_use['scaler']
@@ -393,6 +400,7 @@ def entry_point(args):
         print(f"   Scorer: {setup_to_use['scorer']}")
         print(f"   Train/Test scores: {setup_to_use['train_score']:.2%}/{setup_to_use['test_score']:.2%}")
         print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
+        print(f"   Target: {type_of_target} @{percentage_of_type_target:.2%}")
         print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
               f"y    : {setup_to_use['y_test_final'].values}\n"
               f"y_hat: {setup_to_use['y_hat_test_final']}")
