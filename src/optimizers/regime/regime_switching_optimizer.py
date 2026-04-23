@@ -855,7 +855,8 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
         if not os.path.exists(model_path):
             print(f"❌ ERROR: Model file not found: {model_path}")
             return
-        print(f"📂 Loading specified model: {model_path}")
+        if not hyper_silence:
+            print(f"📂 Loading specified model: {model_path}")
     else:
         # Auto-detect: try latest symlink first, then most recent matching file
         latest_link = f"{args.output_dir}/{ticker.replace('^', '')}_regime_model_latest.pkl"
@@ -890,12 +891,14 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     _metadata = model_data.get("metadata", {})
     _trade_context = model_data["trade_context"]
     assert ticker == _metadata['ticker']
-    print(f"✅ Model loaded successfully (Created: {_metadata.get('timestamp', 'N/A')})")
+    if not hyper_silence:
+        print(f"✅ Model loaded successfully (Created: {_metadata.get('timestamp', 'N/A')})")
 
     # 2. Load Latest Data
     try:
         df = load_data(_ticker=ticker, _dataset_id=_metadata['dataset_id'])
-        print(f"📦 Loaded {len(df)} rows for {ticker}   (dataset id:{_metadata['dataset_id']})")
+        if not hyper_silence:
+            print(f"📦 Loaded {len(df)} rows for {ticker}   (dataset id:{_metadata['dataset_id']})")
     except Exception as e:
         print(f"❌ ERROR loading data: {e}")
         return
@@ -906,7 +909,8 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
             raise ValueError(f"Missing required param '{param}' in saved model")
     # 3. Build Features using SAVED Hyperparameters
     # Crucial: Must use the same params used during training
-    print(f"🔧 Engineering features with saved hyperparameters: {_params}")
+    if not hyper_silence:
+        print(f"🔧 Engineering features with saved hyperparameters: {_params}")
     features = build_features(
         _df=df,
         _pct1=_params.get('pct1', 5),
@@ -932,13 +936,14 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     latest_row = valid_features.iloc[[-1]]
     assert df.index[-1] == latest_date
     latest_close_value = df['Close'].iloc[-1]
-    print(f"📅 Analyzing latest data point: {latest_date.strftime('%Y-%m-%d')}  (close value @{latest_close_value:.0f})")
+    if not hyper_silence:
+        print(f"📅 Analyzing latest data point: {latest_date.strftime('%Y-%m-%d')}  (close value @{latest_close_value:.0f})")
 
     # 5. Scale and Predict
     X_latest = _scaler.transform(latest_row)
     regime = _model.predict(X_latest)[0]
-
-    print(f"🔍 Detected Regime: #{regime}")
+    if not hyper_silence:
+        print(f"🔍 Detected Regime: #{regime}")
 
     if regime not in _stats:
         print(f"⚠️  WARNING: Regime #{regime} has no statistics (possibly insufficient samples during training)")
