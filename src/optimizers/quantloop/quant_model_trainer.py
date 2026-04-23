@@ -28,6 +28,7 @@ from sklearn.metrics import (classification_report, confusion_matrix,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
 from tqdm import tqdm
+from utils import get_next_step
 
 
 def parse_arguments():
@@ -386,10 +387,15 @@ def entry_point(args):
         proba = None
         if hasattr(model, 'predict_proba'):
             proba = model.predict_proba(X_last_scaled)[0][1]
-
+        dataset_id = "day" if "_day_" in final_dataset_filename else None
+        dataset_id = "month" if "_monthly_" in final_dataset_filename else dataset_id
+        dataset_id = "week" if "_weekly_" in final_dataset_filename or "_week" in final_dataset_filename else dataset_id
+        assert dataset_id is not None
+        ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
         print("\n" + "═" * 50)
         print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} STEP")
         print(f"📅 Base Date       : {last_date}")
+        print(f"📅 Prediction Date : {ff_date}")
         print(f"📊 Prediction      : {'UP (1)' if pred == 1 else 'DOWN (0)'}")
         if proba is not None:
             print(f"📈 Confidence      : {proba:.2%}")

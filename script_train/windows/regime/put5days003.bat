@@ -8,6 +8,8 @@ python .\regime_switching_optimizer.py ^
 --strike-distance 0.03 ^
 --timeout 256000 ^
 --spread-type put ^
---storage-url sqlite:///put5days003.db ^
---study-name put5days003
+--penalize_invalid_cluster ^
+--confirmation-before-run ^
+--storage-url sqlite:///put5days003_2.db ^
+--study-name put5days003_2
 pause

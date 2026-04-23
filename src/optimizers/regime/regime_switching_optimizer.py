@@ -1097,6 +1097,10 @@ def entry_main(args):
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     total_number_of_rows = len(df)
+    split_value = 0.8
+    split_idx = int(len(df) * split_value)
+    print(f"   Split value of {split_value:.2%} | {int(split_value * total_number_of_rows)} ({df.index[0].strftime("%Y-%m-%d")}:{df.index[split_idx-1].strftime("%Y-%m-%d")}) :: "
+          f"{int((1 - split_value) * total_number_of_rows)} ({df.index[split_idx].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")})")
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
@@ -1150,8 +1154,6 @@ def entry_main(args):
 
         # ===== 1. TIME-SERIES SPLIT (RAW DATA) =====
         # Split BEFORE feature engineering to prevent leakage in rolling windows/targets
-        split_idx = int(len(df) * 0.8)
-
         df_train_raw = df.iloc[:split_idx].copy()
         df_test_raw  = df.iloc[split_idx:].copy()
 
@@ -1252,11 +1254,13 @@ def entry_main(args):
         test_data['regime'] = regimes_test
 
         # ===== 6. Evaluate Each Regime on TEST Data Only =====
-        scores = []
+        scores, valid_clusters = [], 0
         for r in range(_n_clusters):
             subset = test_data[test_data["regime"] == r]["target"]
-
+            print(f"{r}  {len(subset)}  {len(X_test)}   {len(X_train)}")
             if len(subset) < min_n_in_cluster:
+                trial.set_user_attr(f"cluster_{r}_skipped", True)
+                trial.set_user_attr(f"cluster_{r}_samples", len(subset))
                 continue  # Skip underpopulated clusters
 
             # 1. Primary: OTM Probability (higher = better for credit spreads)
@@ -1301,8 +1305,13 @@ def entry_main(args):
             )
 
             scores.append(combined)
+            valid_clusters += 1
 
-        return np.mean(scores) if scores else 0.0
+        if len(scores) > 0 and args.penalize_invalid_cluster:
+            base_score = np.mean(scores)
+            coverage_penalty = valid_clusters / _n_clusters  # e.g., 3/5 = 0.6
+            return base_score * coverage_penalty
+        return np.mean(scores) if len(scores) > 0 else 0.0
 
     # =========================================================
     # OPTUNA STUDY SETUP
@@ -1336,7 +1345,8 @@ def entry_main(args):
     else:
         print("→ Starting fresh optimization...")
     print("─" * 40 + "\n")
-
+    if args.confirmation_before_run:
+        input("Appuyez sur Entrée pour continuer...")
     # ===== Run Optimization =====
     print("⚙️  Running Optuna optimization...\n")
     study.optimize(
@@ -1676,6 +1686,10 @@ if __name__ == "__main__":
         "--min-n-in-cluster", type=int, default=160,
         help="Minimum samples per cluster to be considered valid"
     )
+    parser.add_argument(
+        "--penalize_invalid_cluster", action="store_true",
+        help="Add a penalty for invalid clusters"
+    )
 
     # ─────────────────────────────────────────────────────
     # CREDIT SPREAD TRADE CONFIGURATION
@@ -1720,6 +1734,11 @@ if __name__ == "__main__":
     parser.add_argument("--short-verbose", action="store_true",
         help="In Real-Time mode only, display only the minimal information"
     )
+    parser.add_argument(
+        "--confirmation-before-run", action="store_true",
+        help="Ask user to hit enter before running the optimzation"
+    )
+
     # ─────────────────────────────────────────────────────
     # REGIME FILTERING OPTIONS (Real-Time Mode Only)
     # ─────────────────────────────────────────────────────
