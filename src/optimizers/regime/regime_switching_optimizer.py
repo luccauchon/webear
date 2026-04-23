@@ -1257,7 +1257,7 @@ def entry_main(args):
         scores, valid_clusters = [], 0
         for r in range(_n_clusters):
             subset = test_data[test_data["regime"] == r]["target"]
-            print(f"{r}  {len(subset)}  {len(X_test)}   {len(X_train)}")
+
             if len(subset) < min_n_in_cluster:
                 trial.set_user_attr(f"cluster_{r}_skipped", True)
                 trial.set_user_attr(f"cluster_{r}_samples", len(subset))
