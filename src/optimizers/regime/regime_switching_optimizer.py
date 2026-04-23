@@ -894,7 +894,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     # 2. Load Latest Data
     try:
         df = load_data(_ticker=ticker, _dataset_id=_metadata['dataset_id'])
-        print(f"📦 Loaded {len(df)} rows for {ticker}")
+        print(f"📦 Loaded {len(df)} rows for {ticker}   (dataset id:{_metadata['dataset_id']})")
     except Exception as e:
         print(f"❌ ERROR loading data: {e}")
         return
