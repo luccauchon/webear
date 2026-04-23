@@ -29,8 +29,8 @@ if IS_RUNNING_ON_CASIR:
     BASE_YFINANCE_DIR = r"/gpfs/groups/gc014b/cj3272/experiences/yfinance"
     BASE_FORECAST_DIR  = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
 if IS_RUNNING_ON_LINUX_VMWARE:
-    BASE_YFINANCE_DIR = r"/home/ubuntu/Finance/data/yfinance"
-    BASE_FORECAST_DIR  = "/home/ubuntu/Finance/data/forecast"
+    BASE_YFINANCE_DIR  = "/home/luccauchon/REALTIME/data/yfinance"
+    BASE_FORECAST_DIR  = "/home/luccauchon/REALTIME/data/forecast"
 # Ensure the directory exists (optional, but helpful if you're writing later)
 os.makedirs(BASE_YFINANCE_DIR, exist_ok=True)
 
