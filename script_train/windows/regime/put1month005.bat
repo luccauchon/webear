@@ -8,7 +8,7 @@ python .\regime_switching_optimizer.py ^
 --strike-distance 0.05 ^
 --timeout 256000 ^
 --spread-type put ^
---penalize_invalid_cluster ^
+--penalize-invalid-cluster ^
 --confirmation-before-run ^
 --min-n-in-cluster 8 ^
 --storage-url sqlite:///put1month005_2.db ^

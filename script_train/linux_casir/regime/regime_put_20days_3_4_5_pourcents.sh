@@ -6,6 +6,7 @@ python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__1.db \
     --timeout $WEBEAR__TIMEOUT \
     --spread-type put \
     --strike-distance 0.03 \
+    --penalize-invalid-cluster \
     --forward-days 20 \
     --lookback-years 99999 &
 PID1=$!
@@ -15,6 +16,7 @@ python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__2.db \
     --timeout $WEBEAR__TIMEOUT \
     --spread-type put \
     --strike-distance 0.04 \
+    --penalize-invalid-cluster \
     --forward-days 20 \
     --lookback-years 99999 &
 PID2=$!
@@ -24,6 +26,7 @@ python regime_switching_optimizer.py --storage-url sqlite:///put_20_days__3.db \
     --timeout $WEBEAR__TIMEOUT \
     --spread-type put \
     --strike-distance 0.05 \
+    --penalize-invalid-cluster \
     --forward-days 20 \
     --lookback-years 99999 &
 PID3=$!

@@ -1687,7 +1687,7 @@ if __name__ == "__main__":
         help="Minimum samples per cluster to be considered valid"
     )
     parser.add_argument(
-        "--penalize_invalid_cluster", action="store_true",
+        "--penalize-invalid-cluster", action="store_true",
         help="Add a penalty for invalid clusters"
     )
 

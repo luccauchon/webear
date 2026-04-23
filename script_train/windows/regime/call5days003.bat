@@ -8,7 +8,7 @@ python .\regime_switching_optimizer.py ^
 --strike-distance 0.03 ^
 --timeout 256000 ^
 --spread-type call ^
---penalize_invalid_cluster ^
+--penalize-invalid-cluster ^
 --confirmation-before-run ^
 --storage-url sqlite:///call5days003_1.db ^
 --study-name call5days003_1
