@@ -822,7 +822,8 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     Load a saved model and run inference on the latest data point.
     """
     normal_verbose = not args.short_verbose
-    if normal_verbose:
+    hyper_silence  = args.hypershort_verbose
+    if normal_verbose and not hyper_silence:
         print("⚡ REAL-TIME INFERENCE MODE")
         print("-" * 60)
 
@@ -946,7 +947,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     regime_stats = _stats[regime]
 
     # 6. Print Regime Report
-    if normal_verbose:
+    if normal_verbose and not hyper_silence:
         print_report(
             _regime=regime,
             _stats=regime_stats,
@@ -976,7 +977,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
             print("   → Trade blocked by regime filtering criteria\n")
 
     # 7. Evaluate Trade Decision
-    if normal_verbose:
+    if normal_verbose and not hyper_silence:
         print("💰 TRADE DECISION EVALUATION")
         print("─" * 40)
         if not regime_filter_passed:
@@ -1006,7 +1007,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     # ─────────────────────────────────────────────────────
     # OPTIONAL: Show ALL regimes summary if flag is set
     # ─────────────────────────────────────────────────────
-    if normal_verbose:
+    if normal_verbose and not hyper_silence:
         print_all_regimes_summary(
             _stats=_stats,
             _n_clusters=_params['n_clusters'],
@@ -1031,7 +1032,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , {result_string}")
     print(f"🎯 Short Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price ({latest_close_value:.0f}) , forward {regime_stats['forward_days']} {regime_stats['dataset_id']} "
           f"--> {_future_value__base_on__latest_close_value:.0f} @{_due_date_.strftime('%Y-%m-%d')}")
-    if normal_verbose:
+    if normal_verbose and not hyper_silence:
         print("\n" + "═" * 60)
         print("✨ INFERENCE COMPLETE")
         print("═" * 60 + "\n")
