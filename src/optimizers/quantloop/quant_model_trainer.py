@@ -311,10 +311,10 @@ def entry_point(args):
     np.set_printoptions(linewidth=np.inf)
     saved_data = None
     if verbose:
-        print(f"Beta	Priorité	Philosophie\n"
-              f"0.5	    Précision	'Je ne veux pas me tromper quand j\'investis.'\n"
-              f"1.0	    Équilibre	'Je veux un bon mélange de fiabilité et d\'opportunités.'\n"
-              f"2.0	    Rappel	    'Je ne veux surtout pas rater une hausse du marché.")
+        print(f"Beta    Priorite    Philosophie\n"
+              f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
+              f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
+              f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
     # ─────────────────────────────────────────────────────────────────────────
     # 🔄 LOAD SAVED PARAMETERS FIRST IF IN REAL-TIME MODE
     # ─────────────────────────────────────────────────────────────────────────
