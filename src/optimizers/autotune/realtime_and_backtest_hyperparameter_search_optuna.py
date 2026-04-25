@@ -475,16 +475,22 @@ def entry(args):
     # =============================================================================
     # 🎯 OPTIMIZATION MODE
     # =============================================================================
+    window_min, window_max = 2, 160
+    bandwith_min, bandwith_max = 0.00015, 0.9995
+    threshold_min, threshold_max = -0.9996, -0.0001
     if verbose:
         print(f"🔧 Running AutoTune Strategy with Optuna Optimization  |  Signal Type: {signal_type}  |  Optimize: {optimize}   |  Look Ahead: {lookahead_bars}b  |  Dataset id: {dataset_id}  |  "
               f"Win Threshold: {win_threshold:.0%}  |  Optuna: {n_trials}/{timeout}  |  Dataset Length: {len(closes)}")
-
+        print(f"Parameters search space"
+              f"  Window    : {window_min}::{window_max}\n"
+              f"  Bandwitdh : {bandwith_min}::{bandwith_max}\n"
+              f"  Threshold : {threshold_min}::{threshold_max}\n")
     def objective(trial):
         try:
             # Parameter search space
-            window = trial.suggest_int('window', 2, 260, step=1)
-            bandwidth = trial.suggest_float('bandwidth', 0.0015, 0.995)
-            threshold = trial.suggest_float('threshold', -0.996, -0.001)
+            window = trial.suggest_int('window', window_min, window_max, step=1)
+            bandwidth = trial.suggest_float('bandwidth', bandwith_min, bandwith_max)
+            threshold = trial.suggest_float('threshold', threshold_min, threshold_max)
             lookahead = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars, step=1)
 
             strat = AutoTuneStrategy(
