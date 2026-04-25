@@ -411,8 +411,8 @@ def entry_point(args):
         print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
         print(f"   Target: {type_of_target} @{percentage_of_type_target:.2%}")
         print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
-              f"y    : {setup_to_use['y_test_final'].values}\n"
-              f"y_hat: {setup_to_use['y_hat_test_final']}")
+              f"    y    : {setup_to_use['y_test_final'].values}\n"
+              f"    y_hat: {setup_to_use['y_hat_test_final']}")
         print("Confusion Matrix:")
         print(confusion_matrix(setup_to_use['y_test_final'], setup_to_use['y_hat_test_final']))
         print("═" * 50)
