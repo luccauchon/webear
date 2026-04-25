@@ -56,7 +56,7 @@ def parse_arguments():
     # ─────────────────────────────────────────────────────────────────────────
     data_grp = parser.add_argument_group("Data & Target Configuration")
     data_grp.add_argument(
-        "--dataset", "-d", type=str, default="combined_monthly_macro.data",
+        "--dataset", "-d", type=str, default="combined_month_macro.data",
         help="Path to the pickled dataset containing 'market_data' and 'macro_data'."
     )
     data_grp.add_argument(
