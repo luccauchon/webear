@@ -1035,7 +1035,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
             parts.append(formatted_val)
     result_string = f"[{','.join(parts)}]"
     print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , {result_string}")
-    print(f"🎯 Short Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price ({latest_close_value:.0f}) , forward {regime_stats['forward_days']} {regime_stats['dataset_id']} "
+    print(f" 🎯 Short Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price ({latest_close_value:.0f}) , {_metadata['spread_type'].upper()} forward {regime_stats['forward_days']} {regime_stats['dataset_id']} "
           f"--> {_future_value__base_on__latest_close_value:.0f} @{_due_date_.strftime('%Y-%m-%d')}")
     if normal_verbose and not hyper_silence:
         print("\n" + "═" * 60)
