@@ -24,7 +24,7 @@ from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import (classification_report, confusion_matrix,
-                             fbeta_score, make_scorer)
+                             fbeta_score, f1_score, make_scorer)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
 from tqdm import tqdm
@@ -119,7 +119,7 @@ def parse_arguments():
     )
     model_grp.add_argument(
         "--scorer", "-sc", type=str, default="F0.5",
-        choices=["F0.5"],
+        choices=["F0.5", "F", "F2"],
         help="Metric used for hyperparameter optimization and evaluation."
     )
     model_grp.add_argument(
@@ -310,6 +310,11 @@ def entry_point(args):
     final_dataset_filename = args.dataset
     np.set_printoptions(linewidth=np.inf)
     saved_data = None
+    if verbose:
+        print(f"Beta	Priorité	Philosophie\n"
+              f"0.5	    Précision	'Je ne veux pas me tromper quand j\'investis.'\n"
+              f"1.0	    Équilibre	'Je veux un bon mélange de fiabilité et d\'opportunités.'\n"
+              f"2.0	    Rappel	    'Je ne veux surtout pas rater une hausse du marché.")
     # ─────────────────────────────────────────────────────────────────────────
     # 🔄 LOAD SAVED PARAMETERS FIRST IF IN REAL-TIME MODE
     # ─────────────────────────────────────────────────────────────────────────
@@ -520,6 +525,10 @@ def entry_point(args):
         scoring_sl1, scoring_sl2 = None, None
         if the_scorer == 'F0.5':
             scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=0.5, zero_division=0), fbeta_score
+        elif the_scorer == 'F2':
+            scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=2, zero_division=0), fbeta_score
+        elif the_scorer == 'F':
+            scoring_sl1, scoring_sl2 = make_scorer(f1_score, zero_division=0), f1_score
         assert scoring_sl1 is not None and scoring_sl2 is not None
         warnings.filterwarnings("ignore", category=ConvergenceWarning)
         random_search = RandomizedSearchCV(
@@ -537,7 +546,14 @@ def entry_point(args):
         best_model = random_search.best_estimator_
         train_score = random_search.best_score_
         test_preds = best_model.predict(X_test_scaled)
-        test_score = scoring_sl2(y_test_final, test_preds, beta=0.5, zero_division=0)
+        test_score = None
+        if the_scorer == 'F0.5':
+            test_score = scoring_sl2(y_test_final, test_preds, beta=0.5, zero_division=0)
+        elif the_scorer == 'F2':
+            test_score = scoring_sl2(y_test_final, test_preds, beta=2, zero_division=0)
+        elif the_scorer == 'F':
+            test_score = scoring_sl2(y_test_final, test_preds, beta=1.0, zero_division=0)
+        assert test_score is not None
         _tmp_update_snapshot, do_display = {'test_score': test_score, 'train_score': train_score,
                                             'model': best_model, 'estimator': the_estimator, 'type_of_target': type_of_target,
                                             'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
