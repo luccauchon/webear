@@ -1,38 +1,39 @@
 #!/bin/bash
 
-# 1. Récupère le 1er argument ($1). Si vide, utilise 30000 par défaut.
 WEBEAR__TIMEOUT=${1:-30000}
-
-# 2. Exporte la variable pour qu'elle soit visible par Python
 export WEBEAR__TIMEOUT
 
-echo "Demarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
-
+echo "Démarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
 cd ../../../src/optimizers/autotune
 
-python ./realtime_and_backtest_hyperparameter_search_optuna.py  --signal-type long \
-    --optimize win_rate_3 \
-    --timeout $WEBEAR__TIMEOUT \
-    --lookahead-bars 5 \
-    --win-threshold 0.04 \
-    --n-trials 999999 \
-    --length-dataset 99999 \
-    --min-signal-density 0.06 &
+# 1. Définition des valeurs de lookahead
+BARS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
+PIDS=()
 
-PID1=$!
+for bar in "${BARS[@]}"; do
+    # 2. Ajustement dynamique du seuil selon le bar
+    THRESHOLD="0.04"
+    [[ "$bar" -eq 20 ]] && THRESHOLD="0.08"
 
-python ./realtime_and_backtest_hyperparameter_search_optuna.py  --signal-type long \
-     --optimize win_rate_3 \
-     --timeout $WEBEAR__TIMEOUT \
-     --lookahead-bars 20 \
-     --win-threshold 0.08 \
-     --n-trials 999999 \
-     --length-dataset 99999 \
-     --min-signal-density 0.06 &
-PID2=$!
+    # 3. Lancement en arrière-plan
+    python ./realtime_and_backtest_hyperparameter_search_optuna.py \
+        --signal-type long \
+        --optimize win_rate_3 \
+        --timeout "$WEBEAR__TIMEOUT" \
+        --lookahead-bars "$bar" \
+        --win-threshold "$THRESHOLD" \
+        --n-trials 999999 \
+        --length-dataset 99999 \
+        --min-signal-density 0.06 &
 
-# ⏳ Wait for both background jobs to complete
-wait $PID1 $PID2
+    # 4. Stockage du PID
+    PIDS+=($!)
+done
 
-echo "✅ All processes finished!"
-read  # Pause before exit
+echo "Processus lancés : ${PIDS[*]}"
+
+# ⏳ Attente de tous les processus
+wait "${PIDS[@]}"
+
+echo "✅ Tous les processus sont terminés !"
+read
