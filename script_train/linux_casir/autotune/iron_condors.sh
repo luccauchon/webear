@@ -22,7 +22,7 @@ for bar in "${BARS[@]}"; do
             THRESHOLD="0.03"
             ;;
         15|16|17|18|19|20)
-            THRESHOLD="0.08"
+            THRESHOLD="0.06"
             ;;
         *)
             THRESHOLD="0.04"
