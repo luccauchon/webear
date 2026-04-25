@@ -153,7 +153,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
             verbose_short=True,
             dataset_id=dataset_id,
             ticker=ticker,
-            verbose=False,
+            verbose=verbose,
             output_dir=str(dir_path),
             length_dataset=999999,
         )
