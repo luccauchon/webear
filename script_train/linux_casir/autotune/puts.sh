@@ -12,9 +12,22 @@ PIDS=()
 
 for bar in "${BARS[@]}"; do
     # 2. Ajustement dynamique du seuil selon le bar
-    THRESHOLD="0.04"
-    [[ "$bar" -eq 20 ]] && THRESHOLD="0.08"
-
+    # THRESHOLD="0.04"
+    # [[ "$bar" -eq 20 ]] && THRESHOLD="0.08"
+    case $bar in
+        1|2|)
+            THRESHOLD="0.02"
+            ;;
+        3|4|5)
+            THRESHOLD="0.03"
+            ;;
+        15|16|17|18|19|20)
+            THRESHOLD="0.08"
+            ;;
+        *)
+            THRESHOLD="0.04"
+            ;;
+    esac
     # 3. Lancement en arrière-plan
     python ./realtime_and_backtest_hyperparameter_search_optuna.py \
         --signal-type long \
