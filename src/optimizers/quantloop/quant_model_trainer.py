@@ -576,9 +576,9 @@ def entry_point(args):
             for category in ['train', 'test']:
                 data = best_setup_found[category]
                 _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher", "lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target * 100:.2f}%"
-                print("\n" + "═" * 70)
+                print("\n" + "═" * 128)
                 print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  {_type_target_str}  |  LA:{look_head_for_prediction}  |  DF:{final_dataset_filename} ({train_size}/{test_size}) ")
-                print("═" * 70)
+                print("═" * 128)
 
                 print(f"Features         : {data['features']}")
                 print(f"Scaler           : {data['scaler']}")
@@ -597,7 +597,7 @@ def entry_point(args):
                       f"y_hat: {saved_preds}\n")
                 print("Confusion Matrix:")
                 print(confusion_matrix(data['y_test_final'], saved_preds))
-                print("═" * 70)
+                print("═" * 128)
         displayed_output_once = True
         if stop_search_time_limit_exceeded:
             break
