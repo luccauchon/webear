@@ -1,5 +1,5 @@
 #!/bin/bash
-cd ../../../src/optimizers/regime
+cd ../../../src/optimizers/autotune
 export WEBEAR__TIMEOUT=36000
 python .\autoTune.py  --signal-type long \
     --optimize win_rate_3 \
