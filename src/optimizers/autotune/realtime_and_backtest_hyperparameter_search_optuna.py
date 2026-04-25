@@ -18,7 +18,7 @@ from typing import Tuple, Dict
 import warnings
 import optuna
 from optuna.samplers import TPESampler
-from utils import get_filename_for_dataset
+from utils import get_filename_for_dataset, get_next_step
 import pickle
 import os
 import glob
@@ -339,7 +339,8 @@ def setup_argparse() -> argparse.ArgumentParser:
                             help='Specific path to a saved .pkl model for real-time mode. Overrides auto-loading the newest model.')
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True,
                             help='Print detailed progress, metrics, and explanations')
-
+    flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False,
+                            help='For Real-Time Only, Print very short progress, metrics, and explanations')
     return parser
 
 
@@ -360,6 +361,7 @@ def entry(args):
     n_trials = args.n_trials
     timeout = args.timeout
     verbose = args.verbose
+    verbose_short = args.verbose_short
     real_time = args.real_time
     output_dir = args.output_dir
     capital = args.capital
@@ -368,11 +370,15 @@ def entry(args):
     min_bars = args.min_bars
 
     if verbose and not real_time:
+        win_rate_str   = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
+        win_rate_2_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
+        win_rate_3_str = f"Price stays ABOVE entry*(1-{win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
+        win_rate_4_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound"
         print()
-        print(f"win_rate    = Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}")
-        print(f"win_rate_2  = Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)")
-        print(f"win_rate_3  = Price stays ABOVE entry*(1-{win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)")
-        print(f"win_rate_4  = Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound")
+        print(f"win_rate    = {win_rate_str}")
+        print(f"win_rate_2  = {win_rate_2_str}")
+        print(f"win_rate_3  = {win_rate_3_str}")
+        print(f"win_rate_4  = {win_rate_4_str}")
         print()
         print(f"signal_type = Which trades to look at (long/short/both)")
         print(f"optimize    = What metric to maximize for those trades")
@@ -401,13 +407,13 @@ def entry(args):
             if not os.path.exists(args.model_path):
                 raise FileNotFoundError(f"Specified model not found: {args.model_path}")
             model_path = args.model_path
-            if verbose: print(f"📥 Loading specified real-time model: {model_path}")
+            if verbose and not verbose_short: print(f"📥 Loading specified real-time model: {model_path}")
         else:
             model_files = glob.glob(os.path.join(output_dir, "autotune_model_*.pkl"))
             if not model_files:
                 raise FileNotFoundError(f"No model files found in '{output_dir}'. Run with --no-real-time first to optimize & save.")
             model_path = max(model_files, key=os.path.getmtime)
-            if verbose: print(f"📥 Loading most recent real-time model (out of {len(model_files)}): {model_path}")
+            if verbose and not verbose_short: print(f"📥 Loading most recent real-time model (out of {len(model_files)}): {model_path}")
 
         with open(model_path, 'rb') as f:
             saved_model = pickle.load(f)
@@ -420,7 +426,7 @@ def entry(args):
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']
-        print(saved_model)
+
         # 📊 SIGNAL COUNTING
         total_rt_signals = (results_rt['signal'] != 0).sum()
         long_rt = (results_rt['signal'] == 1.0).sum()
@@ -431,18 +437,33 @@ def entry(args):
             signal_density = long_rt / len(closes)
         elif saved_model['signal_type'] == 'short':
             signal_density = short_rt / len(closes)
-        if verbose:
-            print(f"\n🔍 Real-Time Signal Check (Last Bar):")
+        last_price = last_row['price']
+        last_date = spx.index[-1].strftime('%Y-%m-%d')
+        la_date = get_next_step(the_date=spx.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
+        signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
+        if verbose and verbose_short:
+            if saved_model['optimize_metric'] == 'win_rate_3':
+                if last_signal == 1. and saved_model['signal_type'] == 'long':
+                    print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B)")
+        if verbose and not verbose_short:
+            win_rate_str   = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
+            win_rate_2_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
+            win_rate_3_str = f"Price stays ABOVE {last_price*(1-win_threshold):.0f})      → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
+            win_rate_4_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound"
+            _win_rate_tmp_str = win_rate_str
+            _win_rate_tmp_str = win_rate_2_str if saved_model['optimize_metric'] == 'win_rate_2' else _win_rate_tmp_str
+            _win_rate_tmp_str = win_rate_3_str if saved_model['optimize_metric'] == 'win_rate_3' else _win_rate_tmp_str
+            _win_rate_tmp_str = win_rate_4_str if saved_model['optimize_metric'] == 'win_rate_4' else _win_rate_tmp_str
+            print(f"\n🔍 Real-Time Signal Check (Last Bar={last_date}):")
             print(f"   📊 Total Signals (Dataset) : {total_rt_signals} (Long: {long_rt}, Short: {short_rt})")
-            print(f"   📉  Signal Type            : {saved_model['signal_type']}")
-            print(f"   📉  Optimized Metric       : {saved_model['optimize_metric']}")
+            print(f"   📉  Signal Type            : {saved_model['signal_type']} (@{saved_model['win_threshold']:.2%} in {saved_model['params']['lookahead_bars']}B={la_date})")
+            print(f"   📉  Optimized Metric       : {saved_model['optimize_metric']} ({_win_rate_tmp_str})")
             print(f"   📉 Signal Density ({saved_model['signal_type']})   : {signal_density:.2%} (over {len(closes)} bars)")
             print(f"   📉 Score                   : {saved_model['score']:.2%}")
             if total_rt_signals < 50:
                 print(f"   ⚠️  LOW EVENT COUNT          : Statistical reliability may be compromised.")
             print(f"   Timestamp (last row)       : {spx.index[-1].strftime('%Y-%m-%d')}")
-            print(f"   Close Price                : {last_row['price']:.2f}")
-            signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
+            print(f"   Close Price                : {last_price:.2f}")
             print(f"   Signal                     : {signal_str}")
             print()
             print(f"   ROC (2-bar)                : {last_row['roc']:.4f}")
@@ -481,7 +502,7 @@ def entry(args):
     if verbose:
         print(f"🔧 Running AutoTune Strategy with Optuna Optimization  |  Signal Type: {signal_type}  |  Optimize: {optimize}   |  Look Ahead: {lookahead_bars}b  |  Dataset id: {dataset_id}  |  "
               f"Win Threshold: {win_threshold:.0%}  |  Optuna: {n_trials}/{timeout}  |  Dataset Length: {len(closes)}")
-        print(f"Parameters search space"
+        print(f"Parameters search space\n"
               f"  Window    : {window_min}::{window_max}\n"
               f"  Bandwitdh : {bandwith_min}::{bandwith_max}\n"
               f"  Threshold : {threshold_min}::{threshold_max}\n")
@@ -598,6 +619,7 @@ def entry(args):
         'signal_type': signal_type,
         'optimize_metric': optimize,
         'score': score_of_best_trial,
+        'dataset_id': dataset_id,
     }
     with open(model_path, 'wb') as f:
         pickle.dump(model_data, f)
