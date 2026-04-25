@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timedelta
 from tqdm import tqdm
 from curl_cffi.requests import Session
-from constants import IS_RUNNING_ON_LINUX_VMWARE
+from constants import IS_RUNNING_ON_LINUX_VMWARE, IS_RUNNING_ON_CASIR
 
 from constants import (
     FYAHOO__OUTPUTFILENAME_YEAR,
@@ -211,7 +211,7 @@ def entry(
     ###########################################################################
     # Economic (Top 10 S&P500 metadata)
     ###########################################################################
-    if not skip_economic:
+    if not skip_economic and not IS_RUNNING_ON_CASIR:
         print(f"{Fore.CYAN}{Style.BRIGHT}🚀 Starting Download Tracker...{Style.RESET_ALL}\n", flush=True)
         result = {}
         for ticker in tqdm(TOP10_SP500_TICKERS, desc="Economic"):
