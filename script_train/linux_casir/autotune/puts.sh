@@ -1,7 +1,16 @@
 #!/bin/bash
+
+# 1. Récupère le 1er argument ($1). Si vide, utilise 30000 par défaut.
+WEBEAR__TIMEOUT=${1:-30000}
+
+# 2. Exporte la variable pour qu'elle soit visible par Python
+export WEBEAR__TIMEOUT
+
+echo "🚀 Démarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
+
 cd ../../../src/optimizers/autotune
-export WEBEAR__TIMEOUT=36000
-python .\autoTune.py  --signal-type long \
+
+python ./realtime_and_backtest_hyperparameter_search_optuna.py  --signal-type long \
     --optimize win_rate_3 \
     --timeout $WEBEAR__TIMEOUT \
     --lookahead-bars 5 \
@@ -12,7 +21,7 @@ python .\autoTune.py  --signal-type long \
 
 PID1=$!
 
-pyython .\autoTune.py  --signal-type long \
+python ./realtime_and_backtest_hyperparameter_search_optuna.py  --signal-type long \
      --optimize win_rate_3 \
      --timeout $WEBEAR__TIMEOUT \
      --lookahead-bars 20 \
