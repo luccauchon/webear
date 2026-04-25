@@ -351,41 +351,12 @@ def entry(args):
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     dataset_id = args.dataset_id
-    lookahead_bars = args.lookahead_bars
-    signal_type = args.signal_type
-    required_signal_density = args.min_signal_density
     ticker = args.ticker
-    length_dataset = args.length_dataset
-    win_threshold = args.win_threshold
-    optimize = args.optimize
-    n_trials = args.n_trials
-    timeout = args.timeout
     verbose = args.verbose
     verbose_short = args.verbose_short
     real_time = args.real_time
     output_dir = args.output_dir
-    capital = args.capital
-    margin_cost = args.margin_cost
-    commission = args.commission
-    min_bars = args.min_bars
-
-    if verbose and not real_time:
-        win_rate_str   = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
-        win_rate_2_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
-        win_rate_3_str = f"Price stays ABOVE entry*(1-{win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
-        win_rate_4_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound"
-        print()
-        print(f"win_rate    = {win_rate_str}")
-        print(f"win_rate_2  = {win_rate_2_str}")
-        print(f"win_rate_3  = {win_rate_3_str}")
-        print(f"win_rate_4  = {win_rate_4_str}")
-        print()
-        print(f"signal_type = Which trades to look at (long/short/both)")
-        print(f"optimize    = What metric to maximize for those trades")
-        print(f"signal_type='long' + optimize='win_rate_2' → 'Find parameters where longs tend to stay tightly range-bound after entry (good for selling covered calls).'")
-        print(f"signal_type='short' + optimize='win_rate'  → 'Find parameters where short signals reliably drop by at least {win_threshold:.0%}.'")
-        print(f"signal_type='both' + optimize='win_rate_3' → 'Find parameters where all signals avoid breaking below the lower threshold (useful for risk-defined strategies).'")
-        print(f"signal_type='long' + optimize='win_rate_3' → 'Find the parameter set that maximizes the percentage of long trades that never drop more than {win_threshold:.0%} below their entry price during the {lookahead_bars} lookahead window.'")
+    length_dataset = args.length_dataset
 
     np.random.seed(42)
 
@@ -420,13 +391,12 @@ def entry(args):
 
         rt_params = saved_model['params']
         rt_win_threshold = saved_model['win_threshold']
-        strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold,
-                                    capital=capital, margin_cost=margin_cost, commission=commission)
-
+        strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold)
+        assert dataset_id == saved_model['dataset_id']
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']
-
+        # assert ticker == saved_model['ticker']
         # 📊 SIGNAL COUNTING
         total_rt_signals = (results_rt['signal'] != 0).sum()
         long_rt = (results_rt['signal'] == 1.0).sum()
@@ -444,12 +414,12 @@ def entry(args):
         if verbose and verbose_short:
             if saved_model['optimize_metric'] == 'win_rate_3':
                 if last_signal == 1. and saved_model['signal_type'] == 'long':
-                    print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B)")
+                    print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B)")
         if verbose and not verbose_short:
-            win_rate_str   = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
-            win_rate_2_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
-            win_rate_3_str = f"Price stays ABOVE {last_price*(1-win_threshold):.0f})      → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
-            win_rate_4_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound"
+            win_rate_str   = f"Price reaches ≥ +{rt_win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{rt_win_threshold:.0%}"
+            win_rate_2_str = f"Price stays INSIDE ±{rt_win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{rt_win_threshold:.0%} range (mean-reversion/consolidation)"
+            win_rate_3_str = f"Price stays ABOVE {last_price*(1-rt_win_threshold):.0f})      → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
+            win_rate_4_str = f"Price stays BELOW entry*(1+{rt_win_threshold:.0%})            → % of signals where price stays below the upper bound"
             _win_rate_tmp_str = win_rate_str
             _win_rate_tmp_str = win_rate_2_str if saved_model['optimize_metric'] == 'win_rate_2' else _win_rate_tmp_str
             _win_rate_tmp_str = win_rate_3_str if saved_model['optimize_metric'] == 'win_rate_3' else _win_rate_tmp_str
@@ -492,7 +462,34 @@ def entry(args):
                   f"    >50 bars         Long-term cycle — signals may be infrequent but higher conviction\n"
                   f"    Rapidly changing Market regime shift — be cautious; parameters may need re-optimization")
         sys.exit(0)
-
+    lookahead_bars = args.lookahead_bars
+    signal_type = args.signal_type
+    required_signal_density = args.min_signal_density
+    win_threshold = args.win_threshold
+    optimize = args.optimize
+    n_trials = args.n_trials
+    timeout = args.timeout
+    capital = args.capital
+    margin_cost = args.margin_cost
+    commission = args.commission
+    min_bars = args.min_bars
+    if verbose:
+        win_rate_str   = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
+        win_rate_2_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
+        win_rate_3_str = f"Price stays ABOVE entry*(1-{win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
+        win_rate_4_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound"
+        print()
+        print(f"win_rate    = {win_rate_str}")
+        print(f"win_rate_2  = {win_rate_2_str}")
+        print(f"win_rate_3  = {win_rate_3_str}")
+        print(f"win_rate_4  = {win_rate_4_str}")
+        print()
+        print(f"signal_type = Which trades to look at (long/short/both)")
+        print(f"optimize    = What metric to maximize for those trades")
+        print(f"signal_type='long' + optimize='win_rate_2' → 'Find parameters where longs tend to stay tightly range-bound after entry (good for selling covered calls).'")
+        print(f"signal_type='short' + optimize='win_rate'  → 'Find parameters where short signals reliably drop by at least {win_threshold:.0%}.'")
+        print(f"signal_type='both' + optimize='win_rate_3' → 'Find parameters where all signals avoid breaking below the lower threshold (useful for risk-defined strategies).'")
+        print(f"signal_type='long' + optimize='win_rate_3' → 'Find the parameter set that maximizes the percentage of long trades that never drop more than {win_threshold:.0%} below their entry price during the {lookahead_bars} lookahead window.'")
     # =============================================================================
     # 🎯 OPTIMIZATION MODE
     # =============================================================================
@@ -620,6 +617,7 @@ def entry(args):
         'optimize_metric': optimize,
         'score': score_of_best_trial,
         'dataset_id': dataset_id,
+        'ticker': ticker,
     }
     with open(model_path, 'wb') as f:
         pickle.dump(model_data, f)
