@@ -187,33 +187,33 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     _df_macro['Inflation_Rate'] = _df_macro['CPIAUCSL'].pct_change(12, fill_method=None).shift(1)
 
     # 2. Fusion avec tes données S&P 500
-    monthly = _df_market.join(_df_macro[['Fed_Rate_Diff', 'Unrate_Diff', 'Inflation_Rate', 'Spread_10Y2Y']]).dropna()
+    _df_fusionned = _df_market.join(_df_macro[['Fed_Rate_Diff', 'Unrate_Diff', 'Inflation_Rate', 'Spread_10Y2Y']]).dropna()
 
     # 3. Ajout de nouvelles Features
-    monthly['VIX_Ratio'] = monthly['VIX'] / monthly['VIX'].rolling(12).mean()
+    _df_fusionned['VIX_Ratio'] = _df_fusionned['VIX'] / _df_fusionned['VIX'].rolling(12).mean()
 
-    delta = monthly['Close'].diff()
+    delta = _df_fusionned['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=_rsi_window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=_rsi_window).mean()
     rs = gain / loss
-    monthly['RSI'] = 100 - (100 / (1 + rs))
+    _df_fusionned['RSI'] = 100 - (100 / (1 + rs))
 
-    monthly['MA_Short'] = monthly['Close'].rolling(window=3).mean()
-    monthly['MA_Long'] = monthly['Close'].rolling(window=12).mean()
-    monthly['Price_to_MA'] = monthly['Close'] / monthly['MA_Long']
+    _df_fusionned['MA_Short'] = _df_fusionned['Close'].rolling(window=3).mean()
+    _df_fusionned['MA_Long'] = _df_fusionned['Close'].rolling(window=12).mean()
+    _df_fusionned['Price_to_MA'] = _df_fusionned['Close'] / _df_fusionned['MA_Long']
 
-    monthly['Shifted_MA_Short'] = monthly['MA_Short'].diff()
-    monthly['Shifted_MA_Long'] = monthly['MA_Long'].pct_change()
-    monthly['Shifted_Price_to_MA'] = monthly['Price_to_MA'].diff()
+    _df_fusionned['Shifted_MA_Short'] = _df_fusionned['MA_Short'].diff()
+    _df_fusionned['Shifted_MA_Long'] = _df_fusionned['MA_Long'].pct_change()
+    _df_fusionned['Shifted_Price_to_MA'] = _df_fusionned['Price_to_MA'].diff()
 
-    monthly['VIX_Lag1'] = monthly['VIX'].shift(_vix_lag)
-    monthly['RSI_Lag1'] = monthly['RSI'].shift(_rsi_lag)
+    _df_fusionned['VIX_Lag1'] = _df_fusionned['VIX'].shift(_vix_lag)
+    _df_fusionned['RSI_Lag1'] = _df_fusionned['RSI'].shift(_rsi_lag)
 
-    monthly['Log_Close'] = np.log(monthly['Close'])
-    monthly['Dist_from_ATH'] = (monthly['Close'] / monthly['Close'].cummax()) - 1
+    _df_fusionned['Log_Close'] = np.log(_df_fusionned['Close'])
+    _df_fusionned['Dist_from_ATH'] = (_df_fusionned['Close'] / _df_fusionned['Close'].cummax()) - 1
 
     if _verbose:
-        print(f"Dates in DF (before target):  {monthly.dropna().index[0].strftime('%Y-%m-%d')} :: {monthly.dropna().index[-1].strftime('%Y-%m-%d')}")
+        print(f"Dates in DF (before target):  {_df_fusionned.dropna().index[0].strftime('%Y-%m-%d')} :: {_df_fusionned.dropna().index[-1].strftime('%Y-%m-%d')}")
 
     # --- Cible (Target) ---
     if create_target:
@@ -222,41 +222,41 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         assert 0 < _percentage_of_type_target < 1
 
         # 1. On récupère le prix futur (M + N) pour toutes les comparaisons
-        future_close = monthly["Close"].shift(-_look_head_for_prediction)
+        future_close = _df_fusionned["Close"].shift(-_look_head_for_prediction)
 
         # 2. Calcul des Targets selon le type
         if _type_of_target == 'higher':
-            monthly["Target"] = (future_close > monthly["Close"]).astype(int)
+            _df_fusionned["Target"] = (future_close > _df_fusionned["Close"]).astype(int)
         elif _type_of_target == 'lower':
-            monthly["Target"] = (future_close < monthly["Close"]).astype(int)
+            _df_fusionned["Target"] = (future_close < _df_fusionned["Close"]).astype(int)
         elif _type_of_target == 'soft_higher':
-            monthly["Return"] = (future_close / monthly["Close"]) - 1
-            monthly["Target"] = (monthly["Return"] > _percentage_of_type_target).astype(int)
+            _df_fusionned["Return"] = (future_close / _df_fusionned["Close"]) - 1
+            _df_fusionned["Target"] = (_df_fusionned["Return"] > _percentage_of_type_target).astype(int)
         elif _type_of_target == 'soft_lower':
-            monthly["Return"] = (future_close / monthly["Close"]) - 1
-            monthly["Target"] = (monthly["Return"] < -_percentage_of_type_target).astype(int)
+            _df_fusionned["Return"] = (future_close / _df_fusionned["Close"]) - 1
+            _df_fusionned["Target"] = (_df_fusionned["Return"] < -_percentage_of_type_target).astype(int)
         elif _type_of_target == 'in_between':
-            lower_bound = monthly["Close"] * (1 - _percentage_of_type_target)
-            upper_bound = monthly["Close"] * (1 + _percentage_of_type_target)
-            monthly["Target"] = ((future_close >= lower_bound) & (future_close <= upper_bound)).astype(int)
+            lower_bound = _df_fusionned["Close"] * (1 - _percentage_of_type_target)
+            upper_bound = _df_fusionned["Close"] * (1 + _percentage_of_type_target)
+            _df_fusionned["Target"] = ((future_close >= lower_bound) & (future_close <= upper_bound)).astype(int)
         else:
             raise ValueError(f"Type de target inconnu : {_type_of_target}")
 
         # 3. Nettoyage
         # 🔧 Pandas boolean comparisons with NaN evaluate to False -> 0 after astype(int).
         # We explicitly restore NaNs where future_close is missing so dropna() works as expected.
-        monthly.loc[future_close.isna(), "Target"] = np.nan
+        _df_fusionned.loc[future_close.isna(), "Target"] = np.nan
 
         # Drop only rows with invalid targets (preserves rows where other features might be NaN but you handle them elsewhere)
-        monthly = monthly.dropna(subset=["Target"])
+        _df_fusionned = _df_fusionned.dropna(subset=["Target"])
     else:
         # Real-time mode: only drop rows with missing features
-        monthly = monthly.dropna()
+        _df_fusionned = _df_fusionned.dropna()
 
     if _verbose:
-        print(f"Dates in DF (features only): {monthly.index[0].strftime('%Y-%m-%d')} :: {monthly.index[-1].strftime('%Y-%m-%d')}")
+        print(f"Dates in DF (features only): {_df_fusionned.index[0].strftime('%Y-%m-%d')} :: {_df_fusionned.index[-1].strftime('%Y-%m-%d')}")
 
-    return monthly
+    return _df_fusionned
 
 
 def save_best_model(best_setup, args, output_dir, verbose=True):
