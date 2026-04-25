@@ -30,8 +30,8 @@ for bar in "${BARS[@]}"; do
     esac
     # 3. Lancement en arrière-plan
     python ./realtime_and_backtest_hyperparameter_search_optuna.py \
-        --signal-type both \
-        --optimize win_rate_2 \
+        --signal-type short \
+        --optimize win_rate_4 \
         --timeout "$WEBEAR__TIMEOUT" \
         --lookahead-bars "$bar" \
         --win-threshold "$THRESHOLD" \
