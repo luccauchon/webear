@@ -15,7 +15,7 @@ for bar in "${BARS[@]}"; do
     # THRESHOLD="0.04"
     # [[ "$bar" -eq 20 ]] && THRESHOLD="0.08"
     case $bar in
-        1|2|)
+        1|2)
             THRESHOLD="0.02"
             ;;
         3|4|5)
