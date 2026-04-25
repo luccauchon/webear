@@ -473,9 +473,9 @@ def entry_point(args):
         y_train_full = y.iloc[:-n_test].copy()
         X_test_final = X.iloc[-n_test:].copy()
         y_test_final = y.iloc[-n_test:].copy()
-
+        train_size, test_size = len(X_train_full), len(X_test_final)
         if not displayed_output_once and verbose:
-            print(f"\n[STATIC] {len(X_train_full)=}  {len(X_test_final)=}")
+            print(f"\n[STATIC] {train_size=}  {test_size=}")
             print(f"[TRAIN]  {X_train_full.index[0].strftime('%Y-%m-%d')} :: {X_train_full.index[-1].strftime('%Y-%m-%d')}")
             print(f"[TEST]   {X_test_final.index[0].strftime('%Y-%m-%d')} :: {X_test_final.index[-1].strftime('%Y-%m-%d')}")
 
@@ -577,7 +577,7 @@ def entry_point(args):
                 data = best_setup_found[category]
                 _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher", "lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target * 100:.2f}%"
                 print("\n" + "═" * 70)
-                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  {_type_target_str}  |  LA:{look_head_for_prediction}  |  DF:{final_dataset_filename}")
+                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  {_type_target_str}  |  LA:{look_head_for_prediction}  |  DF:{final_dataset_filename} ({train_size}/{test_size}) ")
                 print("═" * 70)
 
                 print(f"Features         : {data['features']}")
