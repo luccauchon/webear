@@ -6,7 +6,7 @@ WEBEAR__TIMEOUT=${1:-30000}
 # 2. Exporte la variable pour qu'elle soit visible par Python
 export WEBEAR__TIMEOUT
 
-echo "🚀 Démarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
+echo "Demarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
 
 cd ../../../src/optimizers/autotune
 
