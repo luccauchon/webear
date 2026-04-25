@@ -396,7 +396,7 @@ def entry(args):
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']
-        # assert ticker == saved_model['ticker']
+        assert ticker == saved_model['ticker'] if 'ticker' in saved_model else True
         # 📊 SIGNAL COUNTING
         total_rt_signals = (results_rt['signal'] != 0).sum()
         long_rt = (results_rt['signal'] == 1.0).sum()
