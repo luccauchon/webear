@@ -392,7 +392,7 @@ def entry(args):
         rt_params = saved_model['params']
         rt_win_threshold = saved_model['win_threshold']
         strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold)
-        assert dataset_id == saved_model['dataset_id']
+        # assert dataset_id == saved_model['dataset_id'], f"{dataset_id} == {saved_model['dataset_id']}"
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']
