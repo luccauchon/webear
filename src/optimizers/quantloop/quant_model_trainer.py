@@ -280,6 +280,7 @@ def save_best_model(best_setup, args, output_dir, verbose=True):
             'target_percentage': args.target_percentage,
             'target_type': args.target_type,
             'dataset_filename': args.dataset,
+            'dataset_id': args.dataset_id,
         }
     }
 
