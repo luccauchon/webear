@@ -420,8 +420,15 @@ def entry(args):
                         print(f"{saved_model}")
                         print("TODO_2")
                 else:
-                    print(f"{saved_model}")
-                    print("TODO_1")
+                    if saved_model['optimize_metric'] == 'win_rate_4':
+                        if last_signal == -1. and saved_model['signal_type'] == 'short':
+                            print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B)")
+                        else:
+                            print(f"{saved_model}")
+                            print("TODO_1")
+                    else:
+                        print(f"{saved_model}")
+                        print("TODO_3")
         if verbose and not verbose_short:
             win_rate_str   = f"Price reaches ≥ +{rt_win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{rt_win_threshold:.0%}"
             win_rate_2_str = f"Price stays INSIDE ±{rt_win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{rt_win_threshold:.0%} range (mean-reversion/consolidation)"
