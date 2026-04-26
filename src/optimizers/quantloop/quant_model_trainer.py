@@ -393,6 +393,7 @@ def entry_point(args):
         proba = None
         if hasattr(model, 'predict_proba'):
             proba = model.predict_proba(X_last_scaled)[0][1]
+        # There is no dataset_id in the params.
         dataset_id = "day" if "_day_" in final_dataset_filename else None
         dataset_id = "month" if "_monthly_" in final_dataset_filename else dataset_id
         dataset_id = "week" if "_weekly_" in final_dataset_filename or "_week" in final_dataset_filename else dataset_id
