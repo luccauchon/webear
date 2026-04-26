@@ -415,14 +415,14 @@ def entry(args):
             if last_signal != 0:
                 if saved_model['optimize_metric'] == 'win_rate_3':
                     if last_signal == 1. and saved_model['signal_type'] == 'long':
-                        print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                        print(f"Last data point is {last_date} @{last_price}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
                     else:
                         print(f"{saved_model}")
                         print("TODO_2")
                 else:
                     if saved_model['optimize_metric'] == 'win_rate_4':
                         if last_signal == -1. and saved_model['signal_type'] == 'short':
-                            print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                            print(f"Last data point is {last_date} @{last_price}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
                         else:
                             print(f"{saved_model}")
                             print("TODO_1")
