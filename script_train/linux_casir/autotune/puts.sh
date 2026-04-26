@@ -19,8 +19,14 @@ for bar in "${BARS[@]}"; do
         3|4|5)
             THRESHOLD="0.03"
             ;;
+        6|7|8|9|10)
+            THRESHOLD="0.04"
+            ;;
+        11|12|13|14)
+            THRESHOLD="0.05"
+            ;;
         15|16|17|18|19|20)
-            THRESHOLD="0.08"
+            THRESHOLD="0.06"
             ;;
         *)
             THRESHOLD="0.04"
