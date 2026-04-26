@@ -280,7 +280,6 @@ def save_best_model(best_setup, args, output_dir, verbose=True):
             'target_percentage': args.target_percentage,
             'target_type': args.target_type,
             'dataset_filename': args.dataset,
-            'dataset_id': args.dataset_id,
         }
     }
 
@@ -348,8 +347,6 @@ def entry_point(args):
         assert 'target_type' in saved_params
         type_of_target = saved_params.get('target_type', type_of_target)
         final_dataset_filename = saved_params['dataset_filename']
-        dataset_id = saved_params['dataset_id']
-        assert dataset_id in final_dataset_filename
         print("✅ Using saved training parameters for real-time feature engineering.")
     if verbose:
         print(f"🔄 Loading data from <<{final_dataset_filename}>>")
