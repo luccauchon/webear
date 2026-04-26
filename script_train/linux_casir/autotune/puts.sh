@@ -41,6 +41,7 @@ for bar in "${BARS[@]}"; do
         --win-threshold "$THRESHOLD" \
         --n-trials 999999 \
         --length-dataset 99999 \
+        --output-dir puts \
         --min-signal-density 0.06 &
 
     # 4. Stockage du PID
