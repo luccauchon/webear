@@ -3,7 +3,7 @@
 WEBEAR__TIMEOUT=${1:-30000}
 export WEBEAR__TIMEOUT
 
-echo "Démarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
+echo "Demarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
 cd ../../../src/optimizers/autotune
 
 # 1. Définition des valeurs de lookahead
@@ -48,10 +48,10 @@ for bar in "${BARS[@]}"; do
     PIDS+=($!)
 done
 
-echo "Processus lancés : ${PIDS[*]}"
+echo "Processus lances : ${PIDS[*]}"
 
 # ⏳ Attente de tous les processus
 wait "${PIDS[@]}"
 
-echo "✅ Tous les processus sont terminés !"
+echo "✅ Tous les processus sont termines !"
 read
