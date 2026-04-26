@@ -412,9 +412,14 @@ def entry(args):
         la_date = get_next_step(the_date=spx.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
         signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
         if verbose and verbose_short:
-            if saved_model['optimize_metric'] == 'win_rate_3':
-                if last_signal == 1. and saved_model['signal_type'] == 'long':
-                    print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B)")
+            if last_signal != 0:
+                if saved_model['optimize_metric'] == 'win_rate_3':
+                    if last_signal == 1. and saved_model['signal_type'] == 'long':
+                        print(f"Last data point is {last_date}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B)")
+                    else:
+                        print("TODO_2")
+                else:
+                    print("TODO_1")
         if verbose and not verbose_short:
             win_rate_str   = f"Price reaches ≥ +{rt_win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{rt_win_threshold:.0%}"
             win_rate_2_str = f"Price stays INSIDE ±{rt_win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{rt_win_threshold:.0%} range (mean-reversion/consolidation)"
