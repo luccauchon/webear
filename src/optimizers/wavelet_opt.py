@@ -285,7 +285,7 @@ def main(args):
     if not real_time:
         assert use_given_gt_truth is None
     q_min_filter, q_max_filter = args.q_min_filter, args.q_max_filter
-    _nb_workers = _nb_workers = 8 if real_time else NB_WORKERS
+    _nb_workers = 8 if real_time else NB_WORKERS // 2
     performance_tracking     = {'put':[], 'call': [], '?': []}
     performance_tracking_xtm = {'put':  {'success': [], 'failure': []},
                                 'call': {'success': [], 'failure': []}}
