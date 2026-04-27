@@ -1083,7 +1083,7 @@ def entry_main(args):
 
     print(f"🚀 Starting Credit Spread Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
-    print(f"   Spread: {spread_type} @{strike_distance * 100:.1f}% | DTE: {forward_days}")
+    print(f"   Spread: {spread_type} @{strike_distance * 100:.2f}% | DTE: {forward_days}")
     print(f"   Min samples/cluster: {min_n_in_cluster} | Trials: {max_n_trials} | Timeout: {timeout} seconds")
     print(f"   Forward : {forward_days} {dataset_id}")
     print("-" * 60)
