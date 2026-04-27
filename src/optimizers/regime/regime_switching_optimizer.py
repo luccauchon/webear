@@ -1557,14 +1557,14 @@ def entry_main(args):
                 "model_filename": model_filename,
                 "dataset_id": args.dataset_id
             },
-            "trade_context": {
-                "credit_received": credit_received,
-                "spread_width": spread_width,
-                "max_loss": max_loss,
-                "edge_ratio": trade_decision['edge_ratio'],
-                "expectancy": trade_decision['expectancy'],
-                "evaluated_at": datetime.now()
-            }
+            # "trade_context": {
+            #     "credit_received": credit_received,
+            #     "spread_width": spread_width,
+            #     "max_loss": max_loss,
+            #     "edge_ratio": trade_decision['edge_ratio'],
+            #     "expectancy": trade_decision['expectancy'],
+            #     "evaluated_at": datetime.now()
+            # }
         }, f)
 
     print(f"✅ Model saved to: {model_path}")
