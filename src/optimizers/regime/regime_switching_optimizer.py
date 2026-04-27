@@ -889,7 +889,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     _stats = model_data["stats"]
     _params = model_data["params"]
     _metadata = model_data.get("metadata", {})
-    _trade_context = model_data["trade_context"]
     assert ticker == _metadata['ticker']
     if not hyper_silence:
         print(f"✅ Model loaded successfully (Created: {_metadata.get('timestamp', 'N/A')})")
@@ -987,27 +986,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
         print("─" * 40)
         if not regime_filter_passed:
             print(f"🎯 DECISION: ⛔ SKIP (Regime filter failed: {filter_reason})")
-        else:
-            max_loss = _trade_context['spread_width'] - _trade_context['credit_received']
-            trade_decision = should_trade_credit_spread(
-                _regime_stats=regime_stats,
-                _credit_received=_trade_context['credit_received'],
-                _max_loss=max_loss,
-                _min_edge_ratio=args.min_edge_ratio
-            )
-
-            print(f"Spread Configuration:")
-            print(f"   • Width:           ${_trade_context['spread_width']:.2f}")
-            print(f"   • Credit Received: ${_trade_context['credit_received']:.2f}")
-            print(f"   • Max Loss:        ${max_loss:.2f}")
-            print(f"   • Min Edge Ratio:  {args.min_edge_ratio * 100:.1f}%")
-            print()
-            print(f"Regime-Based Metrics:")
-            print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
-            print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
-            print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
-            print()
-            print(f"🎯 DECISION: {trade_decision['message']}")
 
     # ─────────────────────────────────────────────────────
     # OPTIONAL: Show ALL regimes summary if flag is set
@@ -1557,14 +1535,6 @@ def entry_main(args):
                 "model_filename": model_filename,
                 "dataset_id": args.dataset_id
             },
-            # "trade_context": {
-            #     "credit_received": credit_received,
-            #     "spread_width": spread_width,
-            #     "max_loss": max_loss,
-            #     "edge_ratio": trade_decision['edge_ratio'],
-            #     "expectancy": trade_decision['expectancy'],
-            #     "evaluated_at": datetime.now()
-            # }
         }, f)
 
     print(f"✅ Model saved to: {model_path}")
