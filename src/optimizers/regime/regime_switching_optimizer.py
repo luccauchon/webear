@@ -44,7 +44,7 @@ import shutil
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
-from utils import DATASET_AVAILABLE, next_weekday, next_week, next_month, get_next_step
+from utils import DATASET_AVAILABLE, next_weekday, next_week, next_month, get_next_step, is_weekday
 # Machine Learning
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
@@ -906,6 +906,15 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     for param in required_feature_params:
         if param not in _params:
             raise ValueError(f"Missing required param '{param}' in saved model")
+    if _metadata['dataset_id'] in ['week', 'month']:
+        now = datetime.now()
+        if _metadata['dataset_id'] == 'week':
+            if is_weekday(now):
+                pass  # Ok.
+            else:
+                # We are in middle of a week; take previous week
+                df = df.iloc[:-1].copy()
+
     # 3. Build Features using SAVED Hyperparameters
     # Crucial: Must use the same params used during training
     if not hyper_silence:
@@ -930,7 +939,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     if len(valid_features) == 0:
         print("❌ ERROR: No valid features available (insufficient history for indicators)")
         return
-
     latest_date = valid_features.index[-1]
     latest_row = valid_features.iloc[[-1]]
     assert df.index[-1] == latest_date
