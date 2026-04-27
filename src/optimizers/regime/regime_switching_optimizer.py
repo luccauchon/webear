@@ -44,7 +44,7 @@ import shutil
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
-from utils import DATASET_AVAILABLE, next_weekday, next_week, next_month, get_next_step, is_weekday
+from utils import DATASET_AVAILABLE, next_weekday, next_week, next_month, get_next_step, is_weekday, is_last_weekend_of_month
 # Machine Learning
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.mixture import GaussianMixture
@@ -890,12 +890,13 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     _params = model_data["params"]
     _metadata = model_data.get("metadata", {})
     assert ticker == _metadata['ticker']
+    _dataset_id = _metadata['dataset_id']
     if not hyper_silence:
         print(f"✅ Model loaded successfully (Created: {_metadata.get('timestamp', 'N/A')})")
 
     # 2. Load Latest Data
     try:
-        df = load_data(_ticker=ticker, _dataset_id=_metadata['dataset_id'])
+        df = load_data(_ticker=ticker, _dataset_id=_dataset_id)
         if not hyper_silence:
             print(f"📦 Loaded {len(df)} rows for {ticker}   (dataset id:{_metadata['dataset_id']})")
     except Exception as e:
@@ -906,13 +907,15 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     for param in required_feature_params:
         if param not in _params:
             raise ValueError(f"Missing required param '{param}' in saved model")
-    if _metadata['dataset_id'] in ['week', 'month']:
+    if _dataset_id in ['week', 'month'] and args.clip:
         now = datetime.now()
-        if _metadata['dataset_id'] == 'week':
+        if _dataset_id == 'week':
             if is_weekday(now):
-                pass  # Ok.
-            else:
                 # We are in middle of a week; take previous week
+                df = df.iloc[:-1].copy()
+        if _dataset_id == 'month':
+            if not is_last_weekend_of_month(now):
+                # We are in middle of a month; take previous month
                 df = df.iloc[:-1].copy()
 
     # 3. Build Features using SAVED Hyperparameters
@@ -1767,6 +1770,9 @@ if __name__ == "__main__":
         "--list-models", action="store_true",
         help="List available trained models for this ticker and exit"
     )
+    parser.add_argument("--clip", action="store_true",
+                        help="In Real-Time mode, don't use the last bar (day, week, month, etc) if it is not completed"
+                        )
 
     # ─────────────────────────────────────────────────────
     # EXECUTE

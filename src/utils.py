@@ -558,6 +558,17 @@ def is_weekday(date):
     return date.weekday() < 5  # 5 represents Saturday, 6 represents Sunday
 
 
+def is_last_weekend_of_month(date):
+    # Vérifie si c'est un samedi (5) ou un dimanche (6)
+    is_weekend = date.weekday() >= 5
+
+    # Vérifie si le même jour la semaine prochaine change de mois
+    _next_week = date + datetime.timedelta(days=7)
+    is_last_week = _next_week.month != date.month
+
+    return is_weekend and is_last_week
+
+
 def find_next_sunday(date: datetime) -> datetime:
     """
     Finds the next Sunday given a datetime object.
