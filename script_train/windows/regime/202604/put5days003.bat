@@ -6,7 +6,7 @@ python .\regime_switching_optimizer.py ^
 --forward-days 5 ^
 --dataset-id day ^
 --strike-distance 0.03 ^
---timeout 256000 ^
+--timeout 512000 ^
 --spread-type put ^
 --penalize-invalid-cluster ^
 --confirmation-before-run ^
