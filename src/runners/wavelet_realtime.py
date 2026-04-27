@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument("--dataset_id", type=str, default="week", choices=DATASET_AVAILABLE)
-    parser.add_argument('--enable-loop', type=str2bool, default=True)
+    parser.add_argument('--enable-loop', type=str2bool, default=False)
     parser.add_argument('--enable-plot', type=str2bool, default=True)
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
