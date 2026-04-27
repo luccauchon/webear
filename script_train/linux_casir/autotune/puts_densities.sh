@@ -21,7 +21,7 @@ for bar in "${BARS[@]}"; do
         *) THRESHOLD="0.04" ;;
     esac
 
-    for density in $DENSITIES; do
+    for density in "${DENSITIES[@]}"; do
         python ./realtime_and_backtest_hyperparameter_search_optuna.py \
             --signal-type long \
             --optimize win_rate_3 \
