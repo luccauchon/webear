@@ -762,7 +762,7 @@ def predict_latest(_features, _model, _scaler, _stats):
 
     if regime not in _stats:
         print(f"⚠️  Predicted regime {regime} not found in stats (may have insufficient samples)")
-        return None
+        return None, None
 
     return regime, _stats[regime]
 
@@ -1495,12 +1495,9 @@ def entry_main(args):
 
     # ===== Predict Latest Regime =====
     result = predict_latest(_features=features, _model=_model, _scaler=_scaler, _stats=_stats)
-
+    regime, regime_stats = result
     if result is None:
         print("⚠️  Could not predict regime for latest data point")
-
-    regime, regime_stats = result
-
     if regime_stats is not None:
         # ===== Print Analysis Report =====
         print_report(_regime=regime, _stats=regime_stats, _strike_distance=strike_distance, _spread_type=spread_type)
