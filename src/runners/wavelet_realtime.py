@@ -120,6 +120,8 @@ if __name__ == "__main__":
     parser.add_argument("--col", type=str, default='Close')
     parser.add_argument("--older_dataset", type=str, default="None")
     parser.add_argument("--dataset_id", type=str, default="week", choices=DATASET_AVAILABLE)
+    parser.add_argument('--enable-loop', type=str2bool, default=True)
+    parser.add_argument('--enable-plot', type=str2bool, default=True)
     parser.add_argument("--n_forecast_length", type=int, default=4)
     parser.add_argument("--n_forecast_length_in_training", type=int, default=4)
     parser.add_argument("--n_models_to_keep", type=int, default=60)
@@ -130,7 +132,7 @@ if __name__ == "__main__":
     parser.add_argument('--thresholds_ep', type=str, default="(0.0125, 0.0125)")
     parser.add_argument('--verbose', type=str2bool, default=False)
     args = parser.parse_args()
-
+    enable_loop = args.enable_loop
     output_dir = f"../../stubs/wavelet_realtime_{datetime.now().strftime('%Y_%m_%d__%H_%M_%S')}/"
     os.makedirs(output_dir, exist_ok=True)
     one_dataset_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None if args.older_dataset == "None" else args.older_dataset)
@@ -155,7 +157,7 @@ if __name__ == "__main__":
         q_max_filter=args.q_max_filter,
         thresholds_ep=args.thresholds_ep,
         threshold_for_shape_similarity=args.threshold_for_shape_similarity,
-        plot_graph = True,
+        plot_graph = args.enable_plot,
         use_given_gt_truth = None,
         display_tqdm = False,
         strategy_for_exit = 'hold_until_the_end_with_roll',
@@ -169,4 +171,17 @@ if __name__ == "__main__":
             continue
         print(f"    {arg:.<40} {value}")
     print("-" * 80, flush=True)
-    main(args)
+    print()
+    if enable_loop:
+        print(f"{'MEAN ForeCast':^33} {'Q10 ForeCast':^33} {'Q90 ForeCast':^33}")
+    for uop in range(0, 20):
+        description_of_what_user_shall_do, misc_returned = main(args)
+        if not enable_loop:
+            break
+        mean = misc_returned['mean_forecast']
+        formatted_mean = " ".join([f"{x:.0f}" for x in mean])
+        q10 = misc_returned['q10_forecast']
+        formatted_q10 = " ".join([f"{x:.0f}" for x in q10])
+        q90 = misc_returned['q90_forecast']
+        formatted_q90 = " ".join([f"{x:.0f}" for x in q90])
+        print(f"{formatted_mean:^33} {formatted_q10:^33} {formatted_q90:^33}")
