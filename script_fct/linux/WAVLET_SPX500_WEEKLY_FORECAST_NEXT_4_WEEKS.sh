@@ -9,5 +9,7 @@ python wavelet_realtime.py \
   --dataset_id "week" \
   --n_forecast_length 4 \
   --n_forecast_length_in_training 4 \
-  --thresholds_ep "(0.0175,0.0175)"
+  --thresholds_ep "(0.0175,0.0175)" \
+  --enable-plot false \
+  --enable-loop true
 read
