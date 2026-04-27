@@ -5,7 +5,7 @@ cd ../../src/runners
 python wavelet_realtime.py \
   --ticker "^GSPC" \
   --col "Close" \
-  --verbose True \
+  --verbose False \
   --dataset_id "week" \
   --n_forecast_length 4 \
   --n_forecast_length_in_training 4 \
