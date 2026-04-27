@@ -563,7 +563,7 @@ def is_last_weekend_of_month(date):
     is_weekend = date.weekday() >= 5
 
     # Vérifie si le même jour la semaine prochaine change de mois
-    _next_week = date + datetime.timedelta(days=7)
+    _next_week = date + timedelta(days=7)
     is_last_week = _next_week.month != date.month
 
     return is_weekend and is_last_week
