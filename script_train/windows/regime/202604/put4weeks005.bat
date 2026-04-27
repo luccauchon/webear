@@ -1,6 +1,6 @@
 @echo off
 call conda activate PY312_HT
-cd ..\..\..\src\optimizers\regime
+cd ..\..\..\..\src\optimizers\regime
 python .\regime_switching_optimizer.py ^
 --lookback-years 99999 ^
 --forward-days 4 ^
