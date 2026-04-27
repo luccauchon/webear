@@ -1498,33 +1498,33 @@ def entry_main(args):
 
     if result is None:
         print("⚠️  Could not predict regime for latest data point")
-        return
 
     regime, regime_stats = result
 
-    # ===== Print Analysis Report =====
-    print_report(_regime=regime, _stats=regime_stats, _strike_distance=strike_distance, _spread_type=spread_type)
+    if regime_stats is not None:
+        # ===== Print Analysis Report =====
+        print_report(_regime=regime, _stats=regime_stats, _strike_distance=strike_distance, _spread_type=spread_type)
 
-    # ===== TRADE EVALUATION =====
-    print("💰 TRADE DECISION EVALUATION")
-    print("─" * 40)
+        # ===== TRADE EVALUATION =====
+        print("💰 TRADE DECISION EVALUATION")
+        print("─" * 40)
 
-    max_loss = spread_width - credit_received
+        max_loss = spread_width - credit_received
 
-    trade_decision = should_trade_credit_spread(_regime_stats=regime_stats, _credit_received=credit_received, _max_loss=max_loss, _min_edge_ratio=min_edge_ratio)
+        trade_decision = should_trade_credit_spread(_regime_stats=regime_stats, _credit_received=credit_received, _max_loss=max_loss, _min_edge_ratio=min_edge_ratio)
 
-    print(f"Spread Configuration:")
-    print(f"   • Width:           ${spread_width:.2f}")
-    print(f"   • Credit Received: ${credit_received:.2f}")
-    print(f"   • Max Loss:        ${max_loss:.2f}")
-    print(f"   • Min Edge Ratio:  {min_edge_ratio * 100:.1f}%")
-    print()
-    print(f"Regime-Based Metrics:")
-    print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
-    print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
-    print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
-    print()
-    print(f"🎯 DECISION: {trade_decision['message']}")
+        print(f"Spread Configuration:")
+        print(f"   • Width:           ${spread_width:.2f}")
+        print(f"   • Credit Received: ${credit_received:.2f}")
+        print(f"   • Max Loss:        ${max_loss:.2f}")
+        print(f"   • Min Edge Ratio:  {min_edge_ratio * 100:.1f}%")
+        print()
+        print(f"Regime-Based Metrics:")
+        print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
+        print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
+        print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
+        print()
+        print(f"🎯 DECISION: {trade_decision['message']}")
 
     # ===== Save Model =====
     print(f"\n💾 Saving model artifacts...")
