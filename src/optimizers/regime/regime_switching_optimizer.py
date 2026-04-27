@@ -211,7 +211,7 @@ def generate_model_filename(_ticker, _study_name, _params, _metadata_extra=None)
     filename = (
         f"{ticker_clean}__{study_clean}__"
         f"{algo}c{n_clusters}__"
-        f"{spread_type}_sd{int(strike_dist * 100)}pct_dte{forward}__"
+        f"{spread_type}_sd{strike_dist}pct_dte{forward}__"
         f"{timestamp}.pkl"
     )
 
