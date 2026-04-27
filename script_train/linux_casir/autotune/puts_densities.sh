@@ -6,9 +6,9 @@ export WEBEAR__TIMEOUT
 echo "Démarrage avec TIMEOUT = $WEBEAR__TIMEOUT"
 cd ../../../src/optimizers/autotune
 
-BARS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)
-# Définit l'incrément ici (ex: 0.01 pour 0.03, 0.04, 0.05...)
-DENSITIES=$(seq 0.03 0.01 0.2)
+BARS=(5 7 10 12 14 15 16 20)
+# Définit l'incrément ici (ex: 0.01 pour 0.03, 0.04, 0.05...) $(seq 0.01 0.03 0.2)
+DENSITIES=(0.01 0.03 0.05 0.06 0.08 0.1 0.12 0.15 0.2)
 PIDS=()
 
 for bar in "${BARS[@]}"; do
