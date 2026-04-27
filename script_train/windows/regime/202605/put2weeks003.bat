@@ -11,6 +11,8 @@ python .\regime_switching_optimizer.py ^
 --penalize-invalid-cluster ^
 --confirmation-before-run ^
 --min-n-in-cluster 35 ^
+--min-clusters 4 ^
+--max-clusters 7 ^
 --storage-url sqlite:///put2weeks003_3.db ^
 --study-name put2weeks003_3
 pause
