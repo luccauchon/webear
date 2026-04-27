@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import pickle
 from constants import FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY, OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, FYAHOO__OUTPUTFILENAME_MONTH
 from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
+import numpy as np
 
 
 def main(args):
@@ -174,14 +175,31 @@ if __name__ == "__main__":
     print()
     if enable_loop:
         print(f"{'MEAN ForeCast':^33} {'Q10 ForeCast':^33} {'Q90 ForeCast':^33}")
-    for uop in range(0, 20):
+    all_means, all_q10s, all_q90s = [], [], []
+    for uop in range(0, 33):
         description_of_what_user_shall_do, misc_returned = main(args)
         if not enable_loop:
             break
         mean = misc_returned['mean_forecast']
-        formatted_mean = " ".join([f"{x:.0f}" for x in mean])
         q10 = misc_returned['q10_forecast']
-        formatted_q10 = " ".join([f"{x:.0f}" for x in q10])
         q90 = misc_returned['q90_forecast']
+        all_means.append(mean)
+        all_q10s.append(q10)
+        all_q90s.append(q90)
+        formatted_mean = " ".join([f"{x:.0f}" for x in mean])
+        formatted_q10 = " ".join([f"{x:.0f}" for x in q10])
         formatted_q90 = " ".join([f"{x:.0f}" for x in q90])
         print(f"{formatted_mean:^33} {formatted_q10:^33} {formatted_q90:^33}")
+    if enable_loop:
+        avg_mean = np.mean(all_means, axis=0)
+        avg_q10 = np.mean(all_q10s, axis=0)
+        avg_q90 = np.mean(all_q90s, axis=0)
+
+        print("-" * 101)
+        print(f"{'OVERALL AVERAGE':^101}")
+
+        f_avg_mean = " ".join([f"{x:.0f}" for x in avg_mean])
+        f_avg_q10 = " ".join([f"{x:.0f}" for x in avg_q10])
+        f_avg_q90 = " ".join([f"{x:.0f}" for x in avg_q90])
+
+        print(f"{f_avg_mean:^33} {f_avg_q10:^33} {f_avg_q90:^33}")
