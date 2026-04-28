@@ -15,6 +15,8 @@ import os
 from colorama import init, Fore, Style
 import pandas as pd
 import copy
+import shutil
+from pathlib import Path
 import pickle
 import yfinance as yf
 import time
@@ -33,7 +35,8 @@ from constants import (
     FYAHOO__OUTPUTFILENAME_DAY,
     FYAHOO__OUTPUTFILENAME_MONTH,
     FYAHOO__OUTPUTFILENAME_WEEK,
-    FYAHOO__OUTPUTFILENAME_QUARTER
+    FYAHOO__OUTPUTFILENAME_QUARTER,
+    FYAHOO_GITHUB_DIRECTORY
 )
 
 def entry(
@@ -227,6 +230,13 @@ def entry(
         with open(FYAHOO_TICKER__OUTPUTFILENAME, 'wb') as f:
             pickle.dump(result, f)
         print(f"{Fore.GREEN}✅ Data saved to {FYAHOO_TICKER__OUTPUTFILENAME}{Style.RESET_ALL}")
+
+    if os.path.exists(FYAHOO_GITHUB_DIRECTORY):
+        for a_file in [FYAHOO__OUTPUTFILENAME, FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR]:
+            if os.path.exists(a_file):
+                _scr = a_file
+                _dst = os.path.join(FYAHOO_GITHUB_DIRECTORY, Path(a_file).name)
+                shutil.copyfile(src=_scr, dst=_dst)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Download and resample financial data from Yahoo Finance.")

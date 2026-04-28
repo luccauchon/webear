@@ -40,9 +40,10 @@ FYAHOO__OUTPUTFILENAME_DAY   = os.path.join(BASE_YFINANCE_DIR, "snapshot_day.pkl
 FYAHOO__OUTPUTFILENAME_WEEK  = os.path.join(BASE_YFINANCE_DIR, "snapshot_week.pkl")
 FYAHOO__OUTPUTFILENAME_MONTH = os.path.join(BASE_YFINANCE_DIR, "snapshot_month.pkl")
 FYAHOO__OUTPUTFILENAME_QUARTER = os.path.join(BASE_YFINANCE_DIR, "snapshot_quarter.pkl")
-FYAHOO__OUTPUTFILENAME_YEAR  = os.path.join(BASE_YFINANCE_DIR, "snapshot_year.pkl")
-FYAHOO_TICKER__OUTPUTFILENAME = os.path.join(BASE_YFINANCE_DIR, "snapshot_ticker.pkl")
-FYAHOO_SPX500__OUTPUTFILENAME = os.path.join(BASE_YFINANCE_DIR, "sp500_daily_data.parquet")
+FYAHOO__OUTPUTFILENAME_YEAR    = os.path.join(BASE_YFINANCE_DIR, "snapshot_year.pkl")
+FYAHOO_TICKER__OUTPUTFILENAME  = os.path.join(BASE_YFINANCE_DIR, "snapshot_ticker.pkl")
+FYAHOO_SPX500__OUTPUTFILENAME  = os.path.join(BASE_YFINANCE_DIR, "sp500_daily_data.parquet")
+FYAHOO_GITHUB_DIRECTORY        = os.path.join(BASE_YFINANCE_DIR, "yfdataset")
 
 # Constants
 NB_WORKERS = os.cpu_count()
