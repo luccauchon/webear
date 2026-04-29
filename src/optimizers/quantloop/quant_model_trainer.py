@@ -391,8 +391,12 @@ def entry_point(args):
 
         best_setup = saved_data['best_setup']
         assert 'test' in best_setup
-        setup_to_use = best_setup.get('test', best_setup.get('train'))
-
+        setup_to_use             = best_setup.get('test', best_setup.get('train'))
+        _target_type_used        = saved_data['params']['target_type']
+        _target_pourcentage_used = saved_data['params']['target_percentage']
+        _look_ahead_used         = saved_data['params']['look_ahead']
+        _dataset_filename_used   = saved_data['params']['dataset_filename']
+        assert final_dataset_filename == saved_data['params']['dataset_filename']
         scaler = setup_to_use['scaler']
         model = setup_to_use['model']
         feat_cols = setup_to_use['features']
@@ -402,23 +406,23 @@ def entry_point(args):
         X_last_scaled = scaler.transform(X_last)
 
         # Predict
-        pred = model.predict(X_last_scaled)[0]
-        proba = None
+        _realtime_prediction = model.predict(X_last_scaled)[0]
+        proba = 0.
         if hasattr(model, 'predict_proba'):
             proba = model.predict_proba(X_last_scaled)[0][1]
         # There is no dataset_id in the params.
         dataset_id = "day" if "_day_" in final_dataset_filename else None
-        dataset_id = "month" if "_monthly_" in final_dataset_filename else dataset_id
-        dataset_id = "week" if "_weekly_" in final_dataset_filename or "_week" in final_dataset_filename else dataset_id
-        assert dataset_id is not None
+        dataset_id = "month" if "_month_" in final_dataset_filename else dataset_id
+        dataset_id = "week" if "_week_" in final_dataset_filename or "_week" in final_dataset_filename else dataset_id
+        assert dataset_id is not None, f"{dataset_id=}   {final_dataset_filename=}"
         ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
+        assert 0 < int(look_head_for_prediction)
         print("\n" + "═" * 50)
-        print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} STEP")
-        print(f"📅 Base Date       : {last_date}")
+        print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1==int(look_head_for_prediction) else 'S'}")
+        print(f"📅 Last Date       : {last_date}")
         print(f"📅 Prediction Date : {ff_date}")
-        print(f"📊 Prediction      : {'UP (1)' if pred == 1 else 'DOWN (0)'}")
-        if proba is not None:
-            print(f"📈 Confidence      : {proba:.2%}")
+        print(f"📊 Prediction      : {'UP (1)' if _realtime_prediction == 1 else 'DOWN (0)'} @ {proba:.2%}")
+        print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
         print("═" * 50)
         print(f"🔑 Features Used   : {feat_cols}")
         print(f"   Scorer: {setup_to_use['scorer']}")
@@ -431,7 +435,7 @@ def entry_point(args):
         print("Confusion Matrix:")
         print(confusion_matrix(setup_to_use['y_test_final'], setup_to_use['y_hat_test_final']))
         print("═" * 50)
-        return
+        return _realtime_prediction
 
     # ─────────────────────────────────────────────────────────────────────────
     # 📚 STANDARD TRAINING LOOP
@@ -464,7 +468,8 @@ def entry_point(args):
                 yield list(combo)
         elif _mode == 'manual':
             provided_features = [
-                ['Dist_from_ATH', 'Fed_Rate_Diff', 'Inflation_Rate', 'Log_Close', 'MA_Long', 'MA_Short', 'Price_to_MA', 'RSI_Lag1', 'Shifted_MA_Short', 'Spread_10Y2Y', 'Unrate_Diff', 'VIX', 'VIX_Lag1']
+                ['Dist_from_ATH', 'Fed_Rate_Diff', 'Inflation_Rate', 'Log_Close', 'MA_Long', 'MA_Short', 'Price_to_MA', 'RSI_Lag1', 'Shifted_MA_Short', 'Spread_10Y2Y', 'Unrate_Diff', 'VIX', 'VIX_Lag1'],
+                ['Fed_Rate_Diff', 'Inflation_Rate', 'MA_Long', 'MA_Short', 'RSI_Lag1', 'VIX_Lag1', 'VIX_Ratio'],
             ]
             for a_feartures_set in provided_features:
                 yield a_feartures_set
