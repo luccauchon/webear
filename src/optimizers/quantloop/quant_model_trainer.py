@@ -124,7 +124,7 @@ def parse_arguments():
     )
     model_grp.add_argument(
         "--training-mode", "-tm", type=str, default="random",
-        choices=["exhaustive", "random"],
+        choices=["exhaustive", "random", "manual"],
         help="Strategy for iterating through feature combinations."
     )
     model_grp.add_argument(
@@ -449,6 +449,12 @@ def entry_point(args):
                     combo = tuple(sorted(set(random.sample(_features, k))))
                 history.add(combo)
                 yield list(combo)
+        elif _mode == 'manual':
+            provided_features = [
+                ['Dist_from_ATH', 'Fed_Rate_Diff', 'Inflation_Rate', 'Log_Close', 'MA_Long', 'MA_Short', 'Price_to_MA', 'RSI_Lag1', 'Shifted_MA_Short', 'Spread_10Y2Y', 'Unrate_Diff', 'VIX', 'VIX_Lag1']
+            ]
+            for a_feartures_set in provided_features:
+                yield a_feartures_set
 
     feature_iterator = get_feature_combinations(_features=features, _mode=training_mode)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
