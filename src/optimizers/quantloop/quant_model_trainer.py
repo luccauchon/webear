@@ -1,3 +1,19 @@
+import os
+import random
+import numpy as np
+# ─────────────────────────────────────────────────────────────────────────
+# 🔒 DETERMINISM SETUP
+# ─────────────────────────────────────────────────────────────────────────
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+os.environ["PYTHONHASHSEED"] = str(SEED)
+# Force single-threaded BLAS/OMP to guarantee identical floating-point accumulation
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -8,15 +24,12 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-import os
 import argparse
 import itertools
 import pickle
-import random
 from datetime import datetime
 import time
 from pathlib import Path
-import numpy as np
 import pandas as pd
 import warnings
 from sklearn.exceptions import ConvergenceWarning, EfficiencyWarning
@@ -546,7 +559,7 @@ def entry_point(args):
             n_iter=100,
             cv=tscv,
             n_jobs=-1,
-            random_state=1,
+            random_state=SEED,
             verbose=0
         )
 
