@@ -421,7 +421,7 @@ def entry_point(args):
         return
 
     # ─────────────────────────────────────────────────────────────────────────
-    # 📚 STANDARD TRAINING LOOP (unchanged)
+    # 📚 STANDARD TRAINING LOOP
     # ─────────────────────────────────────────────────────────────────────────
     total_combinations = (2 ** len(features)) - 1
     if verbose:
@@ -563,7 +563,7 @@ def entry_point(args):
                                             'y_train_full': y_train_full, 'X_test_final__before_scaled': X_test_final,
                                             'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final, 'y_hat_test_final': test_preds,
                                             'X': X, 'y': y, 'n_test': n_test, 'train_t1': X_train_full.index[0].strftime('%Y-%m-%d'), 'train_t2': X_train_full.index[-1].strftime('%Y-%m-%d'),
-                                            'test_t1':X_test_final.index[0].strftime('%Y-%m-%d'), 'test_t2': X_test_final.index[-1].strftime('%Y-%m-%d')}, False
+                                            'test_t1': X_test_final.index[0].strftime('%Y-%m-%d'), 'test_t2': X_test_final.index[-1].strftime('%Y-%m-%d')}, False
         if train_score >= best_setup_found['train']['train_score']:
             cd1 = train_score > best_setup_found['train']['train_score']
             cd2 = train_score == best_setup_found['train']['train_score'] and test_score > best_setup_found['train']['test_score']
