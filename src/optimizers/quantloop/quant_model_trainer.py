@@ -418,7 +418,7 @@ def entry_point(args):
         ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
         assert 0 < int(look_head_for_prediction)
         print("\n" + "═" * 50)
-        print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1==int(look_head_for_prediction) else 'S'}")
+        print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
         print(f"📅 Last Date       : {last_date}")
         print(f"📅 Prediction Date : {ff_date}")
         print(f"📊 Prediction      : {'UP (1)' if _realtime_prediction == 1 else 'DOWN (0)'} @ {proba:.2%}")
@@ -615,7 +615,7 @@ def entry_point(args):
                 print(f"  - Test  {data['scorer']}: {data['test_score']:.2%}")
 
                 saved_preds = data['model'].predict(data['X_test_scaled'])
-                assert np.array_equal(saved_preds, data['y_hat_test_final']) , "Sanity check failed!"
+                assert np.array_equal(saved_preds, data['y_hat_test_final']), "Sanity check failed!"
                 print(f"\nClassification Report ({category} snapshot):")
                 print(classification_report(data['y_test_final'], saved_preds, zero_division=0))
                 print(f"\n"
