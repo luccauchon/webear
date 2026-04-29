@@ -636,6 +636,8 @@ def entry_point(args):
         if verbose:
             print("\n⚠️ No valid model was trained. Nothing to save.")
     print(f"\nScript was executed in {Path.cwd()}")
+    return None
+
 
 if __name__ == "__main__":
     parsed_args = parse_arguments()
