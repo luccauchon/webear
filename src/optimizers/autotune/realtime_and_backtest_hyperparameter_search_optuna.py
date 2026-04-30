@@ -425,8 +425,7 @@ def entry(args):
                             if saved_model['score'] >= .66:
                                 print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
                         else:
-                            print(f"{saved_model}")
-                            print("TODO_1")
+                            assert last_signal == 1.
                     else:
                         print(f"{saved_model}")
                         print("TODO_3")
