@@ -911,7 +911,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
         now = datetime.now()
         if _dataset_id == 'day':
             # We are in middle of a day; take previous week:
-            if now.date() == df.index[-1].date():
+            if now.date() == df.index[-1].date() and now.hour < 16:
                 df = df.iloc[:-1].copy()
         if _dataset_id == 'week':
             # We are in middle of a week; take previous week
