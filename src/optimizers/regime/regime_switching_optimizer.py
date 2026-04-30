@@ -907,15 +907,19 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     for param in required_feature_params:
         if param not in _params:
             raise ValueError(f"Missing required param '{param}' in saved model")
-    if _dataset_id in ['week', 'month'] and args.clip:
+    if _dataset_id in ['day', 'week', 'month'] and args.clip:
         now = datetime.now()
+        if _dataset_id == 'day':
+            # We are in middle of a day; take previous week:
+            if now.date() == df.index[-1].date():
+                df = df.iloc[:-1].copy()
         if _dataset_id == 'week':
+            # We are in middle of a week; take previous week
             if is_weekday(now):
-                # We are in middle of a week; take previous week
                 df = df.iloc[:-1].copy()
         if _dataset_id == 'month':
+            # We are in middle of a month; take previous month
             if not is_last_weekend_of_month(now):
-                # We are in middle of a month; take previous month
                 df = df.iloc[:-1].copy()
 
     # 3. Build Features using SAVED Hyperparameters
