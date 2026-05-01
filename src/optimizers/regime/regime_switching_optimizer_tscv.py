@@ -942,6 +942,9 @@ if __name__ == "__main__":
         "--list-models", action="store_true",
         help="List available trained models for this ticker and exit"
     )
+    parser.add_argument("--clip", action="store_true",
+                        help="In Real-Time mode, don't use the last bar (day, week, month, etc) if it is not completed"
+                        )
 
     # ─────────────────────────────────────────────────────
     # EXECUTE
