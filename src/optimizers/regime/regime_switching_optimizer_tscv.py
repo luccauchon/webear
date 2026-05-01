@@ -903,6 +903,10 @@ if __name__ == "__main__":
     parser.add_argument("--short-verbose", action="store_true",
         help="In Real-Time mode only, display only the minimal information"
     )
+    parser.add_argument("--hypershort-verbose", action="store_true",
+                        help="In Real-Time mode only, display only the VERY minimal information"
+                        )
+
     # ─────────────────────────────────────────────────────
     # REGIME FILTERING OPTIONS (Real-Time Mode Only)
     # ─────────────────────────────────────────────────────
