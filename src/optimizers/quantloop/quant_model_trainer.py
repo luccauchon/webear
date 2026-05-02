@@ -169,6 +169,7 @@ def parse_arguments():
         "--model-path", type=str, default=None,
         help="(Optional for --real-time) Path to a specific pickled model. Defaults to the latest model in --output-dir."
     )
+    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
 
     args = parser.parse_args()
 
@@ -385,7 +386,8 @@ def entry_point(args):
         if df.empty:
             print("❌ No valid data points available after feature engineering.")
             return
-
+        if args.clip:
+            df = df.iloc[:-1].copy()
         last_date = df.index[-1].strftime('%Y-%m-%d')
         print(f"📅 Using last datapoint: {last_date}")
 
