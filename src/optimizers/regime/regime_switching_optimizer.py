@@ -748,6 +748,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     """
     normal_verbose = not args.short_verbose
     hyper_silence  = args.hypershort_verbose
+    only_if_best   = args.bestof_verbose
     if normal_verbose and not hyper_silence:
         print("⚡ REAL-TIME INFERENCE MODE")
         print("-" * 60)
@@ -944,17 +945,20 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
     regime__2__otm   = {r:float(_stats[r]['prob_otm']) for r in range(_params['n_clusters']) if r in _stats}
     regime__2__count = {r: int(_stats[r]['count']) for r in range(_params['n_clusters']) if r in _stats}
     sorted_regime_desc = dict(sorted(regime__2__otm.items(), key=lambda item: item[1], reverse=True))
-    parts = []
-    for k, v in sorted_regime_desc.items():
+    parts, _regime_dectected_is_the_best = [], False
+    for e, (k, v) in enumerate(sorted_regime_desc.items()):
         formatted_val = f"{k}:{v:.1%}:{regime__2__count[k]}"
         if k == regime:
             parts.append(f"\033[1m**{formatted_val}**\033[0m")
+            if 0 == e:
+                _regime_dectected_is_the_best = True
         else:
             parts.append(formatted_val)
     result_string = f"[{','.join(parts)}]"
-    print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , {result_string}")
-    print(f" 🎯       Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price ({latest_close_value:.0f},{latest_date.strftime('%Y-%m-%d')}) , {_metadata['spread_type'].upper()} forward {regime_stats['forward_days']} {regime_stats['dataset_id']} "
-          f"--> {_future_value__base_on__latest_close_value:.0f} @{_due_date_.strftime('%Y-%m-%d')}")
+    if (only_if_best and _regime_dectected_is_the_best) or not only_if_best:
+        print(f"📊 Detected Regime:          #{regime} , {_metadata['spread_type'].upper()} , {result_string}")
+        print(f" 🎯       Strike Distance:    {_metadata['strike_distance'] * 100:.1f}% from current price ({latest_close_value:.0f},{latest_date.strftime('%Y-%m-%d')}) , {_metadata['spread_type'].upper()} forward {regime_stats['forward_days']} {regime_stats['dataset_id']} "
+              f"--> {_future_value__base_on__latest_close_value:.0f} @{_due_date_.strftime('%Y-%m-%d')}")
     if normal_verbose and not hyper_silence:
         print("\n" + "═" * 60)
         print("✨ INFERENCE COMPLETE")
@@ -1611,6 +1615,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--hypershort-verbose", action="store_true",
                         help="In Real-Time mode only, display only the VERY minimal information"
+                        )
+    parser.add_argument("--bestof-verbose", action="store_true",
+                        help="In Real-Time mode only, activate the display if and only if the regime detected is the best"
                         )
     parser.add_argument(
         "--confirmation-before-run", action="store_true",
