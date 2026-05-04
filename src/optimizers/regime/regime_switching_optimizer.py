@@ -328,81 +328,6 @@ def print_all_cluster_characteristics(_stats, _features, _model, _scaler, _n_clu
 
 
 # =========================================================
-# TRADE DECISION HELPER - Credit Spread Expectancy Filter
-# =========================================================
-def should_trade_credit_spread(_regime_stats, _credit_received, _max_loss, _min_edge_ratio):
-    """
-    Evaluate whether a credit spread trade has positive expectancy given regime probabilities.
-
-    Parameters:
-    -----------
-    _regime_stats : dict
-        Output from regime stats computation (must contain 'prob_otm')
-    _credit_received : float
-        Premium received per share (e.g., 0.40 for $0.40)
-    _max_loss : float
-        Max loss per share if spread expires ITM (spread_width - credit)
-    _min_edge_ratio : float, default=0.05
-        Minimum edge per dollar risked to approve trade
-
-    Returns:
-    --------
-    dict with keys:
-        - 'trade': bool, whether to take the trade
-        - 'expectancy': float, expected P&L per spread in dollars
-        - 'edge_ratio': float, expectancy / max_loss (risk-adjusted edge)
-        - 'break_even_prob': float, minimum prob_otm needed for positive EV
-        - 'message': str, human-readable summary
-    """
-    prob_otm = _regime_stats.get('prob_otm')
-
-    if prob_otm is None:
-        return {
-            'trade': False,
-            'expectancy': None,
-            'edge_ratio': None,
-            'break_even_prob': None,
-            'message': "❌ Missing 'prob_otm' in regime stats"
-        }
-
-    prob_itm = 1 - prob_otm
-
-    # Expected value in dollar terms per share
-    expectancy = (prob_otm * _credit_received) - (prob_itm * _max_loss)
-
-    # Risk-adjusted edge: expectancy per $1 risked
-    edge_ratio = expectancy / _max_loss if _max_loss > 0 else 0
-
-    # Break-even probability: minimum prob_otm for EV >= 0
-    # Solve: p*credit - (1-p)*max_loss = 0  →  p = max_loss / (credit + max_loss)
-    denominator = _credit_received + _max_loss
-    break_even_prob = _max_loss / denominator if denominator > 0 else 1.0
-
-    # Decision: require both edge threshold AND win rate above break-even
-    trade = (edge_ratio >= _min_edge_ratio) and (prob_otm > break_even_prob)
-
-    # Build human-readable message
-    if not trade:
-        if edge_ratio < _min_edge_ratio:
-            reason = f"Edge ratio {edge_ratio * 100:.2f}% < minimum {_min_edge_ratio * 100:.1f}%"
-        elif prob_otm <= break_even_prob:
-            reason = f"Win rate {prob_otm * 100:.1f}% ≤ break-even {break_even_prob * 100:.1f}%"
-        else:
-            reason = "Unknown filter failed"
-        message = f"⛔ SKIP: {reason}"
-    else:
-        message = f"✅ APPROVE: Edge {edge_ratio * 100:.2f}% | EV ${expectancy:.3f}/share"
-
-    return {
-        'trade': trade,
-        'expectancy': expectancy,
-        'edge_ratio': edge_ratio,
-        'break_even_prob': break_even_prob,
-        'message': message
-    }
-
-
-# =========================================================
 # DATA LOADING
 # =========================================================
 def load_data(_ticker, _dataset_id):
@@ -1064,10 +989,6 @@ def entry_main(args):
     strike_distance = getattr(args, 'strike_distance', 0.03)
     forward_days = getattr(args, 'forward_days', 20)
 
-    spread_width = getattr(args, 'spread_width', 5.0)
-    credit_received = getattr(args, 'credit_received', 2.0)
-    min_edge_ratio = getattr(args, 'min_edge_ratio', 0.04)
-
     # Set global random seed
     np.random.seed(random_seed)
 
@@ -1495,27 +1416,6 @@ def entry_main(args):
         # ===== Print Analysis Report =====
         print_report(_regime=regime, _stats=regime_stats, _strike_distance=strike_distance, _spread_type=spread_type)
 
-        # ===== TRADE EVALUATION =====
-        print("💰 TRADE DECISION EVALUATION")
-        print("─" * 40)
-
-        max_loss = spread_width - credit_received
-
-        trade_decision = should_trade_credit_spread(_regime_stats=regime_stats, _credit_received=credit_received, _max_loss=max_loss, _min_edge_ratio=min_edge_ratio)
-
-        print(f"Spread Configuration:")
-        print(f"   • Width:           ${spread_width:.2f}")
-        print(f"   • Credit Received: ${credit_received:.2f}")
-        print(f"   • Max Loss:        ${max_loss:.2f}")
-        print(f"   • Min Edge Ratio:  {min_edge_ratio * 100:.1f}%")
-        print()
-        print(f"Regime-Based Metrics:")
-        print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
-        print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
-        print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
-        print()
-        print(f"🎯 DECISION: {trade_decision['message']}")
-
     # ===== Save Model =====
     print(f"\n💾 Saving model artifacts...")
 
@@ -1589,9 +1489,6 @@ if __name__ == "__main__":
     python script.py --storage-url "postgresql://user:pass@localhost/db" \\
                      --max-n-trials 200
 
-    # Conservative trade filtering:
-    python script.py --min-edge-ratio 0.08 --credit-received 1.5
-
     # Quick test run:
     python script.py --max-n-trials 10 --timeout 300 --study-name test_run
     
@@ -1612,10 +1509,7 @@ if __name__ == "__main__":
         epilog="""
         TRADE LOGIC:
         • Regime detection via unsupervised clustering (K-Means or GMM)
-        • Target: Binary outcome of spread expiring OTM (profitable)
-        • Trade approval requires:
-          1. Edge ratio (expectancy/max_loss) ≥ min_edge_ratio
-          2. Regime OTM probability > break-even probability
+        • Target: Binary outcome of spread expiring OTM (profitable)        
         • Model saved only when trade is approved
         """
     )
@@ -1703,22 +1597,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--forward-days", type=int, default=20,
         help="Days to expiration / holding period. Could be week or month, depends on dataset-id."
-    )
-
-    # ─────────────────────────────────────────────────────
-    # TRADE EVALUATION PARAMETERS
-    # ─────────────────────────────────────────────────────
-    parser.add_argument(
-        "--spread-width", type=float, default=5.0,
-        help="Total spread width in dollars (e.g., 5.0 = $5 wide)"
-    )
-    parser.add_argument(
-        "--credit-received", type=float, default=2.0,
-        help="Premium received per share in dollars"
-    )
-    parser.add_argument(
-        "--min-edge-ratio", type=float, default=0.04,
-        help="Minimum edge ratio (expectancy/max_loss) to approve trade"
     )
 
     # ─────────────────────────────────────────────────────
