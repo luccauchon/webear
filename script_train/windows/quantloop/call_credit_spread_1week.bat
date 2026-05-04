@@ -6,6 +6,7 @@ start /low /b /wait python .\quant_model_trainer.py --dataset .\combined_week_ma
 --target-type soft_lower ^
 --target-percentage 0.005 ^
 --look-ahead 1 ^
+--n-test 24 ^
 --scaler FunctionTransformer ^
 --estimator RandomForestClassifier ^
 --training-mode random ^
