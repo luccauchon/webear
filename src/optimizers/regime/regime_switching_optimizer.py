@@ -1002,7 +1002,7 @@ def entry_main(args):
     print(f"🚀 Starting Credit Spread Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
     print(f"   Spread: {spread_type} @{strike_distance * 100:.2f}% | DTE: {forward_days}")
-    print(f"   Min samples/cluster: {min_n_in_cluster} | Trials: {max_n_trials} | Timeout: {timeout} seconds")
+    print(f"   \033[1mMin samples/cluster: {min_n_in_cluster}\033[0m | Trials: {max_n_trials} | Timeout: {timeout} seconds")
     print(f"   Forward : {forward_days} {dataset_id}")
     print("-" * 60)
     assert args.dataset_id in ['day', 'week', 'month']
@@ -1015,9 +1015,9 @@ def entry_main(args):
         df = df.iloc[-cutoff:].copy()
     minimum_train_data, minimum_test_data = 1000, 200
     if args.dataset_id == 'week':
-        minimum_train_data, minimum_test_data = minimum_train_data // 5, minimum_test_data // 5
-    if args.dataset_id == 'month':
         minimum_train_data, minimum_test_data = minimum_train_data // 20, minimum_test_data // 20
+    if args.dataset_id == 'month':
+        minimum_train_data, minimum_test_data = minimum_train_data // 100, minimum_test_data // 200
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     total_number_of_rows = len(df)
@@ -1027,6 +1027,7 @@ def entry_main(args):
     min_clusters, max_clusters = args.min_clusters, args.max_clusters
     print(f"   Split value of {split_value:.2%} | {int(split_value * total_number_of_rows)} ({df.index[0].strftime("%Y-%m-%d")}:{df.index[split_idx-1].strftime("%Y-%m-%d")}) :: "
           f"{int((1 - split_value) * total_number_of_rows)} ({df.index[split_idx].strftime("%Y-%m-%d")}:{df.index[-1].strftime("%Y-%m-%d")})")
+    print(f"   \033[1mMinimum Train Data: {minimum_train_data}   Minimum Test Data: {minimum_test_data}\033[0m")
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
