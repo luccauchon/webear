@@ -950,7 +950,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
         formatted_val = f"{k}:{v:.1%}:{regime__2__count[k]}"
         if k == regime:
             parts.append(f"\033[1m**{formatted_val}**\033[0m")
-            if 0 == e:
+            if e in [0, 1]:  # The best or the second best regime
                 _regime_dectected_is_the_best = True
         else:
             parts.append(formatted_val)
