@@ -1,0 +1,5 @@
+###############################################################################
+# Detection d'une journée Bullish
+###############################################################################
+python .\regime_intrabar.py --add-enhanced-features --timeout 60000 --min-clusters 6 --max-clusters 9
+python .\regime_switching_optimizer.py --lookback-years 999999 --forward-days 1 --spread-type put --strike-distance 0.01 --min-clusters 6 --max-clusters 9 --timeout 60000
