@@ -1021,7 +1021,8 @@ def entry_main(args):
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     total_number_of_rows = len(df)
-    split_value = 0.8
+    split_value = args.split_value
+    assert 0.01 < split_value < 0.99
     split_idx = int(len(df) * split_value)
     min_clusters, max_clusters = args.min_clusters, args.max_clusters
     print(f"   Split value of {split_value:.2%} | {int(split_value * total_number_of_rows)} ({df.index[0].strftime("%Y-%m-%d")}:{df.index[split_idx-1].strftime("%Y-%m-%d")}) :: "
@@ -1536,6 +1537,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir", type=str, default="models",
         help=f"Directory where to save the model"
+    )
+    parser.add_argument(
+        "--split-value", type=float, default=0.8,
+        help="Train/Validation split value (default to 80% train / 20% validation)"
     )
 
     # ─────────────────────────────────────────────────────
