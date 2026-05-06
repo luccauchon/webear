@@ -1430,5 +1430,5 @@ def get_next_step(the_date, dataset_id, nn):
         for u in range(1, nn):
             _next_ = next_week(_next_)
     else:
-        assert False, f"Implement for {_stats['dataset_id']}"
+        assert False, f"Implement for {dataset_id}"
     return _next_
