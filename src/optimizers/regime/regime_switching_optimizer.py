@@ -1602,7 +1602,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--strike-distance", type=float, default=0.03,
-        help="Short strike distance as fraction (0.03 = 3%% away)"
+        help="Short strike distance as fraction (0.03 = 3pourcent away)"
     )
     parser.add_argument(
         "--forward-days", type=int, default=20,
@@ -1635,11 +1635,11 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────────────
     parser.add_argument(
         "--min-prob-otm", type=float, default=None,
-        help="Minimum OTM probability required for a regime to be tradeable (e.g., 0.60 = 60%%)"
+        help="Minimum OTM probability required for a regime to be tradeable (e.g., 0.60 = 60pourcent)"
     )
     parser.add_argument(
         "--max-prob-itm", type=float, default=None,
-        help="Maximum ITM probability allowed for a regime to be tradeable (e.g., 0.40 = 40%%)"
+        help="Maximum ITM probability allowed for a regime to be tradeable (e.g., 0.40 = 40pourcent)"
     )
     parser.add_argument(
         "--min-regime-samples", type=int, default=None,
