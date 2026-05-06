@@ -1001,7 +1001,7 @@ def entry_main(args):
 
     print(f"🚀 Starting Credit Spread Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
-    print(f"   Spread: {spread_type} @{strike_distance * 100:.2f}% | DTE: {forward_days}")
+    print(f"   Spread: {spread_type} @{strike_distance * 100:.4f}% | DTE: {forward_days}")
     print(f"   \033[1mMin samples/cluster: {min_n_in_cluster}\033[0m | Trials: {max_n_trials} | Timeout: {timeout} seconds")
     print(f"   Forward : {forward_days} {dataset_id}")
     print("-" * 60)
@@ -1541,7 +1541,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--split-value", type=float, default=0.8,
-        help="Train/Validation split value (default to 80% train / 20% validation)"
+        help="Train/Validation split value (default to 80pourcent train / 20pourcent validation)"
     )
 
     # ─────────────────────────────────────────────────────
@@ -1655,7 +1655,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--min-ev-per-dollar", type=float, default=None,
-        help="Minimum expected value per $1 risked to approve trade (e.g., 0.10 = +$0.10 EV per $1)"
+        help="Minimum expected value per $1 risked to approve trade (e.g., 0.10 = +0.10 EV per 1)"
     )
     parser.add_argument(
         "--model-filename", type=str, default=None,
