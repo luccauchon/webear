@@ -113,12 +113,6 @@ from optimizers.regime.regime_switching_optimizer import print_all_cluster_chara
 
 
 # =========================================================
-# TRADE DECISION HELPER - Credit Spread Expectancy Filter
-# =========================================================
-from optimizers.regime.regime_switching_optimizer import should_trade_credit_spread
-
-
-# =========================================================
 # DATA LOADING
 # =========================================================
 from optimizers.regime.regime_switching_optimizer import load_data
@@ -677,20 +671,12 @@ def entry_main(args):
 
     max_loss = spread_width - credit_received
 
-    trade_decision = should_trade_credit_spread(_regime_stats=regime_stats, _credit_received=credit_received, _max_loss=max_loss, _min_edge_ratio=min_edge_ratio)
-
     print(f"Spread Configuration:")
     print(f"   • Width:           ${spread_width:.2f}")
     print(f"   • Credit Received: ${credit_received:.2f}")
     print(f"   • Max Loss:        ${max_loss:.2f}")
     print(f"   • Min Edge Ratio:  {min_edge_ratio * 100:.1f}%")
     print()
-    print(f"Regime-Based Metrics:")
-    print(f"   • Break-Even Win Rate: {trade_decision['break_even_prob'] * 100:.2f}%")
-    print(f"   • Expected Value:      ${trade_decision['expectancy']:.3f}/share")
-    print(f"   • Edge Ratio:          {trade_decision['edge_ratio'] * 100:.2f}%")
-    print()
-    print(f"🎯 DECISION: {trade_decision['message']}")
 
     # ===== Save Model =====
     print(f"\n💾 Saving model artifacts...")
@@ -730,8 +716,6 @@ def entry_main(args):
                 "credit_received": credit_received,
                 "spread_width": spread_width,
                 "max_loss": max_loss,
-                "edge_ratio": trade_decision['edge_ratio'],
-                "expectancy": trade_decision['expectancy'],
                 "evaluated_at": datetime.now()
             }
         }, f)
