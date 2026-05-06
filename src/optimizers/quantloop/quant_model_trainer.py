@@ -421,7 +421,7 @@ def entry_point(args):
         assert 0 < int(look_head_for_prediction)
         print("\n" + "═" * 50)
         print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
-        print(f"📅 Last Date       : {last_date} (@)")
+        print(f"📅 Last Date       : {last_date}")
         print(f"📅 Prediction Date : {ff_date}")
         print(f"📊 Prediction      : {'UP (1)' if _realtime_prediction == 1 else 'DOWN (0)'} @ {proba:.2%}")
         print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
