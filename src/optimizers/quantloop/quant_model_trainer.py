@@ -360,7 +360,8 @@ def entry_point(args):
         percentage_of_type_target = saved_params.get('target_percentage', percentage_of_type_target)
         assert 'target_type' in saved_params
         type_of_target = saved_params.get('target_type', type_of_target)
-        final_dataset_filename = saved_params['dataset_filename']
+        print(f"📦 Loading dataset from : {final_dataset_filename}  (overriding {saved_params['dataset_filename']})")
+        saved_params['dataset_filename'] = final_dataset_filename
         print("✅ Using saved training parameters for real-time feature engineering.")
     if verbose:
         print(f"🔄 Loading data from <<{final_dataset_filename}>>")
@@ -388,8 +389,9 @@ def entry_point(args):
             return
         if args.clip:
             df = df.iloc[:-1].copy()
-        last_date = df.index[-1].strftime('%Y-%m-%d')
-        print(f"📅 Using last datapoint: {last_date}")
+        last_date  = df.index[-1].strftime('%Y-%m-%d')
+        last_value = df.iloc[-1]['Close']
+        print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f}")
 
         best_setup = saved_data['best_setup']
         assert 'test' in best_setup
@@ -421,9 +423,8 @@ def entry_point(args):
         assert 0 < int(look_head_for_prediction)
         print("\n" + "═" * 50)
         print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
-        print(f"📅 Last Date       : {last_date}")
-        print(f"📅 Prediction Date : {ff_date}")
-        print(f"📊 Prediction      : {'UP (1)' if _realtime_prediction == 1 else 'DOWN (0)'} @ {proba:.2%}")
+        print(f"📅 Last Date/Value : {last_date} @ {last_value:.0f}")
+        print(f"📊 Prediction      : {'UP (1)' if _realtime_prediction == 1 else 'DOWN (0)'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {last_value*(1+_target_pourcentage_used):.0f}")
         print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
         print("═" * 50)
         print(f"🔑 Features Used   : {feat_cols}")
