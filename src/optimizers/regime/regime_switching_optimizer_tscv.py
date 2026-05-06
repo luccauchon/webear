@@ -215,7 +215,7 @@ def entry_main(args):
     print(f"📦 Loaded {len(df)} rows of data ({df.index[0].date()} to {df.index[-1].date()})")
     assert len(df) > minimum_train_data + minimum_test_data
     total_number_of_rows = len(df)
-
+    min_clusters, max_clusters = args.min_clusters, args.max_clusters
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
@@ -239,7 +239,7 @@ def entry_main(args):
         """
         # ===== 1. SUGGEST HYPERPARAMETERS =====
         if args.dataset_id == 'day':
-            _n_clusters = trial.suggest_int("n_clusters", 3, 6)
+            _n_clusters = trial.suggest_int("n_clusters", min_clusters, max_clusters)
             _pct1 = trial.suggest_int("pct1", 1, 5)
             _pct2 = trial.suggest_int("pct2", 5, 10)
             _pct3 = trial.suggest_int("pct3", 10, 20)
@@ -251,7 +251,7 @@ def entry_main(args):
             _atr_period = trial.suggest_int("atr_period", 2, 21)
             _rsi_length = trial.suggest_int("rsi_length", 10, 20)
         elif args.dataset_id == 'week':
-            _n_clusters = trial.suggest_int("n_clusters", 3, 6)
+            _n_clusters = trial.suggest_int("n_clusters", min_clusters, max_clusters)
             _pct1 = trial.suggest_int("pct1", 1, 3)
             _pct2 = trial.suggest_int("pct2", 3, 8)
             _pct3 = trial.suggest_int("pct3", 8, 16)
@@ -263,7 +263,7 @@ def entry_main(args):
             _atr_period = trial.suggest_int("atr_period", 4, 12)
             _rsi_length = trial.suggest_int("rsi_length", 6, 14)
         elif args.dataset_id == 'month':
-            _n_clusters = trial.suggest_int("n_clusters", 3, 5)
+            _n_clusters = trial.suggest_int("n_clusters", min_clusters, max_clusters)
             _pct1 = trial.suggest_int("pct1", 1, 2)
             _pct2 = trial.suggest_int("pct2", 2, 4)
             _pct3 = trial.suggest_int("pct3", 4, 8)
@@ -838,6 +838,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-n-trials", type=int, default=999999,
         help="Maximum Optuna trials to run"
+    )
+    parser.add_argument(
+        "--min-clusters", type=int, default=3,
+        help="Minimum number of clusters"
+    )
+    parser.add_argument(
+        "--max-clusters", type=int, default=6,
+        help="Maximum number of clusters"
     )
     parser.add_argument(
         "--timeout", type=int, default=86400,
