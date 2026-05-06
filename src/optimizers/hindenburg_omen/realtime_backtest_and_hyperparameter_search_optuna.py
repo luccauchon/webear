@@ -533,7 +533,10 @@ def run_professional_optimization(args):
         trial.set_user_attr("total_events", int(total_events))
         trial.set_user_attr("total_days", int(total_days))
         trial.set_user_attr("n", int(n))
-        return score
+        if not np.isnan(score):
+            return score
+        else:
+            return 0
 
     def stop_at_threshold(study, trial):
         if trial.value is not None and trial.value > 99.9:
