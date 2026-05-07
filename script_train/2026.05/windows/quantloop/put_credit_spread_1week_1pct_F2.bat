@@ -6,7 +6,7 @@ start /low /b /wait python .\quant_model_trainer.py --dataset .\combined_week_ma
 --target-type soft_higher ^
 --target-percentage 0.01 ^
 --look-ahead 1 ^
---n-test 32 ^
+--n-test 96 ^
 --scorer F2 ^
 --scaler FunctionTransformer ^
 --estimator RandomForestClassifier ^
