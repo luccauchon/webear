@@ -25,6 +25,12 @@ os_name = platform.system()
 IS_RUNNING_ON_WINDOWS = True
 IS_RUNNING_ON_CASIR   = False
 
+
+class WEBEARStyle:
+    GRAS = '\033[1m'
+    FIN = '\033[0m'
+
+
 # Function to check if two dictionaries are equal, considering NumPy arrays
 def dicts_are_equal(d1, d2):
     if d1.keys() != d2.keys():
