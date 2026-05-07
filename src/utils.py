@@ -27,8 +27,8 @@ IS_RUNNING_ON_CASIR   = False
 
 
 class WEBEARStyle:
-    GRAS = '\033[1m'
-    FIN = '\033[0m'
+    BOLD = '\033[1m'
+    END = '\033[0m'
 
 
 # Function to check if two dictionaries are equal, considering NumPy arrays

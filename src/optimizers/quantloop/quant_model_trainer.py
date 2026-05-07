@@ -324,36 +324,7 @@ def entry_point(args):
     final_dataset_filename = args.dataset
     np.set_printoptions(linewidth=np.inf)
     saved_data = None
-    if verbose:
-        print(f"Beta    Priorite    Philosophie\n"
-              f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
-              f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
-              f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
-        print(f"🔹 higher\n"
-              f"Logic: 1 if future_price > current_price, else 0\n"
-              f"Meaning: Predicts any upward movement, no matter how small.\n"
-              f"Use case: Pure directional bias. Highly sensitive to market noise.\n"
-              f"\n"
-              f"🔹 lower\n"
-              f"Logic: 1 if future_price < current_price, else 0\n"
-              f"Meaning: Predicts any downward movement.\n"
-              f"Use case: Short/bearish directional bias.\n"
-              f"\n"
-              f"🔹 soft_higher ⭐ (Recommended for trading)\n"
-              f"Logic: 1 if (future_price / current_price) - 1 > threshold, else 0\n"
-              f"Meaning: Predicts an upward move greater than your threshold (e.g., > +1%). Moves between 0% and +1% are labeled 0.\n"
-              f"Use case: Filters out noise and transaction costs. Only signals when there's meaningful upside potential.\n"
-              f"\n"
-              f"🔹 soft_lower\n"
-              f"Logic: 1 if (future_price / current_price) - 1 < -threshold, else 0"
-              f"Meaning: Predicts a downward move greater than your threshold (e.g., < -1%).\n"
-              f"Use case: Filters out minor dips. Only signals meaningful downside risk.\n"
-              f"\n"
-              f"🔹 in_between\n"
-              f"Logic: 1 if current_price * (1 - threshold) ≤ future_price ≤ current_price * (1 + threshold), else 0\n"
-              f"Meaning: Predicts the market will stay sideways/consolidate within ± your threshold.\n"
-              f"Use case: Useful for range-bound strategies, volatility selling, or avoiding false breakout signals.\n"
-              f"\n")
+
     # ─────────────────────────────────────────────────────────────────────────
     # 🔄 LOAD SAVED PARAMETERS FIRST IF IN REAL-TIME MODE
     # ─────────────────────────────────────────────────────────────────────────
@@ -417,7 +388,6 @@ def entry_point(args):
             df = df.iloc[:-1].copy()
         last_date  = df.index[-1].strftime('%Y-%m-%d')
         last_value = df.iloc[-1]['Close']
-        print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f} {'(clipping activated)' if args.clip else ''}")
 
         best_setup = saved_data['best_setup']
         assert 'test' in best_setup
@@ -430,6 +400,42 @@ def entry_point(args):
         scaler = setup_to_use['scaler']
         model = setup_to_use['model']
         feat_cols = setup_to_use['features']
+
+        print(f"Beta    Priorite    Philosophie\n"
+              f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
+              f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
+              f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
+        _tmp_ttu_1 = 'higher' if _target_type_used != 'higher' else f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}'
+        _tmp_ttu_2 = 'lower' if _target_type_used != 'lower' else f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}'
+        _tmp_ttu_3 = 'soft_higher' if _target_type_used != 'soft_higher' else f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}'
+        _tmp_ttu_4 = 'soft_lower' if _target_type_used != 'soft_lower' else f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}'
+        _tmp_ttu_5 = 'in_between' if _target_type_used != 'in_between' else f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}'
+        print(f"🔹 {_tmp_ttu_1}\n"  # higher
+              f"Logic: 1 if future_price > current_price, else 0\n"
+              f"Meaning: Predicts any upward movement, no matter how small.\n"
+              f"Use case: Pure directional bias. Highly sensitive to market noise.\n"
+              f"\n"
+              f"🔹 {_tmp_ttu_2}\n"  # lower
+              f"Logic: 1 if future_price < current_price, else 0\n"
+              f"Meaning: Predicts any downward movement.\n"
+              f"Use case: Short/bearish directional bias.\n"
+              f"\n"
+              f"🔹 {_tmp_ttu_3} ⭐ (Recommended for trading)\n"  # soft_higher
+              f"Logic: 1 if (future_price / current_price) - 1 > threshold, else 0\n"
+              f"Meaning: Predicts an upward move greater than your threshold (e.g., > +1%). Moves between 0% and +1% are labeled 0.\n"
+              f"Use case: Filters out noise and transaction costs. Only signals when there's meaningful upside potential.\n"
+              f"\n"
+              f"🔹 {_tmp_ttu_4}\n"  # soft_lower
+              f"Logic: 1 if (future_price / current_price) - 1 < -threshold, else 0\n"
+              f"Meaning: Predicts a downward move greater than your threshold (e.g., < -1%).\n"
+              f"Use case: Filters out minor dips. Only signals meaningful downside risk.\n"
+              f"\n"
+              f"🔹 {_tmp_ttu_5}\n"  # in_between
+              f"Logic: 1 if current_price * (1 - threshold) ≤ future_price ≤ current_price * (1 + threshold), else 0\n"
+              f"Meaning: Predicts the market will stay sideways/consolidate within ± your threshold.\n"
+              f"Use case: Useful for range-bound strategies, volatility selling, or avoiding false breakout signals.\n"
+              f"\n")
+        print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f} {'(clipping activated)' if args.clip else ''}")
 
         # Prepare last row
         X_last = df[feat_cols].iloc[[-1]]
