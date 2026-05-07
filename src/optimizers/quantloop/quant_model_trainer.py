@@ -360,7 +360,8 @@ def entry_point(args):
         percentage_of_type_target = saved_params.get('target_percentage', percentage_of_type_target)
         assert 'target_type' in saved_params
         type_of_target = saved_params.get('target_type', type_of_target)
-        print(f"📦 Loading dataset from : {final_dataset_filename}  (overriding {saved_params['dataset_filename']})")
+        _is_same_file_str = f"(overriding {saved_params['dataset_filename']})" if final_dataset_filename != saved_params['dataset_filename'] else ""
+        print(f"📦 Loading dataset from : {final_dataset_filename}  {_is_same_file_str}")
         saved_params['dataset_filename'] = final_dataset_filename
         print("✅ Using saved training parameters for real-time feature engineering.")
     if verbose:
