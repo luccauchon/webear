@@ -1,0 +1,5 @@
+2026.05
+* Considérer l'utilisation de la "balance sheet" de la FED comme variable : RESPPANWW , WM2NS , WALCL
+* Considérer l'utilisation de OHLCV dans les algorithmes comme regime
+* Fusionner les différents résultats des algorithmes dans une vue avec une perspective temporelle
+
