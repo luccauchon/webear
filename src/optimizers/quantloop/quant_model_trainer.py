@@ -41,7 +41,7 @@ from sklearn.metrics import (classification_report, confusion_matrix,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
 from tqdm import tqdm
-from utils import get_next_step
+from utils import get_next_step, WEBEARStyle
 
 
 def parse_arguments():
@@ -329,6 +329,31 @@ def entry_point(args):
               f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
               f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
               f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
+        print(f"🔹 higher\n"
+              f"Logic: 1 if future_price > current_price, else 0\n"
+              f"Meaning: Predicts any upward movement, no matter how small.\n"
+              f"Use case: Pure directional bias. Highly sensitive to market noise.\n"
+              f"\n"
+              f"🔹 lower\n"
+              f"Logic: 1 if future_price < current_price, else 0\n"
+              f"Meaning: Predicts any downward movement.\n"
+              f"Use case: Short/bearish directional bias.\n"
+              f"\n"
+              f"🔹 soft_higher ⭐ (Recommended for trading)\n"
+              f"Logic: 1 if (future_price / current_price) - 1 > threshold, else 0\n"
+              f"Meaning: Predicts an upward move greater than your threshold (e.g., > +1%). Moves between 0% and +1% are labeled 0.\n"
+              f"Use case: Filters out noise and transaction costs. Only signals when there's meaningful upside potential.\n"
+              f"\n"
+              f"🔹 soft_lower\n"
+              f"Logic: 1 if (future_price / current_price) - 1 < -threshold, else 0"
+              f"Meaning: Predicts a downward move greater than your threshold (e.g., < -1%).\n"
+              f"Use case: Filters out minor dips. Only signals meaningful downside risk.\n"
+              f"\n"
+              f"🔹 in_between\n"
+              f"Logic: 1 if current_price * (1 - threshold) ≤ future_price ≤ current_price * (1 + threshold), else 0\n"
+              f"Meaning: Predicts the market will stay sideways/consolidate within ± your threshold.\n"
+              f"Use case: Useful for range-bound strategies, volatility selling, or avoiding false breakout signals.\n"
+              f"\n")
     # ─────────────────────────────────────────────────────────────────────────
     # 🔄 LOAD SAVED PARAMETERS FIRST IF IN REAL-TIME MODE
     # ─────────────────────────────────────────────────────────────────────────
@@ -392,7 +417,7 @@ def entry_point(args):
             df = df.iloc[:-1].copy()
         last_date  = df.index[-1].strftime('%Y-%m-%d')
         last_value = df.iloc[-1]['Close']
-        print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f}")
+        print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f} {'(clipping activated)' if args.clip else ''}")
 
         best_setup = saved_data['best_setup']
         assert 'test' in best_setup
@@ -422,10 +447,19 @@ def entry_point(args):
         assert dataset_id is not None, f"{dataset_id=}   {final_dataset_filename=}"
         ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
         assert 0 < int(look_head_for_prediction)
+        _now_timestamp = datetime.now().strftime("%Y%m%d")#_%H%M%S")
         print("\n" + "═" * 50)
         print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
-        print(f"📅 Last Date/Value : {last_date} @ {last_value:.0f}")
-        print(f"📊 Prediction      : {'UP (1)' if _realtime_prediction == 1 else 'DOWN (0)'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {last_value*(1+_target_pourcentage_used):.0f}")
+        print(f"📅 Date/Value used : {last_date} @ {last_value:.0f}")
+        print(f"📅 Today's date    : {_now_timestamp}")
+        if _target_type_used in ["lower", "soft_lower"]:
+            print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '?'} {last_value*(1+_target_pourcentage_used):.0f}")
+        if _target_type_used in ["higher", "soft_higher"]:
+            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '?'} {last_value*(1+_target_pourcentage_used):.0f}")
+        if _target_type_used in ["in_between"]:
+            _str_left_tmp  = f"{last_value*(1-_target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
+            _str_right_tmp = f"{last_value*(1+_target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
+            print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
         print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
         print("═" * 50)
         print(f"🔑 Features Used   : {feat_cols}")
