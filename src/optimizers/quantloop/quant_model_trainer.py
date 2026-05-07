@@ -453,7 +453,7 @@ def entry_point(args):
         assert dataset_id is not None, f"{dataset_id=}   {final_dataset_filename=}"
         ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
         assert 0 < int(look_head_for_prediction)
-        _now_timestamp = datetime.now().strftime("%Y%m%d")#_%H%M%S")
+        _now_timestamp = datetime.now().strftime("%Y-%m-%d")#_%H%M%S")
         print("\n" + "═" * 50)
         print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
         print(f"📅 Date/Value used : {last_date} @ {last_value:.0f}")
