@@ -405,11 +405,11 @@ def entry_point(args):
               f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
               f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
               f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
-        _tmp_ttu_1 = f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}' if _target_type_used == 'higher' else f''
-        _tmp_ttu_2 = f'{WEBEARStyle.BOLD}lower{WEBEARStyle.END}'  if _target_type_used == 'lower'  else f''
-        _tmp_ttu_3 = f'{WEBEARStyle.BOLD}soft_higher{WEBEARStyle.END}' if _target_type_used == 'soft_higher' else f''
-        _tmp_ttu_4 = f'{WEBEARStyle.BOLD}soft_lower{WEBEARStyle.END}' if _target_type_used == 'soft_lower' else f''
-        _tmp_ttu_5 = f'{WEBEARStyle.BOLD}in_between{WEBEARStyle.END}' if _target_type_used == 'in_between' else f''
+        _tmp_ttu_1 = f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}' if _target_type_used == 'higher' else f'higher'
+        _tmp_ttu_2 = f'{WEBEARStyle.BOLD}lower{WEBEARStyle.END}'  if _target_type_used == 'lower'  else f'lower'
+        _tmp_ttu_3 = f'{WEBEARStyle.BOLD}soft_higher{WEBEARStyle.END}' if _target_type_used == 'soft_higher' else f'soft_higher'
+        _tmp_ttu_4 = f'{WEBEARStyle.BOLD}soft_lower{WEBEARStyle.END}' if _target_type_used == 'soft_lower' else f'soft_lower'
+        _tmp_ttu_5 = f'{WEBEARStyle.BOLD}in_between{WEBEARStyle.END}' if _target_type_used == 'in_between' else f'in_between'
         print(f"🔹 {_tmp_ttu_1}\n"  # higher
               f"Logic: 1 if future_price > current_price, else 0\n"
               f"Meaning: Predicts any upward movement, no matter how small.\n"
