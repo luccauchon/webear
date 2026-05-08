@@ -622,7 +622,7 @@ def entry_point(args):
         elif the_scorer == 'F2':
             test_score = scoring_sl2(y_test_final, test_preds, beta=2, zero_division=0)
         elif the_scorer == 'F':
-            test_score = scoring_sl2(y_test_final, test_preds, beta=1.0, zero_division=0)
+            test_score = scoring_sl2(y_test_final, test_preds, zero_division=0)
         assert test_score is not None
         _tmp_update_snapshot, do_display = {'test_score': test_score, 'train_score': train_score,
                                             'model': best_model, 'estimator': the_estimator, 'type_of_target': type_of_target,
