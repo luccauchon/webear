@@ -1,49 +1,42 @@
 import os
 try:
-    IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else False
+    IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR", 0)) else False
 except:
     IS_RUNNING_ON_CASIR = False
 try:
-    IS_RUNNING_ON_LINUX_VMWARE = True if 4 == int(os.getenv("ENV_EXEC_CODE__WEBEAR")) else False
+    IS_RUNNING_ON_LINUX_VMWARE = True if 4 == int(os.getenv("ENV_EXEC_CODE__WEBEAR", 0)) else False
 except:
     IS_RUNNING_ON_LINUX_VMWARE = False
-# Determine base finance data directory based on drive availability
-def is_drive_writable(path):
-    try:
-        test_file = os.path.join(path, 'test.txt')
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-        return True
-    except:
-        return False
+
 BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
+BASE_YFINANCE_DIR     = r"C:\Finance\data\yfinance"
+BASE_FORECAST_DIR     = r"C:\Finance\data\forecast"
 if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
     BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
-else:
-    BASE_YFINANCE_DIR = r"C:\Finance\data\yfinance"
-    BASE_FORECAST_DIR  = r"C:\Finance\data\forecast"
 if IS_RUNNING_ON_CASIR:
     BASE_YFINANCE_DIR = r"/gpfs/groups/gc014b/cj3272/experiences/yfinance"
-    BASE_FORECAST_DIR  = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
+    BASE_FORECAST_DIR = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
 if IS_RUNNING_ON_LINUX_VMWARE:
-    BASE_YFINANCE_DIR  = "/home/luccauchon/REALTIME/data/yfinance"
-    BASE_FORECAST_DIR  = "/home/luccauchon/REALTIME/data/forecast"
+    BASE_YFINANCE_DIR = "/home/luccauchon/REALTIME/data/yfinance"
+    BASE_FORECAST_DIR = "/home/luccauchon/REALTIME/data/forecast"
+if os.getenv("SPECIFIC_BASE_YFINANCE_DIR__WEBEAR") is not None:  # User can override the default directory where to find the data
+    BASE_YFINANCE_DIR = os.getenv("SPECIFIC_BASE_YFINANCE_DIR__WEBEAR")
+
 # Ensure the directory exists (optional, but helpful if you're writing later)
-os.makedirs(BASE_YFINANCE_DIR, exist_ok=True)
+os.makedirs(str(BASE_YFINANCE_DIR), exist_ok=True)
 
 # Define output filenames using the base directory
-FYAHOO__OUTPUTFILENAME       = os.path.join(BASE_YFINANCE_DIR, "snapshot.pkl")
-FYAHOO__OUTPUTFILENAME_DAY   = os.path.join(BASE_YFINANCE_DIR, "snapshot_day.pkl")
-FYAHOO__OUTPUTFILENAME_WEEK  = os.path.join(BASE_YFINANCE_DIR, "snapshot_week.pkl")
-FYAHOO__OUTPUTFILENAME_MONTH = os.path.join(BASE_YFINANCE_DIR, "snapshot_month.pkl")
-FYAHOO__OUTPUTFILENAME_QUARTER = os.path.join(BASE_YFINANCE_DIR, "snapshot_quarter.pkl")
-FYAHOO__OUTPUTFILENAME_YEAR    = os.path.join(BASE_YFINANCE_DIR, "snapshot_year.pkl")
-FYAHOO_TICKER__OUTPUTFILENAME  = os.path.join(BASE_YFINANCE_DIR, "snapshot_ticker.pkl")
-FYAHOO_SPX500__OUTPUTFILENAME  = os.path.join(BASE_YFINANCE_DIR, "sp500_daily_data.parquet")
-FYAHOO_GITHUB_DIRECTORY        = os.path.join(BASE_YFINANCE_DIR, "yfdataset")
+FYAHOO__OUTPUTFILENAME         = os.path.join(str(BASE_YFINANCE_DIR), "snapshot.pkl")
+FYAHOO__OUTPUTFILENAME_DAY     = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_day.pkl")
+FYAHOO__OUTPUTFILENAME_WEEK    = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_week.pkl")
+FYAHOO__OUTPUTFILENAME_MONTH   = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_month.pkl")
+FYAHOO__OUTPUTFILENAME_QUARTER = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_quarter.pkl")
+FYAHOO__OUTPUTFILENAME_YEAR    = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_year.pkl")
+FYAHOO_TICKER__OUTPUTFILENAME  = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_ticker.pkl")
+FYAHOO_SPX500__OUTPUTFILENAME  = os.path.join(str(BASE_YFINANCE_DIR), "sp500_daily_data.parquet")
+FYAHOO_GITHUB_DIRECTORY        = os.path.join(str(BASE_YFINANCE_DIR), "yfdataset")
 
 # Constants
 NB_WORKERS = os.cpu_count()

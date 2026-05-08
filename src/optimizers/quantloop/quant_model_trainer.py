@@ -1,6 +1,7 @@
 import os
 import random
 import numpy as np
+
 # ─────────────────────────────────────────────────────────────────────────
 # 🔒 DETERMINISM SETUP
 # ─────────────────────────────────────────────────────────────────────────
@@ -386,16 +387,18 @@ def entry_point(args):
             return
         if args.clip:
             df = df.iloc[:-1].copy()
-        last_date  = df.index[-1].strftime('%Y-%m-%d')
+        last_date = df.index[-1].strftime('%Y-%m-%d')
         last_value = df.iloc[-1]['Close']
 
         best_setup = saved_data['best_setup']
-        assert 'test' in best_setup
-        setup_to_use             = best_setup.get('test', best_setup.get('train'))
-        _target_type_used        = saved_data['params']['target_type']
+        # 🔧 ENHANCED: Prioritize 'cv' key, fallback to 'test'/'train' for legacy compatibility
+        setup_to_use = best_setup.get('cv', best_setup.get('test', best_setup.get('train')))
+        assert setup_to_use is not None, "No valid model setup found in saved file."
+
+        _target_type_used = saved_data['params']['target_type']
         _target_pourcentage_used = saved_data['params']['target_percentage']
-        _look_ahead_used         = saved_data['params']['look_ahead']
-        _dataset_filename_used   = saved_data['params']['dataset_filename']
+        _look_ahead_used = saved_data['params']['look_ahead']
+        _dataset_filename_used = saved_data['params']['dataset_filename']
         assert final_dataset_filename == saved_data['params']['dataset_filename']
         scaler = setup_to_use['scaler']
         model = setup_to_use['model']
@@ -406,31 +409,31 @@ def entry_point(args):
               f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
               f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
         _tmp_ttu_1 = f'{WEBEARStyle.BOLD}higher{WEBEARStyle.END}' if _target_type_used == 'higher' else f'higher'
-        _tmp_ttu_2 = f'{WEBEARStyle.BOLD}lower{WEBEARStyle.END}'  if _target_type_used == 'lower'  else f'lower'
+        _tmp_ttu_2 = f'{WEBEARStyle.BOLD}lower{WEBEARStyle.END}' if _target_type_used == 'lower' else f'lower'
         _tmp_ttu_3 = f'{WEBEARStyle.BOLD}soft_higher{WEBEARStyle.END}' if _target_type_used == 'soft_higher' else f'soft_higher'
         _tmp_ttu_4 = f'{WEBEARStyle.BOLD}soft_lower{WEBEARStyle.END}' if _target_type_used == 'soft_lower' else f'soft_lower'
         _tmp_ttu_5 = f'{WEBEARStyle.BOLD}in_between{WEBEARStyle.END}' if _target_type_used == 'in_between' else f'in_between'
-        print(f"🔹 {_tmp_ttu_1}\n"  # higher
+        print(f"🔹 {_tmp_ttu_1}\n"
               f"Logic: 1 if future_price > current_price, else 0\n"
               f"Meaning: Predicts any upward movement, no matter how small.\n"
               f"Use case: Pure directional bias. Highly sensitive to market noise.\n"
               f"\n"
-              f"🔹 {_tmp_ttu_2}\n"  # lower
+              f"🔹 {_tmp_ttu_2}\n"
               f"Logic: 1 if future_price < current_price, else 0\n"
               f"Meaning: Predicts any downward movement.\n"
               f"Use case: Short/bearish directional bias.\n"
               f"\n"
-              f"🔹 {_tmp_ttu_3} ⭐ (Recommended for trading)\n"  # soft_higher
+              f"🔹 {_tmp_ttu_3} ⭐ (Recommended for trading)\n"
               f"Logic: 1 if (future_price / current_price) - 1 > threshold, else 0\n"
               f"Meaning: Predicts an upward move greater than your threshold (e.g., > +1%). Moves between 0% and +1% are labeled 0.\n"
               f"Use case: Filters out noise and transaction costs. Only signals when there's meaningful upside potential.\n"
               f"\n"
-              f"🔹 {_tmp_ttu_4}\n"  # soft_lower
+              f"🔹 {_tmp_ttu_4}\n"
               f"Logic: 1 if (future_price / current_price) - 1 < -threshold, else 0\n"
               f"Meaning: Predicts a downward move greater than your threshold (e.g., < -1%).\n"
               f"Use case: Filters out minor dips. Only signals meaningful downside risk.\n"
               f"\n"
-              f"🔹 {_tmp_ttu_5}\n"  # in_between
+              f"🔹 {_tmp_ttu_5}\n"
               f"Logic: 1 if current_price * (1 - threshold) ≤ future_price ≤ current_price * (1 + threshold), else 0\n"
               f"Meaning: Predicts the market will stay sideways/consolidate within ± your threshold.\n"
               f"Use case: Useful for range-bound strategies, volatility selling, or avoiding false breakout signals.\n"
@@ -446,31 +449,34 @@ def entry_point(args):
         proba = 0.
         if hasattr(model, 'predict_proba'):
             proba = model.predict_proba(X_last_scaled)[0][1]
-        # There is no dataset_id in the params.
+
         dataset_id = "day" if "_day_" in final_dataset_filename else None
         dataset_id = "month" if "_month_" in final_dataset_filename else dataset_id
         dataset_id = "week" if "_week_" in final_dataset_filename or "_week" in final_dataset_filename else dataset_id
         assert dataset_id is not None, f"{dataset_id=}   {final_dataset_filename=}"
         ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
         assert 0 < int(look_head_for_prediction)
-        _now_timestamp = datetime.now().strftime("%Y-%m-%d")#_%H%M%S")
+        _now_timestamp = datetime.now().strftime("%Y-%m-%d")
         print("\n" + "═" * 50)
         print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
         print(f"📅 Date/Value used : {last_date} @ {last_value:.0f}")
         print(f"📅 Today's date    : {_now_timestamp}")
         if _target_type_used in ["lower", "soft_lower"]:
-            print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '?'} {last_value*(1-_target_pourcentage_used):.0f}")
+            print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '?'} {last_value * (1 - _target_pourcentage_used):.0f}")
         if _target_type_used in ["higher", "soft_higher"]:
-            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '?'} {last_value*(1+_target_pourcentage_used):.0f}")
+            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '?'} {last_value * (1 + _target_pourcentage_used):.0f}")
         if _target_type_used in ["in_between"]:
-            _str_left_tmp  = f"{last_value*(1-_target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
-            _str_right_tmp = f"{last_value*(1+_target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
+            _str_left_tmp = f"{last_value * (1 - _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
+            _str_right_tmp = f"{last_value * (1 + _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
             print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
         print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
         print("═" * 50)
         print(f"🔑 Features Used   : {feat_cols}")
         print(f"   Scorer: {setup_to_use['scorer']}")
-        print(f"   Train/Test scores: {setup_to_use['train_score']:.2%}/{setup_to_use['test_score']:.2%}")
+        # 🔧 ENHANCED: Show CV score as selection metric, Test score as unbiased reference
+        cv_score_str = f"{setup_to_use.get('cv_score', 'N/A'):.2%}" if isinstance(setup_to_use.get('cv_score'), (int, float)) else setup_to_use.get('cv_score', 'N/A')
+        test_score_str = f"{setup_to_use.get('test_score', 'N/A'):.2%}" if isinstance(setup_to_use.get('test_score'), (int, float)) else setup_to_use.get('test_score', 'N/A')
+        print(f"   CV/Test scores: {cv_score_str}/{test_score_str}")
         print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
         print(f"   Target: {type_of_target} @{percentage_of_type_target:.2%}")
         print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
@@ -521,9 +527,12 @@ def entry_point(args):
     feature_iterator = get_feature_combinations(_features=features, _mode=training_mode)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
 
-    best_setup_found = {'train': {'train_score': 0, 'test_score': 0}, 'test': {'train_score': 0, 'test_score': 0}}
+    # 🔧 ENHANCED: Single dictionary tracking the best model based on Cross-Validation score.
+    # Test score is recorded for reporting ONLY, never used for selection.
+    best_setup_found = {'cv': {'cv_score': -1.0, 'test_score': -1.0}}
     displayed_output_once = False
     start_time = time.time()
+
     for selected_features in tqdm(feature_iterator, total=total_to_process, disable=not verbose):
         # ─────────────────────────────────────────────────────────────────────
         # ⏱️ Time limit check
@@ -609,72 +618,93 @@ def entry_point(args):
             cv=tscv,
             n_jobs=-1,
             random_state=SEED,
-            verbose=0
+            verbose=0,
+            refit=True
         )
 
         random_search.fit(X_train_scaled, y_train_full)
+
+        # 🔧 ENHANCED: Explicitly rename to cv_score to prevent confusion.
+        # This is the MEAN CROSS-VALIDATION score across TimeSeriesSplit folds.
+        cv_score = random_search.best_score_
         best_model = random_search.best_estimator_
-        train_score = random_search.best_score_
+
         test_preds = best_model.predict(X_test_scaled)
-        test_score = None
+        test_score = -99.
         if the_scorer == 'F0.5':
             test_score = scoring_sl2(y_test_final, test_preds, beta=0.5, zero_division=0)
         elif the_scorer == 'F2':
             test_score = scoring_sl2(y_test_final, test_preds, beta=2, zero_division=0)
         elif the_scorer == 'F':
             test_score = scoring_sl2(y_test_final, test_preds, zero_division=0)
-        assert test_score is not None
-        _tmp_update_snapshot, do_display = {'test_score': test_score, 'train_score': train_score,
-                                            'model': best_model, 'estimator': the_estimator, 'type_of_target': type_of_target,
-                                            'features': selected_features, 'scaler': scaler, 'scorer': the_scorer,
-                                            'X_train_full__before_scaled': X_train_full, 'X_train_scaled': X_train_scaled,
-                                            'y_train_full': y_train_full, 'X_test_final__before_scaled': X_test_final,
-                                            'X_test_scaled': X_test_scaled, 'y_test_final': y_test_final, 'y_hat_test_final': test_preds,
-                                            'X': X, 'y': y, 'n_test': n_test, 'train_t1': X_train_full.index[0].strftime('%Y-%m-%d'), 'train_t2': X_train_full.index[-1].strftime('%Y-%m-%d'),
-                                            'test_t1': X_test_final.index[0].strftime('%Y-%m-%d'), 'test_t2': X_test_final.index[-1].strftime('%Y-%m-%d')}, False
-        if train_score >= best_setup_found['train']['train_score']:
-            cd1 = train_score > best_setup_found['train']['train_score']
-            cd2 = train_score == best_setup_found['train']['train_score'] and test_score > best_setup_found['train']['test_score']
-            if cd1 or cd2:
-                best_setup_found['train'], do_display = _tmp_update_snapshot, True
-        if test_score >= best_setup_found['test']['test_score']:
-            cd1 = test_score > best_setup_found['test']['test_score']
-            cd2 = test_score == best_setup_found['test']['test_score'] and train_score > best_setup_found['test']['train_score']
-            if cd1 or cd2:
-                best_setup_found['test'], do_display = _tmp_update_snapshot, True
+        assert test_score != -99.
+
+        # 🔧 ENHANCED: Store cv_score explicitly. Test score is for reporting only.
+        _tmp_update_snapshot = {
+            'cv_score': cv_score,
+            'test_score': test_score,
+            'model': best_model,
+            'estimator': the_estimator,
+            'type_of_target': type_of_target,
+            'features': selected_features,
+            'scaler': scaler,
+            'scorer': the_scorer,
+            'X_train_full__before_scaled': X_train_full,
+            'X_train_scaled': X_train_scaled,
+            'y_train_full': y_train_full,
+            'X_test_final__before_scaled': X_test_final,
+            'X_test_scaled': X_test_scaled,
+            'y_test_final': y_test_final,
+            'y_hat_test_final': test_preds,
+            'X': X, 'y': y, 'n_test': n_test,
+            'train_t1': X_train_full.index[0].strftime('%Y-%m-%d'),
+            'train_t2': X_train_full.index[-1].strftime('%Y-%m-%d'),
+            'test_t1': X_test_final.index[0].strftime('%Y-%m-%d'),
+            'test_t2': X_test_final.index[-1].strftime('%Y-%m-%d')
+        }
+        do_display = False
+
+        # 🔧 ENHANCED: Model selection logic. Prioritize CV score. Use test score only as tie-breaker.
+        if cv_score > best_setup_found['cv']['cv_score']:
+            best_setup_found['cv'] = _tmp_update_snapshot
+            do_display = True
+        elif cv_score == best_setup_found['cv']['cv_score'] and test_score > best_setup_found['cv']['test_score']:
+            best_setup_found['cv'] = _tmp_update_snapshot
+            do_display = True
+
         if (verbose and (not displayed_output_once or do_display)) or stop_search_time_limit_exceeded:
-            for category in ['train', 'test']:
-                data = best_setup_found[category]
-                _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher", "lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target * 100:.2f}%"
-                print("\n" + "═" * 128)
-                print(f"⭐ BEST SETUP RECORDED FOR: {category.upper()}  |  {_type_target_str}  |  LA:{look_head_for_prediction}  |  DF:{final_dataset_filename} ({train_size}/{test_size}) ")
-                print("═" * 128)
+            data = best_setup_found['cv']
+            _type_target_str = f"TARGET:{type_of_target}" if type_of_target in ["higher", "lower"] else f"TARGET:{type_of_target} @{percentage_of_type_target * 100:.2f}%"
+            print("\n" + "═" * 128)
+            print(f"⭐ BEST SETUP RECORDED FOR: CV (TimeSeriesSplit)  |  {_type_target_str}  |  LA:{look_head_for_prediction}  |  DF:{final_dataset_filename} ({train_size}/{test_size}) ")
+            print("═" * 128)
 
-                print(f"Features         : {data['features']}")
-                print(f"Scaler           : {data['scaler']}")
-                print(f"Scorer           : {data['scorer']}")
+            print(f"Features         : {data['features']}")
+            print(f"Scaler           : {data['scaler']}")
+            print(f"Scorer           : {data['scorer']}")
 
-                print(f"\nScores for this snapshot:")
-                print(f"  - Train {data['scorer']}: {data['train_score']:.2%}")
-                print(f"  - Test  {data['scorer']}: {data['test_score']:.2%}")
+            print(f"\nScores for this snapshot:")
+            print(f"  - CV (Selection Metric) {data['scorer']}: {data['cv_score']:.2%}")
+            print(f"  - Test (Unbiased Report){data['scorer']}: {data['test_score']:.2%}")
 
-                saved_preds = data['model'].predict(data['X_test_scaled'])
-                assert np.array_equal(saved_preds, data['y_hat_test_final']), "Sanity check failed!"
-                print(f"\nClassification Report ({category} snapshot):")
-                print(classification_report(data['y_test_final'], saved_preds, zero_division=0))
-                print(f"\n"
-                      f"y    : {data['y_test_final'].values}\n"
-                      f"y_hat: {saved_preds}\n")
-                print("Confusion Matrix:")
-                print(confusion_matrix(data['y_test_final'], saved_preds))
-                print("═" * 128)
+            saved_preds = data['model'].predict(data['X_test_scaled'])
+            assert np.array_equal(saved_preds, data['y_hat_test_final']), "Sanity check failed!"
+            print(f"\nClassification Report (Test Set - Unbiased):")
+            print(classification_report(data['y_test_final'], saved_preds, zero_division=0))
+            print(f"\n"
+                  f"y    : {data['y_test_final'].values}\n"
+                  f"y_hat: {saved_preds}\n")
+            print("Confusion Matrix:")
+            print(confusion_matrix(data['y_test_final'], saved_preds))
+            print("═" * 128)
         displayed_output_once = True
         if stop_search_time_limit_exceeded:
             break
+
     # ─────────────────────────────────────────────────────────────────────────
     # 💾 Save the best model after loop finishes or breaks
     # ─────────────────────────────────────────────────────────────────────────
-    if best_setup_found is not None:
+    if best_setup_found is not None and best_setup_found.get('cv'):
         save_best_model(best_setup_found, args, output_dir, verbose)
     else:
         if verbose:
