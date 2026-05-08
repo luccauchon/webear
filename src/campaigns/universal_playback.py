@@ -1,3 +1,13 @@
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    import sys
+    import pathlib
+
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
 from dataclasses import dataclass
 from typing import Iterator, Optional, Any
 import pandas as pd
