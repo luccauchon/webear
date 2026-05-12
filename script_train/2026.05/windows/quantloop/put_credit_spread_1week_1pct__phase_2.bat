@@ -9,8 +9,6 @@ start /low /b /wait python quant_model_trainer_phase_2.py --training-mode fixed 
 --target-percentage 0.01 ^
 --look-ahead 1 ^
 --n-test 6
---scaler FunctionTransformer ^
---estimator RandomForestClassifier ^
---training-mode random
+
 echo "WEEKLY 1BAR 1% PUT CREDIT SPREAD"
 pause

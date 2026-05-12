@@ -4,7 +4,7 @@ cd ..\..\..\..
 cd src\optimizers\quantloop
 start /low /b /wait python quant_model_trainer_phase_2.py --training-mode fixed ^
 --features Fed_Rate_Diff Inflation_Rate MA_Long MA_Short RSI_Lag1 VIX_Lag1 VIX_Ratio ^
---optuna-trials 999 ^
+--optuna-trials 3333 ^
 --target-type soft_higher ^
 --target-percentage 0.01 ^
 --look-ahead 1 ^
