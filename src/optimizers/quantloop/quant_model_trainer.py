@@ -197,12 +197,29 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
                               _type_of_target, _verbose, create_target=True):
     # 1. Création de Features Macro (Lags et Variations)
     _df_macro['Spread_10Y2Y'] = _df_macro['T10Y2Y'].shift(1)
+    _df_macro['Spread_10Y3M'] = _df_macro['T10Y3M'].shift(1)
     _df_macro['Fed_Rate_Diff'] = _df_macro['FEDFUNDS'].diff().shift(1)
     _df_macro['Unrate_Diff'] = _df_macro['UNRATE'].diff().shift(1)
     _df_macro['Inflation_Rate'] = _df_macro['CPIAUCSL'].pct_change(12, fill_method=None).shift(1)
+    # --- NEW: PCEPI, WALCL, DGS10 ---
+    # PCEPI: YoY PCE Inflation (Fed's preferred inflation gauge)
+    _df_macro['PCE_Inflation_YoY'] = _df_macro['PCEPI'].pct_change(12).shift(1)
 
+    # WALCL: Fed Balance Sheet YoY Growth (Liquidity / QE-QT proxy)
+    _df_macro['WALCL_YoY'] = _df_macro['WALCL'].pct_change(12).shift(1)
+
+    # DGS10: 10Y Treasury Yield (Level & Monthly Change)
+    _df_macro['DGS10_Level'] = _df_macro['DGS10'].shift(1)
+    _df_macro['DGS10_MoM_Chg'] = _df_macro['DGS10'].diff().shift(1)
+    # --------------------------------
     # 2. Fusion avec tes données S&P 500
-    _df_fusionned = _df_market.join(_df_macro[['Fed_Rate_Diff', 'Unrate_Diff', 'Inflation_Rate', 'Spread_10Y2Y']]).dropna()
+    macro_features = [
+        'Fed_Rate_Diff', 'Unrate_Diff', 'Inflation_Rate',
+        'Spread_10Y2Y', 'Spread_10Y3M',
+        'PCE_Inflation_YoY', 'WALCL_YoY',
+        'DGS10_Level', 'DGS10_MoM_Chg'
+    ]
+    _df_fusionned = _df_market.join(_df_macro[macro_features]).dropna()
 
     # 3. Ajout de nouvelles Features
     _df_fusionned['VIX_Ratio'] = _df_fusionned['VIX'] / _df_fusionned['VIX'].rolling(12).mean()

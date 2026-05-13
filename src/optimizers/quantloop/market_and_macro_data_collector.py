@@ -65,8 +65,17 @@ def parse_args() -> argparse.Namespace:
         help="End date for FRED data retrieval in YYYY-MM-DD format (default: today)"
     )
     parser.add_argument(
-        "-m", "--macro-indicators", type=str, default="FEDFUNDS,UNRATE,CPIAUCSL,T10Y2Y",
-        help="Comma-separated list of FRED macroeconomic indicators to download (default: FEDFUNDS,UNRATE,CPIAUCSL,T10Y2Y)"
+        "-m", "--macro-indicators", type=str, default="FEDFUNDS,UNRATE,CPIAUCSL,T10Y2Y,T10Y3M,PCEPI,WALCL,DGS10",
+        help="Comma-separated list of FRED macroeconomic indicators to download."
+             "Comma-separated FRED series. Professional default includes:\n"
+            "  FEDFUNDS: Effective Fed Funds Rate\n"
+            "  UNRATE: Unemployment Rate\n"
+            "  CPIAUCSL: CPI All Urban Consumers\n"
+            "  T10Y2Y: 10Y-2Y Treasury Spread\n"
+            "  T10Y3M: 10Y-3M Treasury Spread (superior recession predictor)\n"            
+            "  PCEPI: PCE Price Index (Fed's preferred inflation gauge)\n"
+            "  WALCL: Fed Balance Sheet Total Assets (liquidity/QE-QT proxy)\n"            
+            "  DGS10: 10Y Treasury Yield (discount rate & risk-free rate)"
     )
     parser.add_argument(
         "-f", "--filename", type=str, default=None,
@@ -93,6 +102,10 @@ def entry_point(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments from argparse.
     """
     os.makedirs(args.output_dir, exist_ok=True)
+    # Configurer pandas pour afficher toutes les données dans la console
+    pd.set_option('display.max_rows', None)  # Supprime la limite de lignes
+    pd.set_option('display.max_columns', None)  # Supprime la limite de colonnes
+    pd.set_option('display.width', None)  # Aligne l'affichage sur la largeur de la console
 
     # Map human-readable frequency to pandas offset alias & labels
     if args.freq == "month":
@@ -146,7 +159,7 @@ def entry_point(args: argparse.Namespace) -> None:
     # Safe slicing for validation
     cached_spx = df_spx500[spx_close_col].iloc[-val_window - 1:-1]
     new_spx = market_data['Close'].iloc[-val_window - 1:-1]
-    assert val_window == np.count_nonzero(cached_spx.values == new_spx.values), f"SPX validation failed for {freq_label}"
+    assert val_window == np.count_nonzero(cached_spx.values == new_spx.values), f"SPX validation failed for {freq_label}. Update dataset?"
 
     vix_close_col = ('Close', '^VIX')
     cached_vix = df_vix[vix_close_col].iloc[-val_window - 1:-1]
@@ -162,6 +175,10 @@ def entry_point(args: argparse.Namespace) -> None:
     print(f"📥 Downloading FRED data for indicators: {', '.join(macro_indicators)}...")
     macro_data = web.DataReader(macro_indicators, 'fred', start_date, end_date, api_key=FRED_API_KEY)
 
+    # Remplacer immédiatement les NaN par la dernière valeur connue (Forward Fill)
+    macro_data = macro_data.ffill()
+    # Optionnel : Remplacer les NaN initiaux restants (si le début du fichier est vide) par des zéros
+    macro_data = macro_data.bfill()
     # 4. Resample and align macro data
     # .ffill() is added to propagate the last known value through weeks without releases
     macro_resampled = macro_data.resample(pd_freq).last().ffill()
