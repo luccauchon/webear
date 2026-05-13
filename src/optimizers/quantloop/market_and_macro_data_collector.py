@@ -116,6 +116,7 @@ def entry_point(args: argparse.Namespace) -> None:
     try:
         df_vix = master_data_cache["^VIX_MEAN"].sort_index()
     except:
+        # DAY data has not the VIX_MEAN dataset.
         df_vix = master_data_cache["^VIX"].sort_index()
     if args.vix_method == "last":
         df_vix = master_data_cache["^VIX"].sort_index()
