@@ -221,27 +221,6 @@ def generate_model_filename(_ticker, _study_name, _params, _metadata_extra=None)
 # =========================================================
 #
 # =========================================================
-def compute_oos_regime_stats(_model, _scaler, _features_test, _target_test, _n_clusters, min_n):
-    """Compute regime stats on true out-of-sample data"""
-    X_test = _scaler.transform(_features_test.dropna())
-    regimes_test = _model.predict(X_test)
-    test_df = _features_test.dropna().copy()
-    test_df['regime'] = regimes_test
-    test_df['target'] = _target_test.dropna()
-
-    stats_oos = {}
-    for r in range(_n_clusters):
-        subset = test_df[test_df['regime'] == r]['target'].dropna()
-        if len(subset) >= min_n:
-            prob = subset.mean()
-            ci_low, ci_upp = proportion_confint(subset.sum(), len(subset), method='wilson')
-            stats_oos[r] = {'prob_otm': prob, 'prob_itm': 1-prob, 'count': len(subset), 'ci_lower_oos': ci_low, 'ci_upper_oos': ci_upp}
-    return stats_oos
-
-
-# =========================================================
-#
-# =========================================================
 def characterize_clusters(_features, _model, _scaler, _stats):
     """Return human-readable characteristics for each cluster"""
     X = _scaler.transform(_features.dropna())
@@ -675,7 +654,7 @@ def predict_latest(_features, _model, _scaler, _stats):
 
     if len(valid_features) == 0:
         print("⚠️  No valid features available for prediction")
-        return None
+        return None, None, "No valid features"  # (regime, stats, error_msg)
 
     latest_date = valid_features.index[-1]
     print(f"Latest valid date: {latest_date.strftime('%Y-%m-%d')}")
@@ -687,9 +666,9 @@ def predict_latest(_features, _model, _scaler, _stats):
 
     if regime not in _stats:
         print(f"⚠️  Predicted regime {regime} not found in stats (may have insufficient samples)")
-        return None, None
+        return regime, None, "Regime not in stats"
 
-    return regime, _stats[regime]
+    return regime, _stats[regime], None  # Success
 
 
 # =========================================================
@@ -1415,7 +1394,7 @@ def entry_main(args):
 
     # ===== Predict Latest Regime =====
     result = predict_latest(_features=features, _model=_model, _scaler=_scaler, _stats=_stats)
-    regime, regime_stats = result
+    regime, regime_stats, _ = result
     if result is None:
         print("⚠️  Could not predict regime for latest data point")
     if regime_stats is not None:

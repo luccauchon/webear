@@ -97,12 +97,6 @@ from optimizers.regime.regime_switching_optimizer import generate_model_filename
 # =========================================================
 #
 # =========================================================
-from optimizers.regime.regime_switching_optimizer import compute_oos_regime_stats
-
-
-# =========================================================
-#
-# =========================================================
 from optimizers.regime.regime_switching_optimizer import characterize_clusters
 
 
@@ -655,13 +649,11 @@ def entry_main(args):
 
     # ===== Predict Latest Regime =====
     result = predict_latest(_features=features, _model=_model, _scaler=_scaler, _stats=_stats)
-
-    if result is None:
-        print("⚠️  Could not predict regime for latest data point")
+    regime, regime_stats, err_msg = result
+    if err_msg is not None:
+        print(f"⚠️  Could not predict regime for latest data point: {err_msg}")
         return
-
-    regime, regime_stats = result
-
+    assert regime is not None and regime_stats is not None
     # ===== Print Analysis Report =====
     print_report(_regime=regime, _stats=regime_stats, _strike_distance=strike_distance, _spread_type=spread_type)
 
