@@ -190,7 +190,7 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
     """Save the best trial parameters as a loadable model file."""
     import os
     from datetime import datetime
-    print(metadata)
+
     os.makedirs(output_dir, exist_ok=True)
 
     # Build model name with user-specified parameters for easy identification
@@ -349,6 +349,13 @@ Examples:
         help="Maximum optimization time in seconds. If set, optimization stops after this duration "
              "even if n_trials is not reached. Default: None (no time limit)"
     )
+    # Configurable output directory for saved models
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="models",
+        help="Directory to save optimized model files. Will be created if it doesn't exist. Default: 'models'"
+    )
     return parser
 
 
@@ -410,7 +417,7 @@ if __name__ == "__main__":
     # ✅ SAVE BEST MODEL AFTER OPTIMIZATION (still works with in-memory studies)
     save_best_model(
         study,
-        output_dir="models",
+        output_dir=opt_args.output_dir,
         metric=opt_args.metric,
         lookahead_bars=opt_args.lookahead_bars,
         threshold_pct=opt_args.threshold_pct,
