@@ -181,14 +181,15 @@ def create_target(close: pd.Series, lookahead_bars: int, threshold_pct: float = 
     Any: Checks if price EXCEEDS threshold at ANY point from t to t+lookahead_bars.
     Uses a forward-looking rolling maximum for efficient vectorized computation.
     """
-    # Forward max over window [t, t+lookahead_bars] -> window size = lookahead_bars + 1
-    forward_max = close.rolling(window=lookahead_bars + 1, min_periods=1).max().shift(-lookahead_bars)
+    # Version optimisée (Exclut le prix actuel t, regarde uniquement de t+1 à t+lookahead_bars)
+    future_max = close.iloc[::-1].rolling(window=lookahead_bars, min_periods=lookahead_bars).max().iloc[::-1].shift(-1)
 
     # True if max in window > threshold
-    labels = (forward_max > close * (1 + threshold_pct)).astype(float)
+    labels = (future_max > close * (1 + threshold_pct)).astype(float)
 
     # Mask out last lookahead_bars where future data is incomplete
     labels.iloc[-lookahead_bars:] = np.nan
+
     return labels
 
 
