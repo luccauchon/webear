@@ -67,7 +67,7 @@ def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
     # 4️⃣ Execute entry function & apply penalty
     try:
         metrics = entry(args)
-
+        assert "total_bars" in metrics and "total_signals" in metrics and metric_key in metrics
         # ✅ Use configurable metric key
         accuracy = metrics.get(metric_key, 0.0)
         total_signals = metrics.get("total_signals", 0)
@@ -127,22 +127,27 @@ def display_study_state(study):
 def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio, penalty_weight, metric_key, storage):
     optuna.logging.set_verbosity(OPTUNA_VERBOSITY)
 
-    # Create or resume persistent study
+    # ✅ Handle None storage: study_name and load_if_exists only valid with storage backend
     study = optuna.create_study(
         direction="maximize",
         sampler=sampler,
         storage=storage,
-        study_name=study_name,
-        load_if_exists=True
+        study_name=study_name if storage else None,
+        load_if_exists=True if storage else False
     )
 
-    # ✅ REQ #1: Display study state if it already has trials
-    if len(study.trials) > 0:
+    # ✅ REQ #1: Display study state if it already has trials (only possible with storage)
+    if storage and len(study.trials) > 0:
         display_study_state(study)
         print(f"➕ Adding {n_trials} more trials... (optimizing for '{metric_key}')\n")
-    else:
+    elif storage:
         print(f"\n🔍 Starting New Study: '{study_name}' ({type(sampler).__name__})")
         print(f"   🎯 Optimization metric: {metric_key} - {AVAILABLE_METRICS.get(metric_key, 'Custom metric')}\n")
+    else:
+        # In-memory mode
+        print(f"\n🔍 Starting In-Memory Study ({type(sampler).__name__})")
+        print(f"   🎯 Optimization metric: {metric_key} - {AVAILABLE_METRICS.get(metric_key, 'Custom metric')}")
+        print(f"   ⚠️  Results will NOT be persisted after this run\n")
 
     # Run optimization loop
     study.optimize(
@@ -152,7 +157,7 @@ def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio,
     )
 
     # Report results
-    print(f"\n✅ {study_name} Finished!")
+    print(f"\n✅ {study_name or 'In-Memory Study'} Finished!")
     print(f"🏆 Best {metric_key}: {study.best_value:.4f}")
     print("🔧 Best Hyperparameters:")
     for k, v in study.best_params.items():
@@ -299,16 +304,17 @@ Examples:
         default=42,
         help="Random seed for reproducibility (default: 42)"
     )
-    # ✅ NEW: Configurable Optuna storage URL
+    # Configurable Optuna storage URL
     parser.add_argument(
         "--storage",
         type=str,
         default="sqlite:///optuna_forecast_optimization.db",
         help="Optuna storage URL for study persistence. "
              "Examples: 'sqlite:///results.db', 'postgresql://user:pass@host/db'. "
+             "Use 'none' to disable storage (in-memory only, not persisted). "
              "Default: 'sqlite:///optuna_forecast_optimization.db'"
     )
-    # ✅ NEW: User-controlled threshold_pct parameter (0.0-0.05, step 0.005)
+    # User-controlled threshold_pct parameter (0.0-0.05, step 0.005)
     parser.add_argument(
         "--threshold-pct",
         type=float,
@@ -328,7 +334,8 @@ if __name__ == "__main__":
     # Parse optimizer-specific arguments first
     optimizer_parser = setup_optimizer_argparse()
     opt_args, remaining_args = optimizer_parser.parse_known_args()
-
+    # 🔧 Normalize storage: convert "none" to None for in-memory studies
+    storage_url = None if opt_args.storage.lower() == "none" else opt_args.storage
     print("🚀 Starting Optuna Hyperparameter Optimization...")
     print(f"💡 Sampler: {opt_args.sampler.upper()} | Trials: {opt_args.n_trials}")
     print(f"💡 Metric: {opt_args.metric} - {AVAILABLE_METRICS[opt_args.metric]}")
@@ -337,7 +344,11 @@ if __name__ == "__main__":
     print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")  # ✅ Added
     print(f"💡 Target Type: {opt_args.target_type}")  # ✅ Added
     print(f"💡 Studies persisted in: {opt_args.storage}\n")  # ✅ Updated print
-
+    # ✅ Updated storage print to handle None
+    if storage_url:
+        print(f"💡 Studies persisted in: {storage_url}\n")
+    else:
+        print(f"💡 Storage disabled - using in-memory study (not persisted)\n")
     # Load default arguments from your existing parser
     base_parser = setup_argparse()
     base_args = base_parser.parse_args([])  # Parse empty to get defaults
@@ -367,10 +378,10 @@ if __name__ == "__main__":
         min_signal_ratio=opt_args.min_signal_ratio,
         penalty_weight=opt_args.penalty_weight,
         metric_key=opt_args.metric,
-        storage=opt_args.storage  # ← NEW PARAMETER
+        storage=storage_url  # ✅ Pass normalized value
     )
 
-    # ✅ SAVE BEST MODEL AFTER OPTIMIZATION
+    # ✅ SAVE BEST MODEL AFTER OPTIMIZATION (still works with in-memory studies)
     save_best_model(
         study,
         output_dir="models",
@@ -383,9 +394,13 @@ if __name__ == "__main__":
     )
 
     print("\n" + "=" * 60)
-    print(f"📦 Results saved in: {opt_args.storage}")  # ✅ Updated print
-    print(f"🔍 View study with: optuna-dashboard {opt_args.storage}")
+    if storage_url:
+        print(f"📦 Results saved in: {opt_args.storage}")
+        print(f"🔍 View study with: optuna-dashboard {opt_args.storage}")
+    else:
+        print(f"📦 Storage disabled - study not persisted to disk")
+        print(f"💡 Tip: Use --storage sqlite:///my.db to save results for later analysis")
     print(f"🎯 Optimized for: {opt_args.metric} ({AVAILABLE_METRICS[opt_args.metric]})")
     print(f"🔭 Lookahead bars (fixed): {opt_args.lookahead_bars}")
-    print(f"🎚️  Threshold pct (fixed): {opt_args.threshold_pct}")  # ✅ Added
+    print(f"🎚️  Threshold pct (fixed): {opt_args.threshold_pct}")
     print("=" * 60)
