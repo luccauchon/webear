@@ -349,7 +349,7 @@ if __name__ == "__main__":
     print("🚀 Starting Optuna Hyperparameter Optimization...")
     print(f"💡 Sampler: {opt_args.sampler.upper()} | Trials: {opt_args.n_trials}")
     print(f"💡 Metric: {opt_args.metric} - {AVAILABLE_METRICS[opt_args.metric]}")
-    print(f"💡 Penalty: min_ratio={opt_args.min_signal_ratio}, weight={opt_args.penalty_weight}")
+    print(f"💡 Penalty: min_ratio={opt_args.min_signal_ratio}")
     print(f"💡 Lookahead bars: {opt_args.lookahead_bars} (fixed during optimization)")
     print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")  # ✅ Added
     print(f"💡 Target Type: {opt_args.target_type}")  # ✅ Added
