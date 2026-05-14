@@ -397,7 +397,7 @@ if __name__ == "__main__":
         penalty_weight=opt_args.penalty_weight,
         metric_key=opt_args.metric,
         storage=storage_url,
-        timeout=opt_args.time_out,
+        timeout=opt_args.timeout,
     )
 
     # ✅ SAVE BEST MODEL AFTER OPTIMIZATION (still works with in-memory studies)
