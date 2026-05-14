@@ -134,7 +134,7 @@ def display_study_state(study):
 # ==========================================================
 # STUDY RUNNER
 # ==========================================================
-def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio, penalty_weight, metric_key, storage):
+def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio, penalty_weight, metric_key, storage, timeout=None):
     optuna.logging.set_verbosity(OPTUNA_VERBOSITY)
 
     # ✅ Handle None storage: study_name and load_if_exists only valid with storage backend
@@ -163,6 +163,7 @@ def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio,
     study.optimize(
         lambda trial: objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key),
         n_trials=n_trials,
+        timeout=timeout,
         show_progress_bar=True
     )
 
@@ -270,7 +271,7 @@ Examples:
         help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
     )
 
-    # ✅ NEW: User-controlled lookahead_bars parameter (1-40, default: 20)
+    # User-controlled lookahead_bars parameter (1-40, default: 20)
     parser.add_argument(
         "--lookahead-bars",
         type=int,
@@ -333,7 +334,14 @@ Examples:
         help="Threshold percentage for signal validation. Range: 0.0 to 0.05 in steps of 0.005. "
              "This value is fixed during optimization but tracked in Optuna for reproducibility. Default: 0.03"
     )
-
+    # Timeout parameter for max optimization time (in seconds)
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Maximum optimization time in seconds. If set, optimization stops after this duration "
+             "even if n_trials is not reached. Default: None (no time limit)"
+    )
     return parser
 
 
@@ -388,7 +396,8 @@ if __name__ == "__main__":
         min_signal_ratio=opt_args.min_signal_ratio,
         penalty_weight=opt_args.penalty_weight,
         metric_key=opt_args.metric,
-        storage=storage_url  # ✅ Pass normalized value
+        storage=storage_url,
+        timeout=opt_args.time_out,
     )
 
     # ✅ SAVE BEST MODEL AFTER OPTIMIZATION (still works with in-memory studies)
