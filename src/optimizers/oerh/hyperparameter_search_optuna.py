@@ -30,6 +30,12 @@ AVAILABLE_METRICS = {
 # ==========================================================
 # OPTUNA OBJECTIVE FUNCTION
 # ==========================================================
+def make_stop_callback(threshold: float = 1.0, metric_name: str = "score"):
+    def callback(study, trial):
+        if study.best_value is not None and study.best_value >= threshold:
+            print(f"\n🎯 Target {metric_name} ≥ {threshold} reached ({study.best_value:.4f})! Stopping early.")
+            study.stop()
+    return callback
 def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
     # 1️⃣ Sample Hyperparameters
     rsi_period = trial.suggest_int("rsi_period", 5, 30)
@@ -164,7 +170,8 @@ def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio,
         lambda trial: objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key),
         n_trials=n_trials,
         timeout=timeout,
-        show_progress_bar=True
+        show_progress_bar=True,
+        callbacks=[make_stop_callback(threshold=1.0, metric_name=metric_key)],
     )
 
     # Report results
