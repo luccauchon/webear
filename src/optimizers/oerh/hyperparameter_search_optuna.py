@@ -369,7 +369,7 @@ if __name__ == "__main__":
     print(f"💡 Lookahead bars: {opt_args.lookahead_bars} (fixed during optimization)")
     print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")  # ✅ Added
     print(f"💡 Target Type: {opt_args.target_type}")  # ✅ Added
-    print(f"💡 Studies persisted in: {opt_args.storage}\n")  # ✅ Updated print
+
     # ✅ Updated storage print to handle None
     if storage_url:
         print(f"💡 Studies persisted in: {storage_url}\n")
