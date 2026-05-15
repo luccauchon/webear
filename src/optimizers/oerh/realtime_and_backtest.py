@@ -93,7 +93,7 @@ def run_real_time(args, model_path: str):
     # Get config values (prefer params, fallback to metadata)
     the_metric = params.get('metric', metadata.get('metric', 'long_accuracy'))
     lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
-    threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.01))
+    threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
     target_type = valid_params.get('target_type', args.target_type)
 
     assert 1 == len(signal)
@@ -424,7 +424,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--one-euro-min", type=float, default=10.0, help="One-Euro filter min cutoff")
     algo_grp.add_argument("--one-euro-factor", type=float, default=0.2, help="One-Euro filter beta factor")
     algo_grp.add_argument("--lookahead-bars", type=int, default=5, help="Future bars to forecast")
-    algo_grp.add_argument("--threshold-pct", type=float, default=0.01, help="Min %% move to label 'up'")
+    algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target")
 
     # ✅ NEW: Target labeling mode
     algo_grp.add_argument(
@@ -493,7 +493,7 @@ def entry(args):
         print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
         print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
         print(f"   Target Mode: '{args.target_type}'")
-        print(f"   Minimum Move Threshold: {args.threshold_pct * 100:.2f}%\n")
+        print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
 
     if not args.disable_plot_sample:
         plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample)

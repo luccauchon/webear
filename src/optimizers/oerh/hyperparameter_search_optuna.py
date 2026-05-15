@@ -332,7 +332,7 @@ Examples:
         type=float,
         choices=[round(x * 0.005, 3) for x in range(0, 11)],  # 0.0, 0.005, 0.01, ... 0.05
         default=0.03,
-        help="Threshold percentage for signal validation. Range: 0.0 to 0.05 in steps of 0.005. "
+        help="Threshold percentage for signal validation (used when creating the target). Range: 0.0 to 0.05 in steps of 0.005. "
              "This value is fixed during optimization but tracked in Optuna for reproducibility. Default: 0.03"
     )
     # Timeout parameter for max optimization time (in seconds)
