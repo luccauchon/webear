@@ -386,7 +386,6 @@ if __name__ == "__main__":
     base_args = base_parser.parse_args([])  # Parse empty to get defaults
     base_args.dataset_id = "day"
     base_args.ticker = "^GSPC"
-    base_args.older_dataset = None
     base_args.seed = opt_args.seed
     base_args.lookahead_bars = opt_args.lookahead_bars  # ✅ Apply user-specified lookahead_bars to base_args
     base_args.threshold_pct = opt_args.threshold_pct  # ✅ Apply user-specified threshold

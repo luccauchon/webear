@@ -468,7 +468,7 @@ def entry(args):
 
     # ✅ BATCH MODE: Original behavior
     np.random.seed(args.seed)
-    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=args.older_dataset)
+    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
     with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
 
