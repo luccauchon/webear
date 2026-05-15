@@ -22,6 +22,7 @@ import os
 # 1. ONE-EURO FILTER (Adaptive Smoothing)
 # ============================================
 from algorithms.one_euro_filter import one_euro_filter
+from utils import DATASET_AVAILABLE
 
 
 # ============================================
@@ -408,7 +409,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     )
 
     data_grp = parser.add_argument_group("Data & Environment")
-    data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier for caching")
+    data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier",choices=DATASET_AVAILABLE)
     data_grp.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
     data_grp.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     data_grp.add_argument("--disable-print", action="store_true", help="Skip prints")

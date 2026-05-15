@@ -12,6 +12,7 @@ except ImportError:
 import optuna
 import argparse
 import sys
+from utils import DATASET_AVAILABLE
 from optimizers.oerh.realtime_and_backtest import entry, setup_argparse
 import pickle
 # ==========================================================
@@ -350,6 +351,8 @@ Examples:
         default="models",
         help="Directory to save optimized model files. Will be created if it doesn't exist. Default: 'models'"
     )
+    parser.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier", choices=DATASET_AVAILABLE)
+    parser.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
     return parser
 
 
@@ -365,10 +368,10 @@ if __name__ == "__main__":
     print("🚀 Starting Optuna Hyperparameter Optimization...")
     print(f"💡 Sampler: {opt_args.sampler.upper()} | Trials: {opt_args.n_trials}")
     print(f"💡 Metric: {opt_args.metric} - {AVAILABLE_METRICS[opt_args.metric]}")
-    print(f"💡 Penalty: min_ratio={opt_args.min_signal_ratio}")
+    print(f"💡 Minimum Signal Density: {opt_args.min_signal_ratio:.2%}")
     print(f"💡 Lookahead bars: {opt_args.lookahead_bars} (fixed during optimization)")
-    print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")  # ✅ Added
-    print(f"💡 Target Type: {opt_args.target_type}")  # ✅ Added
+    print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")
+    print(f"💡 Target Type: {opt_args.target_type}  |  Dataset: {opt_args.dataset_id}  |  Ticker: {opt_args.ticker}")
 
     # ✅ Updated storage print to handle None
     if storage_url:
@@ -378,8 +381,8 @@ if __name__ == "__main__":
     # Load default arguments from your existing parser
     base_parser = setup_argparse()
     base_args = base_parser.parse_args([])  # Parse empty to get defaults
-    base_args.dataset_id = "day"
-    base_args.ticker = "^GSPC"
+    base_args.dataset_id = opt_args.dataset_id
+    base_args.ticker = opt_args.ticker
     base_args.seed = opt_args.seed
     base_args.lookahead_bars = opt_args.lookahead_bars  # ✅ Apply user-specified lookahead_bars to base_args
     base_args.threshold_pct = opt_args.threshold_pct  # ✅ Apply user-specified threshold
