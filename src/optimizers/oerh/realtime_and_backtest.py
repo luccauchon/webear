@@ -46,7 +46,7 @@ def run_real_time(args, model_path: str):
     metadata = model_data.get('metadata', {})
 
     # Load data cache
-    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=args.older_dataset)
+    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
     with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
 
@@ -410,7 +410,6 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_grp = parser.add_argument_group("Data & Environment")
     data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier for caching")
     data_grp.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
-    data_grp.add_argument("--older-dataset", type=str, default=None, help="Path/name for older dataset cache")
     data_grp.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     data_grp.add_argument("--disable-print", action="store_true", help="Skip prints")
 
