@@ -203,8 +203,8 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
         ticker = metadata.get('ticker', 'SPX').replace("^", "")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         target_type = metadata.get('target_type', 'any')
-        model_name = f"model_{metric}_lb{lookahead}_th{threshold:.3f}_tt{target_type}_{ticker}_{timestamp}"
-
+        score = f"{study.best_value:.8f}"
+        model_name = f"model_{metric}_lb{lookahead}_th{threshold:.3f}_tt{target_type}_sc{score}_{ticker}_{timestamp}"
     model_data = {
         'best_params': study.best_params,
         'best_value': study.best_value,
