@@ -296,12 +296,6 @@ Examples:
         help="Minimum signal ratio (signals/total_bars) before penalty applies. "
              "Trials with fewer signals are penalized. Default: 0.1 (10%%)"
     )
-    parser.add_argument(
-        "--penalty-weight",
-        type=float,
-        default=10.0,
-        help="Multiplier for the signal ratio penalty. Higher = stronger penalty for low signal frequency. Default: 10.0"
-    )
 
     # Other common args
     parser.add_argument(
@@ -407,7 +401,7 @@ if __name__ == "__main__":
         n_trials=opt_args.n_trials,
         base_args=base_args,
         min_signal_ratio=opt_args.min_signal_ratio,
-        penalty_weight=opt_args.penalty_weight,
+        penalty_weight=10,
         metric_key=opt_args.metric,
         storage=storage_url,
         timeout=opt_args.timeout,
