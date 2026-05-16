@@ -52,9 +52,10 @@ def run_real_time(args, model_path: str):
         master_data_cache = pickle.load(f)
 
     df = master_data_cache[args.ticker].sort_index()
-    price_col = ('Close', args.ticker) if isinstance(df.columns, pd.MultiIndex) else 'Close'
+    price_col = ('Close', args.ticker)
 
     # Determine minimum history needed for indicators
+    assert 'rsi_period' in params and 'macd_slow' in params
     min_history = max(
         params.get('rsi_period', 14),
         params.get('macd_slow', 26),
@@ -70,13 +71,10 @@ def run_real_time(args, model_path: str):
         'rsi_period', 'rsi_oversold', 'rsi_overbought', 'rsi_mode',
         'macd_fast', 'macd_slow', 'macd_signal',
         'one_euro_min', 'one_euro_factor',
-        'lookahead_bars', 'threshold_pct', 'target_type'
+        'lookahead_bars', 'threshold_pct'
     ]}
-
-    # Fallback to CLI arg if saved model doesn't have target_type
-    if 'target_type' not in valid_params:
-        valid_params['target_type'] = args.target_type
-
+    assert 'target_type' in metadata
+    valid_params.update({'target_type': metadata['target_type']})
     # Run forecast on the window
     df_results, _ = run_forecast(
         df=latest_df,
@@ -427,7 +425,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--lookahead-bars", type=int, default=5, help="Future bars to forecast")
     algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target")
 
-    # ✅ NEW: Target labeling mode
+    # Target labeling mode
     algo_grp.add_argument(
         "--target-type",
         type=str,
