@@ -39,20 +39,21 @@ def load_model(model_path: str) -> dict:
     return model_data
 
 
-def run_real_time(args, model_path: str):
+def run_real_time(model_path: str, output_signal_only):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
     params = model_data['best_params']
     metadata = model_data.get('metadata', {})
-
+    dataset_id = metadata.get('dataset_id')
+    ticker = metadata.get('ticker')
     # Load data cache
-    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
+    cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
     with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
 
-    df = master_data_cache[args.ticker].sort_index()
-    price_col = ('Close', args.ticker)
+    df = master_data_cache[ticker].sort_index()
+    price_col = ('Close', ticker)
 
     # Determine minimum history needed for indicators
     assert 'rsi_period' in params and 'macd_slow' in params
@@ -74,7 +75,8 @@ def run_real_time(args, model_path: str):
         'lookahead_bars', 'threshold_pct'
     ]}
     assert 'target_type' in metadata
-    valid_params.update({'target_type': metadata['target_type']})
+    target_type = metadata['target_type']
+    valid_params.update({'target_type': target_type})
     # Run forecast on the window
     df_results, _ = run_forecast(
         df=latest_df,
@@ -90,10 +92,12 @@ def run_real_time(args, model_path: str):
     current_date = latest_row.name  # Index is datetime
 
     # Get config values (prefer params, fallback to metadata)
+    assert 'metric' in metadata
     the_metric = params.get('metric', metadata.get('metric', 'long_accuracy'))
+    assert 'lookahead_bars' in metadata
     lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
+    assert 'threshold_pct' in metadata
     threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
-    target_type = valid_params.get('target_type', args.target_type)
 
     assert 1 == len(signal)
     signal = signal.values[0]
@@ -123,7 +127,7 @@ def run_real_time(args, model_path: str):
     # Format output
     ticker_display = args.ticker if args.ticker != "^GSPC" else "SPX500"
 
-    if args.output_signal_only:
+    if output_signal_only:
         # Minimal output for automation/scripts
         if signal == 1:
             print(f"BUY|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}|+{lookahead_bars}bars|{target_price:.2f}")
@@ -463,7 +467,7 @@ def entry(args):
     if args.real_time:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
-        return run_real_time(args, args.model_path)
+        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path)
 
     # ✅ BATCH MODE: Original behavior
     np.random.seed(args.seed)
