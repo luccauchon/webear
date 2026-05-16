@@ -37,6 +37,8 @@ def make_stop_callback(threshold: float = 1.0, metric_name: str = "score"):
             print(f"\n🎯 Target {metric_name} ≥ {threshold} reached ({study.best_value:.4f})! Stopping early.")
             study.stop()
     return callback
+
+
 def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
     # 1️⃣ Sample Hyperparameters
     rsi_period = trial.suggest_int("rsi_period", 5, 30)
@@ -205,7 +207,9 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         target_type = metadata.get('target_type', 'any')
         score = f"{study.best_value:.8f}"
-        model_name = f"model_{metric}_lb{lookahead}_th{threshold:.3f}_tt{target_type}_sc{score}_{ticker}_{timestamp}"
+        signal_density = f"{metadata.get('min_signal_ratio'):.2f}"
+        dd_id = f"{metadata.get('dataset_id')}"
+        model_name = f"model_{metric}_lb{lookahead}_th{threshold:.3f}_tt{target_type}_sc{score}_sd{signal_density}_{dd_id}_{ticker}_{timestamp}"
     model_data = {
         'best_params': study.best_params,
         'best_value': study.best_value,
@@ -419,6 +423,7 @@ if __name__ == "__main__":
         ticker=base_args.ticker,
         dataset_id=base_args.dataset_id,
         target_type=base_args.target_type,
+        min_signal_ratio=opt_args.min_signal_ratio,
     )
 
     print("\n" + "=" * 60)
