@@ -375,7 +375,8 @@ if __name__ == "__main__":
     print(f"💡 Lookahead bars: {opt_args.lookahead_bars} (fixed during optimization)")
     print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")
     print(f"💡 Target Type: {opt_args.target_type}  |  Dataset: {opt_args.dataset_id}  |  Ticker: {opt_args.ticker}")
-
+    if remaining_args:
+        print(f"Unknown or unhandled arguments detected: {remaining_args}")
     # ✅ Updated storage print to handle None
     if storage_url:
         print(f"💡 Studies persisted in: {storage_url}\n")
