@@ -182,7 +182,7 @@ def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int
 # ============================================
 # 4. LOOK-AHEAD LABELING (Forecast Target)
 # ============================================
-def create_future_labels(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+def create_target_exact(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """Exact: Checks price exactly at t + lookahead_bars"""
     future_close = close.shift(-lookahead_bars)
     labels = (future_close > close * (1 + threshold_pct)).astype(float)
@@ -190,7 +190,7 @@ def create_future_labels(close: pd.Series, lookahead_bars: int, threshold_pct: f
     return labels
 
 
-def create_target(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+def create_target_any(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """
     Any: Checks if price EXCEEDS threshold at ANY point from t to t+lookahead_bars.
     Uses a forward-looking rolling maximum for efficient vectorized computation.
@@ -241,9 +241,9 @@ class ForecastSystem:
 
         # ✅ DYNAMIC TARGET SELECTION
         if self.target_type == "any":
-            df['FutureLabel'] = create_target(close, self.lookahead_bars, self.threshold_pct)
+            df['FutureLabel'] = create_target_any(close, self.lookahead_bars, self.threshold_pct)
         else:
-            df['FutureLabel'] = create_future_labels(close, self.lookahead_bars, self.threshold_pct)
+            df['FutureLabel'] = create_target_exact(close, self.lookahead_bars, self.threshold_pct)
 
         df['Signal'] = 0
 
