@@ -81,7 +81,7 @@ def run_real_time(model_path: str, output_signal_only):
     df_results, _ = run_forecast(
         df=latest_df,
         price_col=price_col,
-        ticker=args.ticker,
+        ticker=str(ticker),
         **valid_params
     )
 
@@ -125,7 +125,7 @@ def run_real_time(model_path: str, output_signal_only):
         target_date = current_date + pd.Timedelta(days=lookahead_bars)
 
     # Format output
-    ticker_display = args.ticker if args.ticker != "^GSPC" else "SPX500"
+    ticker_display = ticker if ticker != "^GSPC" else "SPX500"
 
     if output_signal_only:
         # Minimal output for automation/scripts
