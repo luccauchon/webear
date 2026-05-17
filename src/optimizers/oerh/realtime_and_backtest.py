@@ -11,6 +11,7 @@ except ImportError:
     from version import sys__name, sys__version
 import numpy as np
 import pandas as pd
+from numba import njit
 import math
 import matplotlib.pyplot as plt
 from typing import Optional, Tuple
@@ -138,7 +139,12 @@ def run_real_time(model_path: str, output_signal_only):
     else:
         # Human-readable output
         if signal != 0:
-            target_mode_desc = "any point in window" if target_type == "any" else "exact future point"
+            if target_type == "any":
+                target_mode_desc = "any point in window [t+1, t+B]"
+            elif target_type == "any_half_B":
+                target_mode_desc = "any point in second half [t+B//2+1, t+B]"
+            else:
+                target_mode_desc = "exact future point"
             print(f"\n🎯 Real-Time Signal Detected:")
             print(f"On {current_date.strftime('%Y-%m-%d')} {ticker_display} is at {current_price:.2f} and {direction} activated for +{lookahead_bars}Bars , {ticker_display} {operator} {target_price:.2f} on {target_date.strftime('%Y-%m-%d')}")
             print(f"   Threshold: {threshold_pct * 100:.2f}% | Target Mode: '{target_type}' ({target_mode_desc}) | Model: {os.path.basename(model_path)}\n")
@@ -207,6 +213,46 @@ def create_target_any(close: pd.Series, lookahead_bars: int, threshold_pct: floa
     return labels
 
 
+def create_target_any_at_half_B(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    Any at half B: Checks if price EXCEEDS threshold at ANY point from t+B//2+1 to t+B.
+    (i.e., the second half of the lookahead window, excluding the midpoint itself)
+    Uses a forward-looking rolling maximum for efficient vectorized computation.
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series
+    lookahead_bars : int
+        Number of bars to look ahead (B)
+    threshold_pct : float, optional
+        Percentage threshold for target (default: 0.0)
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if threshold exceeded in window, 0 otherwise), with NaN for incomplete windows
+    """
+    half_B = lookahead_bars // 2
+    window_size = lookahead_bars - half_B  # Size of window from t+half_B+1 to t+B inclusive
+
+    # Handle edge case where window would be empty
+    if window_size <= 0:
+        return pd.Series(np.nan, index=close.index, dtype=float)
+
+    # Get max over the window [t+half_B+1, t+B] for each t
+    # Reverse series, apply rolling max, reverse back, then shift to align window
+    future_max = close.iloc[::-1].rolling(window=window_size, min_periods=window_size).max().iloc[::-1].shift(-(half_B + 1))
+
+    # True if max in window > threshold
+    labels = (future_max > close * (1 + threshold_pct)).astype(float)
+
+    # Mask out last lookahead_bars where future data is incomplete
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
 # ============================================
 # 5. RULE-BASED FORECASTING SYSTEM
 # ============================================
@@ -242,6 +288,8 @@ class ForecastSystem:
         # ✅ DYNAMIC TARGET SELECTION
         if self.target_type == "any":
             df['FutureLabel'] = create_target_any(close, self.lookahead_bars, self.threshold_pct)
+        elif self.target_type == "any_half_B":
+            df['FutureLabel'] = create_target_any_at_half_B(close, self.lookahead_bars, self.threshold_pct)
         else:
             df['FutureLabel'] = create_target_exact(close, self.lookahead_bars, self.threshold_pct)
 
@@ -433,7 +481,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument(
         "--target-type",
         type=str,
-        choices=["exact", "any"],
+        choices=["exact", "any", "any_half_B"],
         default="any",
         help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
     )

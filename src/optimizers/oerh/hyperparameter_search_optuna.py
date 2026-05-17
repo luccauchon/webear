@@ -207,7 +207,7 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         target_type = metadata.get('target_type', 'any')
         score = f"{study.best_value:.8f}"
-        signal_density = f"{metadata.get('min_signal_ratio'):.2f}"
+        signal_density = f"{metadata.get('min_signal_ratio'):.4f}"
         dd_id = f"{metadata.get('dataset_id')}"
         model_name = f"model_{metric}_lb{lookahead}_th{threshold:.5f}_tt{target_type}_sc{score}_sd{signal_density}_{dd_id}_{ticker}_{timestamp}"
     model_data = {
