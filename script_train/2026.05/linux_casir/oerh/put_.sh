@@ -1,12 +1,39 @@
 #!/bin/bash
 
-# Valeurs par défaut si les arguments ne sont pas fournis
-WEBEAR__NTRIALS=${1:-44444}
-WEBEAR__THRESHOLD=${2:-0.020}
-WEBEAR__LOOKAHEAD=${3:-5}
-WEBEAR__METRIC=${4:-long_accuracy}
+# Valeurs par défaut d'origine
+WEBEAR__NTRIALS=44444
+WEBEAR__THRESHOLD=0.020
+WEBEAR__LOOKAHEAD=5
+WEBEAR__METRIC="long_accuracy"
 
-# Calcul du pourcentage pour le dossier de sortie
+# Analyse des arguments nommés
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --trials)
+      WEBEAR__NTRIALS="$2"
+      shift 2
+      ;;
+    --threshold)
+      WEBEAR__THRESHOLD="$2"
+      shift 2
+      ;;
+    --lookahead)
+      WEBEAR__LOOKAHEAD="$2"
+      shift 2
+      ;;
+    --metric)
+      WEBEAR__METRIC="$2"
+      shift 2
+      ;;
+    *)
+      echo "❌ Option inconnue : $1"
+      echo "Options valides : --trials, --threshold, --lookahead, --metric"
+      exit 1
+      ;;
+  esac
+done
+
+# Calcul dynamique du dossier de sortie
 PCT_VALUE=$(awk "BEGIN {print $WEBEAR__THRESHOLD * 100}")
 WEBEAR__OUTPUT_DIR="models_put_${WEBEAR__LOOKAHEAD}B_${PCT_VALUE}pct"
 
