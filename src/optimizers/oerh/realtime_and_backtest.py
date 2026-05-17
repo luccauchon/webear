@@ -11,8 +11,10 @@ except ImportError:
     from version import sys__name, sys__version
 import numpy as np
 import pandas as pd
+from functools import lru_cache
 from numba import njit
 import math
+import copy
 import matplotlib.pyplot as plt
 from typing import Optional, Tuple
 import pickle
@@ -510,6 +512,14 @@ def setup_argparse() -> argparse.ArgumentParser:
     return parser
 
 
+@lru_cache(maxsize=32)
+def _load_df(_datase_id):
+    cache_filename = get_filename_for_dataset(_datase_id, older_dataset=None)
+    with open(cache_filename, 'rb') as f:
+        master_data_cache = pickle.load(f)
+    return master_data_cache
+
+
 def entry(args):
     # ✅ REAL-TIME MODE: Load model and evaluate latest point only
     if args.real_time:
@@ -519,10 +529,7 @@ def entry(args):
 
     # ✅ BATCH MODE: Original behavior
     np.random.seed(args.seed)
-    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
-    with open(cache_filename, 'rb') as f:
-        master_data_cache = pickle.load(f)
-
+    master_data_cache = copy.deepcopy(_load_df(_datase_id=args.dataset_id))
     df_spx500 = master_data_cache[args.ticker].sort_index()
     price_col = ('Close', args.ticker) if isinstance(df_spx500.columns, pd.MultiIndex) else 'Close'
 
