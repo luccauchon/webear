@@ -17,7 +17,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --threshold-pct $WEBEAR__THRESHOLD \
       --n-trials $WEBEAR__NTRIALS \
       --storage none \
-      --min-signal-ratio $msr
+      --min-signal-ratio $msr &
     PIDS+=($!)
 done
 
