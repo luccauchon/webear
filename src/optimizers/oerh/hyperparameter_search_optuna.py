@@ -278,7 +278,7 @@ Examples:
     parser.add_argument(
         "--target-type",
         type=str,
-        choices=["exact", "any"],
+        choices=["exact", "any", "any_half_B"],
         default="any",
         help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
     )
