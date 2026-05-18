@@ -80,7 +80,7 @@ DEFAULT_RANDOM_SEED = 42
 # =========================================================
 # ALL REGIMES SUMMARY – For Real-Time Mode
 # =========================================================
-def print_all_regimes_summary(_stats, _n_clusters, _args):
+def print_all_regimes_summary(_stats, _n_clusters, bullish_threshold):
     """
     Print a concise summary table of ALL regimes for quick comparison.
     """
@@ -88,7 +88,7 @@ def print_all_regimes_summary(_stats, _n_clusters, _args):
     print(" " * 25 + "📊 ALL REGIMES SUMMARY")
     print("═" * 80 + "\n")
 
-    print(f"Target: Close > Open × (1 + {args.bullish_threshold * 100:.4%}) (Bullish Day)\n")
+    print(f"Target: Close > Open × (1 + {bullish_threshold * 100:.4%}) (Bullish Day)\n")
 
     # Table header
     print(f"{'Regime':<8} {'Samples':>10} {'Bullish %':>12} {'95% CI Lower':>14} {'95% CI Upper':>14} {'EV/$1':>10} {'Recommendation':>18}")
@@ -625,7 +625,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
 
     # Show all regimes summary
     if normal_verbose and not hyper_silence:
-        print_all_regimes_summary(_stats, _params['n_clusters'], args)
+        print_all_regimes_summary(_stats=_stats, _n_clusters=_params['n_clusters'], bullish_threshold=model_threshold)
 
     # Final output
     regime_probs = {r: _stats[r]['prob_bullish'] for r in range(_params['n_clusters']) if r in _stats}
