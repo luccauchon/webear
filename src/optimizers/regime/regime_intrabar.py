@@ -638,7 +638,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         parts.append(f"\033[1m**{fmt}**\033[0m" if k == regime else fmt)
 
     print(f"📊 Detected Regime: #{regime} → [{','.join(parts)}]")
-    print(f"   Bullish Probability: {regime_stats['prob_bullish'] * 100:.2f}%")
+    print(f"   Bullish Probability: {regime_stats['prob_bullish'] * 100:.2f}%   ({latest_date.strftime('%Y-%m-%d')} @{latest_close:.0f})")
 
     if normal_verbose and not hyper_silence:
         print("\n" + "═" * 60 + "\n✨ INFERENCE COMPLETE\n" + "═" * 60)
