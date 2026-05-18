@@ -25,7 +25,7 @@ import os
 # 1. ONE-EURO FILTER (Adaptive Smoothing)
 # ============================================
 from algorithms.one_euro_filter import one_euro_filter
-from utils import DATASET_AVAILABLE
+from utils import DATASET_AVAILABLE,get_next_step
 
 
 # ============================================
@@ -42,7 +42,7 @@ def load_model(model_path: str) -> dict:
     return model_data
 
 
-def run_real_time(model_path: str, output_signal_only):
+def run_real_time(model_path: str, output_signal_only, verbose):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
@@ -50,10 +50,7 @@ def run_real_time(model_path: str, output_signal_only):
     metadata = model_data.get('metadata', {})
     dataset_id = metadata.get('dataset_id')
     ticker = metadata.get('ticker')
-    # Load data cache
-    cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
-    with open(cache_filename, 'rb') as f:
-        master_data_cache = pickle.load(f)
+    master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
 
     df = master_data_cache[ticker].sort_index()
     price_col = ('Close', ticker)
@@ -118,43 +115,37 @@ def run_real_time(model_path: str, output_signal_only):
         direction = "NoSignal"
         operator = ""
 
-    # Estimate target date (assumes daily data; adjust if needed)
-    try:
-        # Try to infer frequency from index
-        freq = pd.infer_freq(df.index[-10:]) or 'D'
-        target_date = current_date + pd.tseries.frequencies.to_offset(freq) * lookahead_bars
-    except:
-        # Fallback: assume daily
-        target_date = current_date + pd.Timedelta(days=lookahead_bars)
+    # Estimate target date
+    target_date = get_next_step(the_date=current_date, dataset_id=dataset_id, nn=lookahead_bars)
 
     # Format output
     ticker_display = ticker if ticker != "^GSPC" else "SPX500"
-
-    if output_signal_only:
-        # Minimal output for automation/scripts
-        if signal == 1:
-            print(f"BUY|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}|+{lookahead_bars}bars|{target_price:.2f}")
-        elif signal == -1:
-            print(f"SELL|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}|+{lookahead_bars}bars|{target_price:.2f}")
-        else:
-            print(f"HOLD|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}")
-    else:
-        # Human-readable output
-        if signal != 0:
-            if target_type == "any":
-                target_mode_desc = "any point in window [t+1, t+B]"
-            elif target_type == "any_half_B":
-                target_mode_desc = "any point in second half [t+B//2+1, t+B]"
+    if verbose:
+        if output_signal_only:
+            # Minimal output for automation/scripts
+            if signal == 1:
+                print(f"BUY|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}|+{lookahead_bars}bars|{target_price:.2f}")
+            elif signal == -1:
+                print(f"SELL|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}|+{lookahead_bars}bars|{target_price:.2f}")
             else:
-                target_mode_desc = "exact future point"
-            print(f"\n🎯 Real-Time Signal Detected:")
-            print(f"On {current_date.strftime('%Y-%m-%d')} {ticker_display} is at {current_price:.2f} and {direction} activated for +{lookahead_bars}Bars , {ticker_display} {operator} {target_price:.2f} on {target_date.strftime('%Y-%m-%d')}")
-            print(f"   Threshold: {threshold_pct * 100:.2f}% | Target Mode: '{target_type}' ({target_mode_desc}) | Model: {os.path.basename(model_path)}\n")
+                print(f"HOLD|{current_date.strftime('%Y-%m-%d')}|{current_price:.2f}")
         else:
-            print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d')}: {ticker_display} at {current_price:.2f}")
-            print(f"   (Threshold: {threshold_pct * 100:.2f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
+            # Human-readable output
+            if signal != 0:
+                if target_type == "any":
+                    target_mode_desc = "any point in window [t+1, t+B]"
+                elif target_type == "any_half_B":
+                    target_mode_desc = "any point in second half [t+B//2+1, t+B]"
+                else:
+                    target_mode_desc = "exact future point"
+                print(f"\n🎯 Real-Time Signal Detected:")
+                print(f"On {current_date.strftime('%Y-%m-%d')} {ticker_display} is at {current_price:.2f} and {direction} activated for +{lookahead_bars}Bars , {ticker_display} {operator} {target_price:.2f} on {target_date.strftime('%Y-%m-%d')}")
+                print(f"   Threshold: {threshold_pct * 100:.2f}% | Target Mode: '{target_type}' ({target_mode_desc}) | Model: {os.path.basename(model_path)}\n")
+            else:
+                print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d')}: {ticker_display} at {current_price:.2f}")
+                print(f"   (Threshold: {threshold_pct * 100:.2f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
 
-    return signal, current_price, target_price if signal != 0 else None
+    return signal, current_price, target_price, target_date
 
 
 # ============================================
@@ -280,7 +271,9 @@ class ForecastSystem:
     def generate_signals(self, df: pd.DataFrame, price_col, ticker) -> pd.DataFrame:
         df = df.copy()
         close = df[price_col]
-        df['OneEuro'] = one_euro_filter(close.values, self.one_euro_min, self.one_euro_factor)
+        _tmp_array = one_euro_filter(close.values, self.one_euro_min, self.one_euro_factor)
+        assert len(_tmp_array) == len(close)
+        df['OneEuro'] = _tmp_array
         df['RSI'] = calculate_rsi(close, self.rsi_period)
         macd_df = calculate_macd(close, self.macd_fast, self.macd_slow, self.macd_signal)
         df['MACD'] = macd_df['MACD']
@@ -465,6 +458,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_grp.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
     data_grp.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     data_grp.add_argument("--disable-print", action="store_true", help="Skip prints")
+    data_grp.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Print detailed progress, metrics, and explanations')
 
     algo_grp = parser.add_argument_group("Algorithm Parameters")
     algo_grp.add_argument("--rsi-period", type=int, default=14, help="RSI calculation window")
@@ -525,7 +519,7 @@ def entry(args):
     if args.real_time:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
-        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path)
+        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose)
 
     # ✅ BATCH MODE: Original behavior
     np.random.seed(args.seed)

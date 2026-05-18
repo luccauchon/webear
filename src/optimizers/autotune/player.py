@@ -1,17 +1,16 @@
-import argparse
-import pathlib
-from argparse import Namespace
-
 try:
     from version import sys__name, sys__version
 except ImportError:
     # Fallback: dynamically add parent directory to path if 'version' module isn't found
     import sys
-
+    import pathlib
     current_dir = pathlib.Path(__file__).resolve()
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+import argparse
+import pathlib
+from argparse import Namespace
 
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune
 
