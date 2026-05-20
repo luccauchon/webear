@@ -607,10 +607,20 @@ def build_target(_df, _forward_days, _strike_distance, _spread_type):
         short_strike = close * (1 - _strike_distance)
         target = (future_close > short_strike).astype(int)
 
+    elif _spread_type == 'buy_put':
+        # Bullish put credit spread: profit if price > short_put_strike
+        short_strike = close * (1 - _strike_distance)
+        target = (future_close < short_strike).astype(int)
+
     elif _spread_type == 'call':
         # Bearish call credit spread: profit if price < short_call_strike
         short_strike = close * (1 + _strike_distance)
         target = (future_close < short_strike).astype(int)
+
+    elif _spread_type == 'buy_call':
+        # Bearish call credit spread: profit if price < short_call_strike
+        short_strike = close * (1 + _strike_distance)
+        target = (future_close > short_strike).astype(int)
 
     elif _spread_type == 'iron_condor':
         # Iron condor: profit if price stays between both short strikes
@@ -1576,8 +1586,8 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────────────
     parser.add_argument(
         "--spread-type", type=str, default="put",
-        choices=["put", "call", "iron_condor"],
-        help="Spread type: 'put' (bullish), 'call' (bearish), 'iron_condor'"
+        choices=["put", "call", "iron_condor", "buy_put", "buy_call"],
+        help="Spread type: 'put' (bullish), 'call' (bearish), 'iron_condor', 'buy_put', 'buy_call'"
     )
     parser.add_argument(
         "--strike-distance", type=float, default=0.03,
