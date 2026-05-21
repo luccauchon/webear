@@ -141,7 +141,8 @@ def entry(args):
 
     success_count = sum(1 for r in results if r["status"] == "SUCCESS")
     error_count = len(results) - success_count
-    print(f"✅ Processed {len(results)} model(s) | {success_count} success | {error_count} error(s)")
+    if verbose:
+        print(f"✅ Processed {len(results)} model(s) | {success_count} success | {error_count} error(s)")
 
 
 if __name__ == "__main__":
