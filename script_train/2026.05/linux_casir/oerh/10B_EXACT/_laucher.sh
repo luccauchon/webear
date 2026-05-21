@@ -47,13 +47,12 @@ PIDS=()
 for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
   python ./hyperparameter_search_optuna.py \
       --metric "$WEBEAR__METRIC" \
-      --target-type exact \
       --lookahead-bars "$WEBEAR__LOOKAHEAD" \
       --threshold-pct "$WEBEAR__THRESHOLD" \
       --n-trials "$WEBEAR__NTRIALS" \
       --storage none \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
-      --target-type any_half_B \
+      --target-type exact \
       --min-signal-ratio "$msr" &
     PIDS+=($!)
 done
