@@ -23,7 +23,7 @@ def parse_args():
         description="Run OERH on multiple .pkl model files and display a results summary."
     )
     parser.add_argument(
-        "-d", "--target_dir",
+        "-d", "--target-dir",
         type=str,
         default="./models",
         help="Directory containing .pkl model files (default: ./models)"
