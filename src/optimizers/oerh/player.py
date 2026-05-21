@@ -127,15 +127,17 @@ def entry(args):
     # Formatting helper
     def format_row(cells):
         return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
-
-    print("\n" + "=" * total_width)
-    print(f"{'OERH RESULTS SUMMARY':^{total_width}}")
-    print("=" * total_width)
+    if verbose:
+        print("\n" + "=" * total_width)
+        print(f"{'OERH RESULTS SUMMARY':^{total_width}}")
+        print("=" * total_width)
     print(format_row(headers))
-    print("-" * total_width)
+    if verbose:
+        print("-" * total_width)
     for row in table_rows:
         print(format_row(row))
-    print("=" * total_width)
+    if verbose:
+        print("=" * total_width)
 
     success_count = sum(1 for r in results if r["status"] == "SUCCESS")
     error_count = len(results) - success_count
