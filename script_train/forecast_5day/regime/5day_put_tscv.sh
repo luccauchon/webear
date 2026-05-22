@@ -9,7 +9,6 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye1.db
     --spread-type put \
     --strike-distance 0.01 \
     --forward-days 5 \
-    --penalize-invalid-cluster \
     --min-n-in-cluster 35 \
     --min-clusters 5 \
     --max-clusters 9 \
@@ -22,7 +21,6 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye2.db
     --spread-type put \
     --strike-distance 0.015 \
     --forward-days 5 \
-    --penalize-invalid-cluster \
     --min-n-in-cluster 35 \
     --min-clusters 5 \
     --max-clusters 9 \
@@ -35,7 +33,6 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye3.db
     --spread-type put \
     --strike-distance 0.02 \
     --forward-days 5 \
-    --penalize-invalid-cluster \
     --min-n-in-cluster 35 \
     --min-clusters 5 \
     --max-clusters 9 \
@@ -48,7 +45,6 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye4.db
     --spread-type put \
     --strike-distance 0.025 \
     --forward-days 5 \
-    --penalize-invalid-cluster \
     --min-n-in-cluster 35 \
     --min-clusters 5 \
     --max-clusters 9 \
@@ -61,7 +57,6 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye5.db
     --spread-type put \
     --strike-distance 0.030 \
     --forward-days 5 \
-    --penalize-invalid-cluster \
     --min-n-in-cluster 35 \
     --min-clusters 5 \
     --max-clusters 9 \
