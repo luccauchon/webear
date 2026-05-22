@@ -608,7 +608,7 @@ def build_target(_df, _forward_days, _strike_distance, _spread_type):
         target = (future_close > short_strike).astype(int)
 
     elif _spread_type == 'buy_put':
-        # Bullish put credit spread: profit if price > short_put_strike
+        # Bearish long put (debit): profit if price drops < strike (ITM)
         short_strike = close * (1 - _strike_distance)
         target = (future_close < short_strike).astype(int)
 
@@ -618,7 +618,7 @@ def build_target(_df, _forward_days, _strike_distance, _spread_type):
         target = (future_close < short_strike).astype(int)
 
     elif _spread_type == 'buy_call':
-        # Bearish call credit spread: profit if price < short_call_strike
+        # Bullish long call (debit): profit if price rises > strike (ITM)
         short_strike = close * (1 + _strike_distance)
         target = (future_close > short_strike).astype(int)
 
