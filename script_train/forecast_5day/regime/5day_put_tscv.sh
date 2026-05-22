@@ -3,7 +3,7 @@ TIMEOUT_VAL=${1:-80000}
 cd ../../../src/optimizers/regime
 PIDS=()
 
-python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye1.db \
+python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_tscvdaye1.db \
     --study-name put_1_day \
     --timeout "$TIMEOUT_VAL" \
     --spread-type put \
@@ -15,7 +15,7 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye1.db
     --lookback-years 99999 &
 PIDS+=($!)
 
-python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye2.db \
+python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_tscvdaye2.db \
     --study-name put_1_day \
     --timeout "$TIMEOUT_VAL" \
     --spread-type put \
@@ -27,7 +27,7 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye2.db
     --lookback-years 99999 &
 PIDS+=($!)
 
-python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye3.db \
+python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_tscvdaye3.db \
     --study-name put_1_day \
     --timeout "$TIMEOUT_VAL" \
     --spread-type put \
@@ -39,7 +39,7 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye3.db
     --lookback-years 99999 &
 PIDS+=($!)
 
-python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye4.db \
+python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_tscvdaye4.db \
     --study-name put_1_day \
     --timeout "$TIMEOUT_VAL" \
     --spread-type put \
@@ -51,7 +51,7 @@ python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye4.db
     --lookback-years 99999 &
 PIDS+=($!)
 
-python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_daye5.db \
+python regime_switching_optimizer_tscv.py --storage-url sqlite:///put_5_tscvdaye5.db \
     --study-name put_1_day \
     --timeout "$TIMEOUT_VAL" \
     --spread-type put \
