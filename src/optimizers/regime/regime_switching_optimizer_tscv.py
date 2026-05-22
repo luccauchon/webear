@@ -77,27 +77,9 @@ DEFAULT_RANDOM_SEED = 42
 
 
 # =========================================================
-# ALL REGIMES SUMMARY - For Real-Time Mode
-# =========================================================
-from optimizers.regime.regime_switching_optimizer import print_all_regimes_summary
-
-
-# =========================================================
-# REGIME FILTERING HELPER
-# =========================================================
-from optimizers.regime.regime_switching_optimizer import regime_passes_filters
-
-
-# =========================================================
 # MODEL NAMING HELPER
 # =========================================================
 from optimizers.regime.regime_switching_optimizer import generate_model_filename
-
-
-# =========================================================
-#
-# =========================================================
-from optimizers.regime.regime_switching_optimizer import characterize_clusters
 
 
 # =========================================================
