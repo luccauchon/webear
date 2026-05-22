@@ -7,4 +7,8 @@ python regime_switching_optimizer.py --storage-url sqlite:///put_1_dayc2.db \
     --spread-type put \
     --strike-distance 0.01 \
     --forward-days 1 \
+    --penalize-invalid-cluster \
+    --min-n-in-cluster 35 \
+    --min-clusters 5 \
+    --max-clusters 9 \
     --lookback-years 99999
