@@ -100,7 +100,8 @@ def parse_arguments():
             "VIX_Ratio", "RSI", "Price_to_MA", "VIX", "MA_Short", "MA_Long",
             "Shifted_MA_Short", "Shifted_MA_Long", "Shifted_Price_to_MA",
             "VIX_Lag1", "RSI_Lag1", "Fed_Rate_Diff", "Unrate_Diff",
-            "Inflation_Rate", "Spread_10Y2Y", "Log_Close", "Dist_from_ATH"
+            "Inflation_Rate", "Spread_10Y2Y", "Log_Close", "Dist_from_ATH",
+            "PCE_Inflation_YoY", "WALCL_YoY", "DGS10_Level", "DGS10_MoM_Chg"
         ],
         help="List of column names to use as model features."
     )
@@ -140,6 +141,10 @@ def parse_arguments():
         "--training-mode", "-tm", type=str, default="random",
         choices=["exhaustive", "random", "manual"],
         help="Strategy for iterating through feature combinations."
+    )
+    model_grp.add_argument(
+        "--minimum-features", "-mfl", type=int, default=1,
+        help="Minimum number of features selected when --training-mode is 'random'."
     )
     model_grp.add_argument(
         "--max-random-iterations", "-mri", type=int, default=99999,
@@ -251,7 +256,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     if create_target:
         _look_head_for_prediction = int(_look_head_for_prediction)
         assert _look_head_for_prediction > 0
-        assert 0 < _percentage_of_type_target < 1
+        assert 0 <= _percentage_of_type_target < 1
 
         # 1. On récupère le prix futur (M + N) pour toutes les comparaisons
         future_close = _df_fusionned["Close"].shift(-_look_head_for_prediction)
@@ -337,6 +342,7 @@ def entry_point(args):
     the_scorer = args.scorer
     training_mode = args.training_mode
     max_random_iterations = args.max_random_iterations
+    minimum_features = args.minimum_features
     time_limit = args.time_limit
     output_dir = args.output_dir
     final_dataset_filename = args.dataset
@@ -510,6 +516,8 @@ def entry_point(args):
     total_combinations = (2 ** len(features)) - 1
     if verbose:
         print(f"Nombre de features disponibles : {len(features)}")
+        if training_mode == "random":
+            print(f"Nombre de features minimums : {minimum_features}")
         print(f"Total des combinaisons de features possibles : {total_combinations:,}  \n"
               f"Features: {features}")
         print(f"N test: {n_test}   Target: {type_of_target} , {percentage_of_type_target}   Look Ahead: {look_head_for_prediction}   Scaler: {my_scaler.__name__}   "
@@ -529,7 +537,7 @@ def entry_point(args):
                 k = random.randint(1, len(_features))
                 combo = tuple(sorted(set(random.sample(_features, k))))
                 while combo in history:
-                    k = random.randint(1, len(_features))
+                    k = random.randint(minimum_features, len(_features))
                     combo = tuple(sorted(set(random.sample(_features, k))))
                 history.add(combo)
                 yield list(combo)
