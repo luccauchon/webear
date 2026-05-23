@@ -63,7 +63,7 @@ def parse_arguments():
           python train_model.py --real-time
 
           # 🔹 Use Optuna to optimize feature engineering params with a SPECIFIC feature list
-          python train_model.py --training-mode fixed --features VIX_Ratio RSI Log_Close Spread_10Y2Y --optuna-trials 50
+          python train_model.py --features VIX_Ratio RSI Log_Close Spread_10Y2Y --optuna-trials 50
         """
     )
 
@@ -137,11 +137,6 @@ def parse_arguments():
         "--scorer", "-sc", type=str, default="F0.5",
         choices=["F0.5", "F", "F2"],
         help="Metric used for hyperparameter optimization and evaluation."
-    )
-    model_grp.add_argument(
-        "--training-mode", "-tm", type=str, default="fixed",
-        choices=["fixed"],
-        help="Strategy for iterating through feature combinations. 'fixed' uses exactly the features provided via --features without searching."
     )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -340,7 +335,7 @@ def entry_point(args):
     features = args.features
     verbose = args.verbose
     the_scorer = args.scorer
-    training_mode = args.training_mode
+    training_mode = "fixed"
     output_dir = args.output_dir
     final_dataset_filename = args.dataset
     np.set_printoptions(linewidth=np.inf)
