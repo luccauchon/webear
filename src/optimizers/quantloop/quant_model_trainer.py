@@ -526,18 +526,18 @@ def entry_point(args):
     if time_limit and verbose:
         print(f"⏱️ Time limit set to: {time_limit} seconds")
 
-    def get_feature_combinations(_features, _mode):
+    def get_feature_combinations(_features, _mode, _minimum_features, _max_random_iterations):
         if _mode == "exhaustive":
             for r in range(1, len(_features) + 1):
                 for combo in itertools.combinations(_features, r):
                     yield list(combo)
         elif _mode == "random":
             history = set()
-            for _ in range(max_random_iterations):
+            for _ in range(_max_random_iterations):
                 k = random.randint(1, len(_features))
                 combo = tuple(sorted(set(random.sample(_features, k))))
-                while combo in history:
-                    k = random.randint(minimum_features, len(_features))
+                while combo in history or len(combo) < _minimum_features:
+                    k = random.randint(_minimum_features, len(_features))
                     combo = tuple(sorted(set(random.sample(_features, k))))
                 history.add(combo)
                 yield list(combo)
@@ -549,7 +549,7 @@ def entry_point(args):
             for a_feartures_set in provided_features:
                 yield a_feartures_set
 
-    feature_iterator = get_feature_combinations(_features=features, _mode=training_mode)
+    feature_iterator = get_feature_combinations(_features=features, _mode=training_mode, _minimum_features=minimum_features, _max_random_iterations=max_random_iterations)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
 
     # 🔧 ENHANCED: Single dictionary tracking the best model based on Cross-Validation score.

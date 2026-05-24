@@ -298,7 +298,7 @@ def run_training_pipeline(_df, _selected_features, _args):
     elif the_scorer == 'F2':
         test_score = scoring_sl2(y_test_final, test_preds, beta=2, zero_division=0)
     elif the_scorer == 'F':
-        test_score = scoring_sl2(y_test_final, test_preds, beta=1.0, zero_division=0)
+        test_score = scoring_sl2(y_test_final, test_preds, zero_division=0)
     else:
         test_score = 0.
 
