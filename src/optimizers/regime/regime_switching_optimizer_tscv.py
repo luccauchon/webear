@@ -872,7 +872,9 @@ if __name__ == "__main__":
     parser.add_argument("--hypershort-verbose", action="store_true",
                         help="In Real-Time mode only, display only the VERY minimal information"
                         )
-
+    parser.add_argument("--bestof-verbose", action="store_true",
+                        help="In Real-Time mode only, activate the display if and only if the regime detected is the best"
+                        )
     # ─────────────────────────────────────────────────────
     # REGIME FILTERING OPTIONS (Real-Time Mode Only)
     # ─────────────────────────────────────────────────────
