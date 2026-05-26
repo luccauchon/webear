@@ -9,7 +9,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+from numba import njit
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
@@ -165,6 +165,91 @@ def find_divergences(df, high_col, low_col, rsi_col, ticker, window=5):
     return df, Regular_Bullish_Div_col, Regular_Bearish_Div_col, Hidden_Bullish_Div_col, Hidden_Bearish_Div_col
 
 
+def calculate_win_rates_vectorized(df, _args, close_col, high_col, low_col):
+    """
+    Vectorized version: evaluates all signals simultaneously using NumPy broadcasting.
+    ~10-100x faster than loop-based version for typical datasets.
+    """
+    if _args.lookahead_bars <= 0:
+        return 0.0, 0.0, 0.0, 0, 0, 0, 0
+
+    buy_sig_col = ('Signal_Buy', _args.ticker)
+    sell_sig_col = ('Signal_Sell', _args.ticker)
+
+    # Extract numpy arrays for speed
+    close_prices = df[close_col].to_numpy()
+    high_prices = df[high_col].to_numpy()
+    low_prices = df[low_col].to_numpy()
+
+    # Get signal positions as integer indices
+    buy_positions = np.where(df[buy_sig_col].to_numpy())[0]
+    sell_positions = np.where(df[sell_sig_col].to_numpy())[0]
+
+    lookahead = _args.lookahead_bars
+    method = _args.method
+    n_rows = len(df)
+
+    # ============ BUY SIGNALS ============
+    if len(buy_positions) > 0:
+        # Filter positions with sufficient lookahead data
+        valid_buy_mask = buy_positions + 1 + lookahead <= n_rows
+        valid_buy_pos = buy_positions[valid_buy_mask]
+
+        if len(valid_buy_pos) > 0:
+            entry_prices = close_prices[valid_buy_pos]
+            strikes = entry_prices * _args.put_strike_pct
+
+            # Create 2D index array: [n_signals, lookahead]
+            future_idx = valid_buy_pos[:, None] + np.arange(1, lookahead + 1)
+
+            if method == "final_close":
+                future_closes = close_prices[future_idx]
+                buy_success = future_closes[:, -1] > strikes  # Shape: (n_signals,)
+            else:  # "touched" method
+                future_highs = high_prices[future_idx]
+                buy_success = np.any(future_highs > strikes[:, None], axis=1)
+
+            buy_wins = np.count_nonzero(buy_success)
+            total_buy = len(valid_buy_pos)
+        else:
+            buy_wins = total_buy = 0
+    else:
+        buy_wins = total_buy = 0
+
+    # ============ SELL SIGNALS ============
+    if len(sell_positions) > 0:
+        valid_sell_mask = sell_positions + 1 + lookahead <= n_rows
+        valid_sell_pos = sell_positions[valid_sell_mask]
+
+        if len(valid_sell_pos) > 0:
+            entry_prices = close_prices[valid_sell_pos]
+            strikes = entry_prices * _args.call_strike_pct
+
+            future_idx = valid_sell_pos[:, None] + np.arange(1, lookahead + 1)
+
+            if method == "final_close":
+                future_closes = close_prices[future_idx]
+                sell_success = future_closes[:, -1] < strikes
+            else:  # "touched" method
+                future_lows = low_prices[future_idx]
+                sell_success = np.any(future_lows < strikes[:, None], axis=1)
+
+            sell_wins = np.count_nonzero(sell_success)
+            total_sell = len(valid_sell_pos)
+        else:
+            sell_wins = total_sell = 0
+    else:
+        sell_wins = total_sell = 0
+
+    # Calculate win rates
+    buy_wr = buy_wins / total_buy if total_buy > 0 else 0.0
+    sell_wr = sell_wins / total_sell if total_sell > 0 else 0.0
+    total_sig = total_buy + total_sell
+    combined_wr = (buy_wins + sell_wins) / total_sig if total_sig > 0 else 0.0
+
+    return buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell
+
+
 def calculate_win_rates(df, _args, close_col, high_col, low_col):
     if _args.lookahead_bars <= 0:
         return 0.0, 0.0, 0.0, 0, 0, 0, 0
@@ -207,6 +292,102 @@ def calculate_win_rates(df, _args, close_col, high_col, low_col):
     combined_wr = (buy_wins + sell_wins) / total_sig if total_sig > 0 else 0.0
 
     return buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell
+
+
+def calculate_yearly_win_rates_vectorized(df, args, close_col, high_col, low_col):
+    """Vectorized yearly win rate calculation."""
+    if args.lookahead_bars <= 0:
+        return None
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df = df.copy()
+        df.index = pd.to_datetime(df.index)
+
+    buy_sig_col = ('Signal_Buy', args.ticker)
+    sell_sig_col = ('Signal_Sell', args.ticker)
+
+    df = df.copy()
+    df['_Year'] = df.index.year
+
+    close_prices = df[close_col].to_numpy()
+    high_prices = df[high_col].to_numpy()
+    low_prices = df[low_col].to_numpy()
+    years = df['_Year'].to_numpy()
+    n_rows = len(df)
+    lookahead = args.lookahead_bars
+    method = args.method
+
+    results = []
+
+    for year in sorted(df['_Year'].dropna().unique()):
+        year_mask = (years == year)
+        year_indices = np.where(year_mask)[0]
+
+        # Get signal positions within this year
+        buy_positions = year_indices[df[buy_sig_col].to_numpy()[year_mask]]
+        sell_positions = year_indices[df[sell_sig_col].to_numpy()[year_mask]]
+
+        # Vectorized BUY evaluation
+        if len(buy_positions) > 0:
+            valid_mask = buy_positions + 1 + lookahead <= n_rows
+            valid_pos = buy_positions[valid_mask]
+
+            if len(valid_pos) > 0:
+                entry_prices = close_prices[valid_pos]
+                strikes = entry_prices * args.put_strike_pct
+                future_idx = valid_pos[:, None] + np.arange(1, lookahead + 1)
+
+                if method == "final_close":
+                    future_closes = close_prices[future_idx]
+                    success = future_closes[:, -1] > strikes
+                else:
+                    future_highs = high_prices[future_idx]
+                    success = np.any(future_highs > strikes[:, None], axis=1)
+
+                buy_wins = np.count_nonzero(success)
+                total_buy = len(valid_pos)
+            else:
+                buy_wins = total_buy = 0
+        else:
+            buy_wins = total_buy = 0
+
+        # Vectorized SELL evaluation
+        if len(sell_positions) > 0:
+            valid_mask = sell_positions + 1 + lookahead <= n_rows
+            valid_pos = sell_positions[valid_mask]
+
+            if len(valid_pos) > 0:
+                entry_prices = close_prices[valid_pos]
+                strikes = entry_prices * args.call_strike_pct
+                future_idx = valid_pos[:, None] + np.arange(1, lookahead + 1)
+
+                if method == "final_close":
+                    future_closes = close_prices[future_idx]
+                    success = future_closes[:, -1] < strikes
+                else:
+                    future_lows = low_prices[future_idx]
+                    success = np.any(future_lows < strikes[:, None], axis=1)
+
+                sell_wins = np.count_nonzero(success)
+                total_sell = len(valid_pos)
+            else:
+                sell_wins = total_sell = 0
+        else:
+            sell_wins = total_sell = 0
+
+        # Calculate rates
+        buy_wr = buy_wins / total_buy if total_buy > 0 else 0.0
+        sell_wr = sell_wins / total_sell if total_sell > 0 else 0.0
+        total_sig = total_buy + total_sell
+        combined_wr = (buy_wins + sell_wins) / total_sig if total_sig > 0 else 0.0
+
+        results.append({
+            'Year': year, 'Buy Signals': total_buy, 'Buy Wins': buy_wins, 'Buy WR %': buy_wr * 100,
+            'Sell Signals': total_sell, 'Sell Wins': sell_wins, 'Sell WR %': sell_wr * 100,
+            'Total Signals': total_sig, 'Combined WR %': combined_wr * 100
+        })
+
+    df.drop(columns=['_Year'], inplace=True, errors='ignore')
+    return pd.DataFrame(results) if results else None
 
 
 def calculate_yearly_win_rates(df, args, close_col, high_col, low_col):
@@ -605,7 +786,14 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, rsi_
     df[('Signal_Buy', _args.ticker)] = df[buy_cols].fillna(False).any(axis=1)
     df[('Signal_Sell', _args.ticker)] = df[sell_cols].fillna(False).any(axis=1)
 
-    buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell = calculate_win_rates(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
+    buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell = calculate_win_rates_vectorized(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
+    if _args.sanity_check:
+        buy_wr2, sell_wr2, combined_wr2, buy_wins2, sell_wins2, total_buy2, total_sell2 = calculate_win_rates(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
+        assert np.allclose(buy_wr, buy_wr2)
+        assert np.allclose(sell_wr, sell_wr2)
+        assert np.allclose(combined_wr, combined_wr2)
+        assert np.allclose(buy_wins, buy_wins2)
+        assert np.allclose(sell_wins, sell_wins2)
     eval_buy, eval_sell = total_buy, total_sell
     total_bars = len(df.dropna(subset=[close_col]))
     buy_density = int(df[('Signal_Buy', _args.ticker)].sum()) / total_bars if total_bars > 0 else 0
@@ -685,6 +873,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False, help='Short real-time output')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
     flag_group.add_argument('--plot', action='store_true', default=False, help='Plot results with matplotlib')
+    flag_group.add_argument('--sanity-check', action='store_true', default=False, help='Check vectorized implementation consistency')
 
     return parser
 
@@ -812,7 +1001,10 @@ def entry(args):
     total_bars = len(df_final.dropna(subset=[close_col]))
 
     if args.verbose:
-        yearly_stats = calculate_yearly_win_rates(df_final, args, close_col, high_col, low_col)
+        yearly_stats = calculate_yearly_win_rates_vectorized(df_final, args, close_col, high_col, low_col)
+        if args.sanity_check:
+            yearly_stats2 = calculate_yearly_win_rates(df_final, args, close_col, high_col, low_col)
+            print(f"{yearly_stats}  vs  {yearly_stats2}")
         print_yearly_stats(yearly_stats, args.ticker)
 
         print(f"\n📊 {args.ticker} | Valid Bars: {total_bars}")
