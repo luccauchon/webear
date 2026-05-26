@@ -65,7 +65,7 @@ from optuna.samplers import TPESampler
 
 # Statistics
 from statsmodels.stats.proportion import proportion_confint
-
+from numba import njit
 # Logging configuration
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=FutureWarning)
