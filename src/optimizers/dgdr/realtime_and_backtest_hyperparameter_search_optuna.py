@@ -146,7 +146,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=20, dest='lookahead_bars', help='Forward-looking window')
-    strat_group.add_argument('--method', type=str, default='any', choices=['any', 'exact'], help='Strike evaluation method')
+    strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
     strat_group.add_argument('--min-signal-density', type=float, default=0.04, help='Min signal frequency threshold')
     strat_group.add_argument('--put-strike-pct', type=float, default=0.96, help='Base put strike multiplier')
     strat_group.add_argument('--call-strike-pct', type=float, default=1.04, help='Base call strike multiplier')
@@ -246,9 +246,8 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
                          B, method, put__strike_pct, call__strike_pct, silent=False):
     """Evaluates credit spread signals and generates a P&L report."""
     results = []
-    assert method in ["any", "exact"]
+    assert method in ["touched", "final_close"]
     assert 0 < put__strike_pct <= 1 <= call__strike_pct < 2
-    credit_per_trade, max_loss_per_trade = 50, 500
 
     for sig in signals:
         idx = sig['Index']
@@ -263,13 +262,12 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
         strike = None
         if sig_type == 'BUY':
             strike = price * put__strike_pct
-            success = future_df[close_col].iloc[-1] > strike if method == "exact" else (future_df[high_col] > strike).any()
+            success = future_df[close_col].iloc[-1] > strike if method == "final_close" else (future_df[high_col] > strike).any()
         elif sig_type == 'SELL':
             strike = price * call__strike_pct
-            success = future_df[close_col].iloc[-1] < strike if method == "exact" else (future_df[low_col] < strike).any()
+            success = future_df[close_col].iloc[-1] < strike if method == "final_close" else (future_df[low_col] < strike).any()
 
-        pnl = credit_per_trade if success else -max_loss_per_trade
-        results.append({'Signal_Index': idx, 'Type': sig_type, 'Entry_Price': price, 'Strike_Price': strike, 'Method': method, 'Success': success, 'PnL': pnl})
+        results.append({'Signal_Index': idx, 'Type': sig_type, 'Entry_Price': price, 'Strike_Price': strike, 'Method': method, 'Success': success, 'PnL': 0.})
 
     pnl_df = pd.DataFrame(results)
     if pnl_df.empty:
@@ -280,9 +278,6 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
     total_trades = len(pnl_df)
     wins = pnl_df['Success'].sum()
     win_rate = (wins / total_trades) * 100
-    total_pnl = pnl_df['PnL'].sum()
-    avg_pnl = pnl_df['PnL'].mean()
-    max_drawdown = (pnl_df['Cumulative_PnL'].cummax() - pnl_df['Cumulative_PnL']).max()
     trade_density = total_trades / len(df)
 
     pnl_df['trade_density'] = trade_density
@@ -291,7 +286,7 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
 
     if not silent:
         print("\n" + "=" * 42)
-        print(" 📈 CREDIT SPREAD P&L REPORT")
+        print(" 📈 CREDIT SPREAD REPORT")
         print("=" * 42)
         print(f" Dataset Length        : {len(df):,}")
         print(f" Trade Density         : {trade_density:.2%}")
@@ -300,9 +295,6 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
         print(f" Total Trades          : {total_trades}")
         print(f" Winning / Losing      : {wins} / {total_trades - wins}")
         print(f" Win Rate              : {win_rate:.2f}%")
-        print(f" Total PnL             : ${total_pnl:,.2f}")
-        print(f" Avg PnL / Trade       : ${avg_pnl:,.2f}")
-        print(f" Max Drawdown          : ${max_drawdown:,.2f}")
         print("=" * 42 + "\n")
 
     return pnl_df
@@ -324,8 +316,8 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
     st_multipler = trial.suggest_int("st_multipler", 1, 5, step=1)
     st_length = trial.suggest_int("st_length", 3, 20, step=1)
     rsi_length = trial.suggest_int("rsi_length", 2, 21, step=1)
-    sup_wick_null_coef = trial.suggest_float("sup_wick_null_coef", 0.0, 0.5)
-    inf_wick_null_coef = trial.suggest_float("inf_wick_null_coef", 0.0, 0.5)
+    sup_wick_null_coef = trial.suggest_float("sup_wick_null_coef", 0.0, 0.95, step=0.01)
+    inf_wick_null_coef = trial.suggest_float("inf_wick_null_coef", 0.0, 0.95, step=0.01)
     buy_rsi_threshold = trial.suggest_int("buy_rsi_threshold", 50, 95, step=1)
     sell_rsi_threshold = trial.suggest_int("sell_rsi_threshold", 5, 50, step=1)
 
@@ -456,7 +448,7 @@ def perfect_score_callback(study, trial):
 def entry(args):
     print("\n" + "═" * 62)
     print(" 🎯 DGDR ALGORITHM INITIALIZED")
-    print("    Double Green / Double Red Momentum Sniper")
+    print("    Double Green / Double Red Momentum")
     print("═" * 62)
     print(" 📖 CORE CONCEPT:")
     print("    A price-action momentum system that detects accelerating")
@@ -475,7 +467,7 @@ def entry(args):
     print("    • Optuna auto-tunes SuperTrend, RSI & Wick thresholds")
     print("    • Composite scoring: Weighted Win-Rate + Trade-Density")
     print("    • Backtests credit-spread outcomes over lookahead window (B)")
-    print("    • Supports 'any' (price touch) or 'exact' (close) strikes")
+    print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
     print("═" * 62 + "\n")
 
     ticker = args.ticker
@@ -568,9 +560,9 @@ def entry(args):
             if not dir_pnl.empty:
                 wr = dir_pnl['win_rate'].iloc[0]
                 td = dir_pnl['trade_density'].iloc[0]
-                pnl_total = dir_pnl['PnL'].sum()
+                desc = "PUT CREDIT SPREAD (bearish)" if dir_type == 'BUY' else "CALL CREDIT SPREAD (bullish)"
                 trades = len(dir_pnl)
-                print(f"  {dir_type:<6} | Trades: {trades:>4} | Win Rate: {wr:>5.2f}% | Density: {td:.4f} | PnL: ${pnl_total:>8,.2f}")
+                print(f"  {dir_type:<6} | Trades: {trades:>4} | Win Rate: {wr:>5.2f}% | Density: {td:.4f} | {desc}")
             else:
                 print(f"  {dir_type:<6} | {len(dir_signals):>4} signals generated (0 valid for PnL lookahead)")
         else:
