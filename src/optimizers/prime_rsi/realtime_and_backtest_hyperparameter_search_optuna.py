@@ -835,7 +835,7 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
 
 def setup_argparse() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="TODO Strategy Optimizer & Real-Time Monitor",
+        description="Strategy Optimizer & Real-Time Monitor",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     data_group = parser.add_argument_group('Data & Symbol')
@@ -890,7 +890,7 @@ def print_startup_banner(args):
 ║  🔹 Ticker       : {args.ticker:<58}║
 ║  🔹 Dataset      : {args.dataset_id:<58}║
 ║  🔹 Mode         : {'REAL-TIME' if args.real_time else 'OPTIMIZATION' if args.optimize else 'EVALUATION' if args.model_path else 'DEFAULT BACKTEST':<58}║
-║  🔹 Lookahead    : {args.lookahead_bars} bars{' '*51}║
+║  🔹 Lookahead    : {args.lookahead_bars:02d} bars{' '*51}║
 ║  🔹 Method       : {args.method:<58}║
 ║  🔹 Strike Pct   : Put {args.put_strike_pct:.2%} | Call {args.call_strike_pct:.2%}{' '*33}║
 ╚{'═'*78}╝
