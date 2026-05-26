@@ -296,16 +296,15 @@ def entry():
                     "| -------- | ------------------------------------------------ | ----------------------------- |"+
                     "| **0–3**  | Low drop probability                             | Enter normal position         |"+
                     "| **4–6**  | Medium risk                                      | Reduce size 30–50%            |"+
-                    "| **7–10** | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
+                    "| **7–8** | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
     print("\n" + "="*60)
-    print(f"FINAL REGIME SCORE: {score}/6")
+    print(f"FINAL REGIME SCORE: {score}")
     print("| Score    | Meaning                                          | Action for credit put spreads |")
     print("| -------- | ------------------------------------------------ | ----------------------------- |")
     print("| **0–3**  | Low drop probability                             | Enter normal position         |")
     print("| **4–6**  | Medium risk                                      | Reduce size 30–50%            |")
-    print("| **7–10** | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
-    # Note: max possible is 6 (2+3+1? Actually A=3, B=3, C=2 → max=8)
-    # But your table says up to 10. Clarify if needed.
+    print("| **7–8** | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
+    # Note: max possible is 8 (2+3+1? Actually A=3, B=3, C=2 → max=8)
     return score, str_response
 
 
