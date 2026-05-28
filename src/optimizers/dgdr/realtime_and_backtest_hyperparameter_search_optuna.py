@@ -122,7 +122,6 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
             ax1_inset.set_yticks([])
             ax1_inset.set_title('Zoom', fontsize=8, fontweight='bold')
             ax1_inset.grid(True, alpha=0.3)
-            # 🔧 FIXED: Removed Rectangle patch (crashes on datetime indices)
             ax1.indicate_inset_zoom(ax1_inset, edgecolor="gold", alpha=0.7)
 
     plt.setp(ax3.xaxis.get_majorticklabels(), rotation=45, ha='right')
@@ -157,6 +156,8 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials')
     opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
+    # ✅ NEW: Train/Validation split ratio
+    opt_group.add_argument('--train-ratio', type=float, default=0.7, help='Fraction of data used for training/optimization (rest for validation)')
 
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
@@ -504,20 +505,30 @@ def entry(args):
         run_real_time_mode(args, df, config_cols)
         return
 
+    # ✅ TRAIN / VALIDATION CHRONOLOGICAL SPLIT
+    split_idx = int(len(df) * args.train_ratio)
+    df_train = df.iloc[:split_idx].copy()
+    df_val = df.iloc[split_idx:].copy()
+
+    print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Val: {len(df_val):,} ({1 - args.train_ratio:.0%})")
+    if len(df_val) < 50:
+        print(f"⚠️  Validation set is small ({len(df_val)} bars). Out-of-sample metrics may be noisy.\n")
+
     B = args.lookahead_bars
     method = args.method
     min_density = args.min_signal_density
     put_base, call_base = args.put_strike_pct, args.call_strike_pct
     wr_w, td_w = args.wr_weight, args.td_weight
 
-    print(f"🔍 Starting Optuna optimization ({args.n_trials} trials | timeout={args.timeout}s)...")
+    # ✅ OPTIMIZE ON TRAINING SET ONLY
+    print(f"🔍 Starting Optuna optimization on TRAINING SET ({len(df_train):,} bars)...")
     print(f"📉 Min Trade Density: {min_density:.2%} | Look Ahead: {B} | Method: {method.upper()}")
     print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()}")
     print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.2f}, {call_base:.2f}]\n")
 
     study = optuna.create_study(direction="maximize")
     study.optimize(
-        lambda trial: objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
+        lambda trial: objective(trial, df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
                                 B, method, min_density, wr_w, td_w, put_base, call_base, signal_type=args.signal_type),
         n_trials=args.n_trials,
         timeout=args.timeout,
@@ -531,31 +542,31 @@ def entry(args):
         print(f"   {k:<25}: {v}")
     print(f"   {'Objective Score':<25}: {study.best_trial.value:.4f} (max=1.0)\n")
 
-    # Final backtest
-    print("📉 Running final validation backtest...")
+    # ✅ FINAL VALIDATION BACKTEST
+    print("📉 Running final validation backtest on VALIDATION SET...")
     best = study.best_trial.params
-    signals = dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_col, ticker,
-                                       st_multipler=best['st_multipler'], st_length=best['st_length'],
-                                       sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
-                                       buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'])
+    signals_val = dgdr_strategy_vectorized(df_val, close_col, volume_col, open_col, high_col, low_col, ticker,
+                                           st_multipler=best['st_multipler'], st_length=best['st_length'],
+                                           sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
+                                           buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'])
 
     # Apply filter for main report if requested
-    main_signals = signals.copy()
+    main_signals = signals_val.copy()
     if args.signal_type == 'buy':
-        main_signals = [s for s in signals if s['Type'] == 'BUY']
+        main_signals = [s for s in signals_val if s['Type'] == 'BUY']
     elif args.signal_type == 'sell':
-        main_signals = [s for s in signals if s['Type'] == 'SELL']
+        main_signals = [s for s in signals_val if s['Type'] == 'SELL']
 
-    pnl_df = calculate_pnl_report(main_signals, df, close_col, high_col, low_col,
+    pnl_df = calculate_pnl_report(main_signals, df_val, close_col, high_col, low_col,
                                   B, method, best['put__strike_pct'], best['call__strike_pct'], silent=False)
 
     # 📊 POST-HOC DIRECTIONAL BREAKDOWN (Always runs for both directions)
-    print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc)")
+    print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc Validation)")
     print("─" * 65)
     for dir_type in ['BUY', 'SELL']:
-        dir_signals = [s for s in signals if s['Type'] == dir_type]
+        dir_signals = [s for s in signals_val if s['Type'] == dir_type]
         if dir_signals:
-            dir_pnl = calculate_pnl_report(dir_signals, df, close_col, high_col, low_col,
+            dir_pnl = calculate_pnl_report(dir_signals, df_val, close_col, high_col, low_col,
                                            B, method, best['put__strike_pct'], best['call__strike_pct'], silent=True)
             if not dir_pnl.empty:
                 wr = dir_pnl['win_rate'].iloc[0]
@@ -569,12 +580,11 @@ def entry(args):
             print(f"  {dir_type:<6} |    0 signals generated")
     print("─" * 65 + "\n")
 
-    # Plotting
+    # Plotting (uses validation data for out-of-sample visualization)
     if args.plot and not pnl_df.empty:
         plot_signals = main_signals
         if plot_signals:
-            df_plot = prepare_plot_dataframe(df, ticker, plot_signals, price_col_name="Close")
-            # 🔧 FIXED: Pass string 'Close' instead of tuple to match flattened column
+            df_plot = prepare_plot_dataframe(df_val, ticker, plot_signals, price_col_name="Close")
             plot_forecast_results(df_plot, price_col='Close', sample=2000, highlight_signals=True)
         else:
             print("⚠️ No signals of the selected type found to plot.")
