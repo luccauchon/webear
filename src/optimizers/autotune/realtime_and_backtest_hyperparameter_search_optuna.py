@@ -439,8 +439,8 @@ def entry(args):
             bandwidth             = trial.suggest_float('bandwidth', bandwidth_min, bandwidth_max, step=bandwidth_step)
             threshold             = trial.suggest_float('threshold', threshold_min, threshold_max, step=threshold_step)
             _lookahead_bars       = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars)
-            enable_above_baseline = trial.suggest_int('enable_above_baseline', 1, 1)
-            enable_below_baseline = trial.suggest_int('enable_below_baseline', 1, 1)
+            enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
+            enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
 
             strat = AutoTuneStrategy(
                 window=window, bandwidth=bandwidth, threshold=threshold,
