@@ -9,7 +9,10 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.ticker import FuncFormatter
+from optuna.pruners import MedianPruner
 import argparse
 import numpy as np
 import pandas as pd
@@ -52,6 +55,8 @@ def _bandpass2(data: np.ndarray, period: np.ndarray, bandwidth: float) -> np.nda
         p = 4.0 if p < 4.0 else (100.0 if p > 100.0 else p)
         L1 = np.cos(2 * np.pi / p)
         G1 = np.cos(bandwidth * 2 * np.pi / p)
+        if abs(G1) < 1e-10:
+            G1 = 1e-10 if G1 >= 0 else -1e-10
         G1 = -0.99 if G1 < -0.99 else (0.99 if G1 > 0.99 else G1)
         disc = 1.0 / (G1 ** 2) - 1.0
         disc = 0.0 if disc < 0.0 else disc
@@ -108,58 +113,54 @@ def _auto_tune(data: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray, n
 @njit(cache=True)
 def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np.ndarray,
                   hp: np.ndarray, window: int, bandwidth: float, threshold: float,
-                  capital: float, margin_cost: float, commission: float,
-                  lookahead_bars: int, win_threshold: float) -> Tuple:
+                  lookahead_bars: int, win_threshold: float, signal_type: int, enable_above_baseline: int, enable_below_baseline: int) -> Tuple:
     n = len(prices)
     bp = _bandpass2(prices, dc_series, bandwidth)
     roc = np.zeros(n)
     for i in range(2, n): roc[i] = bp[i] - bp[i - 2]
     signals = np.zeros(n)
-    positions = np.zeros(n)
-    equity = np.zeros(n)
-    equity[0] = capital
-    profit_total = 0.0
-    current_pos = 0.0
-    entry_price = 0.0
     start_i = max(window + 10, 5)
+
     for i in range(start_i, n):
-        lots = 0.5 * (capital + np.sqrt(1 + profit_total / capital)) / margin_cost
-        lots = 0.1 if lots < 0.1 else (10.0 if lots > 10.0 else lots)
-        if roc[i] > 0 and roc[i - 1] <= 0 and min_corr_series[i] < threshold and current_pos <= 0:
-            signals[i] = 1.0
-            if current_pos != 0: profit_total += current_pos * (prices[i] - entry_price)
-            entry_price = prices[i];
-            current_pos = lots
-            profit_total -= lots * entry_price * commission
-        elif roc[i] < 0 and roc[i - 1] >= 0 and min_corr_series[i] < threshold and hp[i] > 0 and current_pos >= 0:
-            signals[i] = -1.0
-            if current_pos != 0: profit_total += current_pos * (prices[i] - entry_price)
-            entry_price = prices[i];
-            current_pos = -lots
-            profit_total -= lots * entry_price * commission
-        if current_pos != 0:
-            positions[i] = current_pos
-            profit_total = current_pos * (prices[i] - entry_price)
-        equity[i] = capital + profit_total
+        long_cross = roc[i] > 0 >= roc[i - 1]
+        short_cross = roc[i] < 0 <= roc[i - 1]
+        strong_cycle = min_corr_series[i] < threshold
+        above_baseline = hp[i] > 0 if enable_above_baseline else True
+        below_baseline = hp[i] < 0 if enable_below_baseline else True
+
+        if signal_type == 1:  # LONG ONLY
+            if long_cross and strong_cycle and below_baseline:
+                signals[i] = 1.0
+        elif signal_type == -1:  # SHORT ONLY
+            if short_cross and strong_cycle and above_baseline:
+                signals[i] = -1.0
+        else:  # BOTH
+            if long_cross and strong_cycle and below_baseline:
+                signals[i] = 1.0
+            elif short_cross and strong_cycle and above_baseline:
+                signals[i] = -1.0
 
     # 📊 Forward Metrics Arrays
     forward_returns = np.zeros(n)
-    within_bound = np.zeros(n)  # win_rate_2
-    within_lower = np.zeros(n)  # win_rate_3
-    within_upper = np.zeros(n)  # win_rate_4
+    within_bound = np.zeros(n)  # range_bound metric
+    within_lower = np.zeros(n)  # hold_floor metric
+    within_upper = np.zeros(n)  # hold_ceiling metric
+    above_upper_last = np.zeros(n)  # finish_above metric
+    below_lower_last = np.zeros(n)  # finish_below metric
 
     for i in range(n):
         if signals[i] != 0:
             end = min(n, i + lookahead_bars + 1)
+            last_idx = end - 1
 
-            # 1️⃣ Forward Return (Best signed return)
-            best_ret = 0.0
+            # 1️⃣ Forward Return (Best signed return) -> profit_target
+            best_ret = -np.inf
             for j in range(i + 1, end):
                 ret = (prices[j] / prices[i] - 1.0) * signals[i]
                 if ret > best_ret: best_ret = ret
             forward_returns[i] = best_ret
 
-            # 2️⃣ win_rate_2: Stayed inside ±win_threshold band
+            # 2️⃣ range_bound: Stayed inside ±win_threshold band
             if signals[i] > 0.0:
                 max_p = prices[i]
                 for j in range(i + 1, end):
@@ -171,19 +172,25 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
                     if prices[j] < min_p: min_p = prices[j]
                 within_bound[i] = 1.0 if min_p >= prices[i] * (1.0 - win_threshold) else 0.0
 
-            # 3️⃣ win_rate_3: Stayed ABOVE entry*(1 - win_threshold)
+            # 3️⃣ hold_floor: Stayed ABOVE entry*(1 - win_threshold)
             min_p = prices[i]
             for j in range(i + 1, end):
                 if prices[j] < min_p: min_p = prices[j]
             within_lower[i] = 1.0 if min_p >= prices[i] * (1.0 - win_threshold) else 0.0
 
-            # 4️⃣ win_rate_4: Stayed BELOW entry*(1 + win_threshold)
+            # 4️⃣ hold_ceiling: Stayed BELOW entry*(1 + win_threshold)
             max_p = prices[i]
             for j in range(i + 1, end):
                 if prices[j] > max_p: max_p = prices[j]
             within_upper[i] = 1.0 if max_p <= prices[i] * (1.0 + win_threshold) else 0.0
 
-    return signals, positions, equity, forward_returns, within_bound, within_lower, within_upper, bp, roc
+            # 5️⃣ finish_above: Close at LAST lookahead bar > entry * (1 + win_threshold)
+            above_upper_last[i] = 1.0 if prices[last_idx] > prices[i] * (1.0 + win_threshold) else 0.0
+            # 6️⃣ finish_below: Close at LAST lookahead bar < entry * (1 - win_threshold)
+            below_lower_last[i] = 1.0 if prices[last_idx] < prices[i] * (1.0 - win_threshold) else 0.0
+
+    positions, equity = None, None
+    return signals, positions, equity, forward_returns, within_bound, within_lower, within_upper, bp, roc, above_upper_last, below_lower_last
 
 
 # =============================================================================
@@ -191,99 +198,72 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
 # =============================================================================
 class AutoTuneStrategy:
     def __init__(self, window: int = 26, bandwidth: float = 0.22, threshold: float = -0.22,
-                 capital: float = 100_000, margin_cost: float = 5000, commission: float = 0.0005,
-                 lookahead_bars: int = 5, win_threshold: float = 0.01):
+                 lookahead_bars: int = 5, win_threshold: float = 0.01, signal_type: int = 0,
+                 enable_above_baseline: int = 1, enable_below_baseline: int = 1):
         self.window = window
         self.bandwidth = bandwidth
         self.threshold = threshold
-        self.capital = capital
-        self.margin_cost = margin_cost
-        self.commission = commission
         self.lookahead_bars = lookahead_bars
         self.win_threshold = win_threshold
+        self.signal_type = signal_type  # 1: long, -1: short, 0: both
+        self.enable_above_baseline = enable_above_baseline
+        self.enable_below_baseline = enable_below_baseline
 
     def generate_signals(self, prices) -> pd.DataFrame:
         prices = np.asarray(prices, dtype=np.float64)
-        dc_series, min_corr_series, hp = _auto_tune(prices, self.window)
-        sig, pos, eq, fwd, wr2, wr3, wr4, bp, roc = _run_backtest(
-            prices, dc_series, min_corr_series, hp,
-            self.window, self.bandwidth, self.threshold,
-            self.capital, self.margin_cost, self.commission,
-            self.lookahead_bars, self.win_threshold
+        dc_series, min_corr_series, hp = _auto_tune(data=prices, window=self.window)
+        sig, _, _, fwd, wr2, wr3, wr4, bp, roc, wr5, wr6 = _run_backtest(
+            prices=prices, dc_series=dc_series, min_corr_series=min_corr_series, hp=hp,
+            window=self.window, bandwidth=self.bandwidth, threshold=self.threshold,
+            win_threshold=self.win_threshold, lookahead_bars=self.lookahead_bars,
+            signal_type=self.signal_type, enable_below_baseline=self.enable_below_baseline, enable_above_baseline=self.enable_above_baseline
         )
         LA = self.lookahead_bars
         return pd.DataFrame({
             'price': prices, 'dominant_cycle': dc_series, 'bandpass': bp, 'roc': roc,
             'min_correlation': min_corr_series, 'highpass': hp, 'signal': sig,
-            'position': pos, 'equity': eq,
             f'forward_return_{LA}b': fwd,
             f'stay_in_band_{LA}b': wr2,
             f'stay_above_lower_{LA}b': wr3,
-            f'stay_below_upper_{LA}b': wr4
+            f'stay_below_upper_{LA}b': wr4,
+            f'above_upper_last_{LA}b': wr5,
+            f'below_lower_last_{LA}b': wr6
         })
 
-    def evaluate(self, results: pd.DataFrame, min_bars: int = 100, signal_type: str = 'both') -> Dict:
-        if signal_type not in ('long', 'short', 'both'):
-            raise ValueError("signal_type must be 'long', 'short', or 'both'")
-
-        df = results.iloc[min_bars:].copy()
+    def evaluate(self, results: pd.DataFrame) -> Dict:
+        df = results.copy()
         LA = self.lookahead_bars
         fwd_col = f'forward_return_{LA}b'
         wr2_col = f'stay_in_band_{LA}b'
         wr3_col = f'stay_above_lower_{LA}b'
         wr4_col = f'stay_below_upper_{LA}b'
+        wr5_col = f'above_upper_last_{LA}b'
+        wr6_col = f'below_lower_last_{LA}b'
 
-        if signal_type == 'long':
-            signals = df[df['signal'] == 1.0].copy();
-            label = 'long'
-        elif signal_type == 'short':
-            signals = df[df['signal'] == -1.0].copy();
-            label = 'short'
-        else:
-            signals = df[df['signal'] != 0].copy();
-            label = 'both'
+        signals = df[df['signal'] != 0].copy()
+        label = 'long' if self.signal_type == 1 else ('short' if self.signal_type == -1 else 'both')
 
         total_signals = len(signals)
         if total_signals == 0:
             return {'status': f'No {label} signals generated in evaluation period'}
 
-        win_rate = (signals[fwd_col].values > self.win_threshold).mean()
-        win_rate_2 = signals[wr2_col].values.mean()
-        win_rate_3 = signals[wr3_col].values.mean()
-        win_rate_4 = signals[wr4_col].values.mean()
-
-        equity = df['equity'].values
-        peak = np.maximum.accumulate(equity)
-        drawdown, max_dd, total_return, sharpe_approx = 0, 0, 0, 0
-        with np.errstate(divide='ignore', invalid='ignore'):
-            try:
-                drawdown = (equity - peak) / peak
-                max_dd = drawdown.min()
-            except Exception:
-                drawdown = 0;
-                max_dd = 0
-            try:
-                total_return = (equity[-1] / equity[0]) - 1 if len(equity) > 0 else 0.0
-            except Exception:
-                total_return = 0
-            try:
-                std_dd = np.std(drawdown)
-                sharpe_approx = total_return / (std_dd + 1e-10) if std_dd > 0 else 0
-            except Exception:
-                sharpe_approx = 0
+        profit_target = (signals[fwd_col].values > self.win_threshold).mean()
+        range_bound = signals[wr2_col].values.mean()
+        hold_floor = signals[wr3_col].values.mean()
+        hold_ceiling = signals[wr4_col].values.mean()
+        finish_above = signals[wr5_col].values.mean()
+        finish_below = signals[wr6_col].values.mean()
 
         return {
             'total_signals': total_signals,
             'signal_type': label,
-            f'win_rate_{label}_{LA}b': f"{win_rate * 100:.1f}%",
-            f'win_rate_2_{label}_{LA}b': f"{win_rate_2 * 100:.1f}%",
-            f'win_rate_3_{label}_{LA}b': f"{win_rate_3 * 100:.1f}%",
-            f'win_rate_4_{label}_{LA}b': f"{win_rate_4 * 100:.1f}%",
+            f'profit_target_{label}_{LA}b': f"{profit_target * 100:.1f}%",
+            f'range_bound_{label}_{LA}b': f"{range_bound * 100:.1f}%",
+            f'hold_floor_{label}_{LA}b': f"{hold_floor * 100:.1f}%",
+            f'hold_ceiling_{label}_{LA}b': f"{hold_ceiling * 100:.1f}%",
+            f'finish_above_{label}_{LA}b': f"{finish_above * 100:.1f}%",
+            f'finish_below_{label}_{LA}b': f"{finish_below * 100:.1f}%",
             f'expectancy_{label}_{LA}b': f"{signals[fwd_col].mean() * 100:.3f}%",
-            'total_return': f"{total_return * 100:.2f}%",
-            'max_drawdown': f"{max_dd * 100:.2f}%",
-            'sharpe_approx': f"{sharpe_approx:.2f}",
-            'final_equity': f"${equity[-1]:,.0f}" if len(equity) > 0 else "$0"
         }
 
 
@@ -305,26 +285,18 @@ def setup_argparse() -> argparse.ArgumentParser:
                             help='Number of trailing data points to load from cache')
 
     strat_group = parser.add_argument_group('Strategy Parameters')
-    strat_group.add_argument('--capital', type=float, default=100_000,
-                             help='Initial account capital for position sizing')
-    strat_group.add_argument('--margin-cost', type=float, default=5_000,
-                             help='Cost per contract/margin unit')
-    strat_group.add_argument('--commission', type=float, default=0.0005,
-                             help='Commission rate per trade (e.g., 0.0005 = 0.05%%)')
     strat_group.add_argument('--lookahead-bars', type=int, default=10,
                              help='Forward-looking window (in bars) for signal evaluation')
     strat_group.add_argument('--win-threshold', type=float, default=0.04,
                              help='Price movement threshold for win-rate calculation (0.04 = 4%%)')
-    strat_group.add_argument('--min-bars', type=int, default=100,
-                             help='Warm-up period (bars) before starting signal evaluation')
     strat_group.add_argument('--min-signal-density', type=float, default=0.04,
                              help='Minimum number of signal detected w.r.t. the total length of df (n-signals / total-length-df) to be considered as a valid optimization pass (0.04 = 4%%)')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
-    opt_group.add_argument('--signal-type', type=str, choices=['long', 'short', 'both'], default='long',
-                           help='Direction of signals to analyze/optimize')
-    opt_group.add_argument('--optimize', type=str, choices=['win_rate', 'win_rate_2', 'win_rate_3', 'win_rate_4'], default='win_rate_3',
-                           help='Objective metric for Optuna to maximize')
+    opt_group.add_argument('--optimize', type=str,
+                           choices=['profit_target', 'range_bound', 'hold_floor', 'hold_ceiling', 'finish_above', 'finish_below'],
+                           default='hold_floor',
+                           help='Metric to maximize. Auto-infers signal direction: hold_floor/finish_above → LONG, hold_ceiling/finish_below → SHORT, profit_target/range_bound → BOTH')
     opt_group.add_argument('--n-trials', type=int, default=999999,
                            help='Number of Optuna optimization trials')
     opt_group.add_argument('--timeout', type=int, default=86400,
@@ -341,7 +313,15 @@ def setup_argparse() -> argparse.ArgumentParser:
                             help='Print detailed progress, metrics, and explanations')
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False,
                             help='For Real-Time Only, Print very short progress, metrics, and explanations')
+    flag_group.add_argument('--plot', action=argparse.BooleanOptionalAction, default=False,
+                            help='Generate and display visualization plots of strategy results after optimization')
     return parser
+
+
+def perfect_score_callback(study, trial):
+    if study.best_value is not None and study.best_value >= 0.9999:
+        print("\n🎯 Perfect score reached (≥ 0.9999). Stopping optimization early.")
+        study.stop()
 
 
 # =============================================================================
@@ -357,7 +337,7 @@ def entry(args):
     real_time = args.real_time
     output_dir = args.output_dir
     length_dataset = args.length_dataset
-
+    optimize_metric = args.optimize
     np.random.seed(42)
 
     filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
@@ -391,57 +371,72 @@ def entry(args):
 
         rt_params = saved_model['params']
         rt_win_threshold = saved_model['win_threshold']
-        strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold)
+        rt_signal_type = saved_model.get('signal_type', 0)
+        strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
         assert dataset_id == saved_model['dataset_id'], f"{dataset_id} == {saved_model['dataset_id']}"
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']
-        assert ticker == saved_model['ticker'] if 'ticker' in saved_model else True
+        if 'ticker' in saved_model and ticker != saved_model['ticker']:
+            raise ValueError(f"Ticker mismatch: CLI={ticker}, Model={saved_model['ticker']}")
         # 📊 SIGNAL COUNTING
         total_rt_signals = (results_rt['signal'] != 0).sum()
         long_rt = (results_rt['signal'] == 1.0).sum()
         short_rt = (results_rt['signal'] == -1.0).sum()
-        if saved_model['signal_type'] == 'both':
-            signal_density = total_rt_signals / len(closes)
-        elif saved_model['signal_type'] == 'long':
-            signal_density = long_rt / len(closes)
-        elif saved_model['signal_type'] == 'short':
-            signal_density = short_rt / len(closes)
+        signal_density = total_rt_signals / len(closes)
         last_price = last_row['price']
         last_date = spx.index[-1].strftime('%Y-%m-%d')
         la_date = get_next_step(the_date=spx.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
         signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
+
+        if rt_signal_type in ('long', 'both'):
+            print(f"There's a {saved_model['score']:.2%} historical probability that if you enter LONG now at price ${last_price:.0f}, the price will not fall below ${last_price:.0f} × {1 - rt_win_threshold} at any point during the next {saved_model['params']['lookahead_bars']} bars.")
+        if rt_signal_type in ('short', 'both'):
+            print(f"There's a {saved_model['score']:.2%} historical probability that if you enter SHORT now at price ${last_price:.0f}, the price will not rise above ${last_price:.0f} × {1 + rt_win_threshold} at any point during the next {saved_model['params']['lookahead_bars']} bars.")
+
         if verbose_short:
             if last_signal != 0:
-                if saved_model['optimize_metric'] == 'win_rate_3':
+                metric_ok = (last_signal == 1 and saved_model['optimize_metric'] in ('hold_floor', 'finish_above')) or \
+                            (last_signal == -1 and saved_model['optimize_metric'] in ('hold_ceiling', 'finish_below'))
+                if saved_model['optimize_metric'] == 'hold_floor':
                     if last_signal == 1. and saved_model['signal_type'] == 'long':
                         if saved_model['score'] >= .66:
-                            print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price*(1-rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                            print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price * (1 - rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
                     else:
                         assert last_signal == -1.
-                else:
-                    if saved_model['optimize_metric'] == 'win_rate_4':
-                        if last_signal == -1. and saved_model['signal_type'] == 'short':
-                            if saved_model['score'] >= .66:
-                                print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
-                        else:
-                            assert last_signal == 1.
+                elif saved_model['optimize_metric'] == 'hold_ceiling':
+                    if last_signal == -1. and saved_model['signal_type'] == 'short':
+                        if saved_model['score'] >= .66:
+                            print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
                     else:
-                        print(f"{saved_model}")
-                        print("TODO_3")
+                        assert last_signal == 1.
+                elif saved_model['optimize_metric'] == 'finish_above':
+                    if last_signal == 1. and saved_model['signal_type'] == 'long':
+                        if saved_model['score'] >= .66:
+                            print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES > {last_price * (1 + rt_win_threshold):.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                elif saved_model['optimize_metric'] == 'finish_below':
+                    if last_signal == -1. and saved_model['signal_type'] == 'short':
+                        if saved_model['score'] >= .66:
+                            print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES < {last_price * (1 - rt_win_threshold):.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                else:
+                    print(f"{saved_model}")
+                    print("TODO_3")
         if verbose and not verbose_short:
-            win_rate_str   = f"Price reaches ≥ +{rt_win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{rt_win_threshold:.0%}"
-            win_rate_2_str = f"Price stays INSIDE ±{rt_win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{rt_win_threshold:.0%} range (mean-reversion/consolidation)"
-            win_rate_3_str = f"Price stays ABOVE {last_price*(1-rt_win_threshold):.0f})      → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
-            win_rate_4_str = f"Price stays BELOW entry*(1+{rt_win_threshold:.0%})            → % of signals where price stays below the upper bound"
-            _win_rate_tmp_str = win_rate_str
-            _win_rate_tmp_str = win_rate_2_str if saved_model['optimize_metric'] == 'win_rate_2' else _win_rate_tmp_str
-            _win_rate_tmp_str = win_rate_3_str if saved_model['optimize_metric'] == 'win_rate_3' else _win_rate_tmp_str
-            _win_rate_tmp_str = win_rate_4_str if saved_model['optimize_metric'] == 'win_rate_4' else _win_rate_tmp_str
+            profit_target_str = f"Price reaches ≥ +{rt_win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{rt_win_threshold:.0%}"
+            range_bound_str = f"Price stays INSIDE ±{rt_win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{rt_win_threshold:.0%} range (mean-reversion/consolidation)"
+            hold_floor_str = f"Price stays ABOVE entry*(1-{rt_win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
+            hold_ceiling_str = f"Price stays BELOW entry*(1+{rt_win_threshold:.0%})          → % of signals where price stays below the upper bound"
+            finish_above_str = f"Price at LAST bar > entry*(1+{rt_win_threshold:.0%})        → % of signals where the closing price at the last lookahead bar exceeds the upper threshold"
+            finish_below_str = f"Price at LAST bar < entry*(1-{rt_win_threshold:.0%})        → % of signals where the closing price at the last lookahead bar falls below the lower threshold"
+
+            _optimize_tmp_str = profit_target_str
+            for m, s in [('range_bound', range_bound_str), ('hold_floor', hold_floor_str), ('hold_ceiling', hold_ceiling_str), ('finish_above', finish_above_str), ('finish_below', finish_below_str)]:
+                if saved_model['optimize_metric'] == m: _optimize_tmp_str = s; break
+
             print(f"\n🔍 Real-Time Signal Check (Last Bar={last_date}):")
             print(f"   📊 Total Signals (Dataset) : {total_rt_signals} (Long: {long_rt}, Short: {short_rt})")
             print(f"   📉  Signal Type            : {saved_model['signal_type']} (@{saved_model['win_threshold']:.2%} in {saved_model['params']['lookahead_bars']}B={la_date})")
-            print(f"   📉  Optimized Metric       : {saved_model['optimize_metric']} ({_win_rate_tmp_str})")
+            print(f"   📉  Optimized Metric       : {saved_model['optimize_metric']} ({_optimize_tmp_str})")
             print(f"   📉 Signal Density ({saved_model['signal_type']})   : {signal_density:.2%} (over {len(closes)} bars)")
             print(f"   📉 Score                   : {saved_model['score']:.2%}")
             if total_rt_signals < 50:
@@ -476,103 +471,130 @@ def entry(args):
                   f"    >50 bars         Long-term cycle — signals may be infrequent but higher conviction\n"
                   f"    Rapidly changing Market regime shift — be cautious; parameters may need re-optimization")
         return
-    lookahead_bars = args.lookahead_bars
-    signal_type = args.signal_type
-    required_signal_density = args.min_signal_density
-    win_threshold = args.win_threshold
-    optimize = args.optimize
-    n_trials = args.n_trials
-    timeout = args.timeout
-    capital = args.capital
-    margin_cost = args.margin_cost
-    commission = args.commission
-    min_bars = args.min_bars
-    if verbose:
-        win_rate_str   = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
-        win_rate_2_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
-        win_rate_3_str = f"Price stays ABOVE entry*(1-{win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
-        win_rate_4_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})            → % of signals where price stays below the upper bound"
-        print()
-        print(f"win_rate    = {win_rate_str}")
-        print(f"win_rate_2  = {win_rate_2_str}")
-        print(f"win_rate_3  = {win_rate_3_str}")
-        print(f"win_rate_4  = {win_rate_4_str}")
-        print()
-        print(f"signal_type = Which trades to look at (long/short/both)")
-        print(f"optimize    = What metric to maximize for those trades")
-        print(f"signal_type='long' + optimize='win_rate_2' → 'Find parameters where longs tend to stay tightly range-bound after entry (good for selling covered calls).'")
-        print(f"signal_type='short' + optimize='win_rate'  → 'Find parameters where short signals reliably drop by at least {win_threshold:.0%}.'")
-        print(f"signal_type='both' + optimize='win_rate_3' → 'Find parameters where all signals avoid breaking below the lower threshold (useful for risk-defined strategies).'")
-        print(f"signal_type='long' + optimize='win_rate_3' → 'Find the parameter set that maximizes the percentage of long trades that never drop more than {win_threshold:.0%} below their entry price during the {lookahead_bars} lookahead window.'")
+
     # =============================================================================
     # 🎯 OPTIMIZATION MODE
     # =============================================================================
-    window_min, window_max = 2, 160
-    bandwith_min, bandwith_max = 0.00015, 0.9995
-    threshold_min, threshold_max = -0.9996, -0.0001
+    lookahead_bars = args.lookahead_bars
+    win_threshold = args.win_threshold
+    assert 0 <= win_threshold < 1
+    optimize = args.optimize
+    n_trials = args.n_trials
+    timeout = args.timeout
+    required_signal_density = args.min_signal_density
+
+    # 🧠 AUTO-INFER SIGNAL TYPE FROM OPTIMIZATION TARGET
+    METRIC_TO_SIGNAL_TYPE = {
+        'hold_floor': 1,  # Price staying above floor → BULLISH/LONG
+        'finish_above': 1,  # Price finishing above target → BULLISH/LONG
+        'hold_ceiling': -1,  # Price staying below ceiling → BEARISH/SHORT
+        'finish_below': -1,  # Price finishing below target → BEARISH/SHORT
+        'profit_target': 0,  # Direction-agnostic profit → BOTH
+        'range_bound': 0  # Consolidation, direction-agnostic → BOTH
+    }
+    signal_type = METRIC_TO_SIGNAL_TYPE.get(optimize, 0)
+    signal_label = {1: 'long', -1: 'short', 0: 'both'}[signal_type]
+
+    # =============================================================================
+    # 🛡️ ENFORCE LOGICALLY CONSISTENT signal_type + optimize COMBINATIONS
+    # =============================================================================
+    VALID_METRICS = {'profit_target', 'range_bound', 'hold_floor', 'hold_ceiling', 'finish_above', 'finish_below'}
+    assert optimize in VALID_METRICS, f"❌ Invalid --optimize. Choose from: {VALID_METRICS}"
+
     if verbose:
-        print(f"🔧 Running AutoTune Strategy with Optuna Optimization  |  Signal Type: {signal_type}  |  Optimize: {optimize}   |  Look Ahead: {lookahead_bars}b  |  Dataset id: {dataset_id}  |  "
+        profit_target_str = f"Price reaches ≥ +{win_threshold:.0%} during lookahead      → % of signals that achieve a forward return ≥ +{win_threshold:.0%}"
+        range_bound_str = f"Price stays INSIDE ±{win_threshold:.0%} (consolidation)    → % of signals where price stays inside a ±{win_threshold:.0%} range (mean-reversion/consolidation)"
+        hold_floor_str = f"Price stays ABOVE entry*(1-{win_threshold:.0%})            → % of signals where price stays above the lower bound (useful for credit spreads or trailing stops)"
+        hold_ceiling_str = f"Price stays BELOW entry*(1+{win_threshold:.0%})          → % of signals where price stays below the upper bound"
+        finish_above_str = f"Price at LAST bar > entry*(1+{win_threshold:.0%})        → % of signals where close at last lookahead > upper threshold"
+        finish_below_str = f"Price at LAST bar < entry*(1-{win_threshold:.0%})        → % of signals where close at last lookahead < lower threshold"
+        print()
+        print(f"profit_target   = {profit_target_str}")
+        print(f"range_bound     = {range_bound_str}")
+        print(f"hold_floor      = {hold_floor_str}")
+        print(f"hold_ceiling    = {hold_ceiling_str}")
+        print(f"finish_above    = {finish_above_str}")
+        print(f"finish_below    = {finish_below_str}")
+        print()
+        print(f"optimize    = What metric to maximize across {signal_label} signals only")
+        print(f"Auto-inferred Signal Type: {signal_label.upper()} (based on --optimize={optimize})")
+        print(f"Example: optimize='hold_floor' → 'Maximize % of LONG signals that never drop below entry*(1-{win_threshold:.0%})'")
+
+    # =============================================================================
+    # 🛠️ OPTIMIZATION SETUP
+    # =============================================================================
+    window_min, window_max, window_step          = 2, 160, 1
+    bandwidth_min, bandwidth_max, bandwidth_step = 0.00015, 0.99015, 0.01
+    threshold_min, threshold_max, threshold_step = -0.9996, -0.0096, 0.01
+    lookahead_bars_min, lookahead_bars_max = lookahead_bars, lookahead_bars
+
+    if verbose:
+        print(f"\n🔧 Running AutoTune Strategy with Optuna Optimization  |  Optimize: {optimize} ({signal_label})  |  Look Ahead: {lookahead_bars}b  |  Dataset id: {dataset_id}  |  "
               f"Win Threshold: {win_threshold:.0%}  |  Optuna: {n_trials}/{timeout}  |  Dataset Length: {len(closes)}")
         print(f"Parameters search space\n"
-              f"  Window    : {window_min}::{window_max}\n"
-              f"  Bandwitdh : {bandwith_min}::{bandwith_max}\n"
-              f"  Threshold : {threshold_min}::{threshold_max}\n")
+              f"  Window    : {window_min}::{window_max}::{window_step}\n"
+              f"  Bandwidth : {bandwidth_min}::{bandwidth_max}::{bandwidth_step}\n"
+              f"  Threshold : {threshold_min}::{threshold_max}::{threshold_step}\n")
+
     def objective(trial):
         try:
-            # Parameter search space
-            window = trial.suggest_int('window', window_min, window_max, step=1)
-            bandwidth = trial.suggest_float('bandwidth', bandwith_min, bandwith_max)
-            threshold = trial.suggest_float('threshold', threshold_min, threshold_max)
-            lookahead = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars, step=1)
+            window = trial.suggest_int('window', window_min, window_max, step=window_step)
+            bandwidth = trial.suggest_float('bandwidth', bandwidth_min, bandwidth_max, step=bandwidth_step)
+            threshold = trial.suggest_float('threshold', threshold_min, threshold_max, step=threshold_step)
+            _lookahead_bars = trial.suggest_int('lookahead_bars', lookahead_bars_min, lookahead_bars_max)
+            enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
+            enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
 
             strat = AutoTuneStrategy(
-                window=window, bandwidth=bandwidth, threshold=threshold, lookahead_bars=lookahead,
-                win_threshold=win_threshold, capital=capital, margin_cost=margin_cost, commission=commission
+                window=window, bandwidth=bandwidth, threshold=threshold,
+                lookahead_bars=_lookahead_bars, win_threshold=win_threshold,
+                signal_type=signal_type, enable_above_baseline=enable_above_baseline, enable_below_baseline=enable_below_baseline,
             )
             results = strat.generate_signals(closes)
-            df = results.iloc[min_bars:].copy()
+            df = results.copy()
 
-            fwd_col = f'forward_return_{lookahead}b'
-            if signal_type == 'long':
-                signals = df[df['signal'] == 1.0].copy()
-            elif signal_type == 'short':
-                signals = df[df['signal'] == -1.0].copy()
-            else:
-                signals = df[df['signal'] != 0].copy()
+            fwd_col = f'forward_return_{_lookahead_bars}b'
+            signals = df[df['signal'] != 0].copy()
 
-            if len(signals) == 0:
+            n_signals = len(signals)
+            if n_signals == 0:
                 return 0.0
 
-            # 🆕 1. Calculate base objective first
-            if optimize == 'win_rate':
-                obj = (signals[fwd_col].values > win_threshold).mean()
-            elif optimize == 'win_rate_2':
-                obj = signals[f'stay_in_band_{lookahead}b'].mean()
-            elif optimize == 'win_rate_3':
-                obj = signals[f'stay_above_lower_{lookahead}b'].mean()
-            elif optimize == 'win_rate_4':
-                obj = signals[f'stay_below_upper_{lookahead}b'].mean()
-            else:
-                raise ValueError(f"Unknown optimize metric: {optimize}")
+            MIN_SIGNALS = 30
+            if n_signals < MIN_SIGNALS:
+                return 0.0
 
-            # 🆕 2. Apply exponential penalty for low signal density
-            signal_density = len(signals) / len(df)
+            # Base objective
+            if optimize == 'profit_target':
+                obj = (signals[fwd_col].values > win_threshold).mean()
+            elif optimize == 'range_bound':
+                obj = signals[f'stay_in_band_{_lookahead_bars}b'].mean()
+            elif optimize == 'hold_floor':
+                obj = signals[f'stay_above_lower_{_lookahead_bars}b'].mean()
+            elif optimize == 'hold_ceiling':
+                obj = signals[f'stay_below_upper_{_lookahead_bars}b'].mean()
+            elif optimize == 'finish_above':
+                obj = signals[f'above_upper_last_{_lookahead_bars}b'].mean()
+            elif optimize == 'finish_below':
+                obj = signals[f'below_lower_last_{_lookahead_bars}b'].mean()
+
+            signal_density = n_signals / len(df)
             if signal_density < required_signal_density:
                 gap = required_signal_density - signal_density
-                # Exponential decay penalty.
-                # Scale factor 100 means: 1% below threshold → ~37% penalty, 4% below → ~1.8% penalty
-                penalty = np.exp(-100.0 * gap)
+                penalty = max(0.0, 1.0 - gap * 5.0)
                 return obj * penalty
 
             return obj
-        except Exception:
+        except Exception as e:
+            print(f"[WARNING] Trial failed: {e}")
             return 0.0
 
     if verbose:
         print(f"\n⚙️ Starting Optuna search ({n_trials} trials, {timeout}s timeout)")
     sampler = TPESampler(seed=42)
-    study = optuna.create_study(direction='maximize', sampler=sampler)
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=verbose, gc_after_trial=True, timeout=timeout)
+    pruner = MedianPruner(n_startup_trials=20, n_warmup_steps=0)
+    study = optuna.create_study(direction='maximize', sampler=sampler, pruner=pruner)
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=verbose, gc_after_trial=True, timeout=timeout, callbacks=[perfect_score_callback])
 
     if verbose:
         print(f"\n✅ Best Trial Completed:")
@@ -597,13 +619,44 @@ def entry(args):
 
     score_of_best_trial = study.best_trial.value
     best_params = study.best_trial.params
-    strat_best = AutoTuneStrategy(**best_params, win_threshold=win_threshold,
-                                  capital=capital, margin_cost=margin_cost, commission=commission)
+    strat_best = AutoTuneStrategy(**best_params, win_threshold=win_threshold, signal_type=signal_type)
     results_best = strat_best.generate_signals(closes)
+
+    # 📅 NEW: Calculate and print win rate per year
+    if verbose:
+        signals_best = results_best[results_best['signal'] != 0].copy()
+        if len(signals_best) > 0:
+            LA = best_params['lookahead_bars']
+
+            # Map the optimization target to its success condition
+            if optimize_metric == 'profit_target':
+                signals_best['is_win'] = signals_best[f'forward_return_{LA}b'] > win_threshold
+            elif optimize_metric == 'range_bound':
+                signals_best['is_win'] = signals_best[f'stay_in_band_{LA}b'] == 1.0
+            elif optimize_metric == 'hold_floor':
+                signals_best['is_win'] = signals_best[f'stay_above_lower_{LA}b'] == 1.0
+            elif optimize_metric == 'hold_ceiling':
+                signals_best['is_win'] = signals_best[f'stay_below_upper_{LA}b'] == 1.0
+            elif optimize_metric == 'finish_above':
+                signals_best['is_win'] = signals_best[f'above_upper_last_{LA}b'] == 1.0
+            elif optimize_metric == 'finish_below':
+                signals_best['is_win'] = signals_best[f'below_lower_last_{LA}b'] == 1.0
+            else:
+                signals_best['is_win'] = signals_best[f'forward_return_{LA}b'] > win_threshold
+
+            # Extract year and compute yearly aggregates
+            signals_best['year'] = pd.to_datetime(signals_best.index).year
+            yearly_stats = signals_best.groupby('year')['is_win'].agg(['mean', 'count'])
+
+            print("\n📅 Win Rate Per Year:")
+            for year, row in yearly_stats.iterrows():
+                print(f"   {int(year)}: {row['mean'] * 100:.2f}% ({int(row['count'])} signals)")
+        else:
+            print("\n📅 Win Rate Per Year: No signals generated.")
 
     if verbose:
         print("\n📊 Final Performance (Best Params):")
-        final_metrics = strat_best.evaluate(results_best, min_bars=min_bars, signal_type=signal_type)
+        final_metrics = strat_best.evaluate(results_best)
 
         if 'status' in final_metrics:
             print(f"   {final_metrics['status']}")
@@ -612,9 +665,10 @@ def entry(args):
                 print(f"   {k.replace('_', ' ').title()}: {v}")
 
             total_signals = final_metrics.get('total_signals', 0)
-            if total_signals > 0 and total_signals < 50:
+            if 0 < total_signals < 50:
                 print(f"\n   ⚠️  STATISTICAL WARNING: Only {total_signals} signals generated in the evaluation period.")
                 print(f"      Win rates, expectancy, and Sharpe approximations may lack statistical significance.")
+
     # 💾 SAVE MODEL WITH PARAMETERIZED NAME
     os.makedirs(output_dir, exist_ok=True)
     w = best_params['window']
@@ -627,7 +681,8 @@ def entry(args):
     model_data = {
         'params': best_params,
         'win_threshold': win_threshold,
-        'signal_type': signal_type,
+        'signal_type': signal_label,
+        'signal_type_code': signal_type,
         'optimize_metric': optimize,
         'score': score_of_best_trial,
         'dataset_id': dataset_id,
@@ -639,6 +694,176 @@ def entry(args):
     if verbose:
         print(f"\n💾 Model saved to: {model_path}")
 
+    if args.plot:
+        final_metrics = strat_best.evaluate(results_best)
+        plot_strategy_results(
+            results=results_best,
+            params=best_params,
+            metrics=final_metrics,
+            ticker=ticker,
+            dataset_id=dataset_id,
+            output_dir=output_dir,
+            verbose=verbose,
+            signal_type=signal_label,
+            optimize_metric=optimize,
+            win_threshold=win_threshold,
+        )
+
+
+# =============================================================================
+# 🆕 NEW: PLOTTING FUNCTION
+# =============================================================================
+# =============================================================================
+# 🆕 NEW: PLOTTING FUNCTION (Updated)
+# =============================================================================
+def plot_strategy_results(results: pd.DataFrame, params: dict, metrics: dict,
+                          ticker: str, dataset_id: str, output_dir: str = '.',
+                          verbose: bool = True, signal_type: str = 'both',
+                          optimize_metric: str = 'profit_target', win_threshold: float = 0.04) -> str:
+    """
+    Generate comprehensive visualization plots for the AutoTune strategy results.
+    Win/Fail classification now strictly matches the --optimize target.
+    """
+    try:
+        plt.style.use('seaborn-v0_8-darkgrid')
+    except:
+        pass
+
+    df = results.copy()
+    dates = df.index
+    LA = params.get('lookahead_bars', 10)
+
+    signals = df[df['signal'] != 0]
+    long_signals = signals[signals['signal'] > 0]
+    short_signals = signals[signals['signal'] < 0]
+
+    # =====================================================================
+    # 🎯 METRIC-AWARE CLASSIFICATION
+    # =====================================================================
+    def classify(df_sig, metric, la, thresh):
+        if len(df_sig) == 0:
+            return pd.DataFrame(), pd.DataFrame()
+
+        if metric == 'profit_target':
+            col = f'forward_return_{la}b'
+            return df_sig[df_sig[col] > thresh], df_sig[df_sig[col] <= thresh]
+        elif metric == 'range_bound':
+            col = f'stay_in_band_{la}b'
+            return df_sig[df_sig[col] == 1.0], df_sig[df_sig[col] == 0.0]
+        elif metric == 'hold_floor':
+            col = f'stay_above_lower_{la}b'
+            return df_sig[df_sig[col] == 1.0], df_sig[df_sig[col] == 0.0]
+        elif metric == 'hold_ceiling':
+            col = f'stay_below_upper_{la}b'
+            return df_sig[df_sig[col] == 1.0], df_sig[df_sig[col] == 0.0]
+        elif metric == 'finish_above':
+            col = f'above_upper_last_{la}b'
+            return df_sig[df_sig[col] == 1.0], df_sig[df_sig[col] == 0.0]
+        elif metric == 'finish_below':
+            col = f'below_lower_last_{la}b'
+            return df_sig[df_sig[col] == 1.0], df_sig[df_sig[col] == 0.0]
+        else:
+            col = f'forward_return_{la}b'
+            return df_sig[df_sig[col] > thresh], df_sig[df_sig[col] <= thresh]
+
+    long_success, long_fail = classify(long_signals, optimize_metric, LA, win_threshold)
+    short_success, short_fail = classify(short_signals, optimize_metric, LA, win_threshold)
+
+    # =====================================================================
+    # 📊 PLOT GENERATION
+    # =====================================================================
+    fig = plt.figure(figsize=(16, 10))
+    fig.suptitle(f'AutoTune Strategy Results - {ticker} ({dataset_id}) | Signal Type: {signal_type.upper()}\n'
+                 f'Optimized for: {optimize_metric.upper()} @ {win_threshold:.0%} threshold',
+                 fontsize=15, fontweight='bold', y=0.995)
+
+    gs = fig.add_gridspec(2, 2, height_ratios=[2.2, 1], hspace=0.3, wspace=0.25)
+
+    # 1️⃣ Price Chart with Signals
+    ax1 = fig.add_subplot(gs[0, :])
+    ax1.plot(dates, df['price'], label='Price', linewidth=1.5, color='steelblue', zorder=1)
+
+    # 🟢 Green Circles = Success (matches optimization score)
+    # 🔴 Red Squares = Fail (explains the "missing" ratio you noticed)
+    marker_kwargs = dict(s=110, zorder=5, edgecolors='black', linewidths=0.8, alpha=0.85)
+
+    if len(long_success) > 0:
+        ax1.scatter(long_success.index, long_success['price'], marker='o', color='limegreen',
+                    label=f'Long ({optimize_metric} Success)', **marker_kwargs)
+    if len(long_fail) > 0:
+        ax1.scatter(long_fail.index, long_fail['price'], marker='s', color='crimson',
+                    label=f'Long ({optimize_metric} Fail)', **marker_kwargs)
+    if len(short_success) > 0:
+        ax1.scatter(short_success.index, short_success['price'], marker='o', color='limegreen',
+                    label=f'Short ({optimize_metric} Success)', **marker_kwargs)
+    if len(short_fail) > 0:
+        ax1.scatter(short_fail.index, short_fail['price'], marker='s', color='crimson',
+                    label=f'Short ({optimize_metric} Fail)', **marker_kwargs)
+
+    ax1.set_ylabel('Price', fontweight='bold')
+    ax1.set_title('Price Action with Trading Signals', fontweight='bold')
+    ax1.legend(loc='upper left', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+
+    # Date formatting
+    if hasattr(dates[0], 'year') or hasattr(dates, 'strftime'):
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    # 2️⃣ Bandpass Filter
+    ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)
+    ax2.plot(dates, df['bandpass'], label='Bandpass', linewidth=1, color='purple')
+    ax2.axhline(y=0, color='gray', linestyle='--', linewidth=0.5)
+    ax2.set_ylabel('Bandpass', fontweight='bold')
+    ax2.set_title('Bandpass Filter Output', fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+
+    # 3️⃣ ROC Momentum
+    ax3 = fig.add_subplot(gs[1, 1], sharex=ax1)
+    ax3.plot(dates, df['roc'], label='ROC (2-bar)', linewidth=1, color='orange')
+    ax3.axhline(y=0, color='gray', linestyle='--', linewidth=0.5)
+    ax3.set_ylabel('ROC', fontweight='bold')
+    ax3.set_title('Rate of Change (Momentum)', fontweight='bold')
+    ax3.grid(True, alpha=0.3)
+
+    # =====================================================================
+    # 📝 METRICS TEXT BOX
+    # =====================================================================
+    n_long_win = len(long_success)
+    n_long_fail = len(long_fail)
+    n_short_win = len(short_success)
+    n_short_fail = len(short_fail)
+    total_signals = len(signals)
+    plot_success_rate = (n_long_win + n_short_win) / total_signals if total_signals > 0 else 0.0
+
+    metrics_text = (f"Optimized Metric: {optimize_metric.upper()}\n"
+                    f"Win Threshold: {win_threshold:.2%} | Lookahead: {LA} bars\n\n"
+                    f"Performance:\n")
+
+    metrics_text += (f"\n📊 Visual Classification (per {optimize_metric}):\n"
+                     f"  Success: {n_long_win + n_short_win} | Fail: {n_long_fail + n_short_fail}\n"
+                     f"  Plotted Rate: {plot_success_rate:.2%} (should match best trial score)")
+
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.85)
+    fig.text(0.985, 0.97, metrics_text, fontsize=9, verticalalignment='top',
+             horizontalalignment='right', bbox=props, family='monospace')
+
+    plt.tight_layout(rect=[0, 0, 0.97, 0.96])
+
+    timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+    plot_filename = f"autotune_plot_{ticker}_{dataset_id}_{timestamp}.png"
+    plot_path = os.path.join(output_dir, plot_filename)
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(plot_path, dpi=150, bbox_inches='tight', facecolor='white')
+
+    if verbose:
+        print(f"\n📊 Plot saved to: {plot_path}")
+        print(f"   Visual success rate: {plot_success_rate:.2%} | Optimized score: {metrics.get(f'{optimize_metric}_{signal_type}_{LA}b', 'N/A')}")
+        print("   Showing plot window... (close it to continue)")
+    plt.show()
+
+    return plot_path
 
 # =============================================================================
 # 5. MAIN
