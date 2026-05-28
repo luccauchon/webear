@@ -78,18 +78,24 @@ def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
     args.one_euro_factor = one_euro_factor
     args.lookahead_bars = lookahead_bars  # Will always equal base_args.lookahead_bars
     args.threshold_pct = threshold_pct
-
+    assert 0 < args.train_ratio < 1
+    args.validate_jit = False
+    args.use_jit_signals = True
     # 3️⃣ Enforce Silent Mode
     args.disable_print = True
     args.disable_plot_sample = True
-
+    args.verbose = False
     # 4️⃣ Execute entry function & apply penalty
     try:
-        metrics = entry(args)
+        metrics_val, metrics_train = entry(args)
+        metrics = metrics_train
         assert "total_bars" in metrics and "total_signals" in metrics and metric_key in metrics
         # ✅ Use configurable metric key
+        assert metric_key in metrics
         accuracy = metrics.get(metric_key, 0.0)
+        assert "total_signals" in metrics
         total_signals = metrics.get("total_signals", 0)
+        assert "total_bars" in metrics
         total_bars = metrics.get("total_bars", 1000)
 
         signal_ratio = total_signals / total_bars if total_bars > 0 else 0.0
@@ -104,8 +110,13 @@ def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
         trial.set_user_attr("raw_accuracy", accuracy)
         trial.set_user_attr("metric_used", metric_key)
         trial.set_user_attr("target_type", args.target_type)
+        # 🎯 Store validation metrics (for post-optimization display)
+        for key in ["accuracy", "long_accuracy", "short_accuracy", "total_signals", "total_bars"]:
+            if key in metrics_val:
+                trial.set_user_attr(f"val_{key}", metrics_val[key])
+            if key in metrics_train:
+                trial.set_user_attr(f"train_{key}", metrics_train[key])
         return max(0.0, min(1.0, adjusted_score))
-
     except Exception as e:
         return 0.0
 
@@ -234,6 +245,67 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
 
 
 # ==========================================================
+# DISPLAY BEST MODEL METRICS (TRAIN vs VALIDATION)
+# ==========================================================
+def display_best_model_metrics(study, base_args, metric_key):
+    """Re-evaluate and display training/validation metrics for the best trial."""
+    print(f"\n📊 BEST MODEL METRICS (Train vs Validation)")
+    print("=" * 70)
+
+    best_params = study.best_params
+    best_value = study.best_value
+
+    # Reconstruct args with best params
+    args = argparse.Namespace(**vars(base_args))
+    for k, v in best_params.items():
+        setattr(args, k, v)
+
+    # Ensure silent mode for clean output
+    args.disable_print = True
+    args.disable_plot_sample = True
+    args.verbose = False
+    assert 0 < args.train_ratio < 1
+    # Re-run entry() with best params to get fresh metrics
+    try:
+        metrics_val, metrics_train = entry(args)
+
+        # Display comparison table
+        print(f"🎯 Optimization Target: {metric_key} ({AVAILABLE_METRICS[metric_key]})")
+        print(f"🏆 Best Optimized Score: {best_value:.4f}\n")
+
+        print(f"{'Metric':<20} {'Training':>12} {'Validation':>12} {'Gap':>10}")
+        print("-" * 70)
+
+        for key in ["accuracy", "long_accuracy", "short_accuracy"]:
+            train_val = metrics_train.get(key, 0.0)
+            val_val = metrics_val.get(key, 0.0)
+            gap = train_val - val_val
+            print(f"{key:<20} {train_val:12.4f} {val_val:12.4f} {gap:+10.4f}")
+
+        print("-" * 70)
+        print(f"{'Total Signals':<20} {metrics_train.get('total_signals', 0):12d} {metrics_val.get('total_signals', 0):12d}")
+        print(f"{'Total Bars':<20} {metrics_train.get('total_bars', 0):12d} {metrics_val.get('total_bars', 0):12d}")
+
+        train_ratio = metrics_train.get('total_signals', 0) / max(1, metrics_train.get('total_bars', 1))
+        val_ratio = metrics_val.get('total_signals', 0) / max(1, metrics_val.get('total_bars', 1))
+        print(f"{'Signal Ratio':<20} {train_ratio:12.2%} {val_ratio:12.2%}")
+
+        # 🚨 Overfitting warning
+        target_train = metrics_train.get(metric_key, 0)
+        target_val = metrics_val.get(metric_key, 0)
+        if target_train - target_val > 0.15:  # >15% gap
+            print(f"\n⚠️  WARNING: Large train/val gap ({target_train - target_val:.2%}) - potential overfitting!")
+        elif target_val > target_train:
+            print(f"\n✅ Great: Validation performance exceeds training (good generalization)")
+
+        return metrics_train, metrics_val
+
+    except Exception as e:
+        print(f"❌ Error re-evaluating best model: {e}")
+        return None, None
+
+
+# ==========================================================
 # ARGPARSE SETUP FOR OPTIMIZER
 # ==========================================================
 def setup_optimizer_argparse():
@@ -253,7 +325,6 @@ Examples:
   %(prog)s --storage sqlite:///my_custom.db --study-name my_study
         """
     )
-
     # Sampler choice (default: TPE)
     parser.add_argument(
         "--sampler",
@@ -279,7 +350,7 @@ Examples:
         "--target-type",
         type=str,
         choices=["exact", "any", "any_half_B"],
-        default="any",
+        default="any_half_B",
         help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
     )
 
@@ -356,6 +427,7 @@ Examples:
     )
     parser.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier", choices=DATASET_AVAILABLE)
     parser.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
+    parser.add_argument('--train-ratio', type=float, default=0.7, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
     return parser
 
 
@@ -391,6 +463,7 @@ if __name__ == "__main__":
     base_args.lookahead_bars = opt_args.lookahead_bars  # ✅ Apply user-specified lookahead_bars to base_args
     base_args.threshold_pct = opt_args.threshold_pct  # ✅ Apply user-specified threshold
     base_args.target_type = opt_args.target_type
+    base_args.train_ratio = opt_args.train_ratio
     # Select sampler based on user choice
     if opt_args.sampler == "random":
         sampler = optuna.samplers.RandomSampler(seed=opt_args.seed)
@@ -426,6 +499,9 @@ if __name__ == "__main__":
         target_type=base_args.target_type,
         min_signal_ratio=opt_args.min_signal_ratio,
     )
+
+    # ✅ DISPLAY TRAIN/VAL METRICS FOR BEST MODEL
+    display_best_model_metrics(study, base_args, opt_args.metric)
 
     print("\n" + "=" * 60)
     if storage_url:

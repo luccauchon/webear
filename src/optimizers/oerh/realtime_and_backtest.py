@@ -1,3 +1,175 @@
+"""
+🎯 RULE-BASED TECHNICAL FORECASTING SYSTEM (JIT-ACCELERATED)
+====================================================================================================
+
+📋 OVERVIEW
+-----------
+This system implements a multi-indicator, rule-based forecasting engine for financial time series.
+It combines adaptive signal smoothing, momentum/reversion logic, and flexible target labeling to
+generate actionable trading signals with configurable lookahead horizons.
+
+🔧 CORE ALGORITHMS
+------------------
+
+1️⃣ ONE-EURO FILTER (Adaptive Smoothing)
+   ├─ Purpose: Reduce noise while preserving rapid price movements
+   ├─ Mechanism: Dynamic cutoff frequency based on signal derivative
+   ├─ Parameters:
+   │  • one_euro_min  : Minimum cutoff frequency (Hz) – controls baseline smoothing
+   │  • one_euro_factor: Beta factor – adapts smoothing to signal volatility
+   └─ Output: Smoothed price series used as dynamic support/resistance reference
+
+2️⃣ RSI – RELATIVE STRENGTH INDEX (Wilder's Method) [✅ JIT-ACCELERATED]
+   ├─ Purpose: Measure momentum and identify overbought/oversold conditions
+   ├─ Two Operating Modes:
+   │  • "momentum"  : Buy when RSI > overbought (trend continuation)
+   │  • "reversion" : Buy when RSI < oversold (mean reversion)
+   ├─ Parameters:
+   │  • rsi_period    : Lookback window for RSI calculation (default: 14)
+   │  • rsi_oversold  : Lower threshold for oversold signal (default: 30)
+   │  • rsi_overbought: Upper threshold for overbought signal (default: 70)
+   └─ Output: Oscillator [0–100] used in conjunction with trend filters
+
+3️⃣ MACD – MOVING AVERAGE CONVERGENCE DIVERGENCE [✅ JIT-ACCELERATED]
+   ├─ Purpose: Identify trend direction, strength, and potential reversals
+   ├─ Components:
+   │  • MACD Line     : EMA(fast) − EMA(slow)
+   │  • Signal Line   : EMA of MACD Line
+   │  • Histogram     : MACD − Signal (momentum accelerator)
+   ├─ Parameters:
+   │  • macd_fast   : Fast EMA period (default: 12)
+   │  • macd_slow   : Slow EMA period (default: 26)
+   │  • macd_signal : Signal line EMA period (default: 9)
+   └─ Output: Trend confirmation + momentum divergence signals
+
+4️⃣ TARGET LABELING STRATEGIES (Forecast Ground Truth)
+   ├─ Purpose: Define what constitutes a "successful" prediction
+   ├─ Three Modes:
+   │  • "exact"      : Price must exceed threshold EXACTLY at t + lookahead_bars
+   │  • "any"        : Price must exceed threshold ANYWHERE in [t+1, t+lookahead_bars]
+   │  • "any_half_B" : Price must exceed threshold in SECOND HALF of window [t+B//2+1, t+B]
+   ├─ Parameters:
+   │  • lookahead_bars : Forecast horizon in bars (default: 5)
+   │  • threshold_pct  : Minimum price move to trigger positive label (default: 0.01 = 1%)
+   └─ Output: Binary labels (1 = target met, 0 = not met) for signal evaluation
+
+⚙️ SIGNAL GENERATION LOGIC [✅ OPTIONAL JIT]
+--------------------------
+A trading signal is generated when ALL of the following conditions align:
+
+🟢 LONG SIGNAL (Signal = +1):
+   ✓ Price > One-Euro Filter (uptrend confirmation)
+   ✓ RSI condition (mode-dependent):
+       - momentum: RSI > overbought AND rising vs. previous bar
+       - reversion: RSI < oversold AND rising vs. previous bar
+   ✓ MACD Histogram > 0 AND increasing vs. previous bar (bullish momentum)
+
+🔴 SHORT SIGNAL (Signal = -1):
+   ✓ Price < One-Euro Filter (downtrend confirmation)
+   ✓ RSI condition (mode-dependent):
+       - momentum: RSI < oversold AND falling vs. previous bar
+       - reversion: RSI > overbought AND falling vs. previous bar
+   ✓ MACD Histogram < 0 AND decreasing vs. previous bar (bearish momentum)
+
+⚪ NO SIGNAL (Signal = 0): Default when conditions are not met
+
+📊 EVALUATION METRICS
+---------------------
+After signal generation, the system computes:
+   • Overall Accuracy     : % of signals where prediction matched actual outcome
+   • Long Accuracy        : % of long signals that correctly predicted upward move
+   • Short Accuracy       : % of short signals that correctly predicted downward move
+   • Signal Frequency     : Total signals generated vs. total bars analyzed
+
+🚀 EXECUTION MODES
+------------------
+🔹 BATCH MODE (default):
+   - Processes entire historical dataset
+   - Supports train/validation split via --train-ratio
+   - Outputs comprehensive metrics + optional visualization
+
+🔹 REAL-TIME MODE (--real-time):
+   - Loads pre-optimized model parameters from .pkl file
+   - Evaluates ONLY the most recent data point
+   - Outputs minimal, automation-friendly signal format:
+       BUY|DATE|PRICE|+BARS|TARGET_PRICE
+       SELL|DATE|PRICE|+BARS|TARGET_PRICE
+       HOLD|DATE|PRICE
+
+📦 MODEL PERSISTENCE
+--------------------
+Models saved via pickle contain:
+   • best_params    : Optimized algorithm hyperparameters
+   • metadata       : Dataset ID, ticker, target_type, metric used for optimization
+   • (optional) performance history for audit trails
+
+🎨 VISUALIZATION DASHBOARD
+--------------------------
+Three-panel synchronized plot:
+   1. Price + One-Euro Filter + Signal markers (▲ long / ▼ short)
+   2. RSI oscillator with overbought/oversold zones
+   3. MACD histogram + signal line with momentum coloring
+Features: Zoom/pan synchronization, inset zoom region, interactive Matplotlib backend
+
+⚙️ KEY COMMAND-LINE PARAMETERS
+------------------------------
+Data & Environment:
+   --dataset-id      : Dataset identifier (choices from DATASET_AVAILABLE)
+   --ticker          : Symbol to analyze (default: "^GSPC")
+   --seed            : Random seed for reproducibility
+   --validate-jit    : Run JIT consistency sanity check at startup (default: disabled)
+
+Algorithm Tuning:
+   --rsi-period / --rsi-oversold / --rsi-overbought / --rsi-mode
+   --macd-fast / --macd-slow / --macd-signal
+   --one-euro-min / --one-euro-factor
+   --lookahead-bars / --threshold-pct / --target-type
+
+Evaluation & Output:
+   --train-ratio     : Fraction of data for training (rest for validation)
+   --plot-sample     : Number of recent bars to visualize
+   --verbose / --disable-print : Control console output
+
+Real-Time Execution:
+   --real-time       : Enable latest-point evaluation mode
+   --model-path      : Path to saved .pkl model file (required with --real-time)
+   --output-signal-only : Minimal output format for scripting/automation
+
+🧪 EXAMPLE USAGE
+---------------
+# Batch backtest with custom parameters
+python forecast.py --ticker AAPL --rsi-mode reversion --lookahead-bars 10 --threshold-pct 0.02
+
+# Train/validation split evaluation
+python forecast.py --train-ratio 0.7 --plot-sample 150
+
+# Real-time signal with saved model
+python forecast.py --real-time --model-path models/aapl_optimized.pkl --output-signal-only
+
+# Silent automation mode (parse output programmatically)
+python forecast.py --real-time --model-path models/spx.pkl --output-signal-only --disable-print
+
+# Run with JIT validation sanity check
+python forecast.py --validate-jit --ticker SPY --disable-plot-sample
+
+🔐 DESIGN PRINCIPLES
+--------------------
+• Modular: Each indicator is independently testable and replaceable
+• Vectorized: Leverages pandas/numpy for efficient batch processing
+• JIT-Accelerated: Numba @njit for RSI, MACD, and optional signal generation
+• Cache-aware: LRU caching for dataset loading + numba function caching
+• Type-safe: Comprehensive type hints for maintainability
+• Reproducible: Seed control + deterministic indicator calculations
+• Production-ready: Fallback imports, error handling, and clear CLI interface
+
+📚 DEPENDENCIES
+--------------
+numpy, pandas, numba>=0.56 (JIT acceleration), matplotlib, pickle, argparse
+
+====================================================================================================
+🏁 SYSTEM READY — Configure parameters via CLI or load optimized model for real-time deployment
+"""
+
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -9,10 +181,11 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+
 import numpy as np
 import pandas as pd
 from functools import lru_cache
-from numba import njit
+from numba import njit, prange
 import math
 import copy
 import matplotlib.pyplot as plt
@@ -21,11 +194,178 @@ import pickle
 import argparse
 from utils import get_filename_for_dataset
 import os
+import warnings
+
 # ============================================
 # 1. ONE-EURO FILTER (Adaptive Smoothing)
 # ============================================
 from algorithms.one_euro_filter import one_euro_filter
-from utils import DATASET_AVAILABLE,get_next_step
+from utils import DATASET_AVAILABLE, get_next_step
+
+
+# ============================================
+# JIT-ACCELERATED NUMERICAL CORES
+# ============================================
+
+@njit(cache=True, fastmath=True)
+def _rsi_numba(values: np.ndarray, period: int) -> np.ndarray:
+    """Numba-accelerated RSI using Wilder's smoothing method."""
+    n = len(values)
+    rsi = np.empty(n, dtype=np.float64)
+    rsi[:] = np.nan
+
+    if n < 2:
+        return rsi
+
+    # Calculate price deltas
+    delta = np.empty(n, dtype=np.float64)
+    delta[0] = 0.0
+    for i in range(1, n):
+        delta[i] = values[i] - values[i - 1]
+
+    # Separate gains and losses
+    gain = np.zeros(n, dtype=np.float64)
+    loss = np.zeros(n, dtype=np.float64)
+
+    for i in range(1, n):
+        if delta[i] > 0:
+            gain[i] = delta[i]
+        else:
+            loss[i] = -delta[i]
+
+    # Initial average (simple mean for first period)
+    if n > period:
+        avg_gain = np.mean(gain[1:period + 1])
+        avg_loss = np.mean(loss[1:period + 1])
+    else:
+        avg_gain = np.mean(gain[1:])
+        avg_loss = np.mean(loss[1:])
+
+    # Wilder's smoothing: RSI calculation
+    for i in range(period, n):
+        if i > period:
+            avg_gain = (avg_gain * (period - 1) + gain[i]) / period
+            avg_loss = (avg_loss * (period - 1) + loss[i]) / period
+
+        if avg_loss == 0:
+            rsi[i] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi[i] = 100.0 - (100.0 / (1.0 + rs))
+
+    return rsi
+
+
+@njit(cache=True, fastmath=True)
+def _ema_numba(values: np.ndarray, span: int) -> np.ndarray:
+    """Numba-accelerated exponential moving average (Wilder's style)."""
+    n = len(values)
+    result = np.empty(n, dtype=np.float64)
+    result[:] = np.nan
+
+    if n == 0:
+        return result
+
+    # Alpha for EMA: same as pandas ewm(span=span, adjust=False)
+    alpha = 2.0 / (span + 1)
+    result[0] = values[0]
+
+    for i in range(1, n):
+        result[i] = alpha * values[i] + (1.0 - alpha) * result[i - 1]
+
+    return result
+
+
+@njit(cache=True, fastmath=True)
+def _macd_numba(close: np.ndarray, fast: int, slow: int, signal: int) -> tuple:
+    """Compute MACD components - returns (macd_line, signal_line, histogram)."""
+    ema_fast = _ema_numba(close, fast)
+    ema_slow = _ema_numba(close, slow)
+    macd_line = np.empty(len(close), dtype=np.float64)
+
+    for i in range(len(close)):
+        if np.isnan(ema_fast[i]) or np.isnan(ema_slow[i]):
+            macd_line[i] = np.nan
+        else:
+            macd_line[i] = ema_fast[i] - ema_slow[i]
+
+    signal_line = _ema_numba(macd_line, signal)
+    histogram = np.empty(len(close), dtype=np.float64)
+
+    for i in range(len(close)):
+        if np.isnan(macd_line[i]) or np.isnan(signal_line[i]):
+            histogram[i] = np.nan
+        else:
+            histogram[i] = macd_line[i] - signal_line[i]
+
+    return macd_line, signal_line, histogram
+
+
+@njit(cache=True, parallel=True, fastmath=True)
+def _generate_signals_numba(
+        close: np.ndarray,
+        one_euro: np.ndarray,
+        rsi: np.ndarray,
+        histogram: np.ndarray,
+        rsi_oversold: float,
+        rsi_overbought: float,
+        rsi_mode_momentum: bool,
+) -> np.ndarray:
+    """Numba-accelerated signal generation with parallel processing."""
+    n = len(close)
+    signals = np.zeros(n, dtype=np.int8)
+
+    for i in prange(1, n):
+        # Skip if any required value is NaN
+        if (np.isnan(rsi[i]) or np.isnan(histogram[i]) or
+                np.isnan(one_euro[i]) or np.isnan(close[i])):
+            continue
+
+        # Handle previous values with fallback
+        rsi_prev = rsi[i - 1] if not np.isnan(rsi[i - 1]) else rsi[i]
+        hist_prev = histogram[i - 1] if not np.isnan(histogram[i - 1]) else histogram[i]
+
+        # RSI condition based on mode
+        if rsi_mode_momentum:
+            long_rsi = (rsi[i] > rsi_overbought) and (rsi[i] > rsi_prev)
+            short_rsi = (rsi[i] < rsi_oversold) and (rsi[i] < rsi_prev)
+        else:  # reversion mode
+            long_rsi = (rsi[i] < rsi_oversold) and (rsi[i] > rsi_prev)
+            short_rsi = (rsi[i] > rsi_overbought) and (rsi[i] < rsi_prev)
+
+        # Long signal condition
+        if ((close[i] > one_euro[i]) and long_rsi and
+                (histogram[i] > 0) and (histogram[i] > hist_prev)):
+            signals[i] = 1
+        # Short signal condition
+        elif ((close[i] < one_euro[i]) and short_rsi and
+              (histogram[i] < 0) and (histogram[i] < hist_prev)):
+            signals[i] = -1
+
+    return signals
+
+
+# ============================================
+# PANDAS WRAPPERS FOR JIT FUNCTIONS
+# ============================================
+
+def calculate_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """Calculate RSI using Wilder's smoothing - JIT-accelerated core."""
+    values = close.to_numpy(dtype=np.float64)
+    rsi_array = _rsi_numba(values, period)
+    return pd.Series(rsi_array, index=close.index, name='RSI', dtype=float)
+
+
+def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
+    """Calculate MACD line, signal line, and histogram - JIT-accelerated core."""
+    values = close.to_numpy(dtype=np.float64)
+    macd_arr, sig_arr, hist_arr = _macd_numba(values, fast, slow, signal)
+
+    return pd.DataFrame({
+        'MACD': pd.Series(macd_arr, index=close.index, dtype=float),
+        'Signal': pd.Series(sig_arr, index=close.index, dtype=float),
+        'Histogram': pd.Series(hist_arr, index=close.index, dtype=float)
+    })
 
 
 # ============================================
@@ -42,7 +382,7 @@ def load_model(model_path: str) -> dict:
     return model_data
 
 
-def run_real_time(model_path: str, output_signal_only, verbose):
+def run_real_time(model_path: str, output_signal_only: bool, verbose: bool):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
@@ -77,6 +417,7 @@ def run_real_time(model_path: str, output_signal_only, verbose):
     assert 'target_type' in metadata
     target_type = metadata['target_type']
     valid_params.update({'target_type': target_type})
+
     # Run forecast on the window
     df_results, _ = run_forecast(
         df=latest_df,
@@ -101,6 +442,7 @@ def run_real_time(model_path: str, output_signal_only, verbose):
 
     assert 1 == len(signal)
     signal = signal.values[0]
+
     # Calculate target price and date
     if signal == 1:  # Buy signal
         target_price = current_price * (1 + threshold_pct)
@@ -146,36 +488,6 @@ def run_real_time(model_path: str, output_signal_only, verbose):
                 print(f"   (Threshold: {threshold_pct * 100:.2f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
 
     return signal, current_price, target_price, target_date
-
-
-# ============================================
-# 2. RSI (Relative Strength Index)
-# ============================================
-def calculate_rsi(close: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate RSI using Wilder's smoothing method."""
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period, min_periods=1).mean()
-    rs = gain / loss.replace(0, np.nan)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-
-# ============================================
-# 3. MACD (Fixed: preserves index)
-# ============================================
-def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
-    """Calculate MACD line, signal line, and histogram. Preserves pandas index."""
-    if not isinstance(close, pd.Series):
-        close = pd.Series(close.iloc[:, 0])
-    ema_fast = close.ewm(span=fast, min_periods=fast, adjust=False).mean()
-    ema_slow = close.ewm(span=slow, min_periods=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, min_periods=signal, adjust=False).mean()
-    histogram = macd_line - signal_line
-    return pd.DataFrame({
-        'MACD': macd_line, 'Signal': signal_line, 'Histogram': histogram
-    }, index=close.index)
 
 
 # ============================================
@@ -254,7 +566,8 @@ class ForecastSystem:
                  macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9,
                  one_euro_min: float = 10, one_euro_factor: float = 0.2,
                  lookahead_bars: int = 5, threshold_pct: float = 0.01,
-                 rsi_mode: str = "momentum", target_type: str = "any"):
+                 rsi_mode: str = "momentum", target_type: str = "any",
+                 use_jit_signals: bool = False):
         self.rsi_period = rsi_period
         self.rsi_oversold = rsi_oversold
         self.rsi_overbought = rsi_overbought
@@ -267,6 +580,7 @@ class ForecastSystem:
         self.threshold_pct = threshold_pct
         self.rsi_mode = rsi_mode
         self.target_type = target_type  # 'exact' or 'any'
+        self.use_jit_signals = use_jit_signals  # Enable JIT for signal generation
 
     def generate_signals(self, df: pd.DataFrame, price_col, ticker) -> pd.DataFrame:
         df = df.copy()
@@ -288,26 +602,41 @@ class ForecastSystem:
         else:
             df['FutureLabel'] = create_target_exact(close, self.lookahead_bars, self.threshold_pct)
 
-        df['Signal'] = 0
+        # ✅ SIGNAL GENERATION: JIT or vectorized pandas
+        if self.use_jit_signals and len(df) > 100:  # JIT overhead not worth it for small datasets
+            close_vals = close.to_numpy(dtype=np.float64)
+            one_euro_vals = df['OneEuro'].to_numpy(dtype=np.float64)
+            rsi_vals = df['RSI'].to_numpy(dtype=np.float64)
+            hist_vals = df['Histogram'].to_numpy(dtype=np.float64)
+            rsi_mode_momentum = (self.rsi_mode == "momentum")
 
-        rsi_shift = df['RSI'].shift(1).fillna(df['RSI'])
-        hist_shift = df['Histogram'].shift(1).fillna(df['Histogram'])
+            signal_array = _generate_signals_numba(
+                close_vals, one_euro_vals, rsi_vals, hist_vals,
+                self.rsi_oversold, self.rsi_overbought, rsi_mode_momentum
+            )
+            df['Signal'] = signal_array
+        else:
+            # Original vectorized pandas approach
+            df['Signal'] = 0
+            rsi_shift = df['RSI'].shift(1).fillna(df['RSI'])
+            hist_shift = df['Histogram'].shift(1).fillna(df['Histogram'])
 
-        if self.rsi_mode == "reversion":
-            long_rsi_cond = df['RSI'] < self.rsi_oversold
-            short_rsi_cond = df['RSI'] > self.rsi_overbought
-        else:  # momentum
-            long_rsi_cond = df['RSI'] > self.rsi_overbought
-            short_rsi_cond = df['RSI'] < self.rsi_oversold
+            if self.rsi_mode == "reversion":
+                long_rsi_cond = df['RSI'] < self.rsi_oversold
+                short_rsi_cond = df['RSI'] > self.rsi_overbought
+            else:  # momentum
+                long_rsi_cond = df['RSI'] > self.rsi_overbought
+                short_rsi_cond = df['RSI'] < self.rsi_oversold
 
-        long_cond = ((close > df['OneEuro']) & long_rsi_cond & (df['RSI'] > rsi_shift) &
-                     (df['Histogram'] > 0) & (df['Histogram'] > hist_shift))
-        short_cond = ((close < df['OneEuro']) & short_rsi_cond & (df['RSI'] < rsi_shift) &
-                      (df['Histogram'] < 0) & (df['Histogram'] < hist_shift))
+            long_cond = ((close > df['OneEuro']) & long_rsi_cond & (df['RSI'] > rsi_shift) &
+                         (df['Histogram'] > 0) & (df['Histogram'] > hist_shift))
+            short_cond = ((close < df['OneEuro']) & short_rsi_cond & (df['RSI'] < rsi_shift) &
+                          (df['Histogram'] < 0) & (df['Histogram'] < hist_shift))
 
-        df.loc[long_cond, 'Signal'] = 1
-        df.loc[short_cond, 'Signal'] = -1
-        df['Signal'] = df['Signal'].fillna(0)
+            df.loc[long_cond, 'Signal'] = 1
+            df.loc[short_cond, 'Signal'] = -1
+            df['Signal'] = df['Signal'].fillna(0)
+
         return df
 
     def evaluate_signals(self, df: pd.DataFrame, price_col) -> dict:
@@ -338,6 +667,75 @@ class ForecastSystem:
 
 
 # ============================================
+# JIT WARMUP & VALIDATION UTILITIES
+# ============================================
+
+def warmup_jit():
+    """Pre-compile JIT functions to avoid first-run overhead."""
+    dummy = np.array([100.0, 101.0, 99.5, 102.0, 100.5, 103.0, 101.5, 104.0], dtype=np.float64)
+    _ = _rsi_numba(dummy, 14)
+    _ = _ema_numba(dummy, 12)
+    _ = _macd_numba(dummy, 12, 26, 9)
+    _ = _generate_signals_numba(dummy, dummy, dummy, dummy, 30.0, 70.0, True)
+
+
+def _validate_jit_consistency(verbose: bool = True) -> bool:
+    """
+    Sanity check: Assert JIT functions produce results consistent with expected behavior.
+    Returns True if validation passes, False otherwise.
+    """
+    if verbose:
+        print("🔍 Running JIT consistency validation...")
+
+    try:
+        np.random.seed(42)
+        # Generate realistic test data
+        test_prices = 100 + np.cumsum(np.random.randn(500) * 0.5)
+        test_close = pd.Series(test_prices, name='Close')
+
+        # Test RSI
+        rsi_result = calculate_rsi(test_close, period=14)
+        assert not rsi_result.isna().all(), "RSI: All values are NaN"
+        assert rsi_result.min() >= 0 and rsi_result.max() <= 100, "RSI: Values out of [0, 100] range"
+
+        # Test MACD
+        macd_df = calculate_macd(test_close, fast=12, slow=26, signal=9)
+        assert not macd_df['MACD'].isna().all(), "MACD: All values are NaN"
+        assert len(macd_df) == len(test_close), "MACD: Length mismatch"
+
+        # Test signal generation (both modes)
+        for mode in ["momentum", "reversion"]:
+            df_test = pd.DataFrame({'Close': test_close})
+            df_test['OneEuro'] = one_euro_filter(test_close.values, 10.0, 0.2)
+            df_test['RSI'] = calculate_rsi(test_close, 14)
+            macd_test = calculate_macd(test_close, 12, 26, 9)
+            df_test['Histogram'] = macd_test['Histogram']
+
+            # Test pandas vectorized path
+            system_pandas = ForecastSystem(rsi_mode=mode, use_jit_signals=False)
+            result_pandas = system_pandas.generate_signals(df_test.copy(), 'Close', 'TEST')
+
+            # Test JIT path
+            system_jit = ForecastSystem(rsi_mode=mode, use_jit_signals=True)
+            result_jit = system_jit.generate_signals(df_test.copy(), 'Close', 'TEST')
+
+            # Signals should be identical (both paths use same logic)
+            assert (result_pandas['Signal'] == result_jit['Signal']).all(), \
+                f"Signal mismatch in {mode} mode between pandas and JIT paths"
+
+        if verbose:
+            print("✅ JIT validation passed: All functions produce consistent results")
+        return True
+
+    except Exception as e:
+        print(f"❌ JIT validation FAILED: {e}")
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        return False
+
+
+# ============================================
 # 6. RUN FORECAST (Updated to accept parameters)
 # ============================================
 def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
@@ -345,7 +743,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
                  macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9,
                  one_euro_min: float = 10.0, one_euro_factor: float = 0.2,
                  lookahead_bars: int = 5, threshold_pct: float = 0.01,
-                 target_type: str = "any") -> Tuple[pd.DataFrame, dict]:
+                 target_type: str = "any", use_jit_signals: bool = False) -> Tuple[pd.DataFrame, dict]:
     if not pd.api.types.is_numeric_dtype(df[price_col].to_numpy().dtype if isinstance(df[price_col], pd.DataFrame) else df[price_col].dtype):
         df[price_col] = df[price_col].apply(pd.to_numeric, errors='coerce')
     df = df.dropna(subset=[price_col])
@@ -355,7 +753,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
         macd_fast=macd_fast, macd_slow=macd_slow, macd_signal=macd_signal,
         one_euro_min=one_euro_min, one_euro_factor=one_euro_factor,
         lookahead_bars=lookahead_bars, threshold_pct=threshold_pct,
-        target_type=target_type
+        target_type=target_type, use_jit_signals=use_jit_signals
     )
     df_signals = system.generate_signals(df=df, price_col=price_col, ticker=ticker)
     metrics = system.evaluate_signals(df=df_signals, price_col=price_col)
@@ -449,16 +847,18 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
 # ============================================
 def setup_argparse() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Rule-based Technical Forecasting System (One-Euro + RSI + MACD)",
+        description="Rule-based Technical Forecasting System (One-Euro + RSI + MACD) [JIT-ACCELERATED]",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     data_grp = parser.add_argument_group("Data & Environment")
-    data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier",choices=DATASET_AVAILABLE)
+    data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier", choices=DATASET_AVAILABLE)
     data_grp.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
     data_grp.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     data_grp.add_argument("--disable-print", action="store_true", help="Skip prints")
     data_grp.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Print detailed progress, metrics, and explanations')
+    data_grp.add_argument('--validate-jit', action='store_true', default=False,
+                          help='Run JIT consistency sanity check at startup (default: disabled)')
 
     algo_grp = parser.add_argument_group("Algorithm Parameters")
     algo_grp.add_argument("--rsi-period", type=int, default=14, help="RSI calculation window")
@@ -472,13 +872,16 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--one-euro-factor", type=float, default=0.2, help="One-Euro filter beta factor")
     algo_grp.add_argument("--lookahead-bars", type=int, default=5, help="Future bars to forecast")
     algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target")
+    algo_grp.add_argument('--train-ratio', type=float, default=1.0, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
+    algo_grp.add_argument('--use-jit-signals', action='store_true', default=False,
+                          help='Enable JIT acceleration for signal generation (recommended for large datasets)')
 
     # Target labeling mode
     algo_grp.add_argument(
         "--target-type",
         type=str,
         choices=["exact", "any", "any_half_B"],
-        default="any",
+        default="any_half_B",
         help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
     )
 
@@ -515,42 +918,123 @@ def _load_df(_datase_id):
 
 
 def entry(args):
+    # ✅ JIT VALIDATION (optional, disabled by default)
+    if args.validate_jit:
+        if not _validate_jit_consistency(verbose=args.verbose):
+            print("⚠️  JIT validation failed. Proceeding anyway (results may be inconsistent).")
+            return None
+        # Warmup JIT after validation to cache compiled functions
+        warmup_jit()
+
+    if args.verbose:
+        print("✅ __doc__ length:", len(__doc__ or ""))
+        print("✅ First line:", __doc__.split('\n')[0] if __doc__ else "None")
+        print(__doc__)
+
     # ✅ REAL-TIME MODE: Load model and evaluate latest point only
     if args.real_time:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
         return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose)
 
-    # ✅ BATCH MODE: Original behavior
+    # ✅ BATCH MODE: Original behavior with optional train/val split
     np.random.seed(args.seed)
     master_data_cache = copy.deepcopy(_load_df(_datase_id=args.dataset_id))
     df_spx500 = master_data_cache[args.ticker].sort_index()
     price_col = ('Close', args.ticker) if isinstance(df_spx500.columns, pd.MultiIndex) else 'Close'
 
-    df_results, metrics = run_forecast(
-        df=df_spx500, price_col=price_col, ticker=args.ticker,
-        rsi_period=args.rsi_period, rsi_oversold=args.rsi_oversold, rsi_overbought=args.rsi_overbought, rsi_mode=args.rsi_mode,
-        macd_fast=args.macd_fast, macd_slow=args.macd_slow, macd_signal=args.macd_signal,
-        one_euro_min=args.one_euro_min, one_euro_factor=args.one_euro_factor,
-        lookahead_bars=args.lookahead_bars, threshold_pct=args.threshold_pct,
-        target_type=args.target_type
-    )
+    # Helper to run forecast and print results
+    def run_and_report(df_subset, label, plot_results=False):
+        df_results, metrics = run_forecast(
+            df=df_subset, price_col=price_col, ticker=args.ticker,
+            rsi_period=args.rsi_period, rsi_oversold=args.rsi_oversold, rsi_overbought=args.rsi_overbought, rsi_mode=args.rsi_mode,
+            macd_fast=args.macd_fast, macd_slow=args.macd_slow, macd_signal=args.macd_signal,
+            one_euro_min=args.one_euro_min, one_euro_factor=args.one_euro_factor,
+            lookahead_bars=args.lookahead_bars, threshold_pct=args.threshold_pct,
+            target_type=args.target_type,
+            use_jit_signals=args.use_jit_signals  # Pass JIT flag
+        )
+        if not args.disable_print:
+            print(f"\n📊 {label} Evaluation")
+            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].date()} to {df_subset.index[-1].date()}")
+            print(f"   Total Signals: {metrics.get('total_signals', 0)}")
+            print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
+            print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
+            print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
+            print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
+            print(f"   Target Mode: '{args.target_type}'")
+            print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
+        if plot_results and not args.disable_plot_sample:
+            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample)
+        return df_results, metrics
 
-    if not args.disable_print:
-        print("\n📊 Forecast System Evaluation")
-        print(f"   Ticker: {args.ticker}")
-        print(f"   Total Signals: {metrics.get('total_signals', 0)}")
-        print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
-        print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
-        print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
-        print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
-        print(f"   Target Mode: '{args.target_type}'")
-        print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
+    # ✅ TRAIN/VALIDATION SPLIT LOGIC
+    if args.train_ratio < 1.0:
+        # Calculate split index (ensure minimum data for indicators)
+        min_history = max(args.rsi_period, args.macd_slow, 100) + args.lookahead_bars + 10
+        total_len = len(df_spx500)
 
-    if not args.disable_plot_sample:
-        plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample)
+        if total_len < min_history:
+            raise ValueError(f"Dataset too small ({total_len} bars) for indicators + lookahead. Need at least {min_history}.")
 
-    return metrics
+        train_end_idx = int(total_len * args.train_ratio)
+        # Ensure training set has enough data for warmup
+        train_end_idx = max(train_end_idx, min_history)
+
+        df_train = df_spx500.iloc[:train_end_idx].copy()
+        df_val = df_spx500.iloc[train_end_idx:].copy()
+        if args.verbose:
+            print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%), Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%)")
+
+        # Run on training set (backtest)
+        _, metrics_train = run_and_report(df_train, "🔧 TRAINING SET (Backtest)", plot_results=False)
+
+        # Run on validation set (final evaluation)
+        df_results_val, metrics_val = run_and_report(df_val, "✅ VALIDATION SET (Final Evaluation)", plot_results=True)
+
+        # Print comparison summary
+        if not args.disable_print and metrics_train and metrics_val:
+            print("\n" + "=" * 60)
+            print("📈 TRAIN vs VALIDATION COMPARISON")
+            print("=" * 60)
+            print(f"{'Metric':<25} {'Train':>12} {'Val':>12} {'Δ':>10}")
+            print("-" * 60)
+            for key in ['accuracy', 'long_accuracy', 'short_accuracy']:
+                train_val = metrics_train.get(key, 0) * 100
+                val_val = metrics_val.get(key, 0) * 100
+                delta = val_val - train_val
+                print(f"{key:<25} {train_val:>11.2f}% {val_val:>11.2f}% {delta:>+9.2f}%")
+            print("=" * 60 + "\n")
+
+        return metrics_val, metrics_train
+
+    else:
+        # ✅ Original behavior: run on full dataset
+        df_results, metrics = run_forecast(
+            df=df_spx500, price_col=price_col, ticker=args.ticker,
+            rsi_period=args.rsi_period, rsi_oversold=args.rsi_oversold, rsi_overbought=args.rsi_overbought, rsi_mode=args.rsi_mode,
+            macd_fast=args.macd_fast, macd_slow=args.macd_slow, macd_signal=args.macd_signal,
+            one_euro_min=args.one_euro_min, one_euro_factor=args.one_euro_factor,
+            lookahead_bars=args.lookahead_bars, threshold_pct=args.threshold_pct,
+            target_type=args.target_type,
+            use_jit_signals=args.use_jit_signals  # Pass JIT flag
+        )
+
+        if not args.disable_print:
+            print("\n📊 Forecast System Evaluation")
+            print(f"   Ticker: {args.ticker}")
+            print(f"   Total Signals: {metrics.get('total_signals', 0)}")
+            print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
+            print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
+            print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
+            print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
+            print(f"   Target Mode: '{args.target_type}'")
+            print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
+
+        if not args.disable_plot_sample:
+            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample)
+
+        return metrics, metrics
 
 
 if __name__ == "__main__":
