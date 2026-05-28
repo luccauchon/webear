@@ -1,3 +1,86 @@
+"""
+AutoTune Cycle-Aware Trading Strategy
+======================================
+Overview:
+    A quantitative trading algorithm that leverages digital signal processing (DSP)
+    techniques to dynamically adapt to market cycles. By isolating cyclical price
+    movements from long-term trends and noise, the strategy generates momentum-based
+    trading signals that are optimized for specific risk/reward profiles using Optuna.
+
+Core Algorithm:
+    1. Dominant Cycle Estimation (`_auto_tune`):
+       Applies a 3rd-order high-pass filter to remove low-frequency trends, then
+       computes rolling autocorrelation to dynamically estimate the market's current
+       dominant cycle period (in bars).
+    2. Adaptive Bandpass Filtering (`_bandpass2`):
+       Constructs a 2nd-order bandpass filter dynamically tuned to the estimated
+       cycle period. This extracts cyclical momentum while suppressing non-cyclical
+       drift and high-frequency noise.
+    3. Signal Generation (`_run_backtest`):
+       Triggers LONG/SHORT signals on 2-bar Rate-of-Change (ROC) crossovers of the
+       bandpass output. Signals are gated by:
+         - Cycle Strength: Minimum correlation threshold to ensure the detected cycle
+           is statistically robust.
+         - Baseline Alignment: Optional high-pass trend filter (above/below zero) to
+           align signals with the underlying macro trend.
+    4. Forward Evaluation:
+       For every generated signal, the algorithm simulates forward performance over
+       a configurable `--lookahead-bars` window, recording path-dependent min/max
+       prices, terminal prices, and maximum achievable returns.
+    5. Hyperparameter Optimization:
+       Uses Optuna (TPE sampler + Median pruner) to search for optimal filter
+       parameters (`window`, `bandwidth`, `threshold`, baseline toggles) that
+       maximize a user-defined performance metric on a training set, with final
+       validation on a held-out dataset.
+
+The --optimize Flag: Metric Comparison
+---------------------------------------
+This flag defines the primary objective function for Optuna hyperparameter tuning.
+Each metric evaluates trade success differently over the configured lookahead window,
+using `--win-threshold` (`wt`) as the boundary/reference value:
+
+  • profit_target (Direction-Agnostic)
+    Measures the % of signals where the MAXIMUM forward return exceeds `wt`.
+    Focus: Absolute profit magnitude. Ignores intra-trade drawdown and terminal price.
+
+  • range_bound (Direction-Agnostic)
+    Measures the % of signals where price stays strictly within `[1-wt, 1+wt]`
+    throughout the ENTIRE lookahead window.
+    Focus: Volatility suppression & mean-reversion. Penalizes any breakout.
+
+  • hold_floor (Long-Focused)
+    Measures the % of LONG signals where price NEVER drops below `1-wt` at any
+    point during the lookahead window.
+    Focus: Downside protection & stop-loss integrity. Upside is uncapped.
+
+  • hold_ceiling (Short-Focused)
+    Measures the % of SHORT signals where price NEVER rises above `1+wt` during
+    the lookahead window.
+    Focus: Short-side risk containment & trend continuation safety.
+
+  • finish_above (Long-Focused)
+    Measures the % of LONG signals where the price at the EXACT FINAL BAR of the
+    lookahead window is above `1+wt`.
+    Focus: Terminal momentum & breakout conviction. Allows intra-trade volatility.
+
+  • finish_below (Short-Focused)
+    Measures the % of SHORT signals where the price at the EXACT FINAL BAR of the
+    lookahead window is below `1-wt`.
+    Focus: Terminal downside momentum & trend resolution.
+
+Key Distinctions:
+  - Path-Dependent vs. Endpoint-Dependent: `hold_floor`, `hold_ceiling`, and
+    `range_bound` evaluate price behavior across every bar in the lookahead window.
+    `finish_above` and `finish_below` only evaluate the terminal price.
+  - Directional Bias: The optimizer automatically sets `signal_type` to 1 (long),
+    -1 (short), or 0 (both) based on your chosen metric to ensure logical alignment.
+  - Risk vs. Reward: `hold_*` and `range_bound` prioritize capital preservation.
+    `profit_target` and `finish_*` prioritize directional conviction and momentum capture.
+
+Usage Example:
+    python autotune.py --dataset-id day --ticker ^GSPC --optimize hold_floor \\
+                       --lookahead-bars 10 --win-threshold 0.04 --n-trials 500
+"""
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -8,7 +91,6 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.ticker import FuncFormatter
@@ -318,7 +400,8 @@ def entry(args):
     length_dataset = args.length_dataset
     optimize = args.optimize
     np.random.seed(42)
-
+    if verbose:
+        print(__doc__)
     filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
     if verbose: print(f"📂 Loading dataset from: {filename}")
     with open(filename, "rb") as f:
