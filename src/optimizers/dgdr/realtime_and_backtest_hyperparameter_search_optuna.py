@@ -424,8 +424,8 @@ def run_real_time_mode(args, df, config_cols):
     print("\n" + "─" * 40)
     print(" 🕒 REAL-TIME SIGNAL CHECK")
     print("─" * 40)
-    print(f" Latest Bar Index : {latest_idx}")
-    print(f" Previous Bar     : {prev_idx}")
+    print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f" Close Price      : ${df_tail[close_col].iloc[-1]:.2f}")
 
     if latest_signals:
