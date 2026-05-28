@@ -25,6 +25,7 @@ from datetime import datetime
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
 
+
 # ==============================================================================
 # 🎯 STRATEGY OPTIMIZER & REAL-TIME MONITOR
 # ==============================================================================
@@ -62,6 +63,11 @@ pd.options.mode.chained_assignment = None
 #   • Hyperparameters: RSI length, SMA period, Fib lookback, divergence window
 #   • Objective: Maximize Win Rate (buy/sell/combined) with density penalty
 #   • Persistence: SQLite-backed studies for resumable, distributed optimization
+#
+# 🔄 TRAIN/VALIDATION SPLIT:
+#   • --train-ratio argument (default: 0.7) for chronological data splitting
+#   • Optimize on training set, evaluate best params on validation set
+#   • Detects overfitting via train/val performance gap
 #
 # 🚀 MODES:
 #   1. Backtest Mode    : --optimize          → Tune parameters on historical data
@@ -601,10 +607,12 @@ def generate_model_name(args, params, score):
         arg_parts.append(f"put-{args.put_strike_pct:.2f}")
     if hasattr(args, 'call_strike_pct'):
         arg_parts.append(f"call-{args.call_strike_pct:.2f}")
+    if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
+        arg_parts.append(f"train-{args.train_ratio:.2f}")
 
     # Combine all parts
     name_parts = [
-        args.ticker.replace('^',''),
+        args.ticker.replace('^', ''),
         args.dataset_id,
         args.optimize_target,
         f"score-{score:.4f}",
@@ -623,7 +631,7 @@ def generate_model_name(args, params, score):
     return filename
 
 
-def save_model(params, score, args, df_final=None):
+def save_model(params, score, args, df_final=None, validation_score=None, train_val_split=None):
     """
     Save model parameters and metadata to a file with descriptive name.
     """
@@ -635,6 +643,8 @@ def save_model(params, score, args, df_final=None):
     model_data = {
         'params': params,
         'score': score,
+        'validation_score': validation_score,  # ← Added validation score
+        'train_val_split': train_val_split,  # ← Added split metadata
         'args': {
             'ticker': args.ticker,
             'dataset_id': args.dataset_id,
@@ -644,6 +654,7 @@ def save_model(params, score, args, df_final=None):
             'put_strike_pct': args.put_strike_pct,
             'call_strike_pct': args.call_strike_pct,
             'min_signal_density': args.min_signal_density,
+            'train_ratio': getattr(args, 'train_ratio', 1.0),
         },
         'timestamp': datetime.now().isoformat(),
         'final_df': df_final  # Optional: include final dataframe if needed
@@ -654,6 +665,8 @@ def save_model(params, score, args, df_final=None):
 
     if args.verbose:
         print(f"💾 Model saved to: {model_path}")
+        if validation_score is not None:
+            print(f"   📊 Validation Score: {validation_score:.4f}")
 
     return model_path
 
@@ -735,9 +748,12 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     model_data = load_model(args.model_path)
     params = model_data['params']
     stored_score = model_data.get('score', 'N/A')
+    val_score = model_data.get('validation_score')
 
     if args.verbose:
         print(f"📊 Loaded model with score: {stored_score}")
+        if val_score is not None:
+            print(f"📊 Validation score: {val_score:.4f}")
         print(f"🧠 Parameters: {params}")
 
     # Run strategy on latest datapoint
@@ -803,17 +819,22 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, rsi_
 
 
 def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
-    rsi_length = trial.suggest_int('rsi_length', 8, 30)
-    rsi_signal_len = trial.suggest_int('rsi_signal_len', 5, 20)
-    sma_len = trial.suggest_int('sma_len', 20, 100)
-    fib_lookback = trial.suggest_int('fib_lookback', 20, 100)
-    div_window = trial.suggest_int('div_window', 3, 10)
-
+    # rsi_length     = trial.suggest_int('rsi_length', 8, 30)
+    # rsi_signal_len = trial.suggest_int('rsi_signal_len', 5, 20)
+    # sma_len        = trial.suggest_int('sma_len', 20, 100)
+    # fib_lookback   = trial.suggest_int('fib_lookback', 20, 100)
+    # div_window     = trial.suggest_int('div_window', 3, 10)
+    rsi_length = trial.suggest_int('rsi_length', 2, 60)
+    rsi_signal_len = trial.suggest_int('rsi_signal_len', 2, 60)
+    sma_len = trial.suggest_int('sma_len', 2, 200)
+    fib_lookback = trial.suggest_int('fib_lookback', 2, 200)
+    div_window = trial.suggest_int('div_window', 2, 30)
     try:
         buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df = \
             run_strategy_and_evaluate(df_base=df_base, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col, rsi_length=rsi_length,
                                       rsi_signal_len=rsi_signal_len, sma_len=sma_len, fib_lookback=fib_lookback, div_window=div_window)
-    except Exception:
+    except Exception as ee:
+        print(ee)
         return -1.0  # Discard invalid trials
 
     if _args.optimize_target == 'buy_wr':
@@ -863,6 +884,8 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
     opt_group.add_argument('--optuna-db', type=str, default=None,
                            help='SQLite path for Optuna persistence. Defaults to {output_dir}/optuna_study.db')
+    opt_group.add_argument('--train-ratio', type=float, default=0.7,
+                           help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
 
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False,
@@ -880,20 +903,24 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 def print_startup_banner(args):
     """Print a visible banner when the program runs."""
+    train_info = ""
+    if hasattr(args, 'train_ratio') and args.optimize and args.train_ratio < 1.0:
+        train_info = f" | Train/Val: {args.train_ratio * 100:.0f}%/{(1 - args.train_ratio) * 100:.0f}%"
+
     banner = f"""
-╔{'═'*78}╗
-║  🎯 STRATEGY OPTIMIZER & REAL-TIME MONITOR  {' '*33}║
-╠{'═'*78}╣
+╔{'═' * 78}╗
+║  🎯 STRATEGY OPTIMIZER & REAL-TIME MONITOR  {' ' * 33}║
+╠{'═' * 78}╣
 ║  📈 Multi-signal technical strategy for options validation                   ║
 ║  🔧 RSI • Fibonacci • Divergences • Optuna Optimization                      ║
-╠{'─'*78}╣
+╠{'─' * 78}╣
 ║  🔹 Ticker       : {args.ticker:<58}║
 ║  🔹 Dataset      : {args.dataset_id:<58}║
 ║  🔹 Mode         : {'REAL-TIME' if args.real_time else 'OPTIMIZATION' if args.optimize else 'EVALUATION' if args.model_path else 'DEFAULT BACKTEST':<58}║
-║  🔹 Lookahead    : {args.lookahead_bars:02d} bars{' '*51}║
+║  🔹 Lookahead    : {args.lookahead_bars:02d} bars{' ' * 51}║
 ║  🔹 Method       : {args.method:<58}║
-║  🔹 Strike Pct   : Put {args.put_strike_pct:.2%} | Call {args.call_strike_pct:.2%}{' '*33}║
-╚{'═'*78}╝
+║  🔹 Strike Pct   : Put {args.put_strike_pct:.2%} | Call {args.call_strike_pct:.2%}{' ' * 33}║{train_info if train_info else ' ' * 78}║
+╚{'═' * 78}╝
 """
     print(banner)
 
@@ -923,6 +950,8 @@ def entry(args):
             print("🔹 Mode: REAL-TIME SIGNAL CHECK")
         elif args.optimize:
             print(f"🔹 Mode: OPTIMIZATION → Target: {args.optimize_target} | Trials: {args.n_trials}")
+            if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
+                print(f"🔹 Train/Val Split: {args.train_ratio * 100:.1f}% / {(1 - args.train_ratio) * 100:.1f}%")
         elif args.model_path:
             print(f"🔹 Mode: EVALUATION → Model: {os.path.basename(args.model_path)}")
         else:
@@ -943,7 +972,42 @@ def entry(args):
         params = model_data['params']
         if args.verbose:
             print(f"📊 Loaded model with score: {model_data.get('score', 'N/A')}")
+            if model_data.get('validation_score') is not None:
+                print(f"📊 Validation score: {model_data['validation_score']:.4f}")
             print(f"🧠 Parameters: {params}")
+
+    # ==============================================================================
+    # 🔄 TRAIN/VALIDATION SPLIT (for optimization only)
+    # ==============================================================================
+    df_train = df_base
+    df_val = None
+    train_val_split_info = None
+
+    if args.optimize and hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
+        # Chronological split to avoid look-ahead bias (critical for time-series)
+        split_idx = int(len(df_base) * args.train_ratio)
+
+        # Ensure minimum data in each split
+        min_bars = 100  # Adjust based on your strategy's warmup needs
+        if split_idx < min_bars:
+            print(f"⚠️  Train split too small ({split_idx} < {min_bars}), using full dataset")
+        elif len(df_base) - split_idx < min_bars:
+            print(f"⚠️  Validation split too small ({len(df_base) - split_idx} < {min_bars}), using full dataset")
+        else:
+            df_train = df_base.iloc[:split_idx].copy()
+            df_val = df_base.iloc[split_idx:].copy()
+            train_val_split_info = {
+                'train_ratio': args.train_ratio,
+                'train_bars': len(df_train),
+                'val_bars': len(df_val),
+                'train_range': (df_train.index[0].strftime('%Y-%m-%d'), df_train.index[-1].strftime('%Y-%m-%d')),
+                'val_range': (df_val.index[0].strftime('%Y-%m-%d'), df_val.index[-1].strftime('%Y-%m-%d'))
+            }
+            if args.verbose:
+                print(f"📊 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%), "
+                      f"Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%)")
+                print(f"   📅 Train: {train_val_split_info['train_range'][0]} → {train_val_split_info['train_range'][1]}")
+                print(f"   📅 Val:   {train_val_split_info['val_range'][0]} → {train_val_split_info['val_range'][1]}")
 
     if args.optimize:
         db_path = args.optuna_db or os.path.join(args.output_dir, 'optuna_study.db')
@@ -952,6 +1016,8 @@ def entry(args):
 
         print(f"\n🔍 Initializing Optuna study: {study_name}")
         print(f"   📂 Persistence DB: {db_path}")
+        if df_val is not None:
+            print(f"   🔄 Optimizing on TRAINING set only (validation held out)")
 
         study = optuna.create_study(
             study_name=study_name,
@@ -978,8 +1044,16 @@ def entry(args):
         else:
             print("📦 No stored trials found. Initializing fresh optimization run.\n")
 
+        # Optimize on TRAINING set only
         study.optimize(
-            lambda trial: optuna_objective(trial=trial, _args=args, df_base=df_base, close_col=close_col, high_col=high_col, low_col=low_col),
+            lambda trial: optuna_objective(
+                trial=trial,
+                _args=args,
+                df_base=df_train,  # ← Use training set for optimization
+                close_col=close_col,
+                high_col=high_col,
+                low_col=low_col
+            ),
             n_trials=args.n_trials,
             timeout=args.timeout,
             show_progress_bar=args.verbose
@@ -993,7 +1067,52 @@ def entry(args):
             print(f"      {k}: {v}")
             params[k] = v
 
-    # Final Evaluation & Output
+        # ==============================================================================
+        # 🎯 VALIDATION SET EVALUATION (if split was used)
+        # ==============================================================================
+        if df_val is not None and len(df_val) > args.lookahead_bars:
+            if args.verbose:
+                print(f"\n{'=' * 80}")
+                print(f"🔍 EVALUATING BEST PARAMETERS ON VALIDATION SET")
+                print(f"{'=' * 80}")
+
+            # Evaluate on validation set with best params
+            buy_wr_val, sell_wr_val, combined_wr_val, _, _, eval_buy_val, eval_sell_val, buy_wins_val, sell_wins_val, df_val_final = \
+                run_strategy_and_evaluate(
+                    df_base=df_val,
+                    _args=args,
+                    close_col=close_col,
+                    high_col=high_col,
+                    low_col=low_col,
+                    **params
+                )
+
+            if args.verbose:
+                print(f"📊 Validation Results ({len(df_val)} bars):")
+                print(f"   🟢 Buy:  {buy_wins_val}/{eval_buy_val} → {buy_wr_val:6.2f}%")
+                print(f"   🔴 Sell: {sell_wins_val}/{eval_sell_val} → {sell_wr_val:6.2f}%")
+                print(f"   🎯 Combined: {(buy_wins_val + sell_wins_val)}/{(eval_buy_val + eval_sell_val)} → {combined_wr_val:6.2f}%")
+
+                # Compare train vs val if both available
+                train_score = combined_wr_val if args.optimize_target == 'combined_wr' else (buy_wr_val if args.optimize_target == 'buy_wr' else sell_wr_val)
+                val_score = combined_wr_val if args.optimize_target == 'combined_wr' else (buy_wr_val if args.optimize_target == 'buy_wr' else sell_wr_val)
+                # Actually get training score from best trial
+                train_score = best_trial.value
+                gap = train_score - val_score
+                status = "✅ Good generalization" if abs(gap) < 0.1 else "⚠️  Potential overfitting"
+                print(f"\n📈 Train vs Validation Comparison:")
+                print(f"   Target Metric ({args.optimize_target}):")
+                print(f"      Train: {train_score:.2%} | Val: {val_score:.2%} | Gap: {gap:+.2%} {status}")
+
+            # Store validation score for model saving
+            validation_score = combined_wr_val if args.optimize_target == 'combined_wr' else (buy_wr_val if args.optimize_target == 'buy_wr' else sell_wr_val)
+        else:
+            validation_score = None
+
+    else:
+        validation_score = None
+
+    # Final Evaluation & Output on FULL dataset (unless in real-time mode)
     print(f"\n⚙️  Running final evaluation with params: {params}")
     buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df_final = \
         run_strategy_and_evaluate(df_base, args, close_col, high_col, low_col, **params)
@@ -1022,7 +1141,14 @@ def entry(args):
     # 🔹 Save model with descriptive name including params and score
     if args.optimize or args.model_path is None:  # Only save new model if we optimized or didn't load one
         score = combined_wr if args.optimize_target == 'combined_wr' else (buy_wr if args.optimize_target == 'buy_wr' else sell_wr)
-        saved_path = save_model(params, score, args, df_final if args.verbose else None)
+        saved_path = save_model(
+            params,
+            score,
+            args,
+            df_final if args.verbose else None,
+            validation_score=validation_score,
+            train_val_split=train_val_split_info
+        )
 
     os.makedirs(args.output_dir, exist_ok=True)
     # output_path = os.path.join(args.output_dir, f"{args.ticker}_{args.dataset_id}_signals.pkl")
