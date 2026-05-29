@@ -824,11 +824,11 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
     # sma_len        = trial.suggest_int('sma_len', 20, 100)
     # fib_lookback   = trial.suggest_int('fib_lookback', 20, 100)
     # div_window     = trial.suggest_int('div_window', 3, 10)
-    rsi_length = trial.suggest_int('rsi_length', 2, 60)
+    rsi_length = trial.suggest_int('rsi_length', 5, 30)
     rsi_signal_len = trial.suggest_int('rsi_signal_len', 2, 60)
-    sma_len = trial.suggest_int('sma_len', 2, 200)
+    sma_len = trial.suggest_int('sma_len', 10, 200)
     fib_lookback = trial.suggest_int('fib_lookback', 2, 200)
-    div_window = trial.suggest_int('div_window', 2, 30)
+    div_window = trial.suggest_int('div_window', 3, 20)
     try:
         buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df = \
             run_strategy_and_evaluate(df_base=df_base, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col, rsi_length=rsi_length,
