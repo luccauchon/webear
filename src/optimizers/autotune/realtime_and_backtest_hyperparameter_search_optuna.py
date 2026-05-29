@@ -79,7 +79,8 @@ Key Distinctions:
 
 Usage Example:
     python autotune.py --dataset-id day --ticker ^GSPC --optimize hold_floor \\
-                       --lookahead-bars 10 --win-threshold 0.04 --n-trials 500
+                       --lookahead-bars 10 --win-threshold 0.04 --n-trials 500 \\
+                       --storage sqlite:///optuna.db
 """
 try:
     from version import sys__name, sys__version
@@ -108,7 +109,6 @@ import pickle
 import os
 import glob
 import sys
-
 
 # =============================================================================
 # 📊 CENTRAL METRIC MAPPING (Single Source of Truth)
@@ -369,6 +369,10 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--n-trials', type=int, default=999999)
     opt_group.add_argument('--timeout', type=int, default=86400)
     opt_group.add_argument('--output-dir', type=str, default='models')
+    opt_group.add_argument('--storage', type=str, default=None,
+                           help='Optuna storage URL (e.g., sqlite:///optuna.db). Default: in-memory.')
+    opt_group.add_argument('--study-name', type=str, default=None,
+                           help='Optuna study name. Auto-generated if --storage is provided but name is omitted.')
 
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False)
@@ -554,10 +558,39 @@ def entry(args):
             print(f"[WARNING] Trial failed: {e}")
             return 0.0
 
-    if verbose: print(f"\n⚙️ Starting Optuna search ({n_trials} trials, {timeout}s timeout) on TRAINING SET...")
+    # 🗄️ OPTUNA PERSISTENCE SETUP
+    storage = args.storage
+    study_name = args.study_name
+    load_if_exists = False
+
+    if storage:
+        load_if_exists = True
+        if not study_name:
+            study_name = f"autotune_{ticker}_{dataset_id}_{optimize}"
+
     sampler = TPESampler(seed=42)
     pruner = MedianPruner(n_startup_trials=20, n_warmup_steps=0)
-    study = optuna.create_study(direction='maximize', sampler=sampler, pruner=pruner)
+
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage,
+        direction='maximize',
+        sampler=sampler,
+        pruner=pruner,
+        load_if_exists=load_if_exists
+    )
+
+    # 📊 OUTPUT BEST PARAMS IF AVAILABLE BEFORE OPTIMIZATION
+    if len(study.trials) > 0 and study.best_value is not None:
+        print(f"\n📂 Resuming existing study '{study_name}' ({len(study.trials)} trials found).")
+        print(f"   🎯 Best Objective So Far: {study.best_value * 100:.2f}%")
+        print(f"   ⚙️ Best Parameters    : {study.best_params}")
+    elif len(study.trials) > 0:
+        print(f"\n📂 Resuming existing study '{study_name}' ({len(study.trials)} trials found, but no successful trials yet).")
+    else:
+        if verbose: print(f"\n📂 Starting new Optuna study '{study_name or 'in-memory'}'.")
+
+    if verbose: print(f"\n⚙️ Running Optuna search ({n_trials} trials, {timeout}s timeout) on TRAINING SET...")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=verbose, gc_after_trial=True, timeout=timeout, callbacks=[perfect_score_callback])
 
     if verbose:
