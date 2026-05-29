@@ -158,7 +158,7 @@ def entry_point(args: argparse.Namespace) -> None:
 
     # Safe slicing for validation
     cached_spx = df_spx500[spx_close_col].iloc[-val_window - 1:-1]
-    new_spx = market_data['Close'].iloc[-val_window - 1:-1]
+    new_spx = market_data['Close'].dropna().iloc[-val_window - 1:-1]
     assert val_window == np.count_nonzero(cached_spx.values == new_spx.values), f"SPX validation failed for {freq_label}. Update dataset?"
 
     vix_close_col = ('Close', '^VIX')

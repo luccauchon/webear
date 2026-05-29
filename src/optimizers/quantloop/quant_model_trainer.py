@@ -291,7 +291,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         _df_fusionned = _df_fusionned.dropna()
 
     if _verbose:
-        print(f"Dates in DF (features only): {_df_fusionned.index[0].strftime('%Y-%m-%d')} :: {_df_fusionned.index[-1].strftime('%Y-%m-%d')}")
+        print(f"Dates in DF (features only):  {_df_fusionned.index[0].strftime('%Y-%m-%d')} :: {_df_fusionned.index[-1].strftime('%Y-%m-%d')}")
 
     return _df_fusionned
 
@@ -390,7 +390,6 @@ def entry_point(args):
         loaded_data = pickle.load(f)
     df_market = loaded_data["market_data"]
     df_macro = loaded_data["macro_data"]
-
     # Build features & target (uses overridden params if real-time, else CLI args)
     df = build_features_and_target(
         _df_market=df_market, _df_macro=df_macro,
@@ -400,7 +399,6 @@ def entry_point(args):
         _type_of_target=type_of_target, _verbose=verbose,
         create_target=not args.real_time  # Skip target creation in real-time mode
     )
-
     # ─────────────────────────────────────────────────────────────────────────
     # 🚀 REAL-TIME PREDICTION MODE
     # ─────────────────────────────────────────────────────────────────────────
@@ -485,13 +483,13 @@ def entry_point(args):
         print(f"📅 Date/Value used : {last_date} @ {last_value:.0f}")
         print(f"📅 Today's date    : {_now_timestamp}")
         if _target_type_used in ["lower", "soft_lower"]:
-            print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '?'} {last_value * (1 - _target_pourcentage_used):.0f}")
+            print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '!DOWN'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '>'} {last_value * (1 - _target_pourcentage_used):.0f}")
         if _target_type_used in ["higher", "soft_higher"]:
-            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '?'} {last_value * (1 + _target_pourcentage_used):.0f}")
+            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else '!UP'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {last_value * (1 + _target_pourcentage_used):.0f}")
         if _target_type_used in ["in_between"]:
             _str_left_tmp = f"{last_value * (1 - _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
             _str_right_tmp = f"{last_value * (1 + _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
-            print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '---'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
+            print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '!RANGE'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
         print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
         print("═" * 50)
         print(f"🔑 Features Used   : {feat_cols}")
