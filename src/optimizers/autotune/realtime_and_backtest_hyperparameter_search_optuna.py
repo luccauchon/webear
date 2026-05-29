@@ -454,7 +454,6 @@ def entry(args):
         last_signal = last_row['signal']
         if 'ticker' in saved_model and ticker != saved_model['ticker']:
             raise ValueError(f"Ticker mismatch: CLI={ticker}, Model={saved_model['ticker']}")
-        print(saved_model)
         total_rt_signals = (results_rt['signal'] != 0).sum()
         long_rt = (results_rt['signal'] == 1.0).sum()
         short_rt = (results_rt['signal'] == -1.0).sum()
