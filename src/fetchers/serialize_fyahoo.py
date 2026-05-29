@@ -98,7 +98,7 @@ def entry(
     # 1 day (long history)
     ###########################################################################
     if not skip_daily:
-        daily_start = "1960-01-01"
+        daily_start = "1933-01-01"
         daily_end = end_date
         print(f"{len(tickers)} tickers, {daily_start=}, {daily_end=}, interval=1d", flush=True)
         data_cache = {}
