@@ -545,6 +545,7 @@ def entry_point(args):
             provided_features = [
                 ['Dist_from_ATH', 'Fed_Rate_Diff', 'Inflation_Rate', 'Log_Close', 'MA_Long', 'MA_Short', 'Price_to_MA', 'RSI_Lag1', 'Shifted_MA_Short', 'Spread_10Y2Y', 'Unrate_Diff', 'VIX', 'VIX_Lag1'],
                 ['Fed_Rate_Diff', 'Inflation_Rate', 'MA_Long', 'MA_Short', 'RSI_Lag1', 'VIX_Lag1', 'VIX_Ratio'],
+                ['DGS10_Level', 'DGS10_MoM_Chg', 'Fed_Rate_Diff', 'Inflation_Rate', 'Price_to_MA', 'Shifted_MA_Long', 'Shifted_Price_to_MA', 'Spread_10Y2Y', 'VIX', 'VIX_Lag1', 'VIX_Ratio', 'WALCL_YoY'],
             ]
             for a_feartures_set in provided_features:
                 yield a_feartures_set
