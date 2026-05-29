@@ -156,8 +156,13 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials')
     opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
-    # ✅ NEW: Train/Validation split ratio
     opt_group.add_argument('--train-ratio', type=float, default=0.7, help='Fraction of data used for training/optimization (rest for validation)')
+
+    # 🆕 OPTUNA PERSISTENCE ARGUMENTS
+    opt_group.add_argument('--optuna-storage', type=str, default=None,
+                           help='Optuna storage URL (e.g., sqlite:///optuna.db, mysql://...). Defaults to in-memory.')
+    opt_group.add_argument('--optuna-study-name', type=str, default=None,
+                           help='Study name for persistence. Required if --optuna-storage is set.')
 
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
@@ -185,7 +190,6 @@ def dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_
 
     st = ta.supertrend(df[high_col], df[low_col], df[close_col], multiplier=st_multipler, length=st_length)
     st_direction_col = ('ST_Direction', ticker)
-    # 🔧 FIXED: Use positional indexing to avoid pandas_ta version column-naming bugs
     df[st_direction_col] = st.iloc[:, 1]
 
     C = df[close_col]
@@ -351,7 +355,6 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id):
     td_tag = config.get('td_weight', 'NA')
     st_tag = config.get('signal_type', 'NA')
 
-    # 🔽 ADDED: Extract best score and embed in filename
     best_score = getattr(study.best_trial, 'value', None)
     score_tag = f"score{best_score:.4f}".replace('.', 'p') if best_score is not None else "scoreNA"
     params_str = f"B{p_tag}_{m_tag}_md{md_tag}_wr{wr_tag}_td{td_tag}_{st_tag}_{score_tag}"
@@ -526,7 +529,33 @@ def entry(args):
     print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()}")
     print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.2f}, {call_base:.2f}]\n")
 
-    study = optuna.create_study(direction="maximize")
+    # 🆕 OPTUNA PERSISTENCE SETUP
+    storage = args.optuna_storage
+    study_name = args.optuna_study_name
+
+    if storage:
+        if not study_name:
+            raise ValueError("❌ --optuna-study-name is required when --optuna-storage is specified.")
+        print(f"💾 Optuna persistence enabled: storage='{storage}', study='{study_name}'")
+        study = optuna.create_study(
+            direction="maximize",
+            storage=storage,
+            study_name=study_name,
+            load_if_exists=True
+        )
+    else:
+        study = optuna.create_study(direction="maximize")
+
+    # 🆕 LIST PREVIOUS BEST PARAMETERS IF STUDY ALREADY EXISTS
+    if len(study.trials) > 0:
+        print(f"\n📋 Resuming existing study with {len(study.trials)} completed trial(s).")
+        print("🏆 Previous Best Parameters:")
+        for k, v in study.best_trial.params.items():
+            print(f"   {k:<25}: {v}")
+        print(f"   {'Previous Best Score':<25}: {study.best_trial.value:.4f}\n")
+    else:
+        print(f"🆕 Created new {'ín-memory' if not storage else ''} study.\n")
+
     study.optimize(
         lambda trial: objective(trial, df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
                                 B, method, min_density, wr_w, td_w, put_base, call_base, signal_type=args.signal_type),
@@ -550,7 +579,6 @@ def entry(args):
                                            sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
                                            buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'])
 
-    # Apply filter for main report if requested
     main_signals = signals_val.copy()
     if args.signal_type == 'buy':
         main_signals = [s for s in signals_val if s['Type'] == 'BUY']
@@ -560,7 +588,6 @@ def entry(args):
     pnl_df = calculate_pnl_report(main_signals, df_val, close_col, high_col, low_col,
                                   B, method, best['put__strike_pct'], best['call__strike_pct'], silent=False)
 
-    # 📊 POST-HOC DIRECTIONAL BREAKDOWN (Always runs for both directions)
     print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc Validation)")
     print("─" * 65)
     for dir_type in ['BUY', 'SELL']:
@@ -580,7 +607,6 @@ def entry(args):
             print(f"  {dir_type:<6} |    0 signals generated")
     print("─" * 65 + "\n")
 
-    # Plotting (uses validation data for out-of-sample visualization)
     if args.plot and not pnl_df.empty:
         plot_signals = main_signals
         if plot_signals:
