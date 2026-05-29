@@ -439,7 +439,9 @@ def entry(args):
         with open(model_path, 'rb') as f:
             saved_model = pickle.load(f)
         rt_params = saved_model['params']
+        assert 'win_threshold' in saved_model
         rt_win_threshold = saved_model['win_threshold']
+        assert 'signal_type' in saved_model
         rt_signal_type = saved_model.get('signal_type', 0)
         strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
         assert dataset_id == saved_model['dataset_id'], f"{dataset_id} == {saved_model['dataset_id']}"
@@ -448,7 +450,7 @@ def entry(args):
         last_signal = last_row['signal']
         if 'ticker' in saved_model and ticker != saved_model['ticker']:
             raise ValueError(f"Ticker mismatch: CLI={ticker}, Model={saved_model['ticker']}")
-
+        print(saved_model)
         total_rt_signals = (results_rt['signal'] != 0).sum()
         long_rt = (results_rt['signal'] == 1.0).sum()
         short_rt = (results_rt['signal'] == -1.0).sum()
@@ -459,9 +461,9 @@ def entry(args):
         signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
 
         if rt_signal_type in ('long', 'both'):
-            print(f"There's a {saved_model['score']:.2%} historical probability that if you enter LONG now at price ${last_price:.0f}, the price will not fall below ${last_price:.0f} × {1 - rt_win_threshold} at any point during the next {saved_model['params']['lookahead_bars']} bars.")
+            print(f"There's a {saved_model['score']:.2%} historical probability that if you enter LONG now at price ${last_price:.0f}, the price will not fall below  ${last_price*(1 - rt_win_threshold):.0f} (${last_price:.0f} × {1 - rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
         if rt_signal_type in ('short', 'both'):
-            print(f"There's a {saved_model['score']:.2%} historical probability that if you enter SHORT now at price ${last_price:.0f}, the price will not rise above ${last_price:.0f} × {1 + rt_win_threshold} at any point during the next {saved_model['params']['lookahead_bars']} bars.")
+            print(f"There's a {saved_model['score']:.2%} historical probability that if you enter SHORT now at price ${last_price:.0f}, the price will not rise above ${last_price*(1 + rt_win_threshold):.0f} (${last_price:.0f} × {1 + rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
 
         if verbose_short:
             if last_signal != 0:
@@ -584,8 +586,8 @@ def entry(args):
 
     # 💾 SAVE MODEL
     os.makedirs(output_dir, exist_ok=True)
-    w, bw, th, la = best_params['window'], best_params['bandwidth'], best_params['threshold'], best_params['lookahead_bars']
-    model_name = f"autotune_model_w{w}_bw{bw:.3f}_th{th:.3f}_la{la}___{score_of_best_trial}.pkl"
+    w, bw, th, la, op = best_params['window'], best_params['bandwidth'], best_params['threshold'], best_params['lookahead_bars'], optimize
+    model_name = f"autotune_model_w{w}_bw{bw:.3f}_th{th:.3f}_la{la}_{op}____{score_of_best_trial}.pkl"
     model_path = os.path.join(output_dir, model_name)
 
     model_data = {
