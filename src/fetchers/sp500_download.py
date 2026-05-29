@@ -74,7 +74,7 @@ if __name__ == "__main__":
     # Save this web-page to data
     # https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
     from pathlib import Path
-    html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.2026.03.31.html').resolve()
+    html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.2026.05.29.html').resolve()
     print(f"Reading file {html_file}")
 
     if not os.path.exists(html_file):
