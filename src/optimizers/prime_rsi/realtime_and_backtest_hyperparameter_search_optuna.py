@@ -1141,17 +1141,18 @@ def entry(args):
         print_yearly_stats(yearly_stats, args.ticker)
 
         print(f"\n📊 {args.ticker} | Valid Bars: {total_bars}")
-        print(f"Buy Signals  == Price stayed above lower strike == bullish put credit spread == bullish short volatility signals")
-        print(f"Sell Signals == Price stayed below upper strike == bearish call credit spread == bearish short volatility signals")
-        print(f"🟢 Buy Signals: {int(df_final[('Signal_Buy', args.ticker)].sum())} (Density: {buy_density:.4f}) | Evaluated: {eval_buy} | Wins: {buy_wins} | Win Rate: {buy_wr:.2%}")
-        print(f"🔴 Sell Signals: {int(df_final[('Signal_Sell', args.ticker)].sum())} (Density: {sell_density:.4f}) | Evaluated: {eval_sell} | Wins: {sell_wins} | Win Rate: {sell_wr:.2%}")
+        print(f"🟢 Buy Signals: {int(df_final[('Signal_Buy', args.ticker)].sum())} (Density: {buy_density:.4f}) | Evaluated: {eval_buy} | Wins: {buy_wins} | Win Rate: {buy_wr:.2%}\n"
+              f"\t Consider: Put Credit Spread\n"
+              f"\t Short Put Strike ≈ $latest_close * {args.put_strike_pct:.2f}")
+        print(f"🔴 Sell Signals: {int(df_final[('Signal_Sell', args.ticker)].sum())} (Density: {sell_density:.4f}) | Evaluated: {eval_sell} | Wins: {sell_wins} | Win Rate: {sell_wr:.2%}\n"
+              f"\t Consider: Call Credit Spread\n"
+              f"\t Short Call Strike ≈ $latest_close * {args.call_strike_pct:.2f}")
         print(f"🎯 Combined Win Rate: {combined_wr:.2%} ({buy_wins + sell_wins}/{eval_buy + eval_sell})")
         print(f"🎯   Buy Win Rate : {buy_wr:.2%} ({buy_wins}/{eval_buy})")
         print(f"🎯   Sell Win Rate: {sell_wr:.2%} ({sell_wins}/{eval_sell})")
         print(f"📉 Min Density Threshold: {args.min_signal_density:.2%}")
         if buy_density < args.min_signal_density: print("⚠️  Buy signal density below threshold.")
         if sell_density < args.min_signal_density: print("⚠️  Sell signal density below threshold.")
-
     # 🔹 Save model with descriptive name including params and score
     if args.optimize or args.model_path is None:  # Only save new model if we optimized or didn't load one
         score = combined_wr if args.optimize_target == 'combined_wr' else (buy_wr if args.optimize_target == 'buy_wr' else sell_wr)
