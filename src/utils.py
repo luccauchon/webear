@@ -1427,7 +1427,17 @@ def get_next_step(the_date, dataset_id, nn):
     elif 'month' == dataset_id:
         _next_ = next_month(the_date)
         for u in range(1, nn):
-            _next_ = next_week(_next_)
+            _next_ = next_month(_next_)  # Fixed: was incorrectly calling next_week
+    elif 'quarter' == dataset_id:
+        # Advance by 3 months per quarter step
+        _next_ = the_date
+        for u in range(3 * nn):
+            _next_ = next_month(_next_)
+    elif 'year' == dataset_id:
+        # Advance by 12 months per year step (for completeness, since 'year' is in DATASET_AVAILABLE)
+        _next_ = the_date
+        for u in range(12 * nn):
+            _next_ = next_month(_next_)
     else:
         assert False, f"Implement for {dataset_id}"
     return _next_
