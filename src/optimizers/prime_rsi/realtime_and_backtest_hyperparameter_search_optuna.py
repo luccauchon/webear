@@ -819,11 +819,6 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, rsi_
 
 
 def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
-    # rsi_length     = trial.suggest_int('rsi_length', 8, 30)
-    # rsi_signal_len = trial.suggest_int('rsi_signal_len', 5, 20)
-    # sma_len        = trial.suggest_int('sma_len', 20, 100)
-    # fib_lookback   = trial.suggest_int('fib_lookback', 20, 100)
-    # div_window     = trial.suggest_int('div_window', 3, 10)
     rsi_length = trial.suggest_int('rsi_length', 5, 30)
     rsi_signal_len = trial.suggest_int('rsi_signal_len', 2, 60)
     sma_len = trial.suggest_int('sma_len', 10, 200)
@@ -1010,29 +1005,46 @@ def entry(args):
                 print(f"   📅 Val:   {train_val_split_info['val_range'][0]} → {train_val_split_info['val_range'][1]}")
 
     if args.optimize:
-        db_path = args.optuna_db or os.path.join(args.output_dir, 'optuna_study.db')
-        os.makedirs(os.path.dirname(db_path), exist_ok=True) if os.path.dirname(db_path) else None
+        # ==============================================================================
+        # 🔧 OPTUNA STORAGE SETUP: In-memory if --optuna-db is None, SQLite otherwise
+        # ==============================================================================
+        if args.optuna_db is None:
+            # Use in-memory storage (no persistence across runs)
+            storage = None
+            db_path_display = "in-memory (no persistence)"
+        else:
+            # Use SQLite persistence with the specified path
+            db_path = args.optuna_db
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+            storage = f"sqlite:///{db_path}"
+            db_path_display = db_path
+
         study_name = f"{args.ticker}_{args.optimize_target}"
 
         print(f"\n🔍 Initializing Optuna study: {study_name}")
-        print(f"   📂 Persistence DB: {db_path}")
+        print(f"   📂 Storage: {db_path_display}")
         if df_val is not None:
             print(f"   🔄 Optimizing on TRAINING set only (validation held out)")
 
+        # Create or load the study
         study = optuna.create_study(
             study_name=study_name,
-            storage=f"sqlite:///{db_path}",
-            load_if_exists=True,
+            storage=storage,
+            load_if_exists=True,  # Safe: does nothing for in-memory, loads for SQLite
             direction='maximize',
             pruner=optuna.pruners.MedianPruner()
         )
 
-        # Check for existing trials & print nice description
+        # ==============================================================================
+        # 📦 CHECK FOR EXISTING TRIALS AND PRINT BEFORE OPTIMIZATION
+        # ==============================================================================
         completed_trials = study.get_trials(deepcopy=False, states=(optuna.trial.TrialState.COMPLETE,))
         if completed_trials:
             best_trial = study.best_trial
             print("\n" + "─" * 80)
-            print("📦 STUDY PERSISTENCE DETECTED")
+            print("📦 STUDY PERSISTENCE DETECTED — Resuming optimization")
             print("─" * 80)
             print(f"   🏆  Best Recorded {args.optimize_target.replace('_', ' ').title()}: {best_trial.value:.4f} ({best_trial.value * 100:.2f}%)")
             print(f"   📊  Completed Trials in Storage: {len(completed_trials)}")
@@ -1044,7 +1056,9 @@ def entry(args):
         else:
             print("📦 No stored trials found. Initializing fresh optimization run.\n")
 
-        # Optimize on TRAINING set only
+        # ==============================================================================
+        # 🚀 RUN OPTIMIZATION
+        # ==============================================================================
         study.optimize(
             lambda trial: optuna_objective(
                 trial=trial,

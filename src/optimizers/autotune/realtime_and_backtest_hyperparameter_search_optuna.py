@@ -495,7 +495,8 @@ def entry(args):
 
     if verbose:
         print(f"📊 Train/Validation Split: {train_ratio:.0%} / {1 - train_ratio:.0%}")
-        print(f"   Train: {len(train_closes)} bars | Validation: {len(valid_closes)} bars\n")
+        print(f"   Train: {len(train_closes)} bars ({train_closes.index[0].strftime('%Y%m%d')}::{train_closes.index[-1].strftime('%Y%m%d')}) | "
+              f"Validation: {len(valid_closes)} bars ({valid_closes.index[0].strftime('%Y%m%d')}::{valid_closes.index[-1].strftime('%Y%m%d')})\n")
 
     lookahead_bars = args.lookahead_bars
     win_threshold = args.win_threshold
@@ -541,7 +542,6 @@ def entry(args):
 
             n_signals = len(signals)
             if n_signals == 0: return 0.0
-            if n_signals < 30: return 0.0
 
             # ✅ DYNAMICALLY SELECT CORRECT COLUMN & METRIC BASED ON OPTIMIZE
             col_fmt = METRIC_MAP[optimize]['col'].format(_lookahead_bars)
