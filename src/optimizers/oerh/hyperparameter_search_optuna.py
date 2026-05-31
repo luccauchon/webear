@@ -84,7 +84,7 @@ def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
     # 3️⃣ Enforce Silent Mode
     args.disable_print = True
     args.disable_plot_sample = True
-    args.verbose = False
+    args.verbose = False if trial.number != 0 else True
     # 4️⃣ Execute entry function & apply penalty
     try:
         metrics_val, metrics_train = entry(args)
