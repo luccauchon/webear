@@ -391,12 +391,15 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     dataset_id = metadata.get('dataset_id')
     ticker = metadata.get('ticker')
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
-
+    signal_ratio = model_data['user_attrs']['signal_ratio']
+    val_acc = model_data['user_attrs']['val_accuracy']
+    train_acc = model_data['user_attrs']['train_accuracy']
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
     print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-    print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')}\n")
+    print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Accuracy: {train_acc:.2%} "
+          f":: Val Accuracy: {val_acc:.2%}  @{signal_ratio:.2%} signal density")
     price_col = ('Close', ticker)
 
     # Determine minimum history needed for indicators
@@ -946,7 +949,8 @@ def entry(args):
     master_data_cache = copy.deepcopy(_load_df(_datase_id=args.dataset_id))
     df_spx500 = master_data_cache[args.ticker].sort_index()
     price_col = ('Close', args.ticker) if isinstance(df_spx500.columns, pd.MultiIndex) else 'Close'
-
+    if 1 == args.lookahead_bars:
+        assert args.target_type in ["exact", "any"]
     # Helper to run forecast and print results
     def run_and_report(df_subset, label, plot_results=False):
         df_results, metrics = run_forecast(
