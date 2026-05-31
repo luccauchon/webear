@@ -393,7 +393,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
     signal_ratio = model_data['user_attrs']['signal_ratio']
     val_acc = model_data['user_attrs']['val_accuracy']
-    train_acc = model_data['user_attrs']['train_accuracy']
+    train_acc = model_data['user_attrs']['raw_accuracy']
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
