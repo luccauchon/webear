@@ -42,44 +42,55 @@ using `--win-threshold` (`wt`) as the boundary/reference value:
   • profit_target (Direction-Agnostic)
     Measures the % of signals where the MAXIMUM forward return exceeds `wt`.
     Focus: Absolute profit magnitude. Ignores intra-trade drawdown and terminal price.
+    NOTE: With negative wt, this becomes a lenient target (e.g., wt=-0.04 means
+    "max return > -4%", which is easy to achieve).
 
   • range_bound (Direction-Agnostic)
-    Measures the % of signals where price stays strictly within `[1-wt, 1+wt]`
+    Measures the % of signals where price stays strictly within `[min(1-wt,1+wt), max(1-wt,1+wt)]`
     throughout the ENTIRE lookahead window.
     Focus: Volatility suppression & mean-reversion. Penalizes any breakout.
+    NOTE: Negative wt values are now supported - the band bounds are automatically
+    ordered to ensure lower <= upper.
 
   • hold_floor (Long-Focused)
     Measures the % of LONG signals where price NEVER drops below `1-wt` at any
     point during the lookahead window.
     Focus: Downside protection & stop-loss integrity. Upside is uncapped.
+    NOTE: With negative wt, this becomes MORE aggressive (e.g., wt=-0.04 requires
+    price to stay above 104% of entry - maintaining a minimum 4% gain).
 
   • hold_ceiling (Short-Focused)
     Measures the % of SHORT signals where price NEVER rises above `1+wt` during
     the lookahead window.
     Focus: Short-side risk containment & trend continuation safety.
+    NOTE: With negative wt, this becomes MORE aggressive (e.g., wt=-0.04 requires
+    price to stay below 96% of entry - maintaining a minimum 4% drop).
 
   • finish_above (Long-Focused)
     Measures the % of LONG signals where the price at the EXACT FINAL BAR of the
     lookahead window is above `1+wt`.
     Focus: Terminal momentum & breakout conviction. Allows intra-trade volatility.
+    NOTE: With negative wt, this becomes a lenient target.
 
   • finish_below (Short-Focused)
     Measures the % of SHORT signals where the price at the EXACT FINAL BAR of the
     lookahead window is below `1-wt`.
     Focus: Terminal downside momentum & trend resolution.
+    NOTE: With negative wt, this becomes a lenient target.
 
 Key Distinctions:
-  - Path-Dependent vs. Endpoint-Dependent: `hold_floor`, `hold_ceiling`, and
-    `range_bound` evaluate price behavior across every bar in the lookahead window.
-    `finish_above` and `finish_below` only evaluate the terminal price.
+  - Path-Dependent vs. Endpoint-Dependent: `hold_*`, `range_bound` evaluate price
+    behavior across every bar. `finish_*` only evaluate the terminal price.
   - Directional Bias: The optimizer automatically sets `signal_type` to 1 (long),
-    -1 (short), or 0 (both) based on your chosen metric to ensure logical alignment.
+    -1 (short), or 0 (both) based on your chosen metric.
   - Risk vs. Reward: `hold_*` and `range_bound` prioritize capital preservation.
-    `profit_target` and `finish_*` prioritize directional conviction and momentum capture.
+    `profit_target` and `finish_*` prioritize directional conviction.
+  - Negative Threshold Support: All metrics now properly handle negative win_threshold
+    values, with semantics adjusted as noted above.
 
 Usage Example:
     python autotune.py --dataset-id day --ticker ^GSPC --optimize hold_floor \\
-                       --lookahead-bars 10 --win-threshold 0.04 --n-trials 500 \\
+                       --lookahead-bars 10 --win-threshold -0.04 --n-trials 500 \\
                        --storage sqlite:///optuna.db
 """
 try:
@@ -115,11 +126,11 @@ import sys
 # =============================================================================
 METRIC_MAP = {
     'profit_target': {'col': 'forward_return_{}b', 'calc': lambda s, wt: (s > wt).mean()},
-    'range_bound':   {'col': 'stay_in_band_{}b',     'calc': lambda s, wt: (s >= 0.99).mean()},
-    'hold_floor':    {'col': 'stay_above_lower_{}b', 'calc': lambda s, wt: (s >= 0.99).mean()},
-    'hold_ceiling':  {'col': 'stay_below_upper_{}b', 'calc': lambda s, wt: (s >= 0.99).mean()},
-    'finish_above':  {'col': 'above_upper_last_{}b', 'calc': lambda s, wt: (s >= 0.99).mean()},
-    'finish_below':  {'col': 'below_lower_last_{}b', 'calc': lambda s, wt: (s >= 0.99).mean()},
+    'range_bound': {'col': 'stay_in_band_{}b', 'calc': lambda s, wt: s.mean()},
+    'hold_floor': {'col': 'stay_above_lower_{}b', 'calc': lambda s, wt: s.mean()},
+    'hold_ceiling': {'col': 'stay_below_upper_{}b', 'calc': lambda s, wt: s.mean()},
+    'finish_above': {'col': 'above_upper_last_{}b', 'calc': lambda s, wt: s.mean()},
+    'finish_below': {'col': 'below_lower_last_{}b', 'calc': lambda s, wt: s.mean()},
 }
 
 
@@ -252,7 +263,13 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
             for j in range(i + 1, end):
                 if prices[j] < min_p: min_p = prices[j]
                 if prices[j] > max_p: max_p = prices[j]
-            within_bound[i] = 1.0 if (min_p >= prices[i] * (1.0 - win_threshold) and max_p <= prices[i] * (1.0 + win_threshold)) else 0.0
+
+            # FIXED: Handle negative win_threshold by ensuring bounds are properly ordered
+            lower_bound = prices[i] * (1.0 - win_threshold)
+            upper_bound = prices[i] * (1.0 + win_threshold)
+            if lower_bound > upper_bound:
+                lower_bound, upper_bound = upper_bound, lower_bound
+            within_bound[i] = 1.0 if (min_p >= lower_bound and max_p <= upper_bound) else 0.0
 
             min_p = prices[i]
             for j in range(i + 1, end):
@@ -326,11 +343,11 @@ class AutoTuneStrategy:
             return {'status': f'No {label} signals generated in evaluation period'}
 
         profit_target = (signals[fwd_col].values > self.win_threshold).mean()
-        range_bound = (signals[wr2_col].values >= 0.99).mean()
-        hold_floor = (signals[wr3_col].values >= 0.99).mean()
-        hold_ceiling = (signals[wr4_col].values >= 0.99).mean()
-        finish_above = (signals[wr5_col].values >= 0.99).mean()
-        finish_below = (signals[wr6_col].values >= 0.99).mean()
+        range_bound = signals[wr2_col].values.mean()
+        hold_floor = signals[wr3_col].values.mean()
+        hold_ceiling = signals[wr4_col].values.mean()
+        finish_above = signals[wr5_col].values.mean()
+        finish_below = signals[wr6_col].values.mean()
 
         return {
             'total_signals': total_signals,
@@ -361,7 +378,8 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     strat_group = parser.add_argument_group('Strategy Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=10)
-    strat_group.add_argument('--win-threshold', type=float, default=0.04)
+    strat_group.add_argument('--win-threshold', type=float, default=0.04,
+                             help="Win threshold for optimization metrics. Can be negative for aggressive targets.")
     strat_group.add_argument('--min-signal-density', type=float, default=0.04)
 
     opt_group = parser.add_argument_group('Optimization & Execution')
@@ -474,21 +492,27 @@ def entry(args):
         if last_signal != 0:
             training_score, validation_score = saved_model['train_score'], saved_model['val_score']
             if rt_signal_type in ('long', 'both'):
-                print(f"TODO There's a {validation_score:.2%} historical probability that if you enter LONG now at price ${last_price:.0f}, the price will not fall below  ${last_price * (1 - rt_win_threshold):.0f} (${last_price:.0f} × {1 - rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
+                floor_price = last_price * (1 - rt_win_threshold)
+                print(f"TODO There's a {validation_score:.2%} historical probability that if you enter LONG now at price ${last_price:.0f}, the price will not fall below  ${floor_price:.0f} (${last_price:.0f} × {1 - rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
             if rt_signal_type in ('short', 'both'):
-                print(f"TODO here's a {validation_score:.2%} historical probability that if you enter SHORT now at price ${last_price:.0f}, the price will not rise above ${last_price * (1 + rt_win_threshold):.0f} (${last_price:.0f} × {1 + rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
+                ceiling_price = last_price * (1 + rt_win_threshold)
+                print(f"TODO here's a {validation_score:.2%} historical probability that if you enter SHORT now at price ${last_price:.0f}, the price will not rise above ${ceiling_price:.0f} (${last_price:.0f} × {1 + rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
             if saved_model['optimize_metric'] == 'hold_floor':
                 if last_signal == 1. and rt_signal_type == 'long':
-                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY ABOVE {last_price * (1 - rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                    floor_price = last_price * (1 - rt_win_threshold)
+                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY ABOVE {floor_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'hold_ceiling':
                 if last_signal == -1. and rt_signal_type == 'short':
-                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY BELOW {last_price * (1 + rt_win_threshold):.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                    ceiling_price = last_price * (1 + rt_win_threshold)
+                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY BELOW {ceiling_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'finish_above':
                 if last_signal == 1. and rt_signal_type == 'long':
-                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES > {last_price * (1 + rt_win_threshold):.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                    target_price = last_price * (1 + rt_win_threshold)
+                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES > {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'finish_below':
                 if last_signal == -1. and rt_signal_type == 'short':
-                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES < {last_price * (1 - rt_win_threshold):.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                    target_price = last_price * (1 - rt_win_threshold)
+                    print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES < {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
         return
 
     # =============================================================================
@@ -507,7 +531,8 @@ def entry(args):
 
     lookahead_bars = args.lookahead_bars
     win_threshold = args.win_threshold
-    assert 0 <= win_threshold < 1
+    # FIXED: Allow negative win_threshold values
+    assert -1 < win_threshold < 1, "--win-threshold must be between -1.0 and 1.0 (exclusive)"
     n_trials = args.n_trials
     timeout = args.timeout
     required_signal_density = args.min_signal_density
@@ -634,7 +659,7 @@ def entry(args):
 
     model_data = {
         'params': best_params, 'win_threshold': win_threshold, 'signal_type': signal_label,
-        'signal_type_code': signal_type, 'optimize_metric': optimize, 'train_score': score_of_best_trial, 'val_score':validation_score,
+        'signal_type_code': signal_type, 'optimize_metric': optimize, 'train_score': score_of_best_trial, 'val_score': validation_score,
         'dataset_id': dataset_id, 'ticker': ticker,
     }
     with open(model_path, 'wb') as f:

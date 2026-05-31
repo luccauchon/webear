@@ -382,7 +382,7 @@ def load_model(model_path: str) -> dict:
     return model_data
 
 
-def run_real_time(model_path: str, output_signal_only: bool, verbose: bool):
+def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip: bool):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
@@ -393,6 +393,10 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool):
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
 
     df = master_data_cache[ticker].sort_index()
+    if clip:
+        df = df.iloc[:-1].copy()
+    print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
+    print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')}\n")
     price_col = ('Close', ticker)
 
     # Determine minimum history needed for indicators
@@ -859,7 +863,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_grp.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Print detailed progress, metrics, and explanations')
     data_grp.add_argument('--validate-jit', action='store_true', default=False,
                           help='Run JIT consistency sanity check at startup (default: disabled)')
-
+    data_grp.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
     algo_grp = parser.add_argument_group("Algorithm Parameters")
     algo_grp.add_argument("--rsi-period", type=int, default=14, help="RSI calculation window")
     algo_grp.add_argument("--rsi-oversold", type=float, default=30.0, help="RSI oversold threshold")
@@ -935,7 +939,7 @@ def entry(args):
     if args.real_time:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
-        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose)
+        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip=args.clip)
 
     # ✅ BATCH MODE: Original behavior with optional train/val split
     np.random.seed(args.seed)
