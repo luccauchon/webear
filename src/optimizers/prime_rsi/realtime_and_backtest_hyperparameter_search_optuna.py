@@ -758,14 +758,15 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
 
     # Run strategy on latest datapoint
     print(f"\n⚡ Testing latest datapoint for {args.ticker}...")
-    result = run_strategy_on_latest(df_base, params, args, close_col, high_col, low_col)
-
+    result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
     # Output results
     print(f"\n{'=' * 60}")
     print(f"🔔 REAL-TIME SIGNAL CHECK — {args.ticker}")
     print(f"{'=' * 60}")
-    print(f"📅 Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
-    print(f"💰 Close Price: ${result['close']:.2f}")
+    assert df_base.index[-1].strftime('%Y-%m-%d') == result['timestamp'].strftime('%Y-%m-%d')
+    print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
+    assert df_base[close_col].iloc[-1] == result['close']
+    print(f"💰 Last Close Price: ${result['close']:.2f}")
 
     print(f"\n🎯 SIGNALS:")
     if result['buy_signal']:
@@ -858,6 +859,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group.add_argument('--dataset-id', type=str, default='day', help='Dataset identifier')
     data_group.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     data_group.add_argument('--length-dataset', type=int, default=999999, help='Trailing data points')
+    data_group.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=20, dest='lookahead_bars', help='Forward-looking window')
@@ -920,6 +922,16 @@ def print_startup_banner(args):
     print(banner)
 
 
+def early_stop_on_perfect_success(study, trial):
+    """
+    Callback to stop optimization when 100% success rate is achieved.
+    Objective returns -success_rate, so -100.0 = 100% success.
+    """
+    if study.best_value is not None and study.best_value >= 0.999:
+        print(f"\n🎯 100% success rate achieved at trial #{trial.number}! Stopping optimization early...")
+        study.stop()
+
+
 def entry(args):
     print_startup_banner(args)
     np.random.seed(args.seed)
@@ -930,10 +942,12 @@ def entry(args):
 
     if args.ticker not in master_data_cache:
         raise KeyError(f"Ticker '{args.ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
-
+    assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
     df_base = master_data_cache[args.ticker].sort_index()
     if args.length_dataset != 999999:
         df_base = df_base.iloc[-args.length_dataset:].copy()
+    if args.clip and args.real_time:
+        df_base = df_base.iloc[:-1].copy()
     if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
     close_col = ('Close', args.ticker)
     high_col = ('High', args.ticker)
@@ -1070,7 +1084,8 @@ def entry(args):
             ),
             n_trials=args.n_trials,
             timeout=args.timeout,
-            show_progress_bar=args.verbose
+            show_progress_bar=args.verbose,
+            callbacks=[early_stop_on_perfect_success],
         )
 
         best_trial = study.best_trial
