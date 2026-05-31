@@ -983,7 +983,7 @@ def entry(args):
         split_idx = int(len(df_base) * args.train_ratio)
 
         # Ensure minimum data in each split
-        min_bars = 100  # Adjust based on your strategy's warmup needs
+        min_bars = 1  # Adjust based on your strategy's warmup needs
         if split_idx < min_bars:
             print(f"⚠️  Train split too small ({split_idx} < {min_bars}), using full dataset")
         elif len(df_base) - split_idx < min_bars:
