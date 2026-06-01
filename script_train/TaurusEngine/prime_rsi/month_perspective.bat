@@ -1,0 +1,7 @@
+@echo off
+
+start "Optuna Quarter" cmd /K "call conda activate PY312_HT && cd ..\..\..\src\optimizers\prime_rsi && python .\realtime_and_backtest_hyperparameter_search_optuna.py --optimize --n-trials 99999 --timeout 80000 --dataset-id month --min-signal-density 0.15 --lookahead-bars 1 --train-ratio 0.7 --optuna-db month_month.db --optimize-target buy_wr --method final_close --put-strike-pct 0.95 --call-strike-pct 1."
+
+start "Optuna Quarter" cmd /K "call conda activate PY312_HT && cd ..\..\..\src\optimizers\prime_rsi && python .\realtime_and_backtest_hyperparameter_search_optuna.py --optimize --n-trials 99999 --timeout 80000 --dataset-id week --min-signal-density 0.15 --lookahead-bars 4 --train-ratio 0.7 --optuna-db week_month.db --optimize-target buy_wr --method final_close --put-strike-pct 0.95 --call-strike-pct 1."
+
+start "Optuna Quarter" cmd /K "call conda activate PY312_HT && cd ..\..\..\src\optimizers\prime_rsi && python .\realtime_and_backtest_hyperparameter_search_optuna.py --optimize --n-trials 99999 --timeout 80000 --dataset-id day --min-signal-density 0.075 --lookahead-bars 20 --train-ratio 0.7 --optuna-db day_month.db --optimize-target buy_wr --method final_close --put-strike-pct 0.95 --call-strike-pct 1."
