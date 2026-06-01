@@ -619,6 +619,88 @@ def entry(args):
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
     save_optimized_model(study, config, args.output_dir, ticker, dataset_id)
 
+    # ========================================================================
+    # 📊 TRAIN vs VALIDATION COMPARISON - GENERALIZATION CHECK
+    # ========================================================================
+    print("\n" + "═" * 70)
+    print(" 🔄 TRAIN vs VALIDATION PERFORMANCE COMPARISON")
+    print("═" * 70)
+
+    # Re-evaluate training set with BEST parameters for fair comparison
+    signals_train_best = dgdr_strategy_vectorized(
+        df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
+        st_multipler=best['st_multipler'], st_length=best['st_length'],
+        sup_wick_null_coef=best['sup_wick_null_coef'],
+        inf_wick_null_coef=best['inf_wick_null_coef'],
+        buy_rsi_threshold=best['buy_rsi_threshold'],
+        sell_rsi_threshold=best['sell_rsi_threshold']
+    )
+
+    # Filter signals if needed for fair comparison
+    if args.signal_type == 'buy':
+        signals_train_best = [s for s in signals_train_best if s['Type'] == 'BUY']
+    elif args.signal_type == 'sell':
+        signals_train_best = [s for s in signals_train_best if s['Type'] == 'SELL']
+
+    pnl_train = calculate_pnl_report(
+        signals_train_best, df_train, close_col, high_col, low_col,
+        B, method, best['put__strike_pct'], best['call__strike_pct'], silent=True
+    )
+
+    # Extract comparable metrics
+    def extract_metrics(pnl_df, dataset_name):
+        if pnl_df.empty:
+            return {'trades': 0, 'win_rate': 0.0, 'trade_density': 0.0, 'score': 0.0}
+        wr = pnl_df['win_rate'].iloc[0]
+        td = pnl_df['trade_density'].iloc[0]
+        score = compute_optimization_score(wr, td, min_density, wr_w, td_w)
+        return {
+            'trades': len(pnl_df),
+            'win_rate': wr,
+            'trade_density': td,
+            'score': score
+        }
+
+    train_metrics = extract_metrics(pnl_train, "Train")
+    val_metrics = extract_metrics(pnl_df, "Validation")
+
+    # Display comparison table
+    print(f"\n{'Metric':<20} {'Train':>12} {'Validation':>12} {'Δ (Val-Train)':>15}")
+    print("-" * 70)
+    print(f"{'Trades':<20} {train_metrics['trades']:>12,} {val_metrics['trades']:>12,} {val_metrics['trades'] - train_metrics['trades']:>15,}")
+    print(f"{'Win Rate (%)':<20} {train_metrics['win_rate']:>12.2f} {val_metrics['win_rate']:>12.2f} {val_metrics['win_rate'] - train_metrics['win_rate']:>15.2f}")
+    print(f"{'Trade Density':<20} {train_metrics['trade_density']:>12.4f} {val_metrics['trade_density']:>12.4f} {val_metrics['trade_density'] - train_metrics['trade_density']:>15.4f}")
+    print(f"{'Optimization Score':<20} {train_metrics['score']:>12.4f} {val_metrics['score']:>12.4f} {val_metrics['score'] - train_metrics['score']:>15.4f}")
+
+    # Generalization assessment
+    print("\n" + "🔍 GENERALIZATION ASSESSMENT:")
+    print("-" * 70)
+
+    wr_diff = abs(val_metrics['win_rate'] - train_metrics['win_rate'])
+    score_diff = abs(val_metrics['score'] - train_metrics['score'])
+
+    if val_metrics['trades'] < 10:
+        print("⚠️  WARNING: Validation set has very few trades (<10). Metrics may be noisy.")
+    elif wr_diff <= 5 and score_diff <= 0.05:
+        print("✅ EXCELLENT: Validation performance closely matches training. Strong generalization!")
+    elif wr_diff <= 10 and score_diff <= 0.10:
+        print("✅ GOOD: Minor performance drop on validation. Acceptable generalization.")
+    elif wr_diff <= 15 and score_diff <= 0.15:
+        print("⚠️  MODERATE: Noticeable performance gap. Monitor for overfitting.")
+    else:
+        print("❌ POOR: Large performance drop on validation. Likely overfitting detected.")
+
+    # Additional insights
+    if val_metrics['win_rate'] > train_metrics['win_rate']:
+        print("💡 Bonus: Validation win rate EXCEEDS training – model may be robust!")
+    elif val_metrics['trade_density'] < train_metrics['trade_density'] * 0.5:
+        print("💡 Note: Much lower trade density in validation – market regime may differ.")
+
+    print("═" * 70 + "\n")
+    # ========================================================================
+    # END COMPARISON SECTION
+    # ========================================================================
+
 
 if __name__ == "__main__":
     parser = setup_argparse()
