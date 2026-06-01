@@ -26,6 +26,21 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
 
 
+def safe_ta_indicator(func, series, default_fill=np.nan, **kwargs):
+    """
+    Safely call pandas_ta functions, returning a valid Series even on failure.
+    """
+    try:
+        result = func(series, **kwargs)
+        # Handle None return or all-NaN result
+        if result is None or (hasattr(result, 'isna') and result.isna().all()):
+            return pd.Series(default_fill, index=series.index, name=series.name)
+        return result
+    except Exception as e:
+        print(f"⚠️  TA function {func.__name__} failed with {kwargs}: {e}")
+        return pd.Series(default_fill, index=series.index, name=series.name)
+
+
 # ==============================================================================
 # 🎯 STRATEGY OPTIMIZER & REAL-TIME MONITOR
 # ==============================================================================
@@ -105,13 +120,13 @@ def calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, ti
 
 def implement_rsi_strategies(df, close_col, ticker, rsi_length=14, rsi_ema_10=10, sma_50=50):
     rsi_col = ('RSI', ticker)
-    df[rsi_col] = ta.rsi(df[close_col], length=rsi_length)
+    df[rsi_col] = safe_ta_indicator(ta.rsi, df[close_col], length=rsi_length)
 
     rsi_ema_10_col = ('RSI_EMA_10', ticker)
-    df[rsi_ema_10_col] = ta.ema(df[rsi_col], length=rsi_ema_10)
+    df[rsi_ema_10_col] = safe_ta_indicator(ta.ema, df[rsi_col], length=rsi_ema_10)
 
     sma_50_col = ('SMA_50', ticker)
-    df[sma_50_col] = ta.sma(df[close_col], length=sma_50)
+    df[sma_50_col] = safe_ta_indicator(ta.sma, df[close_col], length=sma_50)
 
     Setup_Pullback_50_Buy_col = ('Setup_Pullback_50_Buy', ticker)
     df[Setup_Pullback_50_Buy_col] = (df[close_col] > df[sma_50_col]) & \
