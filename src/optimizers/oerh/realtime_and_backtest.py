@@ -1,6 +1,7 @@
 """
 🎯 RULE-BASED TECHNICAL FORECASTING SYSTEM (JIT-ACCELERATED)
 ====================================================================================================
+🔧 ENHANCED: Added "floor" target mode for put credit spread / defined-risk bullish strategies
 
 📋 OVERVIEW
 -----------
@@ -44,13 +45,15 @@ generate actionable trading signals with configurable lookahead horizons.
 
 4️⃣ TARGET LABELING STRATEGIES (Forecast Ground Truth)
    ├─ Purpose: Define what constitutes a "successful" prediction
-   ├─ Three Modes:
+   ├─ Four Modes:
    │  • "exact"      : Price must exceed threshold EXACTLY at t + lookahead_bars
    │  • "any"        : Price must exceed threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "any_half_B" : Price must exceed threshold in SECOND HALF of window [t+B//2+1, t+B]
+   │  • "floor" 🆕   : Price must NEVER fall below threshold in [t+1, t+lookahead_bars]
    ├─ Parameters:
    │  • lookahead_bars : Forecast horizon in bars (default: 5)
    │  • threshold_pct  : Minimum price move to trigger positive label (default: 0.01 = 1%)
+   │                     For "floor" mode: use NEGATIVE value (e.g., -0.015 = -1.5% floor)
    └─ Output: Binary labels (1 = target met, 0 = not met) for signal evaluation
 
 ⚙️ SIGNAL GENERATION LOGIC [✅ OPTIONAL JIT]
@@ -137,6 +140,9 @@ Real-Time Execution:
 
 🧪 EXAMPLE USAGE
 ---------------
+# Put credit spread strategy: floor mode with -1.5% threshold
+python forecast.py --ticker SPY --target-type floor --threshold-pct -0.015 --lookahead-bars 5 --rsi-mode reversion
+
 # Batch backtest with custom parameters
 python forecast.py --ticker AAPL --rsi-mode reversion --lookahead-bars 10 --threshold-pct 0.02
 
@@ -419,7 +425,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
         'rsi_period', 'rsi_oversold', 'rsi_overbought', 'rsi_mode',
         'macd_fast', 'macd_slow', 'macd_signal',
         'one_euro_min', 'one_euro_factor',
-        'lookahead_bars', 'threshold_pct'
+        'lookahead_bars', 'threshold_pct', 'target_type'
     ]}
     assert 'target_type' in metadata
     target_type = metadata['target_type']
@@ -485,6 +491,8 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
                     target_mode_desc = "any point in window [t+1, t+B]"
                 elif target_type == "any_half_B":
                     target_mode_desc = "any point in second half [t+B//2+1, t+B]"
+                elif target_type == "floor":
+                    target_mode_desc = "NEVER falls below floor [t+1, t+B] 🛡️"
                 else:
                     target_mode_desc = "exact future point"
                 print(f"\n🎯 Real-Time Signal Detected:")
@@ -565,6 +573,51 @@ def create_target_any_at_half_B(close: pd.Series, lookahead_bars: int, threshold
     return labels
 
 
+def create_target_floor(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    🆕 FLOOR MODE: Label = 1 only if price NEVER falls below threshold
+    throughout the entire lookahead window [t+1, t+B].
+
+    Ideal for put credit spreads / defined-risk bullish strategies where you profit
+    if price stays ABOVE your short put strike (the "floor").
+
+    ⚠️ IMPORTANT: Use NEGATIVE threshold_pct for floor mode!
+       • threshold_pct = -0.015 means floor = entry_price × 0.985 (1.5% below entry)
+       • Label = 1 only if price MINIMUM in window > floor level
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series
+    lookahead_bars : int
+        Number of bars to look ahead (B)
+    threshold_pct : float, optional
+        Percentage threshold for floor (default: 0.0)
+        For floor protection: use NEGATIVE value (e.g., -0.015 = -1.5% floor)
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if price NEVER fell below floor, 0 otherwise),
+        with NaN for incomplete windows
+    """
+    # Get MINIMUM price in forward window [t+1, t+lookahead_bars]
+    # Reverse series → rolling min → reverse back → shift to exclude current bar
+    future_min = close.iloc[::-1].rolling(
+        window=lookahead_bars, min_periods=lookahead_bars
+    ).min().iloc[::-1].shift(-1)
+
+    # Label = 1 if minimum stays ABOVE floor level throughout window
+    # floor_level = entry_price × (1 + threshold_pct)
+    # For threshold_pct = -0.015: floor = entry × 0.985
+    labels = (future_min > close * (1 + threshold_pct)).astype(float)
+
+    # Mask out last lookahead_bars where future data is incomplete
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
 # ============================================
 # 5. RULE-BASED FORECASTING SYSTEM
 # ============================================
@@ -586,7 +639,7 @@ class ForecastSystem:
         self.lookahead_bars = lookahead_bars
         self.threshold_pct = threshold_pct
         self.rsi_mode = rsi_mode
-        self.target_type = target_type  # 'exact' or 'any'
+        self.target_type = target_type  # 'exact', 'any', 'any_half_B', or 'floor'
         self.use_jit_signals = use_jit_signals  # Enable JIT for signal generation
 
     def generate_signals(self, df: pd.DataFrame, price_col, ticker) -> pd.DataFrame:
@@ -601,12 +654,14 @@ class ForecastSystem:
         df['MACD_Signal'] = macd_df['Signal']
         df['Histogram'] = macd_df['Histogram']
 
-        # ✅ DYNAMIC TARGET SELECTION
-        if self.target_type == "any":
+        # ✅ DYNAMIC TARGET SELECTION (now includes "floor" mode)
+        if self.target_type == "floor":
+            df['FutureLabel'] = create_target_floor(close, self.lookahead_bars, self.threshold_pct)
+        elif self.target_type == "any":
             df['FutureLabel'] = create_target_any(close, self.lookahead_bars, self.threshold_pct)
         elif self.target_type == "any_half_B":
             df['FutureLabel'] = create_target_any_at_half_B(close, self.lookahead_bars, self.threshold_pct)
-        else:
+        else:  # "exact"
             df['FutureLabel'] = create_target_exact(close, self.lookahead_bars, self.threshold_pct)
 
         # ✅ SIGNAL GENERATION: JIT or vectorized pandas
@@ -878,18 +933,18 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--one-euro-min", type=float, default=10.0, help="One-Euro filter min cutoff")
     algo_grp.add_argument("--one-euro-factor", type=float, default=0.2, help="One-Euro filter beta factor")
     algo_grp.add_argument("--lookahead-bars", type=int, default=5, help="Future bars to forecast")
-    algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target")
+    algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target (use NEGATIVE for floor mode)")
     algo_grp.add_argument('--train-ratio', type=float, default=1.0, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
     algo_grp.add_argument('--use-jit-signals', action='store_true', default=False,
                           help='Enable JIT acceleration for signal generation (recommended for large datasets)')
 
-    # Target labeling mode
+    # Target labeling mode - UPDATED to include "floor"
     algo_grp.add_argument(
         "--target-type",
         type=str,
-        choices=["exact", "any", "any_half_B"],
+        choices=["exact", "any", "any_half_B", "floor"],  # ← Added "floor"
         default="any_half_B",
-        help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
+        help="Target labeling method: 'exact' (price at t+lookahead), 'any' (price > threshold anywhere), 'any_half_B' (second half), or 'floor' 🆕 (price NEVER < threshold - ideal for put credit spreads)"
     )
 
     viz_grp = parser.add_argument_group("Visualization")
@@ -950,7 +1005,9 @@ def entry(args):
     df_spx500 = master_data_cache[args.ticker].sort_index()
     price_col = ('Close', args.ticker) if isinstance(df_spx500.columns, pd.MultiIndex) else 'Close'
     if 1 == args.lookahead_bars:
-        assert args.target_type in ["exact", "any"]
+        assert args.target_type in ["exact", "any", "floor"]
+    if args.target_type in ["floor"]:
+        assert args.threshold_pct <= 0.
     # Helper to run forecast and print results
     def run_and_report(df_subset, label, plot_results=False):
         df_results, metrics = run_forecast(

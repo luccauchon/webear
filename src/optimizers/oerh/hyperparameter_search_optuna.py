@@ -9,6 +9,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+import os
 import optuna
 import argparse
 import sys
@@ -349,7 +350,7 @@ Examples:
     parser.add_argument(
         "--target-type",
         type=str,
-        choices=["exact", "any", "any_half_B"],
+        choices=["exact", "any", "any_half_B", "floor"],
         default="any_half_B",
         help="Target labeling method: 'exact' (price at t+lookahead) or 'any' (price > threshold anywhere in window)"
     )
@@ -471,7 +472,7 @@ if __name__ == "__main__":
     else:  # default to TPE
         sampler = optuna.samplers.TPESampler(seed=opt_args.seed)
         default_study_name = "forecast_tpe_study"
-
+    os.makedirs(opt_args.output_dir, exist_ok=True)
     study_name = opt_args.study_name or f"{default_study_name}_{opt_args.metric}"
 
     # Run single optimization
