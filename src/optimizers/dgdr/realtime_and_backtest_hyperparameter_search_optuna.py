@@ -527,7 +527,7 @@ def entry(args):
     print(f"🔍 Starting Optuna optimization on TRAINING SET ({len(df_train):,} bars)...")
     print(f"📉 Min Trade Density: {min_density:.2%} | Look Ahead: {B} | Method: {method.upper()}")
     print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()}")
-    print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.2f}, {call_base:.2f}]\n")
+    print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.4f}, {call_base:.4f}]\n")
 
     # 🆕 OPTUNA PERSISTENCE SETUP
     storage = args.optuna_storage
@@ -537,6 +537,7 @@ def entry(args):
         if not study_name:
             raise ValueError("❌ --optuna-study-name is required when --optuna-storage is specified.")
         print(f"💾 Optuna persistence enabled: storage='{storage}', study='{study_name}'")
+        os.makedirs(args.output_dir, exist_ok=True)
         study = optuna.create_study(
             direction="maximize",
             storage=storage,
