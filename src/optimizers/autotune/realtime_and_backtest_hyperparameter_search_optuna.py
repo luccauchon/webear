@@ -413,7 +413,7 @@ def perfect_score_callback(study, trial):
 # =============================================================================
 def entry(args):
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-
+    os.makedirs(args.output_dir, exist_ok=True)
     dataset_id = args.dataset_id
     ticker = args.ticker
     verbose = args.verbose
