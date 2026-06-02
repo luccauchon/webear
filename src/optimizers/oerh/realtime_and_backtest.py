@@ -398,8 +398,15 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     ticker = metadata.get('ticker')
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
     signal_ratio = model_data['user_attrs']['signal_ratio']
+    metric_used = val_acc = model_data['user_attrs']['metric_used']
     val_acc = model_data['user_attrs']['val_accuracy']
     train_acc = model_data['user_attrs']['raw_accuracy']
+    if metric_used == 'long_accuracy':
+        train_acc = model_data['user_attrs']['train_long_accuracy']
+        val_acc = model_data['user_attrs']['val_long_accuracy']
+    elif metric_used == 'short_accuracy':
+        train_acc = model_data['user_attrs']['train_short_accuracy']
+        val_acc = model_data['user_attrs']['val_short_accuracy']
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
@@ -488,11 +495,11 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
             # Human-readable output
             if signal != 0:
                 if target_type == "any":
-                    target_mode_desc = "any point in window [t+1, t+B]"
+                    target_mode_desc = f"any point in window [t+1, t+{lookahead_bars}]"
                 elif target_type == "any_half_B":
-                    target_mode_desc = "any point in second half [t+B//2+1, t+B]"
+                    target_mode_desc = f"any point in second half [t+{lookahead_bars//2+1}, t+{lookahead_bars}]"
                 elif target_type == "floor":
-                    target_mode_desc = "NEVER falls below floor [t+1, t+B] 🛡️"
+                    target_mode_desc = f"NEVER falls below floor [t+1, t+{lookahead_bars}] 🛡️"
                 else:
                     target_mode_desc = "exact future point"
                 print(f"\n🎯 Real-Time Signal Detected:")
