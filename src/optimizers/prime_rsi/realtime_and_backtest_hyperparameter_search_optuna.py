@@ -764,7 +764,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     params = model_data['params']
     stored_score = model_data.get('score', 'N/A')
     val_score = model_data.get('validation_score')
-
+    assert args.dataset_id == model_data['args']['dataset_id']
+    assert args.ticker     == model_data['args']['ticker']
     if args.verbose:
         print(f"📊 Loaded model with score: {stored_score}")
         if val_score is not None:
