@@ -447,7 +447,6 @@ def entry(args):
     # =============================================================================
     if real_time:
         os.makedirs(output_dir, exist_ok=True)
-
         if args.model_path:
             if not os.path.exists(args.model_path):
                 raise FileNotFoundError(f"Specified model not found: {args.model_path}")
@@ -459,7 +458,6 @@ def entry(args):
                 raise FileNotFoundError(f"No model files found in '{output_dir}'. Run with --no-real-time first.")
             model_path = max(model_files, key=os.path.getmtime)
             if verbose and not verbose_short: print(f"📥 Loading most recent real-time model: {model_path}")
-
         with open(model_path, 'rb') as f:
             saved_model = pickle.load(f)
         rt_params = saved_model['params']
@@ -469,6 +467,7 @@ def entry(args):
         rt_signal_type = saved_model.get('signal_type', 0)
         strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
         assert dataset_id == saved_model['dataset_id'], f"{dataset_id} == {saved_model['dataset_id']}"
+        assert ticker == saved_model['ticker'], f"{ticker} == {saved_model['ticker']}"
         if clip:
             fd1 = closes.index[-1].strftime('%Y-%m-%d')
             closes = closes.iloc[:-1].copy()
@@ -488,7 +487,10 @@ def entry(args):
         last_date = closes.index[-1].strftime('%Y-%m-%d')
         la_date = get_next_step(the_date=closes.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
         signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
-        print(f"Datapoint used: {last_date}   Signal computed: {last_signal}")
+        print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
+        print(f"Training score: {saved_model['train_score']:.6f} | Validation score: {saved_model['val_score']:.6f}")
+        print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold} | Signal Type: {rt_signal_type}")
+        print(f"Datapoint used: {last_date} | Signal computed: {last_signal}")
         if last_signal != 0:
             training_score, validation_score = saved_model['train_score'], saved_model['val_score']
             if rt_signal_type in ('long', 'both'):
