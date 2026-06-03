@@ -53,6 +53,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --storage none \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
       --target-type exact \
+      --timeout 80000 \
       --min-signal-ratio "$msr" &
     PIDS+=($!)
 done
