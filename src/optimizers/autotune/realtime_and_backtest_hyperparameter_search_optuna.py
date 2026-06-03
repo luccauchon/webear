@@ -488,7 +488,7 @@ def entry(args):
         la_date = get_next_step(the_date=closes.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
         signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
         print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
-        print(f"Training score: {saved_model['train_score']:.6f} | Validation score: {saved_model['val_score']:.6f}")
+        print(f"Training score: {saved_model['train_score']:.6%} | Validation score: {saved_model['val_score']:.6%}")
         print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold} | Signal Type: {rt_signal_type}")
         print(f"Datapoint used: {last_date} | Signal computed: {last_signal}")
         if last_signal != 0:
