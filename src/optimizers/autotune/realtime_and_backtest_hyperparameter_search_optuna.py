@@ -424,8 +424,6 @@ def entry(args):
     optimize = args.optimize
     clip = args.clip
     np.random.seed(42)
-    if verbose:
-        print(__doc__)
     filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
     if verbose: print(f"📂 Loading dataset from: {filename}")
     with open(filename, "rb") as f:
@@ -516,6 +514,9 @@ def entry(args):
                     target_price = last_price * (1 - rt_win_threshold)
                     print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES < {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
         return
+
+    if verbose:
+        print(__doc__)
 
     # =============================================================================
     # 🎯 OPTIMIZATION MODE
