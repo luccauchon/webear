@@ -995,16 +995,16 @@ def entry(args):
         # Warmup JIT after validation to cache compiled functions
         warmup_jit()
 
-    if args.verbose:
-        print("✅ __doc__ length:", len(__doc__ or ""))
-        print("✅ First line:", __doc__.split('\n')[0] if __doc__ else "None")
-        print(__doc__)
-
     # ✅ REAL-TIME MODE: Load model and evaluate latest point only
     if args.real_time:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
         return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip=args.clip)
+
+    if args.verbose:
+        print("✅ __doc__ length:", len(__doc__ or ""))
+        print("✅ First line:", __doc__.split('\n')[0] if __doc__ else "None")
+        print(__doc__)
 
     # ✅ BATCH MODE: Original behavior with optional train/val split
     np.random.seed(args.seed)
