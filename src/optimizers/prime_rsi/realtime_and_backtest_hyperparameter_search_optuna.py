@@ -1050,9 +1050,13 @@ def entry(args):
                 os.makedirs(db_dir, exist_ok=True)
             storage = f"sqlite:///{db_path}"
             db_path_display = db_path
-
-        study_name = f"{args.ticker}_{args.optimize_target}"
-
+        study_name = (
+            f"{args.ticker}_"            
+            f"{args.dataset_id}_"
+            f"{args.optimize_target}_"
+            f"la{args.lookahead_bars}_"
+            f"{args.method}"
+        )
         print(f"\n🔍 Initializing Optuna study: {study_name}")
         print(f"   📂 Storage: {db_path_display}")
         if df_val is not None:
