@@ -1,0 +1,5 @@
+@echo off
+
+start "Prime RSI Optuna Week-Week" cmd /K "call conda activate PY312_HT && cd ..\..\..\src\optimizers\prime_rsi && python .\realtime_and_backtest_hyperparameter_search_optuna.py --optimize --n-trials 99999 --timeout 80000 --dataset-id week --min-signal-density 0.15 --lookahead-bars 1 --train-ratio 0.7 --optuna-db week_perspective_v2\week_week.db --output-dir week_perspective_v2 --optimize-target buy_wr --method final_close --put-strike-pct 0.97 --call-strike-pct 1."
+
+start "Prime RSI Optuna Day-Week" cmd /K "call conda activate PY312_HT && cd ..\..\..\src\optimizers\prime_rsi && python .\realtime_and_backtest_hyperparameter_search_optuna.py --optimize --n-trials 99999 --timeout 80000 --dataset-id day --min-signal-density 0.15 --lookahead-bars 5 --train-ratio 0.7 --optuna-db week_perspective_v2\day_week.db --output-dir week_perspective_v2 --optimize-target buy_wr --method final_close --put-strike-pct 0.97 --call-strike-pct 1."
