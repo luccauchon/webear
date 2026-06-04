@@ -775,7 +775,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"📊 Validation score: {val_score:.4f}")
         print(f"🧠 Parameters: {params}")
     # Run strategy on latest datapoint
-    print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Lookahead: {lookahead} bars")
+    print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
     # Output results
     print(f"\n{'=' * 60}")
