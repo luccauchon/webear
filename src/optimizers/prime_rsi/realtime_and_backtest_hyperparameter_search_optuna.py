@@ -764,6 +764,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     put_strike_pct = model_data['args']['put_strike_pct']
     call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
+    method = model_data['args']['method']
     params = model_data['params']
     assert 'score' in model_data
     train_score = model_data.get('score', 'N/A')
@@ -780,7 +781,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
         val_bars = model_data['train_val_split']['val_bars']
         train_range = model_data['train_val_split']['train_range']
         val_range = model_data['train_val_split']['val_range']
-        print(f"Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range})")
+        print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method}")
     # Run strategy on latest datapoint
     print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
