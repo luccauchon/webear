@@ -761,7 +761,6 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     # Load the model
     print(f"🔍 Loading model from: {args.model_path}")
     model_data = load_model(args.model_path)
-    print(model_data)
     put_strike_pct = model_data['args']['put_strike_pct']
     call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
