@@ -109,6 +109,7 @@ def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
         trial.set_user_attr("total_bars", total_bars)
         trial.set_user_attr("signal_ratio", signal_ratio)
         trial.set_user_attr("raw_accuracy", accuracy)
+        trial.set_user_attr("train_accuracy", accuracy)
         trial.set_user_attr("metric_used", metric_key)
         trial.set_user_attr("target_type", args.target_type)
         # 🎯 Store validation metrics (for post-optimization display)
