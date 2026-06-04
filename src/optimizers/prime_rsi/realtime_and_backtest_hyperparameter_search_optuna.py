@@ -765,15 +765,22 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
     params = model_data['params']
-    stored_score = model_data.get('score', 'N/A')
+    assert score in model_data
+    train_score = model_data.get('score', 'N/A')
     val_score = model_data.get('validation_score')
     assert args.dataset_id == model_data['args']['dataset_id']
     assert args.ticker     == model_data['args']['ticker']
     if args.verbose:
-        print(f"📊 Loaded model with score: {stored_score}")
-        if val_score is not None:
-            print(f"📊 Validation score: {val_score:.4f}")
+        print(f"📊 Loaded model with training score: {train_score}")
+        assert val_score is not None
+        print(f"📊 Validation score: {val_score:.4f}")
         print(f"🧠 Parameters: {params}")
+        train_ratio = model_data['train_val_split']['train_ratio']
+        train_bars = model_data['train_val_split']['train_bars']
+        val_bars = model_data['train_val_split']['val_bars']
+        train_range = model_data['train_val_split']['train_range']
+        val_range = model_data['train_val_split']['val_range']
+        print(f"Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range})")
     # Run strategy on latest datapoint
     print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
