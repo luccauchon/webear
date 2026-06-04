@@ -487,7 +487,7 @@ def entry(args):
         signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
         print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
         print(f"Training score: {saved_model['train_score']:.6%} | Validation score: {saved_model['val_score']:.6%}")
-        print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold} | Signal Type: {rt_signal_type}")
+        print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type}")
         print(f"Datapoint used: {last_date} | Signal computed: {last_signal}")
         if last_signal != 0:
             training_score, validation_score = saved_model['train_score'], saved_model['val_score']
