@@ -13,7 +13,7 @@ from numba import njit
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
-from utils import get_filename_for_dataset
+from utils import get_filename_for_dataset, get_next_step
 import pickle
 import argparse
 import os
@@ -761,6 +761,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     # Load the model
     print(f"🔍 Loading model from: {args.model_path}")
     model_data = load_model(args.model_path)
+    put_strike_pct = model_data['args']['put_strike_pct']
+    call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
     params = model_data['params']
     stored_score = model_data.get('score', 'N/A')
@@ -799,6 +801,46 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"   {status} {name}: {active}")
 
     print(f"{'=' * 60}\n")
+
+    # ==============================================================================
+    # 💡 RECOMMENDED TRADE OUTPUT (if signal detected)
+    # ==============================================================================
+    if result['buy_signal'] or result['sell_signal']:
+        entry_date = result['timestamp'].strftime('%Y-%m-%d')
+        entry_price = result['close']
+
+        # Calculate approximate target/expiration date based on lookahead bars
+        target_date = get_next_step(the_date=entry_date, dataset_id=args.dataset_id, nn=lookahead).strftime('%Y-%m-%d')
+
+        print(f"\n💡 RECOMMENDED OPTIONS TRADE:")
+        print(f"{'─' * 60}")
+
+        if result['buy_signal']:
+            strike_price = entry_price * put_strike_pct
+            print(f"   📊 Strategy  : Put Credit Spread")
+            print(f"   📅 Entry Date: {entry_date}")
+            print(f"   💰 Entry Price: ${entry_price:.2f}")
+            print(f"   🎯 Short Put Strike: ${strike_price:.2f} ({put_strike_pct:.2%} of entry)")
+            print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
+            print(f"   ✅ Win Condition: Price stays ABOVE ${strike_price:.2f}")
+            print(f"   💡 Premium: Sell OTM put spread below current price")
+
+        if result['sell_signal']:
+            strike_price = entry_price * call_strike_pct
+            print(f"   📊 Strategy  : Call Credit Spread")
+            print(f"   📅 Entry Date: {entry_date}")
+            print(f"   💰 Entry Price: ${entry_price:.2f}")
+            print(f"   🎯 Short Call Strike: ${strike_price:.2f} ({call_strike_pct:.2%} of entry)")
+            print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
+            print(f"   ✅ Win Condition: Price stays BELOW ${strike_price:.2f}")
+            print(f"   💡 Premium: Sell OTM call spread above current price")
+
+        if result['buy_signal'] and result['sell_signal']:
+            print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
+
+        print(f"{'─' * 60}\n")
+
+    return result
 
     return result
 
