@@ -949,13 +949,11 @@ def early_stop_on_perfect_success(study, trial):
 
 
 def entry(args):
-    print_startup_banner(args)
     np.random.seed(args.seed)
     cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
     if args.verbose: print(f"📂 Loading dataset from: {cache_filename}")
     with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
-
     if args.ticker not in master_data_cache:
         raise KeyError(f"Ticker '{args.ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
     assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
@@ -987,6 +985,7 @@ def entry(args):
     if args.real_time:
         return real_time_mode(args, df_base, close_col, high_col, low_col)
 
+    print_startup_banner(args)
     # Default params (used if not optimizing)
     params = {'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5}
 
