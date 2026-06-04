@@ -761,6 +761,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     # Load the model
     print(f"🔍 Loading model from: {args.model_path}")
     model_data = load_model(args.model_path)
+    lookahead = model_data['args']['lookahead_bars']
     params = model_data['params']
     stored_score = model_data.get('score', 'N/A')
     val_score = model_data.get('validation_score')
@@ -771,9 +772,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
         if val_score is not None:
             print(f"📊 Validation score: {val_score:.4f}")
         print(f"🧠 Parameters: {params}")
-
     # Run strategy on latest datapoint
-    print(f"\n⚡ Testing latest datapoint for {args.ticker}...")
+    print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
     # Output results
     print(f"\n{'=' * 60}")
