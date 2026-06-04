@@ -85,7 +85,7 @@ def objective(trial, base_args, min_signal_ratio, penalty_weight, metric_key):
     # 3️⃣ Enforce Silent Mode
     args.disable_print = True
     args.disable_plot_sample = True
-    args.verbose = False if trial.number != 0 else True
+    args.verbose = False  # if trial.number != 0 else True
     # 4️⃣ Execute entry function & apply penalty
     try:
         metrics_val, metrics_train = entry(args)
@@ -449,6 +449,8 @@ if __name__ == "__main__":
     print(f"💡 Lookahead bars: {opt_args.lookahead_bars} (fixed during optimization)")
     print(f"💡 Threshold pct: {opt_args.threshold_pct} (fixed during optimization)")
     print(f"💡 Target Type: {opt_args.target_type}  |  Dataset: {opt_args.dataset_id}  |  Ticker: {opt_args.ticker}")
+    if opt_args.target_type in ['floor']:
+        assert opt_args.threshold_pct <= 0, f"--threshold-pct must be less than or equal to 0 in when {opt_args.target_type=}"
     if remaining_args:
         print(f"Unknown or unhandled arguments detected: {remaining_args}")
     # ✅ Updated storage print to handle None
