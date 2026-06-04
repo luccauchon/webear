@@ -799,10 +799,10 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     sell_signal_detected = result['sell_signal']  and optimize_target in ['combined_wr', 'sell_wr']
     if buy_signal_detected:
         print(f"\n🎯 SIGNALS:")
-        print(f"   🟢 BUY SIGNAL DETECTED!")
+        print(f"   🟢 BUY SIGNAL DETECTED! | Put Threshold: {put_strike_pct:.2%} | @{lookahead} {args.dataset_id}")
     if sell_signal_detected:
         print(f"\n🎯 SIGNALS:")
-        print(f"   🔴 SELL SIGNAL DETECTED!")
+        print(f"   🔴 SELL SIGNAL DETECTED! | Call Threshold: {call_strike_pct:.2%} | @{lookahead} {args.dataset_id}")
     if not buy_signal_detected and not sell_signal_detected:
         print(f"   ⚪ No signal at this time")
 
