@@ -786,13 +786,15 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     assert df_base[close_col].iloc[-1] == result['close']
     print(f"💰 Last Close Price: ${result['close']:.2f}")
     optimize_target = model_data['args']['optimize_target']
-    if result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']:
+    buy_signal_detected  = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
+    sell_signal_detected = result['sell_signal']  and optimize_target in ['combined_wr', 'sell_wr']
+    if buy_signal_detected:
         print(f"\n🎯 SIGNALS:")
         print(f"   🟢 BUY SIGNAL DETECTED!")
-    elif result['sell_signal']  and optimize_target in ['combined_wr', 'sell_wr']:
+    if sell_signal_detected:
         print(f"\n🎯 SIGNALS:")
         print(f"   🔴 SELL SIGNAL DETECTED!")
-    else:
+    if not buy_signal_detected and not sell_signal_detected:
         print(f"   ⚪ No signal at this time")
 
     if args.verbose and not args.verbose_short:
@@ -806,7 +808,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     # ==============================================================================
     # 💡 RECOMMENDED TRADE OUTPUT (if signal detected)
     # ==============================================================================
-    if result['buy_signal'] or result['sell_signal']:
+    if buy_signal_detected or sell_signal_detected:
         entry_date = result['timestamp'].strftime('%Y-%m-%d')
         entry_price = result['close']
 
@@ -816,7 +818,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
         print(f"\n💡 RECOMMENDED OPTIONS TRADE:")
         print(f"{'─' * 60}")
 
-        if result['buy_signal']:
+        if buy_signal_detected:
             strike_price = entry_price * put_strike_pct
             print(f"   📊 Strategy  : Put Credit Spread")
             print(f"   📅 Entry Date: {entry_date}")
@@ -826,7 +828,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"   ✅ Win Condition: Price stays ABOVE ${strike_price:.2f}")
             print(f"   💡 Premium: Sell OTM put spread below current price")
 
-        if result['sell_signal']:
+        if sell_signal_detected:
             strike_price = entry_price * call_strike_pct
             print(f"   📊 Strategy  : Call Credit Spread")
             print(f"   📅 Entry Date: {entry_date}")
@@ -836,7 +838,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"   ✅ Win Condition: Price stays BELOW ${strike_price:.2f}")
             print(f"   💡 Premium: Sell OTM call spread above current price")
 
-        if result['buy_signal'] and result['sell_signal']:
+        if buy_signal_detected and sell_signal_detected:
             print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
 
         print(f"{'─' * 60}\n")
