@@ -394,6 +394,8 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     model_data = load_model(model_path)
     params = model_data['best_params']
     metadata = model_data.get('metadata', {})
+    assert 'lookahead_bars' in metadata
+    lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
     dataset_id = metadata.get('dataset_id')
     ticker = metadata.get('ticker')
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
@@ -410,7 +412,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
-    print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
+    print(f"\n📊 Dataset Loaded: {ticker} | Dataset {dataset_id} | Lookahead {lookahead_bars} bars")
     print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Accuracy: {train_acc:.2%} "
           f":: Val Accuracy: {val_acc:.2%}  @{signal_ratio:.2%} signal density")
     price_col = ('Close', ticker)
@@ -455,8 +457,6 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     # Get config values (prefer params, fallback to metadata)
     assert 'metric' in metadata
     the_metric = params.get('metric', metadata.get('metric', 'long_accuracy'))
-    assert 'lookahead_bars' in metadata
-    lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
     assert 'threshold_pct' in metadata
     threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
 
