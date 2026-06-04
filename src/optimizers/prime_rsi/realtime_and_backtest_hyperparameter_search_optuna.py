@@ -765,7 +765,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
     params = model_data['params']
-    assert score in model_data
+    assert 'score' in model_data
     train_score = model_data.get('score', 'N/A')
     val_score = model_data.get('validation_score')
     assert args.dataset_id == model_data['args']['dataset_id']
