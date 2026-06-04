@@ -568,7 +568,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     assert "add_enhanced_features" in _metadata
     use_enhanced_features = _metadata.get("add_enhanced_features", False)
 
-    print(f"Target Threshold: Close > Open × (1 + {model_threshold * 100:.4%})")
+    print(f"Target Threshold: Close > Open × (1 + {model_threshold:.4f})")
     if not hyper_silence:
         print(f"✅ Model loaded ({_metadata.get('timestamp', 'N/A')})")
 
