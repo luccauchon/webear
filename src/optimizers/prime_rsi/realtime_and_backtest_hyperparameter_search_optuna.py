@@ -761,10 +761,13 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     # Load the model
     print(f"🔍 Loading model from: {args.model_path}")
     model_data = load_model(args.model_path)
+    print(model_data)
     put_strike_pct = model_data['args']['put_strike_pct']
     call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
     method = model_data['args']['method']
+    optimize_target = model_data['args']['optimize_target']
+    min_signal_density = model_data['args']['min_signal_density']
     params = model_data['params']
     assert 'score' in model_data
     train_score = model_data.get('score', 'N/A')
@@ -781,7 +784,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
         val_bars = model_data['train_val_split']['val_bars']
         train_range = model_data['train_val_split']['train_range']
         val_range = model_data['train_val_split']['val_range']
-        print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method}")
+        print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%}")
     # Run strategy on latest datapoint
     print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
@@ -793,7 +796,6 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
     assert df_base[close_col].iloc[-1] == result['close']
     print(f"💰 Last Close Price: ${result['close']:.2f}")
-    optimize_target = model_data['args']['optimize_target']
     buy_signal_detected  = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
     sell_signal_detected = result['sell_signal']  and optimize_target in ['combined_wr', 'sell_wr']
     if buy_signal_detected:
