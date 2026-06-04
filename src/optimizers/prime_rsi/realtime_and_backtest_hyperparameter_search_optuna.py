@@ -785,13 +785,14 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
     assert df_base[close_col].iloc[-1] == result['close']
     print(f"💰 Last Close Price: ${result['close']:.2f}")
-
-    print(f"\n🎯 SIGNALS:")
-    if result['buy_signal']:
+    optimize_target = model_data['args']['optimize_target']
+    if result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']:
+        print(f"\n🎯 SIGNALS:")
         print(f"   🟢 BUY SIGNAL DETECTED!")
-    if result['sell_signal']:
+    elif result['sell_signal']  and optimize_target in ['combined_wr', 'sell_wr']:
+        print(f"\n🎯 SIGNALS:")
         print(f"   🔴 SELL SIGNAL DETECTED!")
-    if not result['buy_signal'] and not result['sell_signal']:
+    else:
         print(f"   ⚪ No signal at this time")
 
     if args.verbose and not args.verbose_short:
