@@ -40,6 +40,7 @@ def parse_args():
         default=False,
         help="Hide rows where signal is 0 (default: False)"
     )
+    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
     return parser.parse_args()
 
 
@@ -70,6 +71,7 @@ def entry(args):
             output_signal_only=False,
             verbose=verbose,
             validate_jit=False,
+            clip=args.clip,
         )
         try:
             signal, current_price, target_price, target_date = oerh(configuration)
