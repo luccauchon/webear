@@ -403,6 +403,8 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     metric_used = model_data['user_attrs']['metric_used']
     val_acc = model_data['user_attrs']['val_accuracy']
     train_acc = model_data['user_attrs']['raw_accuracy']
+    assert 'threshold_pct' in metadata
+    threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
     if metric_used == 'long_accuracy':
         train_acc = model_data['user_attrs']['train_long_accuracy']
         val_acc = model_data['user_attrs']['val_long_accuracy']
@@ -415,7 +417,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
-    print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | Metric used: {metric_used}")
+    print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | Metric used: {metric_used} with threshold: {threshold_pct}%")
     print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Accuracy: {train_acc:.2%} "
           f":: Val Accuracy: {val_acc:.2%}  @{signal_ratio:.2%} signal density")
     price_col = ('Close', ticker)
@@ -461,8 +463,6 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     assert 'metric' in metadata
     the_metric = params.get('metric', metadata.get('metric', 'long_accuracy'))
     assert the_metric == metric_used
-    assert 'threshold_pct' in metadata
-    threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
 
     assert 1 == len(signal)
     signal = signal.values[0]
