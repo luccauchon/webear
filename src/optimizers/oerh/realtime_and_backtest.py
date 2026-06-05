@@ -507,7 +507,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
                 print(f"   Threshold: {threshold_pct * 100:.2f}% | Target Mode: '{target_type}' ({target_mode_desc}) | Model: {os.path.basename(model_path)}\n")
             else:
                 print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d')}: {ticker_display} at {current_price:.2f}")
-                print(f"   (Threshold: {threshold_pct * 100:.2f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
+                print(f"   (Threshold: {threshold_pct * 100:.4f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
 
     return signal, current_price, target_price, target_date
 

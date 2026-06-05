@@ -69,6 +69,7 @@ def entry(args):
             model_path=str(file_path),
             output_signal_only=False,
             verbose=verbose,
+            validate_jit=False,
         )
         try:
             signal, current_price, target_price, target_date = oerh(configuration)
