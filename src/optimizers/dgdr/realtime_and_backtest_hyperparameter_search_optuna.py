@@ -344,7 +344,7 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
                                       min_trade_density=min_trade_density, wr_weight=wr_weight, td_weight=td_weight)
 
 
-def save_optimized_model(study, config, output_dir, ticker, dataset_id):
+def save_optimized_model(study, config, output_dir, ticker, dataset_id,train_metrics, val_metrics):
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -366,16 +366,13 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id):
     pkl_path = os.path.join(output_dir, f"{base_name}.pkl")
     json_path = os.path.join(output_dir, f"{base_name}_meta.json")
 
-    with open(pkl_path, 'wb') as f:
-        pickle.dump({'study': study, 'config': config, 'timestamp': timestamp}, f)
-
     meta = {'ticker': ticker, 'dataset_id': dataset_id, 'best_params': study.best_trial.params,
             'best_value': study.best_trial.value, 'n_trials': len(study.trials), 'timestamp': timestamp, 'filename_tag': params_str}
-    with open(json_path, 'w') as f:
-        json.dump(meta, f, indent=2)
+    with open(pkl_path, 'wb') as f:
+        pickle.dump({'study': study, 'config': config, 'timestamp': timestamp, 'meta': meta, 'train_metrics': train_metrics, 'val_metrics': val_metrics}, f)
 
     print(f"✅ Model saved to: {pkl_path}")
-    print(f"📄 Metadata saved to: {json_path}\n")
+
     return pkl_path
 
 
@@ -395,11 +392,23 @@ def run_real_time_mode(args, df, config_cols):
         model_data = pickle.load(f)
     best_params = model_data['study'].best_trial.params
     config = model_data['config']
-
+    assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
     if args.verbose:
         print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
-
+    ticker = model_data['config']['ticker']
+    assert ticker == args.ticker
+    dataset_id = model_data['config']['dataset_id']
+    assert dataset_id == args.dataset_id
+    lookahead = model_data['config']['B']
+    method = model_data['config']['method']
+    min_signal_density = model_data['config']['min_signal_density']
+    train_win_rate = model_data['train_metrics']['win_rate']
+    train_score = model_data['train_metrics']['score']
+    train_trade_density = model_data['train_metrics']['trade_density']
+    val_win_rate = model_data['val_metrics']['win_rate']
+    val_score = model_data['val_metrics']['score']
+    val_trade_density = model_data['val_metrics']['trade_density']
     lookback_needed = 100
     df_tail = df.tail(lookback_needed).copy()
     close_col, volume_col, open_col, high_col, low_col, ticker = config_cols
@@ -427,9 +436,13 @@ def run_real_time_mode(args, df, config_cols):
     print("\n" + "─" * 40)
     print(" 🕒 REAL-TIME SIGNAL CHECK")
     print("─" * 40)
-    print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f" Close Price      : ${df_tail[close_col].iloc[-1]:.2f}")
+    print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type}")
+    print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
+    print(f" Val score   : {val_score:.2%} | Val Win Rate  : {val_win_rate:.2f}% | Val Density  : {val_trade_density:.2%} | {config['val_range']}")
+    print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
+    print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
+    print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
+    print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')}")
 
     if latest_signals:
         sig = latest_signals[-1]
@@ -437,7 +450,6 @@ def run_real_time_mode(args, df, config_cols):
         print(f"    Entry Price : ${sig['Price']:.2f}")
         print(f"    Stop Loss   : ${sig['SL']:.2f}")
         print(f"    Take Profit : ${sig['TP']:.2f}")
-        print(f"    R:R Ratio   : 1:2 (Fixed)")
     else:
         print(" ⚪ NO SIGNAL on latest closed bar.")
     print("─" * 40 + "\n")
@@ -502,7 +514,7 @@ def entry(args):
     last_date = df.index[-1]
     num_bars = len(df)
     print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-    print(f"   Bars: {num_bars:,} | Range: {first_date}  ->  {last_date}\n")
+    print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
 
     if args.real_time:
         run_real_time_mode(args, df, config_cols)
@@ -616,10 +628,6 @@ def entry(args):
         else:
             print("⚠️ No signals of the selected type found to plot.")
 
-    config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method,
-              'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
-    save_optimized_model(study, config, args.output_dir, ticker, dataset_id)
-
     # ========================================================================
     # 📊 TRAIN vs VALIDATION COMPARISON - GENERALIZATION CHECK
     # ========================================================================
@@ -701,6 +709,11 @@ def entry(args):
     # ========================================================================
     # END COMPARISON SECTION
     # ========================================================================
+
+    config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method, 'train_ratio': args.train_ratio,
+              'train_range':f"({df_train.index[0]}::{df_train.index[-1]})", 'val_range':f"({df_val.index[0].strftime('%Y-%m-%d')}::{df_val.index[-1].strftime('%Y-%m-%d')})",
+              'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
+    save_optimized_model(study, config, args.output_dir, ticker, dataset_id, train_metrics, val_metrics )
 
 
 if __name__ == "__main__":
