@@ -400,7 +400,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     ticker = metadata.get('ticker')
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
     signal_ratio = model_data['user_attrs']['signal_ratio']
-    metric_used = val_acc = model_data['user_attrs']['metric_used']
+    metric_used = model_data['user_attrs']['metric_used']
     val_acc = model_data['user_attrs']['val_accuracy']
     train_acc = model_data['user_attrs']['raw_accuracy']
     if metric_used == 'long_accuracy':
@@ -409,6 +409,8 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     elif metric_used == 'short_accuracy':
         train_acc = model_data['user_attrs']['train_short_accuracy']
         val_acc = model_data['user_attrs']['val_short_accuracy']
+    else:
+        assert False, f"TODO: {metric_used}"
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
@@ -457,11 +459,18 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     # Get config values (prefer params, fallback to metadata)
     assert 'metric' in metadata
     the_metric = params.get('metric', metadata.get('metric', 'long_accuracy'))
+    assert the_metric == metric_used
     assert 'threshold_pct' in metadata
     threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
 
     assert 1 == len(signal)
     signal = signal.values[0]
+    if signal == 1    and the_metric in ['long_accuracy', 'accuracy']:  # Buy signal
+        signal = 1
+    elif signal == -1 and the_metric in ['short_accuracy', 'accuracy']:  # Sell signal
+        signal = -1
+    else:
+        signal = 0
 
     # Calculate target price and date
     if signal == 1:  # Buy signal
