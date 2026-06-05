@@ -986,6 +986,7 @@ def print_startup_banner(args):
 ║  🔹 Mode         : {'REAL-TIME' if args.real_time else 'OPTIMIZATION' if args.optimize else 'EVALUATION' if args.model_path else 'DEFAULT BACKTEST':<58}║
 ║  🔹 Lookahead    : {args.lookahead_bars:02d} bars{' ' * 51}║
 ║  🔹 Method       : {args.method:<58}║
+║  🔹 Min Density  : {args.min_signal_density:<58}║
 ║  🔹 Strike Pct   : Put {args.put_strike_pct:.2%} | Call {args.call_strike_pct:.2%}{' ' * 33}║{train_info if train_info else ' ' * 78}║
 ╚{'═' * 78}╝
 """
