@@ -4,7 +4,7 @@
 WEBEAR__NTRIALS=44444
 WEBEAR__THRESHOLD=0.020
 WEBEAR__LOOKAHEAD=5
-WEBEAR__OPTIMIZE="hold_floor"
+WEBEAR__OPTIMIZE="finish_above"
 
 # Analyse des arguments nommés
 while [[ $# -gt 0 ]]; do
@@ -41,7 +41,7 @@ echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__THRESHOLD=$WEBEAR__THRE
 
 cd ../../../../src/optimizers/autotune || exit 1
 
-MIN_SIGNAL_DENSITIES=(0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 0.29 0.30 0.31 0.32)
+MIN_SIGNAL_DENSITIES=(0.07 0.08 0.09 0.10 0.11 0.12 0.13 0.14 0.15 0.16 0.17 0.18 0.19)
 PIDS=()
 
 for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
