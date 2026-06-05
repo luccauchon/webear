@@ -53,6 +53,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --train-ratio 0.7 \
       --optimize "$WEBEAR__OPTIMIZE" \
       --n-trials "$WEBEAR__NTRIALS" \
+      --output-dir "$WEBEAR__OUTPUT_DIR" \
       --timeout 80000 &
     PIDS+=($!)
 done
