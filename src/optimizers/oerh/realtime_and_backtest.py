@@ -397,8 +397,8 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     assert 'lookahead_bars' in metadata
     lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
     dataset_id = metadata.get('dataset_id')
-    ticker = metadata.get('ticker')
     master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
+    ticker = metadata.get('ticker')
     signal_ratio = model_data['user_attrs']['signal_ratio']
     metric_used = model_data['user_attrs']['metric_used']
     val_acc = model_data['user_attrs']['val_accuracy']
