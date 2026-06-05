@@ -417,7 +417,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
-    print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | Metric used: {metric_used} with threshold: {threshold_pct}%")
+    print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
     print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Accuracy: {train_acc:.2%} "
           f":: Val Accuracy: {val_acc:.2%}  @{signal_ratio:.2%} signal density")
     price_col = ('Close', ticker)
