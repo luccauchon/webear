@@ -410,11 +410,12 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
         train_acc = model_data['user_attrs']['train_short_accuracy']
         val_acc = model_data['user_attrs']['val_short_accuracy']
     else:
+        print(model_data)
         assert False, f"TODO: {metric_used}"
     df = master_data_cache[ticker].sort_index()
     if clip:
         df = df.iloc[:-1].copy()
-    print(f"\n📊 Dataset Loaded: {ticker} | Dataset {dataset_id} | Lookahead {lookahead_bars} bars")
+    print(f"\n📊 Dataset Loaded: {ticker} | Dataset {dataset_id} | Lookahead {lookahead_bars} bars | Metric used: {metric_used}")
     print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Accuracy: {train_acc:.2%} "
           f":: Val Accuracy: {val_acc:.2%}  @{signal_ratio:.2%} signal density")
     price_col = ('Close', ticker)
