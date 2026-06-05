@@ -774,9 +774,9 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     assert args.dataset_id == model_data['args']['dataset_id']
     assert args.ticker     == model_data['args']['ticker']
     if args.verbose:
-        print(f"📊 Loaded model with training score: {train_score}")
+        print(f"📊 Loaded model with training score: {train_score:.4%}")
         assert val_score is not None
-        print(f"📊 Validation score: {val_score:.4f}")
+        print(f"📊 Validation score: {val_score:.4%}")
         print(f"🧠 Parameters: {params}")
         train_ratio = model_data['train_val_split']['train_ratio']
         train_bars = model_data['train_val_split']['train_bars']
