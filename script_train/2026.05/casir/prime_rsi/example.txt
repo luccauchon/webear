@@ -1,2 +1,2 @@
-./_laucher_36x.sh --trials 50000 --threshold 0.025 --lookahead 3 --metric "finish_above" --dataset-id "week" --timeout 120000 --put-strike-pct 0.98 --call-strike-pct 1.
+./_laucher_36x.sh --trials 50000 --lookahead 3 --metric "finish_above" --dataset-id "week" --timeout 120000 --put-strike-pct 0.98 --call-strike-pct 1.
 
