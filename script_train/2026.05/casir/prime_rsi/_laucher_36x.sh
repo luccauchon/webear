@@ -2,7 +2,6 @@
 
 # Valeurs par défaut d'origine
 WEBEAR__NTRIALS=44444
-WEBEAR__THRESHOLD=0.020
 WEBEAR__LOOKAHEAD=5
 WEBEAR__OPTIMIZE="finish_above"
 WEBEAR__DATASET_ID="day"
@@ -15,10 +14,6 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --trials)
       WEBEAR__NTRIALS="$2"
-      shift 2
-      ;;
-    --threshold)
-      WEBEAR__THRESHOLD="$2"
       shift 2
       ;;
     --lookahead)
@@ -60,10 +55,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Calcul dynamique du dossier de sortie
-PCT_VALUE=$(awk "BEGIN {print $WEBEAR__THRESHOLD * 100}")
-WEBEAR__OUTPUT_DIR="models_put_${WEBEAR__LOOKAHEAD}B_${PCT_VALUE}pct"
+PUT_PCT_VALUE=$(awk "BEGIN {print $WEBEAR__PUT_STRIKE_PCT * 100}")
+CALL_PCT_VALUE=$(awk "BEGIN {print $WEBEAR__CALL_STRIKE_PCT * 100}")
+WEBEAR__OUTPUT_DIR="models_put_${WEBEAR__LOOKAHEAD}B__put_${PUT_PCT_VALUE}pct__call_${CALL_PCT_VALUE}pct"
 
-echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__THRESHOLD=$WEBEAR__THRESHOLD  WEBEAR__LOOKAHEAD=$WEBEAR__LOOKAHEAD  WEBEAR__OPTIMIZE=$WEBEAR__OPTIMIZE  DATASET-ID=$WEBEAR__DATASET_ID  TIMEOUT=$WEBEAR__TIMEOUT  PUT-STRIKE-PCT=$WEBEAR__PUT_STRIKE_PCT  CALL-STRIKE-PCT=$WEBEAR__CALL_STRIKE_PCT  WEBEAR__OUTPUT_DIR=$WEBEAR__OUTPUT_DIR"
+echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__LOOKAHEAD=$WEBEAR__LOOKAHEAD  WEBEAR__OPTIMIZE=$WEBEAR__OPTIMIZE  DATASET-ID=$WEBEAR__DATASET_ID  TIMEOUT=$WEBEAR__TIMEOUT  PUT-STRIKE-PCT=$WEBEAR__PUT_STRIKE_PCT  CALL-STRIKE-PCT=$WEBEAR__CALL_STRIKE_PCT  WEBEAR__OUTPUT_DIR=$WEBEAR__OUTPUT_DIR"
 
 cd ../../../../src/optimizers/prime_rsi || exit 1
 
@@ -75,7 +71,6 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --dataset-id "$WEBEAR__DATASET_ID" \
       --lookahead-bars "$WEBEAR__LOOKAHEAD" \
       --method final_close \
-      --win-threshold "$WEBEAR__THRESHOLD" \
       --min-signal-density "$msr" \
       --train-ratio 0.7 \
       --put-strike-pct "$WEBEAR__PUT_STRIKE_PCT" \
