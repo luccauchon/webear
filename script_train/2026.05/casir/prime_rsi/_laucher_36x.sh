@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "❌ Option inconnue : $1"
-      echo "Options valides : --trials, --threshold, --lookahead, --metric, --dataset-id, --timeout, --put-strike-pct, --call-strike-pct"
+      echo "Options valides : --trials, --lookahead, --metric, --dataset-id, --timeout, --put-strike-pct, --call-strike-pct"
       exit 1
       ;;
   esac
@@ -61,7 +61,7 @@ WEBEAR__OUTPUT_DIR="models_put_${WEBEAR__LOOKAHEAD}B__put_${PUT_PCT_VALUE}pct__c
 
 echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__LOOKAHEAD=$WEBEAR__LOOKAHEAD  WEBEAR__OPTIMIZE=$WEBEAR__OPTIMIZE  DATASET-ID=$WEBEAR__DATASET_ID  TIMEOUT=$WEBEAR__TIMEOUT  PUT-STRIKE-PCT=$WEBEAR__PUT_STRIKE_PCT  CALL-STRIKE-PCT=$WEBEAR__CALL_STRIKE_PCT  WEBEAR__OUTPUT_DIR=$WEBEAR__OUTPUT_DIR"
 
-cd ../../../../src/optimizers/prime_rsi || exit 1
+cd ../../../src/optimizers/prime_rsi || exit 1
 
 MIN_SIGNAL_DENSITIES=(0.05 0.06 0.07 0.08 0.09 0.10 0.11 0.12 0.13 0.14 0.15 0.16 0.17 0.18 0.19 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 0.29 0.30 0.31 0.32 0.33 0.34 0.35 0.36 0.37 0.38 0.39 0.40)
 PIDS=()
