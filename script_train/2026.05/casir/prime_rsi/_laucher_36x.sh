@@ -70,7 +70,6 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
   python ./realtime_and_backtest_hyperparameter_search_optuna.py \
       --dataset-id "$WEBEAR__DATASET_ID" \
       --lookahead-bars "$WEBEAR__LOOKAHEAD" \
-      --method final_close \
       --min-signal-density "$msr" \
       --train-ratio 0.7 \
       --put-strike-pct "$WEBEAR__PUT_STRIKE_PCT" \
