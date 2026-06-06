@@ -3,7 +3,7 @@
 # Valeurs par défaut d'origine
 WEBEAR__NTRIALS=44444
 WEBEAR__LOOKAHEAD=5
-WEBEAR__OPTIMIZE="finish_above"
+WEBEAR__OPTIMIZE="buy_wr"
 WEBEAR__DATASET_ID="day"
 WEBEAR__TIMEOUT=80000
 WEBEAR__PUT_STRIKE_PCT=0.99
@@ -78,8 +78,8 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --wr-weight 0.9 \
       --td-weight 0.1 \
       --optimize \
-      --optimize-target buy_wr \
-      --optimize "$WEBEAR__OPTIMIZE" \
+      --optimize-target "$WEBEAR__OPTIMIZE" \
+      --optimize \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
       --timeout "$WEBEAR__TIMEOUT" &
