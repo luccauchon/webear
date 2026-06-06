@@ -79,7 +79,6 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --td-weight 0.1 \
       --optimize \
       --optimize-target "$WEBEAR__OPTIMIZE" \
-      --optimize \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
       --timeout "$WEBEAR__TIMEOUT" &
