@@ -310,7 +310,19 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density=0.04, 
     wr_norm = win_rate / 100.0
     td_norm = min(1.0, trade_density / min_trade_density)
     base_score = (wr_weight * wr_norm) + (td_weight * td_norm)
-    final_score = base_score * (trade_density / min_trade_density) if trade_density < min_trade_density else base_score
+    # Option 1
+    final_score = base_score
+
+    # # Option 2
+    # final_score = base_score * (trade_density / min_trade_density) if trade_density < min_trade_density else base_score
+    #
+    # # Option 3
+    # density_ratio = trade_density / min_trade_density
+    # if density_ratio < 1:
+    #     final_score = base_score * np.sqrt(density_ratio)
+    # else:
+    #     final_score = base_score
+
     return max(0.0, min(1.0, final_score))
 
 
