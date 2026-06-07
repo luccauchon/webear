@@ -397,17 +397,17 @@ def run_real_time_mode(args, df, config_cols):
             print("❌ No saved models found. Run optimization first or provide --model-path.")
             return
         model_path = max(matches, key=os.path.getmtime)
-
     if args.verbose:
         print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
+    assert model_data['config']['dataset_id'] == args.dataset_id
+    assert model_data['config']['ticker'] == args.ticker
     best_params = model_data['study'].best_trial.params
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
-    if args.verbose:
-        print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
+    print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
     assert ticker == args.ticker
     dataset_id = model_data['config']['dataset_id']
@@ -460,8 +460,6 @@ def run_real_time_mode(args, df, config_cols):
         sig = latest_signals[-1]
         print(f" 🟢 SIGNAL DETECTED: {sig['Type']}")
         print(f"    Entry Price : ${sig['Price']:.2f}")
-        print(f"    Stop Loss   : ${sig['SL']:.2f}")
-        print(f"    Take Profit : ${sig['TP']:.2f}")
     else:
         print(" ⚪ NO SIGNAL on latest closed bar.")
     print("─" * 40 + "\n")
@@ -723,7 +721,8 @@ def entry(args):
     # ========================================================================
 
     config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method, 'train_ratio': args.train_ratio,
-              'train_range':f"({df_train.index[0]}::{df_train.index[-1]})", 'val_range':f"({df_val.index[0].strftime('%Y-%m-%d')}::{df_val.index[-1].strftime('%Y-%m-%d')})",
+              'train_range':f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
+              'val_range':f"({df_val.index[0].strftime('%Y-%m-%d')}::{df_val.index[-1].strftime('%Y-%m-%d')})",
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
     save_optimized_model(study, config, args.output_dir, ticker, dataset_id, train_metrics, val_metrics )
 
