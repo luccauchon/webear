@@ -154,7 +154,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
             return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
 
         print("\n" + "=" * total_width)
-        print(f"{'OERH RESULTS SUMMARY':^{total_width}}")
+        print(f"{'AUTOTUNE RESULTS SUMMARY':^{total_width}}")
         print("=" * total_width)
         print(format_row(headers))
         print("-" * total_width)
