@@ -26,65 +26,17 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "-d", "--directory",
+        "-d", "--target-dir",
         type=str,
-        default=".",
-        metavar="PATH",
-        help=(
-            "Path to the target directory containing files to process. "
-            "Defaults to the current working directory ('.')."
-        )
+        default="./models",
+        help="Directory containing .pkl model files (default: ./models)"
     )
 
     parser.add_argument(
-        "-e", "--extension",
-        type=str,
-        default=".pkl",
-        metavar="EXT",
-        help=(
-            "File extension filter (e.g., '.pkl', '.json'). "
-            "Only files matching this extension will be processed. "
-            "Defaults to '.pkl'. The leading dot is optional."
-        )
-    )
-
-    parser.add_argument(
-        "--dataset-id",
-        type=str,
-        default="day",
-        metavar="ID",
-        help=(
-            "Identifier for the dataset timeframe or type (e.g., 'day', 'hour', 'min'). "
-            "Passed to the autotune configuration for each file. Defaults to 'day'."
-        )
-    )
-
-    parser.add_argument(
-        "-t", "--ticker",
-        type=str,
-        default="^GSPC",
-        metavar="SYMBOL",
-        help=(
-            "Stock/asset ticker symbol to use during autotuning (e.g., '^GSPC', 'AAPL', 'BTC-USD'). "
-            "Defaults to '^GSPC'."
-        )
-    )
-
-    parser.add_argument(
-        "-v", "--verbose",
+        "--hide-zero-signal",
         action="store_true",
         default=False,
-        help=(
-            "Enable verbose output mode. Displays file counts, "
-            "processing status, and detailed run information."
-        )
-    )
-
-    parser.add_argument(
-        "-V", "--version",
-        action="version",
-        version=f"%(prog)s {sys__version}",
-        help="Show program's version number and exit."
+        help="Hide rows where signal is 0 (default: False)"
     )
 
     return parser
@@ -105,17 +57,11 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
 
     # Support both argparse.Namespace and dict for backward compatibility
     if isinstance(args, dict):
-        target_dir   = args.get('directory', '.')
+        target_dir   = args.get('target_dir', '.')
         extension    = args.get('extension', '.pkl')
-        dataset_id   = args.get('dataset_id', 'day')
-        ticker       = args.get('ticker', '^GSPC')
-        verbose      = args.get('verbose', False)
     else:
-        target_dir   = getattr(args, 'directory', '.')
+        target_dir   = getattr(args, 'target_dir', '.')
         extension    = getattr(args, 'extension', '.pkl')
-        dataset_id   = getattr(args, 'dataset_id', 'day')
-        ticker       = getattr(args, 'ticker', '^GSPC')
-        verbose      = getattr(args, 'verbose', False)
 
     # Normalize extension to ensure it starts with a dot
     extension = extension.lower() if extension.startswith('.') else f".{extension.lower()}"
@@ -135,33 +81,86 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         print(f"No {extension} files found in {dir_path}")
         return
 
-    if verbose:
-        print(f"Found {len(files)} {extension} file(s) in {dir_path}. Starting sequential autotune...\n")
-
+    print(f"Found {len(files)} {extension} file(s) in {dir_path}. Starting sequential autotune...\n")
+    results = []
     # Loop through files one by one
     for file_path in files:
-        if verbose:
-            print(f"\n{'=' * 60}")
-            print(f"STARTING AUTOTUNE FOR: {file_path.name}")
-            print(f"{'=' * 60}")
+        print(f"\n{'=' * 60}")
+        print(f"STARTING AUTOTUNE FOR: {file_path.name}")
+        print(f"{'=' * 60}")
 
         # Build configuration for the current file using CLI arguments
         configuration = Namespace(
             real_time=True,
             model_path=str(file_path),
-            verbose_short=not verbose,
-            dataset_id=dataset_id,
-            ticker=ticker,
-            verbose=verbose,
+            verbose_short=False,
+            dataset_id="day",
+            ticker="^GSPC",
+            verbose=True,
             output_dir=str(dir_path),
             length_dataset=999999,
+            optimize=False,
+            clip=False,
         )
 
         try:
-            autotune(configuration)
+            result = autotune(configuration)
+            result["file"]: file_path.name
+            results.append(result)
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
 
+        # 1. Filter results if hide_zero_signal is enabled
+        if args.hide_zero_signal:
+            results = [r for r in results if r["signal"] != 0]
+
+        # 2. Sort by target_date descending (most recent first)
+        # Normalize dates to YYYY-MM-DD strings to safely compare pandas.Timestamp vs datetime.date
+        results.sort(
+            key=lambda r: (
+                r["target_date"] is not None,
+                r["target_date"].strftime('%Y-%m-%d') if hasattr(r["target_date"], 'strftime') else str(r["target_date"])
+            ),
+            reverse=False
+        )
+
+        # Print results
+        headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Threshold"]
+        table_rows = []
+        for res in results:
+            sig = str(res["signal"]) if res["signal"] is not None else "N/A"
+            current_price = f"{res['current_price']:.2f}" if isinstance(res['current_price'], (int, float)) else "N/A"
+            current_date = res["current_date"]
+            target_price = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
+            target_date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
+            train_score = f"{res['train_score']:.4%}"
+            val_score = f"{res['val_score']:.4%}"
+            optimize = str(res["optimization_metric"])
+            threshold = f'{res["threshold"]:.2%}'
+            info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
+            table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_score, val_score, optimize, threshold])
+
+        # Calculate column widths
+        col_widths = [len(h) for h in headers]
+        for row in table_rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(cell))
+
+        col_widths = [w + 2 for w in col_widths]
+        total_width = sum(col_widths)
+
+        # Formatting helper
+        def format_row(cells):
+            return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
+
+        print("\n" + "=" * total_width)
+        print(f"{'OERH RESULTS SUMMARY':^{total_width}}")
+        print("=" * total_width)
+        print(format_row(headers))
+        print("-" * total_width)
+        for row in table_rows:
+            print(format_row(row))
+        print("=" * total_width)
 
 # =============================================================================
 # 1. MAIN

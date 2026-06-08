@@ -484,11 +484,13 @@ def entry(args):
         last_price = last_row['price']
         last_date = closes.index[-1].strftime('%Y-%m-%d')
         la_date = get_next_step(the_date=closes.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
-        signal_str = "🟢 LONG" if last_signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
+        signal = 1 if (last_signal == 1.0 and rt_signal_type in ('long', 'both')) else (-1 if (last_signal == -1.0 and rt_signal_type in ('short', 'both')) else 0)
+        signal_str = "🟢 LONG" if signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
         print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
         print(f"Training score: {saved_model['train_score']:.6%} | Validation score: {saved_model['val_score']:.6%}")
         print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type}")
-        print(f"Datapoint used: {last_date} | Signal computed: {last_signal}")
+        print(f"Datapoint used: {last_date} | Signal computed: {last_signal} {signal_str}")
+        target_price = 0.
         if last_signal != 0:
             training_score, validation_score = saved_model['train_score'], saved_model['val_score']
             if rt_signal_type in ('long', 'both'):
@@ -513,7 +515,9 @@ def entry(args):
                 if last_signal == -1. and rt_signal_type == 'short':
                     target_price = last_price * (1 - rt_win_threshold)
                     print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES < {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
-        return
+        return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
+                'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': saved_model['optimize_metric'],
+                'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead':saved_model['params']['lookahead_bars']}
 
     if verbose:
         print(__doc__)
