@@ -500,21 +500,43 @@ def entry(args):
                 ceiling_price = last_price * (1 + rt_win_threshold)
                 print(f"TODO here's a {validation_score:.2%} historical probability that if you enter SHORT now at price ${last_price:.0f}, the price will not rise above ${ceiling_price:.0f} (${last_price:.0f} × {1 + rt_win_threshold}) at any point during the next {saved_model['params']['lookahead_bars']} bars.")
             if saved_model['optimize_metric'] == 'hold_floor':
-                if last_signal == 1. and rt_signal_type == 'long':
+                if last_signal == 1. and rt_signal_type in ('long', 'both'):
                     floor_price = last_price * (1 - rt_win_threshold)
                     print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY ABOVE {floor_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'hold_ceiling':
-                if last_signal == -1. and rt_signal_type == 'short':
+                if last_signal == -1. and rt_signal_type in ('short', 'both'):
                     ceiling_price = last_price * (1 + rt_win_threshold)
                     print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price STAY BELOW {ceiling_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'finish_above':
-                if last_signal == 1. and rt_signal_type == 'long':
+                if last_signal == 1. and rt_signal_type in ('long', 'both'):
                     target_price = last_price * (1 + rt_win_threshold)
                     print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES > {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'finish_below':
-                if last_signal == -1. and rt_signal_type == 'short':
+                if last_signal == -1. and rt_signal_type in ('short', 'both'):
                     target_price = last_price * (1 - rt_win_threshold)
                     print(f"Last data point is {last_date} @{last_price:.0f}, {saved_model['score']:.2%} chance that price CLOSES < {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+        # Invalidate the signal if iw was not optimized for.
+        if last_signal != 0:
+            if saved_model['optimize_metric'] == 'hold_floor':
+                if last_signal == 1. and rt_signal_type in ('long', 'both'):
+                    pass  # Ok
+                else
+                    last_signal = 0.
+            elif saved_model['optimize_metric'] == 'hold_ceiling':
+                if last_signal == -1. and rt_signal_type in ('short', 'both'):
+                    pass  # Ok
+                else:
+                    last_signal = 0.
+            elif saved_model['optimize_metric'] == 'finish_above':
+                if last_signal == 1. and rt_signal_type in ('long', 'both'):
+                    pass  # Ok
+                else:
+                    last_signal = 0.
+            elif saved_model['optimize_metric'] == 'finish_below':
+                if last_signal == -1. and rt_signal_type in ('short', 'both'):
+                    pass  # Ok
+                else:
+                    last_signal = 0.
         return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
                 'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': saved_model['optimize_metric'],
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead':saved_model['params']['lookahead_bars']}
