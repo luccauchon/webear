@@ -773,16 +773,16 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     val_score = model_data.get('validation_score')
     assert args.dataset_id == model_data['args']['dataset_id']
     assert args.ticker     == model_data['args']['ticker']
+    assert val_score is not None
+    train_ratio = model_data['train_val_split']['train_ratio']
+    train_bars = model_data['train_val_split']['train_bars']
+    val_bars = model_data['train_val_split']['val_bars']
+    train_range = model_data['train_val_split']['train_range']
+    val_range = model_data['train_val_split']['val_range']
     if args.verbose:
         print(f"📊 Loaded model with training score: {train_score:.4%}")
-        assert val_score is not None
         print(f"📊 Validation score: {val_score:.4%}")
         print(f"🧠 Parameters: {params}")
-        train_ratio = model_data['train_val_split']['train_ratio']
-        train_bars = model_data['train_val_split']['train_bars']
-        val_bars = model_data['train_val_split']['val_bars']
-        train_range = model_data['train_val_split']['train_range']
-        val_range = model_data['train_val_split']['val_range']
         print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%}")
     # Run strategy on latest datapoint
     print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
@@ -793,8 +793,9 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     print(f"{'=' * 60}")
     assert df_base.index[-1].strftime('%Y-%m-%d') == result['timestamp'].strftime('%Y-%m-%d')
     print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
-    assert df_base[close_col].iloc[-1] == result['close']
-    print(f"💰 Last Close Price: ${result['close']:.2f}")
+    current_price, target_price, target_date = result['close'], None, None
+    assert df_base[close_col].iloc[-1] == current_price
+    print(f"💰 Last Close Price: ${current_price:.2f}")
     buy_signal_detected   = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
     sell_signal_detected  = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
     result['buy_signal_detected']  = buy_signal_detected
@@ -816,15 +817,16 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
 
     print(f"{'=' * 60}\n")
 
+    # Calculate approximate target/expiration date based on lookahead bars
+    entry_date = result['timestamp'].strftime('%Y-%m-%d')
+    target_date = get_next_step(the_date=entry_date, dataset_id=args.dataset_id, nn=lookahead).strftime('%Y-%m-%d')
+
     # ==============================================================================
     # 💡 RECOMMENDED TRADE OUTPUT (if signal detected)
     # ==============================================================================
     if buy_signal_detected or sell_signal_detected:
-        entry_date = result['timestamp'].strftime('%Y-%m-%d')
         entry_price = result['close']
-
-        # Calculate approximate target/expiration date based on lookahead bars
-        target_date = get_next_step(the_date=entry_date, dataset_id=args.dataset_id, nn=lookahead).strftime('%Y-%m-%d')
+        assert entry_price == current_price
 
         print(f"\n💡 RECOMMENDED OPTIONS TRADE:")
         print(f"{'─' * 60}")
@@ -838,6 +840,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
             print(f"   ✅ Win Condition: Price stays ABOVE ${strike_price:.2f}")
             print(f"   💡 Premium: Sell OTM put spread below current price")
+            target_price = strike_price
 
         if sell_signal_detected:
             strike_price = entry_price * call_strike_pct
@@ -848,12 +851,19 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
             print(f"   ✅ Win Condition: Price stays BELOW ${strike_price:.2f}")
             print(f"   💡 Premium: Sell OTM call spread above current price")
+            target_price = strike_price
 
         if buy_signal_detected and sell_signal_detected:
             print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
 
         print(f"{'─' * 60}\n")
 
+    result['train_score']     = train_score
+    result['val_score']       = val_score
+    result['optimize_target'] = optimize_target
+    result['current_price']   = current_price
+    result['target_price']    = current_price
+    result['target_date']     = target_date
     return result
 
 
