@@ -623,7 +623,7 @@ def generate_model_name(args, params, score):
     if hasattr(args, 'call_strike_pct'):
         arg_parts.append(f"call-{args.call_strike_pct:.2f}")
     if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
-        arg_parts.append(f"train-{args.train_ratio:.2f}")
+        arg_parts.append(f"train_ratio-{args.train_ratio:.2f}")
 
     # Combine all parts
     name_parts = [
@@ -795,8 +795,10 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
     assert df_base[close_col].iloc[-1] == result['close']
     print(f"💰 Last Close Price: ${result['close']:.2f}")
-    buy_signal_detected  = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
-    sell_signal_detected = result['sell_signal']  and optimize_target in ['combined_wr', 'sell_wr']
+    buy_signal_detected   = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
+    sell_signal_detected  = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
+    result['buy_signal_detected']  = buy_signal_detected
+    result['sell_signal_detected'] = sell_signal_detected
     if buy_signal_detected:
         print(f"\n🎯 SIGNALS:")
         print(f"   🟢 BUY SIGNAL DETECTED! | Put Threshold: {put_strike_pct:.2%} | @{lookahead} {args.dataset_id}")
@@ -851,8 +853,6 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
             print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
 
         print(f"{'─' * 60}\n")
-
-    return result
 
     return result
 
@@ -1011,7 +1011,6 @@ def entry(args):
         master_data_cache = pickle.load(f)
     if args.ticker not in master_data_cache:
         raise KeyError(f"Ticker '{args.ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
-    assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
     df_base = master_data_cache[args.ticker].sort_index()
     if args.length_dataset != 999999:
         df_base = df_base.iloc[-args.length_dataset:].copy()
@@ -1039,7 +1038,7 @@ def entry(args):
     # 🔹 Handle real-time mode first
     if args.real_time:
         return real_time_mode(args, df_base, close_col, high_col, low_col)
-
+    assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
     print_startup_banner(args)
     # Default params (used if not optimizing)
     params = {'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5}
