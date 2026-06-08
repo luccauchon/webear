@@ -864,6 +864,9 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     result['current_price']   = current_price
     result['target_price']    = current_price
     result['target_date']     = target_date
+    result['dataset_id']      = args.dataset_id
+    result['ticker']          = args.ticker
+    result['lookahead']       = lookahead
     return result
 
 
