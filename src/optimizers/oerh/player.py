@@ -74,14 +74,21 @@ def entry(args):
             clip=args.clip,
         )
         try:
-            signal, current_price, target_price, target_date = oerh(configuration)
+            signal, current_price, current_date, target_price, target_date, train_acc, val_acc, threshold_pct, metric_used_and_target_type, dataset_id, ticker, lookahead_bars = oerh(configuration)
             results.append({
                 "file": file_path.name,
                 "signal": signal,
                 "current_price": current_price,
+                "current_date": current_date,
                 "target_price": target_price,
                 "target_date": target_date,
-                "status": "SUCCESS"
+                'train_acc': train_acc,
+                'val_acc': val_acc,
+                'threshold_pct': threshold_pct,
+                'metric_used_and_target_type': metric_used_and_target_type,
+                'dataset_id': dataset_id,
+                'ticker': ticker,
+                'lookahead_bars': lookahead_bars,
             })
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
@@ -109,20 +116,24 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Model File", "Signal", "Current Price", "Target Price", "Target Date"]
+    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Accuracy", "Val Accuracy", "Threshold Pct", "Metric Optimized::Target Type"]
     table_rows = []
     for res in results:
+        info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead_bars']:<3}"
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
-        curr = f"{res['current_price']:.2f}" if isinstance(res['current_price'], (int, float)) else "N/A"
-        targ = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
-        date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
-        table_rows.append([res['file'], sig, curr, targ, date])
+        current_price = f"{res['current_price']:.2f}" if isinstance(res['current_price'], (int, float)) else "N/A"
+        target_price = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
+        target_date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
+        train_acc = f"{res['train_acc']:.2%}"
+        val_acc = f"{res['val_acc']:.2%}"
+        threshold = f"{res['threshold_pct']:.2%}"
+        table_rows.append([info, sig, current_price, res["current_date"], target_price, target_date, train_acc, val_acc, threshold, res["metric_used_and_target_type"]])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
     for row in table_rows:
         for i, cell in enumerate(row):
-            col_widths[i] = max(col_widths[i], len(cell))
+            col_widths[i] = max(col_widths[i], len(str(cell)))
 
     col_widths = [w + 2 for w in col_widths]
     total_width = sum(col_widths)
@@ -141,11 +152,6 @@ def entry(args):
         print(format_row(row))
     if verbose:
         print("=" * total_width)
-
-    success_count = sum(1 for r in results if r["status"] == "SUCCESS")
-    error_count = len(results) - success_count
-    if verbose:
-        print(f"✅ Processed {len(results)} model(s) | {success_count} success | {error_count} error(s)")
 
 
 if __name__ == "__main__":
