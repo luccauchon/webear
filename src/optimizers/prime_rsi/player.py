@@ -70,7 +70,7 @@ def entry(args):
             seed=123,
             model_path=str(file_path),
             verbose=True,
-            verbose_short=False,
+            verbose_short=True,
             clip=args.clip,
             dataset_id="day",
             ticker="^GSPC",
@@ -97,7 +97,8 @@ def entry(args):
                 "optimize_target": optimize_target,
                 "dataset_id": result['dataset_id'],
                 "ticker": result['ticker'],
-                "lookahead": result['lookahead']
+                "lookahead": result['lookahead'],
+                "method": result['method']
             })
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
@@ -117,7 +118,7 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Info", "Signal", "Current Price", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target"]
+    headers = ["Info", "Signal", "Current Price", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method"]
     table_rows = []
     for res in results:
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
@@ -127,8 +128,9 @@ def entry(args):
         train_score = f"{res['train_score']:.4%}"
         val_score = f"{res['val_score']:.4%}"
         optimize = str(res["optimize_target"])
+        method = str(res["method"])
         info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
-        table_rows.append([info, sig, curr, targ, date, train_score, val_score, optimize])
+        table_rows.append([info, sig, curr, targ, date, train_score, val_score, optimize, method])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]

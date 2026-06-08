@@ -867,6 +867,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     result['dataset_id']      = args.dataset_id
     result['ticker']          = args.ticker
     result['lookahead']       = lookahead
+    result['method']          = method
     return result
 
 
