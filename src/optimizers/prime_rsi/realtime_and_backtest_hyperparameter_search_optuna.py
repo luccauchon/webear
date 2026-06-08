@@ -862,7 +862,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     result['val_score']       = val_score
     result['optimize_target'] = optimize_target
     result['current_price']   = current_price
-    result['target_price']    = current_price
+    result['current_date']    = entry_date
+    result['target_price']    = target_price
     result['target_date']     = target_date
     result['dataset_id']      = args.dataset_id
     result['ticker']          = args.ticker

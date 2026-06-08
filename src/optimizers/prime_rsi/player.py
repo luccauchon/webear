@@ -1,3 +1,5 @@
+from numba.core.target_extension import target_registry
+
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -90,6 +92,7 @@ def entry(args):
                 "file": file_path.name,
                 "signal": signal,
                 "current_price": current_price,
+                "current_date": result['current_date'],
                 "target_price": target_price,
                 "target_date": target_date,
                 "train_score": train_score,
@@ -98,7 +101,7 @@ def entry(args):
                 "dataset_id": result['dataset_id'],
                 "ticker": result['ticker'],
                 "lookahead": result['lookahead'],
-                "method": result['method']
+                "method": result['method'],
             })
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
@@ -118,19 +121,20 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Info", "Signal", "Current Price", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method"]
+    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method"]
     table_rows = []
     for res in results:
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
-        curr = f"{res['current_price']:.2f}" if isinstance(res['current_price'], (int, float)) else "N/A"
-        targ = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
-        date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
+        current_price = f"{res['current_price']:.2f}" if isinstance(res['current_price'], (int, float)) else "N/A"
+        current_date = res["current_date"]
+        target_price = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
+        target_date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
         train_score = f"{res['train_score']:.4%}"
         val_score = f"{res['val_score']:.4%}"
         optimize = str(res["optimize_target"])
         method = str(res["method"])
         info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
-        table_rows.append([info, sig, curr, targ, date, train_score, val_score, optimize, method])
+        table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_score, val_score, optimize, method])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
