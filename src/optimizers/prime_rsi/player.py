@@ -150,7 +150,7 @@ def entry(args):
         return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
     if verbose:
         print("\n" + "=" * total_width)
-        print(f"{'OERH RESULTS SUMMARY':^{total_width}}")
+        print(f"{'PRIME RSI RESULTS SUMMARY':^{total_width}}")
         print("=" * total_width)
     print(format_row(headers))
     if verbose:
