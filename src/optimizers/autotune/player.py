@@ -13,6 +13,7 @@ import pathlib
 from argparse import Namespace
 
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune
+from datetime import datetime
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -164,8 +165,10 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
     results = []
     for row in table_rows:
         info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, threshold = row
-        results.append({"info": info, "signal": signal, "current_price": current_price, "current_date": current_date, "target_price": target_price,
-                        "target_date": target_date, "train_score": train_score, "val_score": val_score, "optimization_target": optimization_target,
+        format_date = "%Y-%m-%d"
+        results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
+                        "target_price": float(target_price), "target_date": datetime.strptime(target_date, format_date),
+                        "train_score": float(train_score.strip('%')) /100., "val_score": float(val_score.strip('%')) /100., "optimize_target": optimization_target,
                         "threshold": threshold, "method": None, "app": "AutoTune"})
     return results
 

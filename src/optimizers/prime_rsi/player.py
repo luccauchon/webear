@@ -1,5 +1,3 @@
-from numba.core.target_extension import target_registry
-
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -11,11 +9,11 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+import numpy as np
 import argparse
 import pathlib
 from argparse import Namespace
-
+from datetime import datetime
 from optimizers.prime_rsi.realtime_and_backtest_hyperparameter_search_optuna import entry as prime_rsi
 
 
@@ -84,10 +82,11 @@ def entry(args):
             buy_signal_detected  = result['buy_signal_detected']
             sell_signal_detected = result['sell_signal_detected']
             optimize_target = result['optimize_target']
-            signal = buy_signal_detected | sell_signal_detected
+            signal = 1 if buy_signal_detected else (-1 if sell_signal_detected else 0)
             current_price = result['current_price']
             target_price = result['target_price']
             target_date = result['target_date']
+            put_strike, call_strike = result['put_strike_pct'], result['call_strike_pct']
             results.append({
                 "file": file_path.name,
                 "signal": signal,
@@ -102,6 +101,8 @@ def entry(args):
                 "ticker": result['ticker'],
                 "lookahead": result['lookahead'],
                 "method": result['method'],
+                "put_threshold": put_strike,
+                "call_threshold": call_strike,
             })
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
@@ -121,7 +122,7 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method"]
+    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method", "Threshold"]
     table_rows = []
     for res in results:
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
@@ -134,7 +135,8 @@ def entry(args):
         optimize = str(res["optimize_target"])
         method = str(res["method"])
         info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
-        table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_score, val_score, optimize, method])
+        threshold = f"P{res['put_threshold']}::C{res['call_threshold']}"
+        table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_score, val_score, optimize, method, threshold])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
@@ -161,10 +163,14 @@ def entry(args):
         print("=" * total_width)
     results = []
     for row in table_rows:
-        info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, method = row
-        results.append({"info": info, "signal": signal, "current_price": current_price, "current_date": current_date, "target_price": target_price,
-                        "target_date": target_date, "train_score": train_score, "val_score": val_score, "optimization_target": optimization_target,
-                        "threshold": None, "method": method, "app": "Prime RSI"})
+        info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, method, thresholds = row
+        format_date = "%Y-%m-%d"
+        put_threshold, call_threshold = thresholds.split("::")[0][1:], thresholds.split("::")[1][1:]
+        results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
+                        "target_price": float(0) if target_price == "N/A" else float(target_price),
+                        "target_date": datetime.strptime(target_date, format_date), "train_score": float(train_score.strip('%'))/100.,
+                        "val_score": float(val_score.strip('%'))/100., "optimize_target": optimization_target,
+                        "threshold": f"{put_threshold}::{call_threshold}", "method": method, "app": "Prime RSI"})
     return results
 
 

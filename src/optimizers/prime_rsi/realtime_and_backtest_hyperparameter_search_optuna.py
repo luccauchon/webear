@@ -869,6 +869,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     result['ticker']          = args.ticker
     result['lookahead']       = lookahead
     result['method']          = method
+    result['put_strike_pct']  = put_strike_pct
+    result['call_strike_pct'] = call_strike_pct
     return result
 
 
