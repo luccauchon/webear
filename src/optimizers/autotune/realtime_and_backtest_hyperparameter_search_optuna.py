@@ -520,7 +520,7 @@ def entry(args):
             if saved_model['optimize_metric'] == 'hold_floor':
                 if last_signal == 1. and rt_signal_type in ('long', 'both'):
                     pass  # Ok
-                else
+                else:
                     last_signal = 0.
             elif saved_model['optimize_metric'] == 'hold_ceiling':
                 if last_signal == -1. and rt_signal_type in ('short', 'both'):
