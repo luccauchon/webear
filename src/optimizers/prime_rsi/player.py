@@ -21,8 +21,8 @@ from optimizers.prime_rsi.realtime_and_backtest_hyperparameter_search_optuna imp
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        prog="oerh_runner",
-        description="Run OERH on multiple .pkl model files and display a results summary."
+        prog="prime_rsi_runner",
+        description="Run Prime RSI on multiple .pkl model files and display a results summary."
     )
     parser.add_argument(
         "-d", "--target-dir",
