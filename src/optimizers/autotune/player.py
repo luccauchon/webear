@@ -161,6 +161,13 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         for row in table_rows:
             print(format_row(row))
         print("=" * total_width)
+    results = []
+    for row in table_rows:
+        info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, threshold = row
+        results.append({"info": info, "signal": signal, "current_price": current_price, "current_date": current_date, "target_price": target_price,
+                        "target_date": target_date, "train_score": train_score, "val_score": val_score, "optimization_target": optimization_target,
+                        "threshold": threshold, "method": None, "app": "AutoTune"})
+    return results
 
 # =============================================================================
 # 1. MAIN

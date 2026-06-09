@@ -164,7 +164,7 @@ def entry(args):
         info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, method = row
         results.append({"info": info, "signal": signal, "current_price": current_price, "current_date": current_date, "target_price": target_price,
                         "target_date": target_date, "train_score": train_score, "val_score": val_score, "optimization_target": optimization_target,
-                        "method": method, "app": "Prime RSI"})
+                        "threshold": None, "method": method, "app": "Prime RSI"})
     return results
 
 
