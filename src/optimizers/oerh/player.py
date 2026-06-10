@@ -9,7 +9,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+from datetime import datetime
 import argparse
 import pathlib
 from argparse import Namespace
@@ -152,6 +152,18 @@ def entry(args):
         print(format_row(row))
     if verbose:
         print("=" * total_width)
+    results = []
+    for row in table_rows:
+        info, signal, current_price, current_date, target_price, target_date, train_accuracy, val_accuracy, threshold_pct, metric__optimize = row
+        format_date = "%Y-%m-%d"
+        metric_optimized = metric__optimize.split("::")[0]
+        target_type = metric__optimize.split("::")[1]
+        results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
+                        "target_price": float(0) if target_price == "N/A" else float(target_price),
+                        "target_date": datetime.strptime(target_date, format_date), "train_score": float(train_accuracy.strip('%')) / 100.,
+                        "val_score": float(val_accuracy.strip('%')) / 100., "optimize_target": metric_optimized,
+                        "threshold": f"{threshold_pct}::{threshold_pct}", "method": target_type, "app": "OERH"})
+    return results
 
 
 if __name__ == "__main__":
