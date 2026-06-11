@@ -263,10 +263,19 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
         strike = None
         if sig_type == 'BUY':
             strike = price * put__strike_pct
-            success = future_df[close_col].iloc[-1] > strike if method == "final_close" else (future_df[high_col] > strike).any()
+            if method == "final_close":
+                success = future_df[close_col].iloc[-1] > strike
+            else:  # "touched" method
+                # We win if the price NEVER drops below the strike
+                success = not (future_df[low_col] < strike).any()
+
         elif sig_type == 'SELL':
             strike = price * call__strike_pct
-            success = future_df[close_col].iloc[-1] < strike if method == "final_close" else (future_df[low_col] < strike).any()
+            if method == "final_close":
+                success = future_df[close_col].iloc[-1] < strike
+            else:  # "touched" method
+                # We win if the price NEVER goes above the strike
+                success = not (future_df[high_col] > strike).any()
 
         results.append({'Signal_Index': idx, 'Type': sig_type, 'Entry_Price': price, 'Strike_Price': strike, 'Method': method, 'Success': success, 'PnL': 0.})
 
@@ -463,7 +472,7 @@ def run_real_time_mode(args, df, config_cols):
         print(" ⚪ NO SIGNAL on latest closed bar.")
     print("─" * 40 + "\n")
     result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': val_score, 'val_trade_density': val_trade_density,
-              'train_win_rate': train_win_rate, 'val_win_rate': val_win_rate,
+              'train_win_rate': train_win_rate/100., 'val_win_rate': val_win_rate/100.,
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
               'dataset_id': dataset_id, 'ticker': args.ticker, 'lookahead': lookahead, 'method': method,
               'buy_signal_detected':buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
