@@ -16,6 +16,7 @@ import sys
 from utils import DATASET_AVAILABLE
 from optimizers.oerh.realtime_and_backtest import entry, setup_argparse
 import pickle
+
 # ==========================================================
 # CONFIGURATION
 # ==========================================================
@@ -37,6 +38,7 @@ def make_stop_callback(threshold: float = 1.0, metric_name: str = "score"):
         if study.best_value is not None and study.best_value >= threshold:
             print(f"\n🎯 Target {metric_name} ≥ {threshold} reached ({study.best_value:.4f})! Stopping early.")
             study.stop()
+
     return callback
 
 
@@ -202,7 +204,7 @@ def run_optimization(sampler, study_name, n_trials, base_args, min_signal_ratio,
 # ==========================================================
 # MODEL PERSISTENCE
 # ==========================================================
-def save_best_model(study, output_dir: str = "models", custom_name: str = None, **metadata):
+def save_best_model(study, output_dir: str = "models", metrics_train=None, metrics_val=None, metric_key="accuracy", custom_name: str = None, **metadata):
     """Save the best trial parameters as a loadable model file."""
     import os
     from datetime import datetime
@@ -223,9 +225,36 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
         signal_density = f"{metadata.get('min_signal_ratio'):.4f}"
         dd_id = f"{metadata.get('dataset_id')}"
         model_name = f"model_{metric}_lb{lookahead}_th{threshold:.5f}_tt{target_type}_sc{score}_sd{signal_density}_{dd_id}_{ticker}_{timestamp}"
+
+    # Extract scores and win rates
+    if metrics_train is not None and metrics_val is not None:
+        train_score = metrics_train.get(metric_key, 0.0)
+        val_score = metrics_val.get(metric_key, 0.0)
+        train_win_rate = metrics_train.get('accuracy', 0.0)
+        val_win_rate = metrics_val.get('accuracy', 0.0)
+    else:
+        train_score = study.best_value
+        val_score = 0.0
+        train_win_rate = 0.0
+        val_win_rate = 0.0
+
+    # Rename 'accuracy' to 'win_rate' in user_attrs as requested
+    user_attrs = study.best_trial.user_attrs if study.best_trial else {}
+    renamed_user_attrs = {}
+    for k, v in user_attrs.items():
+        if 'accuracy' in k:
+            new_k = k.replace('accuracy', 'win_rate')
+            renamed_user_attrs[new_k] = v
+        else:
+            renamed_user_attrs[k] = v
+
     model_data = {
         'best_params': study.best_params,
         'best_value': study.best_value,
+        'train_score': train_score,
+        'val_score': val_score,
+        'train_win_rate': train_win_rate,
+        'val_win_rate': val_win_rate,
         'metadata': {
             'study_name': study.study_name,
             'direction': study.direction.name,
@@ -233,7 +262,7 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
             'optimizer_version': '1.0',
             **metadata  # Include user-specified params like metric, lookahead_bars, etc.
         },
-        'user_attrs': study.best_trial.user_attrs if study.best_trial else {}
+        'user_attrs': renamed_user_attrs
     }
 
     filepath = os.path.join(output_dir, f"{model_name}.pkl")
@@ -243,6 +272,7 @@ def save_best_model(study, output_dir: str = "models", custom_name: str = None, 
     print(f"\n💾 Best model saved to: {filepath}")
     print(f"🔑 Key params: metric={metadata.get('metric')}, lookahead={metadata.get('lookahead_bars')}, threshold={metadata.get('threshold_pct'):.3f}, "
           f"target={metadata.get('target_type')}")
+    print(f"📊 Saved metrics: train_score={train_score:.4f}, val_score={val_score:.4f}, train_win_rate={train_win_rate:.4f}, val_win_rate={val_win_rate:.4f}")
     return filepath
 
 
@@ -279,10 +309,11 @@ def display_best_model_metrics(study, base_args, metric_key):
         print("-" * 70)
 
         for key in ["accuracy", "long_accuracy", "short_accuracy"]:
+            display_key = key.replace('accuracy', 'win_rate')
             train_val = metrics_train.get(key, 0.0)
             val_val = metrics_val.get(key, 0.0)
             gap = train_val - val_val
-            print(f"{key:<20} {train_val:12.4f} {val_val:12.4f} {gap:+10.4f}")
+            print(f"{display_key:<20} {train_val:12.4f} {val_val:12.4f} {gap:+10.4f}")
 
         print("-" * 70)
         print(f"{'Total Signals':<20} {metrics_train.get('total_signals', 0):12d} {metrics_val.get('total_signals', 0):12d}")
@@ -491,10 +522,16 @@ if __name__ == "__main__":
         timeout=opt_args.timeout,
     )
 
+    # ✅ DISPLAY TRAIN/VAL METRICS FOR BEST MODEL (and get metrics for saving)
+    metrics_train, metrics_val = display_best_model_metrics(study, base_args, opt_args.metric)
+
     # ✅ SAVE BEST MODEL AFTER OPTIMIZATION (still works with in-memory studies)
     save_best_model(
         study,
         output_dir=opt_args.output_dir,
+        metrics_train=metrics_train,
+        metrics_val=metrics_val,
+        metric_key=opt_args.metric,
         metric=opt_args.metric,
         lookahead_bars=opt_args.lookahead_bars,
         threshold_pct=opt_args.threshold_pct,
@@ -503,9 +540,6 @@ if __name__ == "__main__":
         target_type=base_args.target_type,
         min_signal_ratio=opt_args.min_signal_ratio,
     )
-
-    # ✅ DISPLAY TRAIN/VAL METRICS FOR BEST MODEL
-    display_best_model_metrics(study, base_args, opt_args.metric)
 
     print("\n" + "=" * 60)
     if storage_url:

@@ -787,6 +787,53 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     # Run strategy on latest datapoint
     print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
+
+    # ==============================================================================
+    # 📊 RECOMPUTE TRAIN & VALIDATION WIN RATES
+    # ==============================================================================
+    train_win_rate, val_win_rate = 0.0, 0.0
+    if train_ratio < 1.0:
+        import copy
+
+        # Create an args object that exactly matches the configuration used during training
+        eval_args = copy.copy(args)
+        for k, v in model_data['args'].items():
+            setattr(eval_args, k, v)
+        eval_args.sanity_check = getattr(args, 'sanity_check', False)
+
+        # Split df_base using the original train_bars to maintain the exact same training set
+        # (If new data was appended to df_base, it will correctly fall into the validation set)
+        if train_bars < len(df_base):
+            split_idx = train_bars
+        else:
+            split_idx = int(len(df_base) * train_ratio)
+
+        df_train = df_base.iloc[:split_idx].copy()
+        df_val = df_base.iloc[split_idx:].copy()
+
+        # Evaluate on the training set
+        buy_wr_train, sell_wr_train, combined_wr_train, _, _, _, _, _, _, _ = \
+            run_strategy_and_evaluate(df_train, eval_args, close_col, high_col, low_col, **params)
+
+        # Evaluate on the validation set
+        buy_wr_val, sell_wr_val, combined_wr_val, _, _, _, _, _, _, _ = \
+            run_strategy_and_evaluate(df_val, eval_args, close_col, high_col, low_col, **params)
+
+        # Extract the specific win rate that was targeted during optimization
+        if optimize_target == 'buy_wr':
+            train_win_rate = buy_wr_train
+            val_win_rate = buy_wr_val
+        elif optimize_target == 'sell_wr':
+            train_win_rate = sell_wr_train
+            val_win_rate = sell_wr_val
+        else:
+            train_win_rate = combined_wr_train
+            val_win_rate = combined_wr_val
+
+        if args.verbose:
+            print(f"📈 Recomputed Train Win Rate: {train_win_rate:.2%}")
+            print(f"📈 Recomputed Val Win Rate  : {val_win_rate:.2%}")
+
     # Output results
     print(f"\n{'=' * 60}")
     print(f"🔔 REAL-TIME SIGNAL CHECK — {args.ticker}")
@@ -860,6 +907,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
 
     result['train_score']     = train_score
     result['val_score']       = val_score
+    result['train_win_rate']  = train_win_rate
+    result['val_win_rate']    = val_win_rate
     result['optimize_target'] = optimize_target
     result['current_price']   = current_price
     result['current_date']    = entry_date

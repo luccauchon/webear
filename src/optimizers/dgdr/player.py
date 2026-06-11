@@ -9,18 +9,18 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from datetime import datetime
+import numpy as np
 import argparse
 import pathlib
 from argparse import Namespace
-
-from optimizers.oerh.realtime_and_backtest import entry as oerh
+from datetime import datetime
+from optimizers.dgdr.realtime_and_backtest_hyperparameter_search_optuna import entry as dgdr
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        prog="oerh_runner",
-        description="Run OERH on multiple .pkl model files and display a results summary."
+        prog="dgdr_runner",
+        description="DGDR on multiple .pkl model files and display a results summary."
     )
     parser.add_argument(
         "-d", "--target-dir",
@@ -62,45 +62,51 @@ def entry(args):
     for file_path in files:
         if verbose:
             print(f"\n{'=' * 60}")
-            print(f"STARTING OERH FOR: {file_path.name}")
+            print(f"STARTING DGDR FOR: {file_path.name}")
             print(f"{'=' * 60}")
 
         configuration = Namespace(
             real_time=True,
+            seed=123,
             model_path=str(file_path),
-            output_signal_only=False,
-            verbose=verbose,
-            validate_jit=False,
+            verbose=True,
+            verbose_short=True,
             clip=args.clip,
+            dataset_id="day",
+            ticker="^GSPC",
+            length_dataset=999999,
         )
         try:
-            signal, current_price, current_date, target_price, target_date, train_acc, val_acc, threshold_pct, metric_used_and_target_type, dataset_id, ticker, lookahead_bars = oerh(configuration)
+            result = dgdr(configuration)
+            train_score, val_score = result['train_score'], result['val_score']
+            train_win_rate, val_win_rate = result['train_win_rate'], result['val_win_rate']
+            buy_signal_detected  = result['buy_signal_detected']
+            sell_signal_detected = result['sell_signal_detected']
+            optimize_target = result['optimize_target']
+            signal = 1 if buy_signal_detected else (-1 if sell_signal_detected else 0)
+            current_price = result['current_price']
+            target_price = result['target_price']
+            target_date = result['target_date']
+            put_strike, call_strike = result['put_strike_pct'], result['call_strike_pct']
             results.append({
                 "file": file_path.name,
                 "signal": signal,
                 "current_price": current_price,
-                "current_date": current_date,
+                "current_date": result['current_date'],
                 "target_price": target_price,
                 "target_date": target_date,
-                'train_win_rate': train_acc,
-                'val_win_rate': val_acc,
-                'threshold_pct': threshold_pct,
-                'metric_used_and_target_type': metric_used_and_target_type,
-                'dataset_id': dataset_id,
-                'ticker': ticker,
-                'lookahead_bars': lookahead_bars,
+                "train_score": train_score, "val_score": val_score,
+                "train_win_rate": train_win_rate, "val_win_rate": val_win_rate,
+                "optimize_target": optimize_target,
+                "dataset_id": result['dataset_id'],
+                "ticker": result['ticker'],
+                "lookahead": result['lookahead'],
+                "method": result['method'],
+                "put_threshold": put_strike,
+                "call_threshold": call_strike,
             })
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
-            results.append({
-                "file": file_path.name,
-                "ticker": "---", "dataset_id": "---", "lookahead_bars": "---", "train_win_rate": 0., "val_win_rate": 0.,
-                "signal": None, "threshold_pct": 0., "current_date": "---", "metric_used_and_target_type": "---::---",
-                "current_price": None,
-                "target_price": None,
-                "target_date": None,
-                "status": f"ERROR: {e}"
-            })
 
     # 1. Filter results if hide_zero_signal is enabled
     if args.hide_zero_signal:
@@ -117,24 +123,27 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Threshold Pct", "Metric Optimized::Target Type"]
+    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method", "Threshold"]
     table_rows = []
     for res in results:
-        info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead_bars']:<3}"
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
         current_price = f"{res['current_price']:.2f}" if isinstance(res['current_price'], (int, float)) else "N/A"
+        current_date = res["current_date"]
         target_price = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
         target_date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
-        train_acc = f"{res['train_win_rate']:.2%}"
-        val_acc = f"{res['val_win_rate']:.2%}"
-        threshold = f"{res['threshold_pct']:.2%}"
-        table_rows.append([info, sig, current_price, res["current_date"], target_price, target_date, train_acc, val_acc, threshold, res["metric_used_and_target_type"]])
+        train_score = f"{res['train_score']:.4%}"
+        val_score = f"{res['val_score']:.4%}"
+        optimize = str(res["optimize_target"])
+        method = str(res["method"])
+        info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
+        threshold = f"P{res['put_threshold']}::C{res['call_threshold']}"
+        table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_score, val_score, optimize, method, threshold])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
     for row in table_rows:
         for i, cell in enumerate(row):
-            col_widths[i] = max(col_widths[i], len(str(cell)))
+            col_widths[i] = max(col_widths[i], len(cell))
 
     col_widths = [w + 2 for w in col_widths]
     total_width = sum(col_widths)
@@ -144,7 +153,7 @@ def entry(args):
         return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
     if verbose:
         print("\n" + "=" * total_width)
-        print(f"{'OERH RESULTS SUMMARY':^{total_width}}")
+        print(f"{'DGDR RESULTS SUMMARY':^{total_width}}")
         print("=" * total_width)
     print(format_row(headers))
     if verbose:
@@ -155,15 +164,14 @@ def entry(args):
         print("=" * total_width)
     results = []
     for row in table_rows:
-        info, signal, current_price, current_date, target_price, target_date, train_accuracy, val_accuracy, threshold_pct, metric__optimize = row
+        info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, method, thresholds = row
         format_date = "%Y-%m-%d"
-        metric_optimized = metric__optimize.split("::")[0]
-        target_type = metric__optimize.split("::")[1]
+        put_threshold, call_threshold = thresholds.split("::")[0][1:], thresholds.split("::")[1][1:]
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(0) if target_price == "N/A" else float(target_price),
-                        "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_accuracy.strip('%')) / 100.,
-                        "val_win_rate": float(val_accuracy.strip('%')) / 100., "optimize_target": metric_optimized,
-                        "threshold": f"{threshold_pct}::{threshold_pct}", "method": target_type, "app": "OERH"})
+                        "target_date": datetime.strptime(target_date, format_date), "train_score": float(train_score.strip('%'))/100.,
+                        "val_score": float(val_score.strip('%'))/100., "optimize_target": optimization_target,
+                        "threshold": f"{put_threshold}::{call_threshold}", "method": method, "app": "DGDR"})
     return results
 
 

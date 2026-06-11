@@ -401,16 +401,14 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     ticker = metadata.get('ticker')
     signal_ratio = model_data['user_attrs']['signal_ratio']
     metric_used = model_data['user_attrs']['metric_used']
-    val_acc = model_data['user_attrs']['val_accuracy']
-    train_acc = model_data['user_attrs']['raw_accuracy']
     assert 'threshold_pct' in metadata
     threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
     if metric_used == 'long_accuracy':
-        train_acc = model_data['user_attrs']['train_long_accuracy']
-        val_acc = model_data['user_attrs']['val_long_accuracy']
+        train_win_rate = model_data['user_attrs']['train_long_win_rate']
+        val_win_rate = model_data['user_attrs']['val_long_win_rate']
     elif metric_used == 'short_accuracy':
-        train_acc = model_data['user_attrs']['train_short_accuracy']
-        val_acc = model_data['user_attrs']['val_short_accuracy']
+        train_win_rate = model_data['user_attrs']['train_short_win_rate']
+        val_win_rate = model_data['user_attrs']['val_short_win_rate']
     else:
         print(model_data)
         assert False, f"TODO: {metric_used}"
@@ -418,8 +416,8 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     if clip:
         df = df.iloc[:-1].copy()
     print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
-    print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Accuracy: {train_acc:.2%} "
-          f":: Val Accuracy: {val_acc:.2%}  @{signal_ratio:.2%} signal density")
+    print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
+          f":: Val Win Rate: {val_win_rate:.2%}  @{signal_ratio:.2%} signal density")
     price_col = ('Close', ticker)
 
     # Determine minimum history needed for indicators
@@ -519,7 +517,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
                 print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d')}: {ticker_display} at {current_price:.2f}")
                 print(f"   (Threshold: {threshold_pct * 100:.4f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
 
-    return signal, current_price, current_date.strftime('%Y-%m-%d'), target_price, target_date, train_acc, val_acc, threshold_pct, f"{metric_used}::{target_type}", dataset_id, ticker, lookahead_bars
+    return signal, current_price, current_date.strftime('%Y-%m-%d'), target_price, target_date, train_win_rate, val_win_rate, threshold_pct, f"{metric_used}::{target_type}", dataset_id, ticker, lookahead_bars
 
 
 # ============================================

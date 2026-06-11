@@ -8,7 +8,6 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
 import argparse
 import glob
 import json
@@ -16,15 +15,12 @@ import os
 import pickle
 from datetime import datetime
 from typing import Optional, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
 import pandas_ta as ta
-
-from utils import get_filename_for_dataset
-
+from utils import get_filename_for_dataset, get_next_step
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -327,7 +323,7 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density=0.04, 
 
 
 def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
-              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type='both'):
+              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type):
     put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
     call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
     st_multipler = trial.suggest_int("st_multipler", 1, 5, step=1)
@@ -431,7 +427,9 @@ def run_real_time_mode(args, df, config_cols):
     latest_idx = df_tail.index[-1]
     prev_idx = df_tail.index[-2]
     latest_signals = [s for s in signals if s['Index'] in (latest_idx, prev_idx)]
-
+    current_price, entry_date = df_tail.iloc[-1][close_col], df_tail.index[-1].strftime('%Y-%m-%d')
+    target_date = get_next_step(the_date=entry_date, dataset_id=dataset_id, nn=lookahead).strftime('%Y-%m-%d')
+    target_price = "N/A"
     if signal_type == 'buy':
         latest_signals = [s for s in latest_signals if s['Type'] == 'BUY']
     elif signal_type == 'sell':
@@ -443,7 +441,6 @@ def run_real_time_mode(args, df, config_cols):
             print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
         else:
             print("⚪ REAL-TIME: No new signal on latest closed bar.")
-        return
 
     print("\n" + "─" * 40)
     print(" 🕒 REAL-TIME SIGNAL CHECK")
@@ -455,14 +452,23 @@ def run_real_time_mode(args, df, config_cols):
     print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
     print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
     print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')}")
-
+    buy_signal_detected, sell_signal_detected = False, False
     if latest_signals:
         sig = latest_signals[-1]
+        print(f"TODO --> {sig}")
         print(f" 🟢 SIGNAL DETECTED: {sig['Type']}")
         print(f"    Entry Price : ${sig['Price']:.2f}")
+        buy_signal_detected, sell_signal_detected = True, True
     else:
         print(" ⚪ NO SIGNAL on latest closed bar.")
     print("─" * 40 + "\n")
+    result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': val_score, 'val_trade_density': val_trade_density,
+              'train_win_rate': train_win_rate, 'val_win_rate': val_win_rate,
+              'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
+              'dataset_id': dataset_id, 'ticker': args.ticker, 'lookahead': lookahead, 'method': method,
+              'buy_signal_detected':buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
+              'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call__strike_pct']}
+    return result
 
 
 def perfect_score_callback(study, trial):
@@ -527,8 +533,7 @@ def entry(args):
     print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
 
     if args.real_time:
-        run_real_time_mode(args, df, config_cols)
-        return
+        return run_real_time_mode(args, df, config_cols)
 
     # ✅ TRAIN / VALIDATION CHRONOLOGICAL SPLIT
     split_idx = int(len(df) * args.train_ratio)

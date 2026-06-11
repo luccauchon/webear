@@ -488,6 +488,7 @@ def entry(args):
         signal_str = "🟢 LONG" if signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
         print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
         print(f"Training score: {saved_model['train_score']:.6%} | Validation score: {saved_model['val_score']:.6%}")
+        print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Validation win rate: {saved_model['validation_win_rate']:.6%}")
         print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type}")
         print(f"Datapoint used: {last_date} | Signal computed: {last_signal} {signal_str}")
         target_price = 0.
@@ -539,7 +540,7 @@ def entry(args):
                     last_signal = 0.
         return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
                 'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': saved_model['optimize_metric'],
-                'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead':saved_model['params']['lookahead_bars']}
+                'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
 
     if verbose:
         print(__doc__)
@@ -661,20 +662,48 @@ def entry(args):
     score_of_best_trial = study.best_trial.value
     best_params = study.best_trial.params
 
-    # 🟢 EVALUATE BEST PARAMS ON VALIDATION SET
+    # 🟢 EVALUATE BEST PARAMS ON TRAINING & VALIDATION SETS
     strat_best = AutoTuneStrategy(**best_params, win_threshold=win_threshold, signal_type=signal_type)
-    results_valid = strat_best.generate_signals(valid_closes)
-    validation_score = 0.
-    sig_valid = results_valid[results_valid['signal'] != 0]
     la = strat_best.lookahead_bars
+
+    # --- Training Set Evaluation ---
+    results_train = strat_best.generate_signals(train_closes)
+    sig_train = results_train[results_train['signal'] != 0]
+    train_win_rate = 0.
+    train_score = score_of_best_trial  # Default to Optuna's returned score
+
+    if len(sig_train) > 0:
+        col_fmt_train = METRIC_MAP[optimize]['col'].format(la)
+        train_win_rate = METRIC_MAP[optimize]['calc'](sig_train[col_fmt_train].values, win_threshold)
+        # Recalculate exact train_score with penalty to be perfectly accurate
+        signal_density_train = len(sig_train) / len(results_train)
+        if signal_density_train < required_signal_density:
+            gap = required_signal_density - signal_density_train
+            penalty = max(0.0, 1.0 - gap * 5.0)
+            train_score = train_win_rate * penalty
+        else:
+            train_score = train_win_rate
+
+    # --- Validation Set Evaluation ---
+    results_valid = strat_best.generate_signals(valid_closes)
+    sig_valid = results_valid[results_valid['signal'] != 0]
+    validation_win_rate = 0.
+    val_score = 0.
     if len(sig_valid) > 0:
-        # ✅ DYNAMICALLY SELECT CORRECT COLUMN FOR VALIDATION PRINT
-        col_fmt = METRIC_MAP[optimize]['col'].format(la)
-        win_rate = METRIC_MAP[optimize]['calc'](sig_valid[col_fmt].values, strat_best.win_threshold)
-        validation_score = win_rate
+        col_fmt_val = METRIC_MAP[optimize]['col'].format(la)
+        validation_win_rate = METRIC_MAP[optimize]['calc'](sig_valid[col_fmt_val].values, win_threshold)
+        signal_density_val = len(sig_valid) / len(results_valid)
+        if signal_density_val < required_signal_density:
+            gap = required_signal_density - signal_density_val
+            penalty = max(0.0, 1.0 - gap * 5.0)
+            val_score = validation_win_rate * penalty
+        else:
+            val_score = validation_win_rate
+
         if verbose:
             print("\n📊 Final Performance (VALIDATION SET):")
-            print(f"   🎯 Win Rate ({optimize}): {win_rate * 100:.2f}%")
+            print(f"   🎯 Win Rate ({optimize}): {validation_win_rate * 100:.2f}%")
+            print(f"   📉 Penalized Score: {val_score * 100:.2f}%")
     else:
         if verbose:
             print("\n📊 Final Performance (VALIDATION SET):")
@@ -688,7 +717,9 @@ def entry(args):
 
     model_data = {
         'params': best_params, 'win_threshold': win_threshold, 'signal_type': signal_label,
-        'signal_type_code': signal_type, 'optimize_metric': optimize, 'train_score': score_of_best_trial, 'val_score': validation_score,
+        'signal_type_code': signal_type, 'optimize_metric': optimize,
+        'train_score': train_score, 'val_score': val_score,
+        'train_win_rate': train_win_rate, 'validation_win_rate': validation_win_rate,
         'dataset_id': dataset_id, 'ticker': ticker,
     }
     with open(model_path, 'wb') as f:
@@ -713,8 +744,10 @@ def plot_strategy_results(results: pd.DataFrame, params: dict, metrics: dict,
                           ticker: str, dataset_id: str, output_dir: str = '.',
                           verbose: bool = True, signal_type: str = 'both',
                           optimize_metric: str = 'profit_target', win_threshold: float = 0.04) -> str:
-    try: plt.style.use('seaborn-v0_8-darkgrid')
-    except: pass
+    try:
+        plt.style.use('seaborn-v0_8-darkgrid')
+    except:
+        pass
 
     df = results.copy()
     dates = df.index

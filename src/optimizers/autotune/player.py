@@ -80,7 +80,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
 
     if not files:
         print(f"No {extension} files found in {dir_path}")
-        return
+        return []
 
     print(f"Found {len(files)} {extension} file(s) in {dir_path}. Starting sequential autotune...\n")
     results = []
