@@ -16,9 +16,10 @@ import argparse
 import pathlib
 from argparse import Namespace
 
-from optimizers.prime_rsi.player import entry as prime_rsi_player
 from optimizers.autotune.player import entry as autotune_player
+from optimizers.dgdr.player import entry as dgdr_player
 from optimizers.oerh.player import entry as oerh_player
+from optimizers.prime_rsi.player import entry as prime_rsi_player
 
 
 def parse_args():
@@ -32,14 +33,19 @@ def parse_args():
         help="Target directory for autotune models"
     )
     parser.add_argument(
-        "--prime-rsi-target-dir",
+        "--dgdr-target-dir",
         required=True,
-        help="Target directory for prime_rsi models"
+        help="Target directory for dgdr models"
     )
     parser.add_argument(
         "--oerh-target-dir",
         required=True,
         help="Target directory for oerh models"
+    )
+    parser.add_argument(
+        "--prime-rsi-target-dir",
+        required=True,
+        help="Target directory for prime_rsi models"
     )
     parser.add_argument(
         "--hide-zero-signal",
@@ -55,8 +61,9 @@ def entry(args):
 
     # Use the required parameters passed from the command line
     autotune_target_dir = args.autotune_target_dir
-    prime_rsi_target_dir = args.prime_rsi_target_dir
+    dgdr_target_dir = args.dgdr_target_dir
     oerh_target_dir = args.oerh_target_dir
+    prime_rsi_target_dir = args.prime_rsi_target_dir
 
     # Pass hide_zero_signal dynamically from the main args
     autotune_args = Namespace(
@@ -67,13 +74,13 @@ def entry(args):
     )
     results.extend(autotune_player(autotune_args))
 
-    prime_rsi_args = Namespace(
+    dgdr_args = Namespace(
         verbose=True,
-        target_dir=prime_rsi_target_dir,
+        target_dir=dgdr_target_dir,
         clip=False,
         hide_zero_signal=False
     )
-    results.extend(prime_rsi_player(prime_rsi_args))
+    results.extend(dgdr_player(dgdr_args))
 
     oerh_args = Namespace(
         verbose=True,
@@ -82,6 +89,14 @@ def entry(args):
         hide_zero_signal=False
     )
     results.extend(oerh_player(oerh_args))
+
+    prime_rsi_args = Namespace(
+        verbose=True,
+        target_dir=prime_rsi_target_dir,
+        clip=False,
+        hide_zero_signal=False
+    )
+    results.extend(prime_rsi_player(prime_rsi_args))
 
     # Print results
     headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold", "Indicator"]

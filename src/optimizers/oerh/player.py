@@ -47,16 +47,19 @@ def parse_args():
 def entry(args):
     verbose = args.verbose
     target_dir = pathlib.Path(args.target_dir).resolve()
-    files = sorted([
-        f for f in target_dir.iterdir()
-        if f.is_file() and f.suffix.lower() == ".pkl"
-    ])
+    try:
+        files = sorted([
+            f for f in target_dir.iterdir()
+            if f.is_file() and f.suffix.lower() == ".pkl"
+        ])
+    except:
+        files = []
+
+    results = []
 
     if not files:
         print(f"⚠️ No .pkl files found in {target_dir}")
-        return
-
-    results = []
+        return results
 
     # Parse all files
     for file_path in files:

@@ -540,6 +540,7 @@ def entry(args):
                     last_signal = 0.
         return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
                 'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': saved_model['optimize_metric'],
+                'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'],
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
 
     if verbose:
