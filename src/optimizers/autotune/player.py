@@ -69,21 +69,22 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
 
     dir_path = pathlib.Path(target_dir).resolve()
 
-    if not dir_path.is_dir():
-        raise FileNotFoundError(f"Target directory not found: {dir_path}")
+    results = []
+    try:
+        # Filter files by the specified extension
+        files = sorted([
+            f for f in dir_path.iterdir()
+            if f.is_file() and f.suffix.lower() == extension
+        ])
+    except:
+        files = []
 
-    # Filter files by the specified extension
-    files = sorted([
-        f for f in dir_path.iterdir()
-        if f.is_file() and f.suffix.lower() == extension
-    ])
-
-    if not files:
+    if 0 == len(files):
         print(f"No {extension} files found in {dir_path}")
-        return []
+        return results
 
     print(f"Found {len(files)} {extension} file(s) in {dir_path}. Starting sequential autotune...\n")
-    results = []
+
     # Loop through files one by one
     for file_path in files:
         print(f"\n{'=' * 60}")
