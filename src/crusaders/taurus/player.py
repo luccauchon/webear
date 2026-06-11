@@ -102,7 +102,6 @@ def entry(args):
     headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold", "Indicator"]
     table_rows = []
     for res in results:
-        print(f"KKKKKKKKKKKKKKKKKKK{res}\nKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK")
         info = res["info"]
         signal = res["signal"]
         current_price = f"{res['current_price']:.2f}"

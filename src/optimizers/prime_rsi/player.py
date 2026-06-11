@@ -99,6 +99,8 @@ def entry(args):
                 "target_date": target_date,
                 "train_score": train_score,
                 "val_score": val_score,
+                "train_win_rate": result['train_win_rate'],
+                "val_win_rate": result['val_win_rate'],
                 "optimize_target": optimize_target,
                 "dataset_id": result['dataset_id'],
                 "ticker": result['ticker'],
@@ -125,7 +127,7 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Score", "Val Score", "Optimize Target", "Method", "Threshold"]
+    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold"]
     table_rows = []
     for res in results:
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
@@ -133,13 +135,13 @@ def entry(args):
         current_date = res["current_date"]
         target_price = f"{res['target_price']:.2f}" if isinstance(res['target_price'], (int, float)) else "N/A"
         target_date = res["target_date"].strftime('%Y-%m-%d') if hasattr(res["target_date"], 'strftime') else str(res["target_date"] or "N/A")
-        train_score = f"{res['train_score']:.4%}"
-        val_score = f"{res['val_score']:.4%}"
+        train_win_rate = f"{res['train_win_rate']:.4%}"
+        val_win_rate = f"{res['val_win_rate']:.4%}"
         optimize = str(res["optimize_target"])
         method = str(res["method"])
         info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
         threshold = f"P{res['put_threshold']}::C{res['call_threshold']}"
-        table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_score, val_score, optimize, method, threshold])
+        table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimize, method, threshold])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
@@ -166,13 +168,13 @@ def entry(args):
         print("=" * total_width)
     results = []
     for row in table_rows:
-        info, signal, current_price, current_date, target_price, target_date, train_score, val_score, optimization_target, method, thresholds = row
+        info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, method, thresholds = row
         format_date = "%Y-%m-%d"
         put_threshold, call_threshold = thresholds.split("::")[0][1:], thresholds.split("::")[1][1:]
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(0) if target_price == "N/A" else float(target_price),
-                        "target_date": datetime.strptime(target_date, format_date), "train_score": float(train_score.strip('%'))/100.,
-                        "val_score": float(val_score.strip('%'))/100., "optimize_target": optimization_target,
+                        "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_win_rate.strip('%'))/100.,
+                        "val_win_rate": float(val_win_rate.strip('%'))/100., "optimize_target": optimization_target,
                         "threshold": f"{put_threshold}::{call_threshold}", "method": method, "app": "Prime RSI"})
     return results
 
