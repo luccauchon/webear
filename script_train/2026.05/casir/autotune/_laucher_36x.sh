@@ -3,11 +3,10 @@
 # Valeurs par défaut d'origine
 WEBEAR__NTRIALS=44444
 WEBEAR__LOOKAHEAD=5
-WEBEAR__OPTIMIZE="buy_wr"
 WEBEAR__DATASET_ID="day"
 WEBEAR__TIMEOUT=80000
-WEBEAR__PUT_STRIKE_PCT=0.99
-WEBEAR__CALL_STRIKE_PCT=1.0
+WEBEAR__OPTIMIZE="finish_above"
+WEBEAR__THRESHOLD=0.02
 
 # Analyse des arguments nommés
 while [[ $# -gt 0 ]]; do
@@ -28,12 +27,8 @@ while [[ $# -gt 0 ]]; do
       WEBEAR__TIMEOUT="$2"
       shift 2
       ;;
-    --put-strike-pct)
-      WEBEAR__PUT_STRIKE_PCT="$2"
-      shift 2
-      ;;
-    --call-strike-pct)
-      WEBEAR__CALL_STRIKE_PCT="$2"
+    --win-threshold)
+      WEBEAR__THRESHOLD="$2"
       shift 2
       ;;
     --dataset-id|-d)
@@ -55,13 +50,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Calcul dynamique du dossier de sortie
-PUT_PCT_VALUE=$(awk "BEGIN {print $WEBEAR__PUT_STRIKE_PCT * 100}")
-CALL_PCT_VALUE=$(awk "BEGIN {print $WEBEAR__CALL_STRIKE_PCT * 100}")
-WEBEAR__OUTPUT_DIR="models_put_${WEBEAR__LOOKAHEAD}B__put_${PUT_PCT_VALUE}pct__call_${CALL_PCT_VALUE}pct"
+THRESHOLD_VALUE=$(awk "BEGIN {print $WEBEAR__THRESHOLD * 100}")
+WEBEAR__OUTPUT_DIR="models_${WEBEAR__LOOKAHEAD}B__threshold_${THRESHOLD_VALUE}"
 
-echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__LOOKAHEAD=$WEBEAR__LOOKAHEAD  WEBEAR__OPTIMIZE=$WEBEAR__OPTIMIZE  DATASET-ID=$WEBEAR__DATASET_ID  TIMEOUT=$WEBEAR__TIMEOUT  PUT-STRIKE-PCT=$WEBEAR__PUT_STRIKE_PCT  CALL-STRIKE-PCT=$WEBEAR__CALL_STRIKE_PCT  WEBEAR__OUTPUT_DIR=$WEBEAR__OUTPUT_DIR"
+echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__LOOKAHEAD=$WEBEAR__LOOKAHEAD  WEBEAR__OPTIMIZE=$WEBEAR__OPTIMIZE  DATASET-ID=$WEBEAR__DATASET_ID  TIMEOUT=$WEBEAR__TIMEOUT  WEBEAR__OUTPUT_DIR=$WEBEAR__OUTPUT_DIR"
 
-cd ../../../src/optimizers/autotune || exit 1
+cd ../../../../src/optimizers/autotune || exit 1
 
 MIN_SIGNAL_DENSITIES=(0.05 0.06 0.07 0.08 0.09 0.10 0.11 0.12 0.13 0.14 0.15 0.16 0.17 0.18 0.19 0.20 0.21 0.22 0.23 0.24 0.25 0.26 0.27 0.28 0.29 0.30 0.31 0.32 0.33 0.34 0.35 0.36 0.37 0.38 0.39 0.40)
 PIDS=()
@@ -72,12 +66,8 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --lookahead-bars "$WEBEAR__LOOKAHEAD" \
       --min-signal-density "$msr" \
       --train-ratio 0.7 \
-      --put-strike-pct "$WEBEAR__PUT_STRIKE_PCT" \
-      --call-strike-pct "$WEBEAR__CALL_STRIKE_PCT" \
-      --wr-weight 0.9 \
-      --td-weight 0.1 \
-      --optimize \
-      --optimize-target "$WEBEAR__OPTIMIZE" \
+      --win-threshold "$WEBEAR__PUT_STRIKE_PCT" \
+      --optimize "$WEBEAR__OPTIMIZE" \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
       --timeout "$WEBEAR__TIMEOUT" &
