@@ -1,2 +1,2 @@
-./_laucher_36x.sh --trials 50000 --lookahead 3 --metric "long_accuracy" --dataset-id "week" --timeout 120000
+./_laucher_36x.sh --trials 50000 --lookahead 3 --metric "long_accuracy" --dataset-id "day" --timeout 120000
 
