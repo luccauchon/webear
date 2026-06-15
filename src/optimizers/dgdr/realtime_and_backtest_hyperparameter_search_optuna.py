@@ -147,6 +147,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group.add_argument('--call-strike-pct', type=float, default=1.04, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
+    strat_group.add_argument('--signal-type', type=str, default='both', choices=['both', 'buy', 'sell'], help='Filter signals for optimization. Post-hoc breakdown always evaluates both.')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials')
@@ -166,9 +167,6 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False, help='Short real-time output')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
-
-    flag_group.add_argument('--signal-type', type=str, default='both', choices=['both', 'buy', 'sell'],
-                            help='Filter signals for optimization. Post-hoc breakdown always evaluates both.')
     flag_group.add_argument('--plot', action='store_true', default=False, help='Plot results')
 
     return parser
