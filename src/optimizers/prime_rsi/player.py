@@ -9,6 +9,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+import traceback
 import numpy as np
 import argparse
 import pathlib
@@ -111,6 +112,7 @@ def entry(args):
             })
         except Exception as e:
             print(f"❌ ERROR processing {file_path.name}: {e}")
+            traceback.print_exc()
 
     # 1. Filter results if hide_zero_signal is enabled
     if args.hide_zero_signal:
