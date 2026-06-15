@@ -66,7 +66,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --lookahead-bars "$WEBEAR__LOOKAHEAD" \
       --min-signal-density "$msr" \
       --train-ratio 0.7 \
-      --win-threshold "$WEBEAR__PUT_STRIKE_PCT" \
+      --win-threshold $WEBEAR__PUT_STRIKE_PCT \
       --optimize "$WEBEAR__OPTIMIZE" \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
