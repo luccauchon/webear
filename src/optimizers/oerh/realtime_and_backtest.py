@@ -397,7 +397,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     assert 'lookahead_bars' in metadata
     lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
     dataset_id = metadata.get('dataset_id')
-    master_data_cache = copy.deepcopy(_load_df(_datase_id=dataset_id))
+    master_data_cache = copy.deepcopy(_load_df(_database_id=dataset_id))
     ticker = metadata.get('ticker')
     signal_ratio = model_data['user_attrs']['signal_ratio']
     metric_used = model_data['user_attrs']['metric_used']
@@ -987,8 +987,8 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 
 @lru_cache(maxsize=32)
-def _load_df(_datase_id):
-    cache_filename = get_filename_for_dataset(_datase_id, older_dataset=None)
+def _load_df(_database_id):
+    cache_filename = get_filename_for_dataset(_database_id, older_dataset=None)
     with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     return master_data_cache
@@ -1016,7 +1016,7 @@ def entry(args):
 
     # ✅ BATCH MODE: Original behavior with optional train/val split
     np.random.seed(args.seed)
-    master_data_cache = copy.deepcopy(_load_df(_datase_id=args.dataset_id))
+    master_data_cache = copy.deepcopy(_load_df(_database_id=args.dataset_id))
     df_spx500 = master_data_cache[args.ticker].sort_index()
     price_col = ('Close', args.ticker) if isinstance(df_spx500.columns, pd.MultiIndex) else 'Close'
     if 1 == args.lookahead_bars:
