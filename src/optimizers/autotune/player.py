@@ -172,7 +172,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(target_price), "target_date": datetime.strptime(target_date, format_date),
                         "train_win_rate": float(train_win_rate.strip('%')) /100., "val_win_rate": float(val_win_rate.strip('%')) /100., "optimize_target": optimization_target,
-                        "threshold": threshold, "method": None, "app": "AutoTune"})
+                        "threshold": threshold, "method": optimization_target, "app": "AutoTune"})
     return results
 
 # =============================================================================

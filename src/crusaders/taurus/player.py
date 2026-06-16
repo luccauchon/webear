@@ -15,7 +15,7 @@ except ImportError:
 import argparse
 import pathlib
 from argparse import Namespace
-
+import os
 from optimizers.autotune.player import entry as autotune_player
 from optimizers.dgdr.player import entry as dgdr_player
 from optimizers.oerh.player import entry as oerh_player
