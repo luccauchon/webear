@@ -383,7 +383,7 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id,train_met
     meta = {'ticker': ticker, 'dataset_id': dataset_id, 'best_params': study.best_trial.params,
             'best_value': study.best_trial.value, 'n_trials': len(study.trials), 'timestamp': timestamp, 'filename_tag': params_str}
     with open(pkl_path, 'wb') as f:
-        pickle.dump({'study': study, 'config': config, 'timestamp': timestamp, 'meta': meta, 'train_metrics': train_metrics, 'val_metrics': val_metrics}, f)
+        pickle.dump({'study_best_trial': study.best_trial, 'config': config, 'timestamp': timestamp, 'meta': meta, 'train_metrics': train_metrics, 'val_metrics': val_metrics}, f)
 
     print(f"✅ Model saved to: {pkl_path}")
 
@@ -405,7 +405,7 @@ def run_real_time_mode(args, df, config_cols):
         model_data = pickle.load(f)
     assert model_data['config']['dataset_id'] == args.dataset_id
     assert model_data['config']['ticker'] == args.ticker
-    best_params = model_data['study'].best_trial.params
+    best_params = model_data['study_best_trial'].params
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
