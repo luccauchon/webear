@@ -750,7 +750,7 @@ def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col)
     }
 
 
-def real_time_mode(args, df_base, close_col, high_col, low_col):
+def real_time_mode(args, close_col, high_col, low_col):
     """
     Real-time mode: load model from path and test latest datapoint for signals.
     """
@@ -771,8 +771,17 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     assert 'score' in model_data
     train_score = model_data.get('score', 'N/A')
     val_score = model_data.get('validation_score')
-    assert args.dataset_id == model_data['args']['dataset_id']
-    assert args.ticker     == model_data['args']['ticker']
+
+    _dataset_id = model_data['args']['dataset_id']
+    _ticker     = model_data['args']['ticker']
+    _cache_filename = get_filename_for_dataset(model_data['args']['dataset_id'], older_dataset=None)
+    with open(_cache_filename, 'rb') as f:
+        _master_data_cache = pickle.load(f)
+    df_base = _master_data_cache[model_data['args']['ticker']].sort_index()
+    if args.clip:
+        df_base = df_base.iloc[:-1].copy()
+    if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
+
     assert val_score is not None
     train_ratio = model_data['train_val_split']['train_ratio']
     train_bars = model_data['train_val_split']['train_bars']
@@ -785,7 +794,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
         print(f"🧠 Parameters: {params}")
         print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%}")
     # Run strategy on latest datapoint
-    print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {args.ticker} | Dataset {args.dataset_id} | Lookahead: {lookahead} bars")
+    print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {_ticker} | Dataset {_dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
 
     # ==============================================================================
@@ -836,7 +845,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
 
     # Output results
     print(f"\n{'=' * 60}")
-    print(f"🔔 REAL-TIME SIGNAL CHECK — {args.ticker}")
+    print(f"🔔 REAL-TIME SIGNAL CHECK — {_ticker}")
     print(f"{'=' * 60}")
     assert df_base.index[-1].strftime('%Y-%m-%d') == result['timestamp'].strftime('%Y-%m-%d')
     print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
@@ -849,10 +858,10 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     result['sell_signal_detected'] = sell_signal_detected
     if buy_signal_detected:
         print(f"\n🎯 SIGNALS:")
-        print(f"   🟢 BUY SIGNAL DETECTED! | Put Threshold: {put_strike_pct:.2%} | @{lookahead} {args.dataset_id}")
+        print(f"   🟢 BUY SIGNAL DETECTED! | Put Threshold: {put_strike_pct:.2%} | @{lookahead} {_dataset_id}")
     if sell_signal_detected:
         print(f"\n🎯 SIGNALS:")
-        print(f"   🔴 SELL SIGNAL DETECTED! | Call Threshold: {call_strike_pct:.2%} | @{lookahead} {args.dataset_id}")
+        print(f"   🔴 SELL SIGNAL DETECTED! | Call Threshold: {call_strike_pct:.2%} | @{lookahead} {_dataset_id}")
     if not buy_signal_detected and not sell_signal_detected:
         print(f"   ⚪ No signal at this time")
 
@@ -866,7 +875,7 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
 
     # Calculate approximate target/expiration date based on lookahead bars
     entry_date = result['timestamp'].strftime('%Y-%m-%d')
-    target_date = get_next_step(the_date=entry_date, dataset_id=args.dataset_id, nn=lookahead).strftime('%Y-%m-%d')
+    target_date = get_next_step(the_date=entry_date, dataset_id=_dataset_id, nn=lookahead).strftime('%Y-%m-%d')
 
     # ==============================================================================
     # 💡 RECOMMENDED TRADE OUTPUT (if signal detected)
@@ -914,8 +923,8 @@ def real_time_mode(args, df_base, close_col, high_col, low_col):
     result['current_date']    = entry_date
     result['target_price']    = target_price
     result['target_date']     = target_date
-    result['dataset_id']      = args.dataset_id
-    result['ticker']          = args.ticker
+    result['dataset_id']      = _dataset_id
+    result['ticker']          = _ticker
     result['lookahead']       = lookahead
     result['method']          = method
     result['put_strike_pct']  = put_strike_pct
@@ -1103,7 +1112,7 @@ def entry(args):
 
     # 🔹 Handle real-time mode first
     if args.real_time:
-        return real_time_mode(args, df_base, close_col, high_col, low_col)
+        return real_time_mode(args, close_col, high_col, low_col)
     assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
     print_startup_banner(args)
     # Default params (used if not optimizing)
