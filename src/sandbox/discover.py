@@ -27,7 +27,7 @@ pd.options.mode.chained_assignment = None
 # OPTIMIZATION 3: Removed duplicate features to save memory and computation
 __FEATURES__ = [
     'spx_pct_rank', 'spx_zscore',
-    'spx_vol_pct_rank', 'spx_vol_zscore',  # <-- ADDED: SPX Volume Features
+    'spx_vol_pct_rank', 'spx_vol_zscore',
     'vix_pct_rank', 'vix_zscore',
     'hyg_pct_rank', 'hyg_zscore',
     'lqd_pct_rank', 'lqd_zscore',
