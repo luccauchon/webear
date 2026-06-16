@@ -15,8 +15,9 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.svm import SVR
 from sklearn.neighbors import KNeighborsRegressor
 from xgboost import XGBRegressor
-
-from constants import FRED_API_KEY
+import requests
+import urllib3
+from constants import FRED_API_KEY, IS_RUNNING_IREQ
 
 # Suppress Optuna & pandas debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -25,6 +26,7 @@ pd.options.mode.chained_assignment = None
 # OPTIMIZATION 3: Removed duplicate features to save memory and computation
 __FEATURES__ = [
     'spx_pct_rank', 'spx_zscore',
+    'spx_vol_pct_rank', 'spx_vol_zscore',  # <-- ADDED: SPX Volume Features
     'vix_pct_rank', 'vix_zscore',
     'hyg_pct_rank', 'hyg_zscore',
     'lqd_pct_rank', 'lqd_zscore',
@@ -79,7 +81,7 @@ def get_parser():
         "--model",
         type=str,
         default="random_forest",
-        choices=["ridge", "lasso", "random_forest", "gradient_boosting", "extra_trees", "svr", "knn", "xgboost"],  # <-- ADDED xgboost
+        choices=["ridge", "lasso", "random_forest", "gradient_boosting", "extra_trees", "svr", "knn", "xgboost"],
         help="Model to use for prediction. Options: ridge, lasso, random_forest, gradient_boosting, extra_trees, svr, knn, xgboost (default: random_forest)"
     )
     parser.add_argument(
@@ -154,14 +156,32 @@ def load_data(filename: str = None) -> pd.DataFrame:
         print(f"File '{filename}' exists. Reloading data from disk...")
         df = pd.read_csv(filename, index_col=0, parse_dates=True)
     else:
+        if IS_RUNNING_IREQ:
+            # Globally disable SSL warnings in the console
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+            # Patch FRED's underlying environment variable before initializing
+            os.environ["CURL_CA_BUNDLE"] = ""
+
+            # Create a curl_cffi Session that bypasses SSL and impersonates Chrome
+            session = requests.Session(impersonate="chrome", verify=False)
+
+            # Yahoo Finance Data (Passing the non-verified curl_cffi session)
+            spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True, session=session)
+            spx, spx_vol = spx_data["Close"].squeeze(), spx_data["Volume"].squeeze()
+            vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True, session=session)["Close"].squeeze()
+            hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True, session=session)["Close"].squeeze()
+            lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True, session=session)["Close"].squeeze()
+        else:
+            # Yahoo Finance Data
+            spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True)
+            spx, spx_vol = spx_data["Close"].squeeze(), spx_data["Volume"].squeeze()
+            vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True)["Close"].squeeze()
+            hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
+            lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
+
         print(f"File '{filename}' not found. Fetching new data...")
         fred = Fred(api_key=FRED_API_KEY)
-
-        # Yahoo Finance Data
-        spx = yf.download("^GSPC", start="2000-01-01", auto_adjust=True)["Close"].squeeze()
-        vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True)["Close"].squeeze()
-        hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
-        lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
 
         # FRED Macroeconomic Data
         curve = fred.get_series("T10Y2Y")
@@ -171,6 +191,7 @@ def load_data(filename: str = None) -> pd.DataFrame:
         # Align and merge data
         df = pd.DataFrame(index=spx.index)
         df["spx"] = spx
+        df["spx_vol"] = spx_vol
         df["vix"] = vix
         df["hyg"] = hyg
         df["lqd"] = lqd
@@ -303,6 +324,9 @@ def compute_features(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     df["spx_pct_rank"] = rolling_percentile_rank(df["spx"], rank_window)
     df["spx_zscore"] = rolling_zscore(df["spx"], zscore_window)
 
+    df["spx_vol_pct_rank"] = rolling_percentile_rank(df["spx_vol"], rank_window)
+    df["spx_vol_zscore"] = rolling_zscore(df["spx_vol"], zscore_window)
+
     df["vix_pct_rank"] = rolling_percentile_rank(df["vix"], rank_window)
     df["vix_zscore"] = rolling_zscore(df["vix"], zscore_window)
 
@@ -375,7 +399,7 @@ def get_model_and_scaler(model_type: str, params: dict):
             reg_lambda=params.get("reg_lambda", 1.0),
             random_state=42,
             n_jobs=-1,
-            tree_method="hist"  # Highly optimized histogram-based algorithm for speed
+            tree_method="hist"
         )
         scaler = None  # Tree-based models are scale-invariant
     elif model_type == "svr":
