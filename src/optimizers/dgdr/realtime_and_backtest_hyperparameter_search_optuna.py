@@ -379,7 +379,6 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id,train_met
     base_name = f"{safe_ticker}_{safe_dataset}_{params_str}_{timestamp}"
 
     pkl_path = os.path.join(output_dir, f"{base_name}.pkl")
-    json_path = os.path.join(output_dir, f"{base_name}_meta.json")
 
     meta = {'ticker': ticker, 'dataset_id': dataset_id, 'best_params': study.best_trial.params,
             'best_value': study.best_trial.value, 'n_trials': len(study.trials), 'timestamp': timestamp, 'filename_tag': params_str}
