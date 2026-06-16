@@ -15,7 +15,8 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.svm import SVR
 from sklearn.neighbors import KNeighborsRegressor
 from xgboost import XGBRegressor
-import requests
+
+from curl_cffi import requests
 import urllib3
 from constants import FRED_API_KEY, IS_RUNNING_IREQ
 
