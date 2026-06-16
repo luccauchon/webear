@@ -7,6 +7,12 @@ try:
     IS_RUNNING_ON_LINUX_VMWARE = True if 4 == int(os.getenv("ENV_EXEC_CODE__WEBEAR", 0)) else False
 except:
     IS_RUNNING_ON_LINUX_VMWARE = False
+try:
+    IS_RUNNING_IREQ = False
+    if IS_RUNNING_ON_CASIR or IS_RUNNING_ON_LINUX_VMWARE or 8 == int(os.getenv("ENV_EXEC_CODE__WEBEAR", 0)):
+        IS_RUNNING_IREQ = True
+except:
+    IS_RUNNING_IREQ = False
 
 BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
