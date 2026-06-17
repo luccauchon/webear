@@ -29,22 +29,26 @@ def parse_args():
     )
     parser.add_argument(
         "--autotune-target-dir",
-        required=True,
+        required=False,
+        default=".",
         help="Target directory for autotune models"
     )
     parser.add_argument(
         "--dgdr-target-dir",
-        required=True,
+        required=False,
+        default=".",
         help="Target directory for dgdr models"
     )
     parser.add_argument(
         "--oerh-target-dir",
-        required=True,
+        required=False,
+        default=".",
         help="Target directory for oerh models"
     )
     parser.add_argument(
         "--prime-rsi-target-dir",
-        required=True,
+        required=False,
+        default=".",
         help="Target directory for prime_rsi models"
     )
     parser.add_argument(
@@ -53,6 +57,58 @@ def parse_args():
         default=False,
         help="Hide rows where signal is 0 (default: False)"
     )
+
+    # ==========================================
+    # NEW FILTER ARGUMENTS
+    # ==========================================
+    parser.add_argument(
+        "--min-val-rate",
+        type=float,
+        default=None,
+        help="Minimum validation win rate (e.g., 80 for 80%% or 0.8)"
+    )
+    parser.add_argument(
+        "--min-train-rate",
+        type=float,
+        default=None,
+        help="Minimum training win rate (e.g., 80 for 80%% or 0.8)"
+    )
+    parser.add_argument(
+        "--signal",
+        type=int,
+        nargs='+',
+        default=None,
+        help="Filter by signal values (e.g., -1 1)"
+    )
+    parser.add_argument(
+        "--indicator",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Filter by indicator names"
+    )
+    parser.add_argument(
+        "--method",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Filter by method names"
+    )
+    parser.add_argument(
+        "--optimize-target",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Filter by optimize target names"
+    )
+    parser.add_argument(
+        "--info",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Filter by info/ticker substring (e.g., ^GSPC)"
+    )
+
     return parser.parse_args()
 
 
@@ -100,29 +156,73 @@ def entry(args):
         )
         results.extend(prime_rsi_player(prime_rsi_args))
 
+    # Helper to parse percentage (allows passing 80 instead of 0.8)
+    def get_min_rate(val):
+        if val is None:
+            return None
+        return val / 100.0 if val > 1 else val
+
+    min_val_rate = get_min_rate(args.min_val_rate)
+    min_train_rate = get_min_rate(args.min_train_rate)
+
     # Print results
     headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold", "Indicator"]
     table_rows = []
+
     for res in results:
+        # Extract raw data first
         info = res["info"]
         signal = res["signal"]
-        current_price = f"{res['current_price']:.2f}"
-        current_date = f"{res['current_date'].strftime('%Y-%m-%d')}"
-        target_price = f"{res['target_price']:.2f}"
-        target_date = f"{res['target_date'].strftime('%Y-%m-%d')}"
-        train_win_rate = f"{res['train_win_rate']:.4%}"
-        val_win_rate = f"{res['val_win_rate']:.4%}"
+        current_price = res['current_price']
+        current_date = res['current_date']
+        target_price = res['target_price']
+        target_date = res['target_date']
+        train_win_rate = res['train_win_rate']
+        val_win_rate = res['val_win_rate']
         optimize = str(res["optimize_target"])
         method = str(res["method"])
         threshold = str(res["threshold"])
         indicator = str(res["app"])
 
+        # ==========================================
+        # APPLY FILTERS
+        # ==========================================
         if args.hide_zero_signal:
             assert signal in [-1, 0, 1]
             if signal == 0:
                 continue
 
-        table_rows.append([info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimize, method, threshold, indicator])
+        if min_val_rate is not None and val_win_rate < min_val_rate:
+            continue
+
+        if min_train_rate is not None and train_win_rate < min_train_rate:
+            continue
+
+        if args.signal is not None and signal not in args.signal:
+            continue
+
+        if args.indicator is not None and indicator not in args.indicator:
+            continue
+
+        if args.method is not None and method not in args.method:
+            continue
+
+        if args.optimize_target is not None and optimize not in args.optimize_target:
+            continue
+
+        if args.info is not None and not any(sub in info for sub in args.info):
+            continue
+
+        # Format strings for display (only for rows that passed filters)
+        current_price_str = f"{current_price:.2f}"
+        current_date_str = f"{current_date.strftime('%Y-%m-%d')}"
+        target_price_str = f"{target_price:.2f}"
+        target_date_str = f"{target_date.strftime('%Y-%m-%d')}"
+        train_win_rate_str = f"{train_win_rate:.4%}"
+        val_win_rate_str = f"{val_win_rate:.4%}"
+
+        print(info)
+        table_rows.append([info, signal, current_price_str, current_date_str, target_price_str, target_date_str, train_win_rate_str, val_win_rate_str, optimize, method, threshold, indicator])
 
     # Calculate column widths
     col_widths = [len(h) for h in headers]
