@@ -1,5 +1,5 @@
 sh ./prime_rsi__laucher_36x.sh --trials 999999 --lookahead 1 --metric "buy_wr" --dataset-id "day" --timeout 80000 --put-strike-pct 0.999 --call-strike-pct 1.
 sh ./oerh__laucher_36x.sh --trials 999999 --lookahead 1 --metric "long_accuracy" --optimize "floor" --dataset-id "day" --timeout 80000 --threshold 0.001
 sh ./dgdr__laucher_36x.sh --trials 999999 --lookahead 1 --metric "final_close" --dataset-id "day" --timeout 80000 --put-strike-pct 0.999 --call-strike-pct 1. --signal-type "buy"
-sh ./autotun__laucher_36x.sh --trials 999999 --lookahead 1 --metric "finish_above" --dataset-id "day" --timeout 80000 --win-threshold 0.001
+sh ./autotun__laucher_36x.sh --trials 999999 --lookahead 1 --metric "hold_floor" --dataset-id "day" --timeout 80000 --win-threshold 0.001
 
