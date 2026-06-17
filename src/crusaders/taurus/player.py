@@ -92,17 +92,13 @@ def entry(args):
 
     # Prime RSI
     for root, dirs, files in os.walk(prime_rsi_target_dir):
-        for file in files:
-            full_path = os.path.join(root, file)
-            if not os.path.isdir(full_path):
-                continue
-            prime_rsi_args = Namespace(
-                verbose=True,
-                target_dir=full_path,
-                clip=False,
-                hide_zero_signal=False
-            )
-            results.extend(prime_rsi_player(prime_rsi_args))
+        prime_rsi_args = Namespace(
+            verbose=True,
+            target_dir=root,
+            clip=False,
+            hide_zero_signal=False
+        )
+        results.extend(prime_rsi_player(prime_rsi_args))
 
     # Print results
     headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold", "Indicator"]
