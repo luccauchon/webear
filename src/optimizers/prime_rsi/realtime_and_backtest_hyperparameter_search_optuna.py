@@ -630,7 +630,7 @@ def generate_model_name(args, params, score):
         args.ticker.replace('^', ''),
         args.dataset_id,
         args.optimize_target,
-        f"score-{score:.4f}",
+        f"score-{score:.12f}",
         '_'.join(param_parts),
         '_'.join(arg_parts),
         timestamp
