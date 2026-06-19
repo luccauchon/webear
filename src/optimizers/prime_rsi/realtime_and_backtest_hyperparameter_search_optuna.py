@@ -1024,8 +1024,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials per run')
     opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
-    opt_group.add_argument('--optuna-db', type=str, default=None,
-                           help='SQLite path for Optuna persistence. Defaults to {output_dir}/optuna_study.db')
+    opt_group.add_argument('--optuna-db', type=str, default=None, help='SQLite path for Optuna persistence.')
     opt_group.add_argument('--train-ratio', type=float, default=0.7,
                            help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
 
