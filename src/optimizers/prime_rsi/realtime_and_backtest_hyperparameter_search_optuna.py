@@ -619,9 +619,9 @@ def generate_model_name(args, params, score):
     if hasattr(args, 'method'):
         arg_parts.append(f"m-{args.method}")
     if hasattr(args, 'put_strike_pct'):
-        arg_parts.append(f"put-{args.put_strike_pct:.2f}")
+        arg_parts.append(f"put-{args.put_strike_pct:.6f}")
     if hasattr(args, 'call_strike_pct'):
-        arg_parts.append(f"call-{args.call_strike_pct:.2f}")
+        arg_parts.append(f"call-{args.call_strike_pct:.6f}")
     if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
         arg_parts.append(f"train_ratio-{args.train_ratio:.2f}")
 
