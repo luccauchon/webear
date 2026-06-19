@@ -80,7 +80,6 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --optimize-target "$WEBEAR__OPTIMIZE" \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
-      --optuna-db "$WEBEAR__OUTPUT_DIR\optuna_db.db" \
       --timeout "$WEBEAR__TIMEOUT" &
     PIDS+=($!)
 done
