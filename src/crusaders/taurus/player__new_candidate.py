@@ -163,7 +163,7 @@ def entry(args):
         for file in files:
             target_file = os.path.join(str(root), str(file))
             assert os.path.exists(target_file)
-            prime_rsi_args = Namespace(verbose=True,target_files=[target_file],clip=False,hide_zero_signal=False)
+            prime_rsi_args = Namespace(verbose=False,target_files=[target_file],clip=False,hide_zero_signal=False)
             use_cases.append({'indicator':'prime_rsi', 'args': prime_rsi_args})
     # Variables partagées
     use_cases__shared, master_cmd__shared = Queue(99999), Value("i", 0)
