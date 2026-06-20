@@ -274,7 +274,7 @@ def entry(args):
 
     # Print results
     headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold", "Indicator"]
-    table_rows = []
+    table_rows, mapped_table_rows = [], []
 
     for res in results:
         # Extract raw data first
@@ -330,7 +330,10 @@ def entry(args):
         target_date_str = f"{target_date.strftime('%Y-%m-%d')}"
         train_win_rate_str = f"{train_win_rate:.4%}"
         val_win_rate_str = f"{val_win_rate:.4%}"
-
+        mapped_table_rows.append({"info": info, "signal": signal, "current_price_str": current_price_str,
+                                  "current_date_str": current_date_str, "target_price_str": target_price_str, "target_date_str": target_date_str,
+                                  "train_win_rate_str": train_win_rate_str, "val_win_rate_str": val_win_rate_str, "optimize": optimize,
+                                  "method": method, "threshold": threshold, "indicator": indicator})
         table_rows.append([info, signal, current_price_str, current_date_str, target_price_str, target_date_str, train_win_rate_str, val_win_rate_str, optimize, method, threshold, indicator])
 
     # Calculate column widths
@@ -357,6 +360,7 @@ def entry(args):
     for row in table_rows:
         print(format_row(row))
     print("=" * total_width)
+    return mapped_table_rows
 
 
 if __name__ == "__main__":
