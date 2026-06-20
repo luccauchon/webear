@@ -132,8 +132,9 @@ def entry(args):
                 "call_threshold": call_strike,
             })
         except Exception as e:
-            print(f"❌ ERROR processing {file_path.name}: {e}")
-            traceback.print_exc()
+            if verbose:
+                print(f"❌ ERROR processing {file_path.name}: {e}")
+                traceback.print_exc()
 
     # 1. Filter results if hide_zero_signal is enabled
     if args.hide_zero_signal:
