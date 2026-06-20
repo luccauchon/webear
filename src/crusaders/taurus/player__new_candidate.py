@@ -145,6 +145,13 @@ def parse_args():
         default=None,
         help="Filter by info/ticker substring (e.g., ^GSPC)"
     )
+    parser.add_argument(
+        "--threshold",
+        type=str,
+        nargs='+',
+        default=None,
+        help="Filter by threshold substring (e.g., 0.987)"
+    )
 
     # ==========================================
     # SAVE / LOAD ARGUMENTS
@@ -311,6 +318,9 @@ def entry(args):
             continue
 
         if args.info is not None and not any(sub in info for sub in args.info):
+            continue
+
+        if args.threshold is not None and not any(sub in threshold for sub in args.threshold):
             continue
 
         # Format strings for display (only for rows that passed filters)
