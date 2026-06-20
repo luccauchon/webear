@@ -782,7 +782,6 @@ def real_time_mode(args, close_col, high_col, low_col):
         df_base = df_base.iloc[:-1].copy()
     if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
 
-    assert val_score is not None
     train_ratio = model_data['train_val_split']['train_ratio']
     train_bars = model_data['train_val_split']['train_bars']
     val_bars = model_data['train_val_split']['val_bars']
@@ -1079,35 +1078,36 @@ def early_stop_on_perfect_success(study, trial):
 
 def entry(args):
     np.random.seed(args.seed)
-    cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
-    if args.verbose: print(f"📂 Loading dataset from: {cache_filename}")
-    with open(cache_filename, 'rb') as f:
-        master_data_cache = pickle.load(f)
-    if args.ticker not in master_data_cache:
-        raise KeyError(f"Ticker '{args.ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
-    df_base = master_data_cache[args.ticker].sort_index()
-    if args.length_dataset != 999999:
-        df_base = df_base.iloc[-args.length_dataset:].copy()
-    if args.clip and args.real_time:
-        df_base = df_base.iloc[:-1].copy()
-    if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
     close_col = ('Close', args.ticker)
     high_col = ('High', args.ticker)
     low_col = ('Low', args.ticker)
+    if not args.real_time:
+        cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
+        if args.verbose: print(f"📂 Loading dataset from: {cache_filename}")
+        with open(cache_filename, 'rb') as f:
+            master_data_cache = pickle.load(f)
+        if args.ticker not in master_data_cache:
+            raise KeyError(f"Ticker '{args.ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
+        df_base = master_data_cache[args.ticker].sort_index()
+        if args.length_dataset != 999999:
+            df_base = df_base.iloc[-args.length_dataset:].copy()
+        if args.clip and args.real_time:
+            df_base = df_base.iloc[:-1].copy()
+        if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
 
-    if args.verbose:
-        print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | Bars: {len(df_base)}")
-        if args.real_time:
-            print("🔹 Mode: REAL-TIME SIGNAL CHECK")
-        elif args.optimize:
-            print(f"🔹 Mode: OPTIMIZATION → Target: {args.optimize_target} | Trials: {args.n_trials}")
-            if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
-                print(f"🔹 Train/Val Split: {args.train_ratio * 100:.1f}% / {(1 - args.train_ratio) * 100:.1f}%")
-        elif args.model_path:
-            print(f"🔹 Mode: EVALUATION → Model: {os.path.basename(args.model_path)}")
-        else:
-            print("🔹 Mode: DEFAULT BACKTEST → Params: {rsi:14, sma:50, fib:50, div:5}")
-        print("─" * 80 + "\n")
+        if args.verbose:
+            print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | Bars: {len(df_base)}")
+            if args.real_time:
+                print("🔹 Mode: REAL-TIME SIGNAL CHECK")
+            elif args.optimize:
+                print(f"🔹 Mode: OPTIMIZATION → Target: {args.optimize_target} | Trials: {args.n_trials}")
+                if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
+                    print(f"🔹 Train/Val Split: {args.train_ratio * 100:.1f}% / {(1 - args.train_ratio) * 100:.1f}%")
+            elif args.model_path:
+                print(f"🔹 Mode: EVALUATION → Model: {os.path.basename(args.model_path)}")
+            else:
+                print("🔹 Mode: DEFAULT BACKTEST → Params: {rsi:14, sma:50, fib:50, div:5}")
+            print("─" * 80 + "\n")
 
     # 🔹 Handle real-time mode first
     if args.real_time:

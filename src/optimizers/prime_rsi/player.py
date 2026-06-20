@@ -23,12 +23,21 @@ def parse_args():
         prog="prime_rsi_runner",
         description="Run Prime RSI on multiple .pkl model files and display a results summary."
     )
-    parser.add_argument(
+
+    # Create a mutually exclusive group for target directory vs target files
+    target_group = parser.add_mutually_exclusive_group()
+    target_group.add_argument(
         "-d", "--target-dir",
         type=str,
-        default="./models",
         help="Directory containing .pkl model files (default: ./models)"
     )
+    target_group.add_argument(
+        "-f", "--target-files",
+        type=str,
+        nargs='+',
+        help="List of specific .pkl model files to process"
+    )
+
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
@@ -47,19 +56,31 @@ def parse_args():
 
 def entry(args):
     verbose = args.verbose
-    target_dir = pathlib.Path(args.target_dir).resolve()
-    try:
-        files = sorted([
-            f for f in target_dir.iterdir()
-            if f.is_file() and f.suffix.lower() == ".pkl"
-        ])
-    except:
-        files = []
+
+    files = []
+    if args.target_files:
+        # Process specific files provided by the user
+        files = [pathlib.Path(f).resolve() for f in args.target_files]
+        files = sorted([f for f in files if f.is_file() and f.suffix.lower() == ".pkl"])
+    else:
+        # Fallback to directory scanning
+        target_dir = pathlib.Path(args.target_dir or "./models").resolve()
+        try:
+            files = sorted([
+                f for f in target_dir.iterdir()
+                if f.is_file() and f.suffix.lower() == ".pkl"
+            ])
+        except Exception:
+            files = []
 
     results = []
 
     if not files:
-        print(f"⚠️ No .pkl files found in {target_dir}")
+        if args.target_files:
+            print("⚠️ No valid .pkl files found among the specified target files.")
+        else:
+            target_dir = pathlib.Path(args.target_dir or "./models").resolve()
+            print(f"⚠️ No .pkl files found in {target_dir}")
         return results
 
     # Parse all files
@@ -83,7 +104,7 @@ def entry(args):
         try:
             result = prime_rsi(configuration)
             train_score, val_score = result['train_score'], result['val_score']
-            buy_signal_detected  = result['buy_signal_detected']
+            buy_signal_detected = result['buy_signal_detected']
             sell_signal_detected = result['sell_signal_detected']
             optimize_target = result['optimize_target']
             signal = 1 if buy_signal_detected else (-1 if sell_signal_detected else 0)
@@ -157,6 +178,7 @@ def entry(args):
     # Formatting helper
     def format_row(cells):
         return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
+
     if verbose:
         print("\n" + "=" * total_width)
         print(f"{'PRIME RSI RESULTS SUMMARY':^{total_width}}")
@@ -175,8 +197,8 @@ def entry(args):
         put_threshold, call_threshold = thresholds.split("::")[0][1:], thresholds.split("::")[1][1:]
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(0) if target_price == "N/A" else float(target_price),
-                        "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_win_rate.strip('%'))/100.,
-                        "val_win_rate": float(val_win_rate.strip('%'))/100., "optimize_target": optimization_target,
+                        "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_win_rate.strip('%')) / 100.,
+                        "val_win_rate": float(val_win_rate.strip('%')) / 100., "optimize_target": optimization_target,
                         "threshold": f"{put_threshold}::{call_threshold}", "method": method, "app": "Prime RSI"})
     return results
 
