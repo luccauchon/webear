@@ -321,7 +321,6 @@ def entry(args):
         train_win_rate_str = f"{train_win_rate:.4%}"
         val_win_rate_str = f"{val_win_rate:.4%}"
 
-        print(info)
         table_rows.append([info, signal, current_price_str, current_date_str, target_price_str, target_date_str, train_win_rate_str, val_win_rate_str, optimize, method, threshold, indicator])
 
     # Calculate column widths
