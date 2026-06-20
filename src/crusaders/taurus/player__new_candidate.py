@@ -1,3 +1,4 @@
+import pickle
 from numba.core.target_extension import target_registry
 from plotly.graph_objs import indicator
 
@@ -145,6 +146,22 @@ def parse_args():
         help="Filter by info/ticker substring (e.g., ^GSPC)"
     )
 
+    # ==========================================
+    # SAVE / LOAD ARGUMENTS
+    # ==========================================
+    parser.add_argument(
+        "--save-to",
+        type=str,
+        default=None,
+        help="Save data_from_workers to the specified file after computation."
+    )
+    parser.add_argument(
+        "--load-from",
+        type=str,
+        default=None,
+        help="Load data_from_workers from the specified file and bypass computation."
+    )
+
     return parser.parse_args()
 
 
@@ -157,33 +174,53 @@ def entry(args):
     oerh_target_dir = args.oerh_target_dir
     prime_rsi_target_dir = args.prime_rsi_target_dir
     nb_worker = args.nb_workers
-    # Construction des cas à traiter
-    use_cases = []
-    for root, dirs, files in os.walk(prime_rsi_target_dir):
-        for file in files:
-            target_file = os.path.join(str(root), str(file))
-            assert os.path.exists(target_file)
-            prime_rsi_args = Namespace(verbose=False,target_files=[target_file],clip=False,hide_zero_signal=False)
-            use_cases.append({'indicator':'prime_rsi', 'args': prime_rsi_args})
-    # Variables partagées
-    use_cases__shared, master_cmd__shared = Queue(99999), Value("i", 0)
-    out__shared = [Queue(1) for k in range(0, nb_worker)]
-    # Lancement des workers
-    for k in range(0, nb_worker):
-        p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k],))
-        p.start()
-    # Envoie les informations aux workers pour traitement
-    # Préparation des lots de travail
-    for use_case in use_cases:
-        use_cases__shared.put(use_case)
-    # Autoriser les workers à traiter
-    with master_cmd__shared.get_lock():
-        master_cmd__shared.value = 1
-    # Récupération des résultats
+
     data_from_workers = []
-    for k in range(0, nb_worker):
-        data_from_workers.extend(out__shared[k].get())
+
+    # ==========================================
+    # LOAD FROM FILE OR COMPUTE
+    # ==========================================
+    if args.load_from:
+        print(f"Loading data from {args.load_from}...")
+        with open(args.load_from, 'rb') as f:
+            data_from_workers = pickle.load(f)
+    else:
+        # Construction des cas à traiter
+        use_cases = []
+        for root, dirs, files in os.walk(prime_rsi_target_dir):
+            for file in files:
+                target_file = os.path.join(str(root), str(file))
+                assert os.path.exists(target_file)
+                prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
+                use_cases.append({'indicator': 'prime_rsi', 'args': prime_rsi_args})
+        # Variables partagées
+        use_cases__shared, master_cmd__shared = Queue(99999), Value("i", 0)
+        out__shared = [Queue(1) for k in range(0, nb_worker)]
+        # Lancement des workers
+        for k in range(0, nb_worker):
+            p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k],))
+            p.start()
+        # Envoie les informations aux workers pour traitement
+        # Préparation des lots de travail
+        for use_case in use_cases:
+            use_cases__shared.put(use_case)
+        # Autoriser les workers à traiter
+        with master_cmd__shared.get_lock():
+            master_cmd__shared.value = 1
+        # Récupération des résultats
+        for k in range(0, nb_worker):
+            data_from_workers.extend(out__shared[k].get())
+
+        # ==========================================
+        # SAVE TO FILE
+        # ==========================================
+        if args.save_to:
+            print(f"Saving data to {args.save_to}...")
+            with open(args.save_to, 'wb') as f:
+                pickle.dump(data_from_workers, f)
+
     results = data_from_workers
+
     # # Pass hide_zero_signal dynamically from the main args
     # autotune_args = Namespace(
     #     verbose=True,
