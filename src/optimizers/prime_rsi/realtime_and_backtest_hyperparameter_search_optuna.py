@@ -759,7 +759,7 @@ def real_time_mode(args, close_col, high_col, low_col):
         return None
 
     # Load the model
-    print(f"🔍 Loading model from: {args.model_path}")
+    if args.verbose: print(f"🔍 Loading model from: {args.model_path}")
     model_data = load_model(args.model_path)
     put_strike_pct = model_data['args']['put_strike_pct']
     call_strike_pct = model_data['args']['call_strike_pct']
@@ -793,7 +793,7 @@ def real_time_mode(args, close_col, high_col, low_col):
         print(f"🧠 Parameters: {params}")
         print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%}")
     # Run strategy on latest datapoint
-    print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {_ticker} | Dataset {_dataset_id} | Lookahead: {lookahead} bars")
+    if args.verbose: print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {_ticker} | Dataset {_dataset_id} | Lookahead: {lookahead} bars")
     result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
 
     # ==============================================================================
@@ -843,26 +843,30 @@ def real_time_mode(args, close_col, high_col, low_col):
             print(f"📈 Recomputed Val Win Rate  : {val_win_rate:.2%}")
 
     # Output results
-    print(f"\n{'=' * 60}")
-    print(f"🔔 REAL-TIME SIGNAL CHECK — {_ticker}")
-    print(f"{'=' * 60}")
+    if args.verbose:
+        print(f"\n{'=' * 60}")
+        print(f"🔔 REAL-TIME SIGNAL CHECK — {_ticker}")
+        print(f"{'=' * 60}")
     assert df_base.index[-1].strftime('%Y-%m-%d') == result['timestamp'].strftime('%Y-%m-%d')
-    print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
+    if args.verbose: print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
     current_price, target_price, target_date = result['close'], None, None
     assert df_base[close_col].iloc[-1] == current_price
-    print(f"💰 Last Close Price: ${current_price:.2f}")
+    if args.verbose: print(f"💰 Last Close Price: ${current_price:.2f}")
     buy_signal_detected   = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
     sell_signal_detected  = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
     result['buy_signal_detected']  = buy_signal_detected
     result['sell_signal_detected'] = sell_signal_detected
     if buy_signal_detected:
-        print(f"\n🎯 SIGNALS:")
-        print(f"   🟢 BUY SIGNAL DETECTED! | Put Threshold: {put_strike_pct:.2%} | @{lookahead} {_dataset_id}")
+        if args.verbose:
+            print(f"\n🎯 SIGNALS:")
+            print(f"   🟢 BUY SIGNAL DETECTED! | Put Threshold: {put_strike_pct:.2%} | @{lookahead} {_dataset_id}")
     if sell_signal_detected:
-        print(f"\n🎯 SIGNALS:")
-        print(f"   🔴 SELL SIGNAL DETECTED! | Call Threshold: {call_strike_pct:.2%} | @{lookahead} {_dataset_id}")
+        if args.verbose:
+            print(f"\n🎯 SIGNALS:")
+            print(f"   🔴 SELL SIGNAL DETECTED! | Call Threshold: {call_strike_pct:.2%} | @{lookahead} {_dataset_id}")
     if not buy_signal_detected and not sell_signal_detected:
-        print(f"   ⚪ No signal at this time")
+        if args.verbose:
+            print(f"   ⚪ No signal at this time")
 
     if args.verbose and not args.verbose_short:
         print(f"\n🔍 Individual Signal Components:")
@@ -870,7 +874,7 @@ def real_time_mode(args, close_col, high_col, low_col):
             status = "✅" if active else "❌"
             print(f"   {status} {name}: {active}")
 
-    print(f"{'=' * 60}\n")
+    if args.verbose: print(f"{'=' * 60}\n")
 
     # Calculate approximate target/expiration date based on lookahead bars
     entry_date = result['timestamp'].strftime('%Y-%m-%d')
@@ -882,36 +886,34 @@ def real_time_mode(args, close_col, high_col, low_col):
     if buy_signal_detected or sell_signal_detected:
         entry_price = result['close']
         assert entry_price == current_price
-
-        print(f"\n💡 RECOMMENDED OPTIONS TRADE:")
-        print(f"{'─' * 60}")
-
+        if args.verbose:
+            print(f"\n💡 RECOMMENDED OPTIONS TRADE:")
+            print(f"{'─' * 60}")
         if buy_signal_detected:
             strike_price = entry_price * put_strike_pct
-            print(f"   📊 Strategy  : Put Credit Spread")
-            print(f"   📅 Entry Date: {entry_date}")
-            print(f"   💰 Entry Price: ${entry_price:.2f}")
-            print(f"   🎯 Short Put Strike: ${strike_price:.2f} ({put_strike_pct:.2%} of entry)")
-            print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
-            print(f"   ✅ Win Condition: Price stays ABOVE ${strike_price:.2f}")
-            print(f"   💡 Premium: Sell OTM put spread below current price")
+            if args.verbose:
+                print(f"   📊 Strategy  : Put Credit Spread")
+                print(f"   📅 Entry Date: {entry_date}")
+                print(f"   💰 Entry Price: ${entry_price:.2f}")
+                print(f"   🎯 Short Put Strike: ${strike_price:.2f} ({put_strike_pct:.2%} of entry)")
+                print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
+                print(f"   ✅ Win Condition: Price stays ABOVE ${strike_price:.2f}")
+                print(f"   💡 Premium: Sell OTM put spread below current price")
             target_price = strike_price
-
         if sell_signal_detected:
             strike_price = entry_price * call_strike_pct
-            print(f"   📊 Strategy  : Call Credit Spread")
-            print(f"   📅 Entry Date: {entry_date}")
-            print(f"   💰 Entry Price: ${entry_price:.2f}")
-            print(f"   🎯 Short Call Strike: ${strike_price:.2f} ({call_strike_pct:.2%} of entry)")
-            print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
-            print(f"   ✅ Win Condition: Price stays BELOW ${strike_price:.2f}")
-            print(f"   💡 Premium: Sell OTM call spread above current price")
+            if args.verbose:
+                print(f"   📊 Strategy  : Call Credit Spread")
+                print(f"   📅 Entry Date: {entry_date}")
+                print(f"   💰 Entry Price: ${entry_price:.2f}")
+                print(f"   🎯 Short Call Strike: ${strike_price:.2f} ({call_strike_pct:.2%} of entry)")
+                print(f"   📅 Target/Expiration: ~{target_date} ({lookahead} bars)")
+                print(f"   ✅ Win Condition: Price stays BELOW ${strike_price:.2f}")
+                print(f"   💡 Premium: Sell OTM call spread above current price")
             target_price = strike_price
-
         if buy_signal_detected and sell_signal_detected:
             print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
-
-        print(f"{'─' * 60}\n")
+        if args.verbose:print(f"{'─' * 60}\n")
 
     result['train_score']     = train_score
     result['val_score']       = val_score
