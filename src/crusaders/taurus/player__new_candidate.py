@@ -156,7 +156,7 @@ def entry(args):
     dgdr_target_dir = args.dgdr_target_dir
     oerh_target_dir = args.oerh_target_dir
     prime_rsi_target_dir = args.prime_rsi_target_dir
-    nb_worker = 1
+    nb_worker = args.nb_workers
     # Construction des cas à traiter
     use_cases = []
     for root, dirs, files in os.walk(prime_rsi_target_dir):
