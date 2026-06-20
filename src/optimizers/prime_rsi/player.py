@@ -77,10 +77,10 @@ def entry(args):
 
     if not files:
         if args.target_files:
-            print("⚠️ No valid .pkl files found among the specified target files.")
+            if verbose: print("⚠️ No valid .pkl files found among the specified target files.")
         else:
             target_dir = pathlib.Path(args.target_dir or "./models").resolve()
-            print(f"⚠️ No .pkl files found in {target_dir}")
+            if verbose: print(f"⚠️ No .pkl files found in {target_dir}")
         return results
 
     # Parse all files
