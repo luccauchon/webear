@@ -184,10 +184,9 @@ def entry(args):
         print(f"{'PRIME RSI RESULTS SUMMARY':^{total_width}}")
         print("=" * total_width)
         print(format_row(headers))
-    if verbose:
-        print("-" * total_width)
+    if verbose: print("-" * total_width)
     for row in table_rows:
-        print(format_row(row))
+        if verbose: print(format_row(row))
     if verbose:
         print("=" * total_width)
     results = []
