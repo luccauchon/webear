@@ -88,7 +88,12 @@ def parse_args():
         default=False,
         help="Hide rows where signal is 0 (default: False)"
     )
-
+    parser.add_argument(
+        "--nb-workers",
+        type=int,
+        default=1,
+        help="Number of parallel worker processes."
+    )
     # ==========================================
     # NEW FILTER ARGUMENTS
     # ==========================================
