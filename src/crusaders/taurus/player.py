@@ -191,7 +191,7 @@ def entry(args):
     # LOAD FROM FILE OR COMPUTE
     # ==========================================
     if args.load_from:
-        print(f"Loading data from {args.load_from}...")
+        if args.verbose: print(f"Loading data from {args.load_from}...")
         with open(args.load_from, 'rb') as f:
             data_from_workers = pickle.load(f)
     else:
