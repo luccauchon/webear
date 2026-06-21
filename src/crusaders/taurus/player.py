@@ -314,7 +314,7 @@ def entry(args):
         if args.optimize_target is not None and optimize not in args.optimize_target:
             continue
 
-        if args.info is not None and not any(sub in info for sub in args.info):
+        if args.info is not None and not all(sub in info for sub in args.info):
             continue
 
         if args.threshold is not None and not any(sub in threshold for sub in args.threshold):
