@@ -1,5 +1,3 @@
-from numba.core.target_extension import target_registry
-
 try:
     from version import sys__name, sys__version
 except ImportError:
