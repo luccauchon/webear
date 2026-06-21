@@ -57,6 +57,12 @@ def parse_args():
         description=""
     )
     parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose output during processing"
+    )
+    parser.add_argument(
         "--autotune-target-dir",
         required=False,
         default=".",
@@ -348,15 +354,15 @@ def entry(args):
     # Formatting helper
     def format_row(cells):
         return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
-
-    print("\n" + "=" * total_width)
-    print(f"{'ALL INDICATORS RESULTS SUMMARY':^{total_width}}")
-    print("=" * total_width)
-    print(format_row(headers))
-    print("-" * total_width)
+    if args.verbose:
+        print("\n" + "=" * total_width)
+        print(f"{'ALL INDICATORS RESULTS SUMMARY':^{total_width}}")
+        print("=" * total_width)
+        print(format_row(headers))
+        print("-" * total_width)
     for row in table_rows:
-        print(format_row(row))
-    print("=" * total_width)
+        if args.verbose: print(format_row(row))
+    if args.verbose: print("=" * total_width)
     return mapped_table_rows
 
 
