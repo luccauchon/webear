@@ -396,7 +396,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--model-path', type=str, default=None)
-    flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True)
+    flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--plot', action=argparse.BooleanOptionalAction, default=False)
     return parser
@@ -653,7 +653,7 @@ def entry(args):
         if verbose: print(f"\n📂 Starting new Optuna study '{study_name or 'in-memory'}'.")
 
     if verbose: print(f"\n⚙️ Running Optuna search ({n_trials} trials, {timeout}s timeout) on TRAINING SET...")
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=verbose, gc_after_trial=True, timeout=timeout, callbacks=[perfect_score_callback])
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False, gc_after_trial=True, timeout=timeout, callbacks=[perfect_score_callback])
 
     if verbose:
         print(f"\n✅ Best Trial Completed (Training Set):")
