@@ -155,6 +155,10 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
         (call_df, call_thresholds, 2)
     ]
 
+    # Variables to store the original unfiltered matrices for the slider
+    z_put, text_put = None, None
+    z_call, text_call = None, None
+
     for subset, thresholds, col_idx in specs_list:
         y_vals = all_lookaheads
         x_vals = thresholds
@@ -182,6 +186,12 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
                     f"<b>Target Date:</b> {row['target_date']}"
                 )
 
+        # Store the original matrices for the slider logic
+        if col_idx == 1:
+            z_put, text_put = z.copy(), text.copy()
+        else:
+            z_call, text_call = z.copy(), text.copy()
+
         # Format x-axis labels to show both the multiplier and the % distance
         x_labels = [f"{(t - 1) * 100:+.1f}%" for t in x_vals]
         fig.add_trace(
@@ -201,6 +211,28 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
             row=1, col=col_idx
         )
 
+    # --- Create Slider for filtering by Val Win Rate ---
+    steps = []
+    # Create steps from 50% to 99% in increments of 1%
+    for T in range(50, 100, 1):
+        # For Put side: keep values >= T, set others to NaN (white gap)
+        z_put_T = np.where(z_put >= T, z_put, np.nan)
+        text_put_T = np.where(z_put >= T, text_put, '')
+
+        # For Call side: keep values >= T, set others to NaN (white gap)
+        z_call_T = np.where(z_call >= T, z_call, np.nan)
+        text_call_T = np.where(z_call >= T, text_call, '')
+
+        step = dict(
+            method='update',
+            args=[
+                {'z': [z_put_T.tolist(), z_call_T.tolist()],
+                 'text': [text_put_T.tolist(), text_call_T.tolist()]}
+            ],
+            label=f"{T}%"
+        )
+        steps.append(step)
+
     fig.update_layout(
         title_text="<b>Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal and/or no data)</sup>",
         title_x=0.5,
@@ -208,7 +240,23 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
         width=1400,
         template="plotly_white",
         hovermode="closest",
-        hoverlabel_font_size=16  # Makes the tooltip text nice and big
+        hoverlabel_font_size=16,
+        margin=dict(b=120, t=100),  # Increased bottom margin to make room for the slider
+        sliders=[dict(
+            active=0,  # Start at 50% (shows everything)
+            currentvalue={"prefix": "Min Val Win Rate: ", "font": {"size": 16}},
+            pad={"t": 30},
+            len=0.9,
+            x=0.05,
+            y=-0.15,
+            xanchor="left",
+            yanchor="top",
+            steps=steps,
+            bgcolor="lightgray",
+            activebgcolor="darkblue",
+            tickcolor="black",
+            font=dict(color="black", size=12)
+        )]
     )
 
     fig.update_yaxes(title_text="Lookahead (days ahead)", autorange="reversed", tickmode='linear')
