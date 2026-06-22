@@ -80,6 +80,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --optimize-target "$WEBEAR__OPTIMIZE" \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
+      --verbose \
       --timeout "$WEBEAR__TIMEOUT" &
     PIDS+=($!)
 done
