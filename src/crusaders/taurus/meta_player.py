@@ -9,6 +9,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+import json
 import argparse
 import pathlib
 from argparse import Namespace
@@ -25,11 +26,40 @@ def parse_args():
         prog="",
         description=""
     )
+    parser.add_argument(
+        "--autotune-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for autotune models"
+    )
+    parser.add_argument(
+        "--dgdr-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for dgdr models"
+    )
+    parser.add_argument(
+        "--oerh-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for oerh models"
+    )
+    parser.add_argument(
+        "--prime-rsi-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for prime_rsi models"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose output during processing"
+    )
     return parser.parse_args()
 
 
 def entry(args):
-    verbose = True
     # Get the current date and time
     current_date = datetime.now()
 
@@ -37,16 +67,18 @@ def entry(args):
     date_string = current_date.strftime("%Y_%m_%d")
 
     # Combine into your final filename
-    filename = f"report_{date_string}.pkl"
+    filename = f"taurus_analyse_{date_string}.pkl"
     save_to  = f"{filename}"
     if not os.path.exists(save_to):
-        configuration = Namespace(prime_rsi_target_dir=r"C:\Temp2\prime_rsi_1B_to_20B_V2",
-                                  autotune_target_dir=".", dgdr_target_dir=".", oerh_target_dir=".", load_from=None,
-                                  nb_workers=20, save_to=save_to, info=None, threshold=None, verbose=False,
+        configuration = Namespace(prime_rsi_target_dir=args.prime_rsi_target_dir,
+                                  autotune_target_dir=args.autotune_target_dir,
+                                  dgdr_target_dir=args.dgdr_target_dir,
+                                  oerh_target_dir=args.oerh_target_dir,
+                                  load_from=None, nb_workers=20, save_to=save_to, info=None, threshold=None, verbose=False,
                                   min_val_rate=None, min_train_rate=None, hide_zero_signal=False, signal=None, indicator=None, method=None, optimize_target=None)
         player_entry(args=configuration)
 
-    result = {}
+    result = {"now": f"{date_string}"}
     for lookahead in tqdm(range(1, 21), desc="Progression lookahead"):
         lookahead_str = f"{lookahead}"
         result[lookahead_str] = {}
@@ -55,7 +87,7 @@ def entry(args):
             result[lookahead_str][optimize_target] = {}
             _ranges = np.arange(0.999, 0.94, -0.001)
             if optimize_target in ["sell_wr"]:
-                _ranges = np.arange(1.001, 1.004, 0.001)
+                _ranges = np.arange(1.001, 1.06, 0.001)
             for threshold in _ranges:
                 thresh_str = f"{threshold:.3f}::"
                 if optimize_target in ["sell_wr"]:
@@ -73,8 +105,12 @@ def entry(args):
                 result[lookahead_str][optimize_target][thresh_str] = player_entry(args=configuration)
 
 
-    if verbose:
+    if args.verbose:
         pprint(result)
+
+    json_file = f"taurus_report_{date_string}.json"
+    with open(json_file, 'w') as f:
+        json.dump(result, f, indent=4)
 
 
 if __name__ == "__main__":

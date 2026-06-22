@@ -225,7 +225,7 @@ def entry(args):
         # SAVE TO FILE
         # ==========================================
         if args.save_to:
-            print(f"Saving data to {args.save_to}...")
+            if args.verbose: print(f"Saving data to {args.save_to}...")
             with open(args.save_to, 'wb') as f:
                 pickle.dump(data_from_workers, f)
 
