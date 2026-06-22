@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Calcul dynamique du dossier de sortie
-THRESHOLD_VALUE=$(awk "BEGIN {print $WEBEAR__THRESHOLD * 100}")
+THRESHOLD_VALUE=$(awk "BEGIN {print $WEBEAR__THRESHOLD * 1}")
 WEBEAR__OUTPUT_DIR="models__${WEBEAR__LOOKAHEAD}B__threshold_${THRESHOLD_VALUE}__${WEBEAR__OPTIMIZE}"
 
 echo "Démarrage avec N-TRIALS=$WEBEAR__NTRIALS  WEBEAR__LOOKAHEAD=$WEBEAR__LOOKAHEAD  WEBEAR__OPTIMIZE=$WEBEAR__OPTIMIZE  DATASET-ID=$WEBEAR__DATASET_ID  TIMEOUT=$WEBEAR__TIMEOUT  WEBEAR__OUTPUT_DIR=$WEBEAR__OUTPUT_DIR"
@@ -70,6 +70,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --optimize "$WEBEAR__OPTIMIZE" \
       --n-trials "$WEBEAR__NTRIALS" \
       --output-dir "$WEBEAR__OUTPUT_DIR" \
+      --verbose \
       --timeout "$WEBEAR__TIMEOUT" &
     PIDS+=($!)
 done
