@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "❌ Option inconnue : $1"
-      echo "Options valides : --trials, --lookahead, --metric, --dataset-id, --timeout, --put-strike-pct, --call-strike-pct"
+      echo "Options valides : --trials, --lookahead, --metric, --dataset-id, --timeout, --win-threshold"
       exit 1
       ;;
   esac
