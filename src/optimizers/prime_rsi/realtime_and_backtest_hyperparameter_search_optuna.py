@@ -1034,7 +1034,7 @@ def setup_argparse() -> argparse.ArgumentParser:
                             help='Real-time mode: test latest datapoint with specified model')
     flag_group.add_argument('--model-path', type=str, default=None,
                             help='Path to saved model .pkl file (required for real-time mode, optional for evaluation)')
-    flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
+    flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False, help='Short real-time output')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
     flag_group.add_argument('--plot', action='store_true', default=False, help='Plot results with matplotlib')
@@ -1233,7 +1233,7 @@ def entry(args):
             ),
             n_trials=args.n_trials,
             timeout=args.timeout,
-            show_progress_bar=args.verbose,
+            show_progress_bar=False,
             callbacks=[early_stop_on_perfect_success],
         )
 
