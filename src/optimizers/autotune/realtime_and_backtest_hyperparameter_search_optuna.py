@@ -713,7 +713,7 @@ def entry(args):
     # 💾 SAVE MODEL
     os.makedirs(output_dir, exist_ok=True)
     w, bw, th, la, op = best_params['window'], best_params['bandwidth'], best_params['threshold'], best_params['lookahead_bars'], optimize
-    model_name = f"autotune_model_w{w}_bw{bw:.3f}_th{th:.3f}_la{la}_{op}____{score_of_best_trial}.pkl"
+    model_name = f"autotune_model_w{w}_bw{bw:.3f}_th{th:.3f}___la{la}_{op}_{win_threshold}___{score_of_best_trial}__{train_win_rate}_{validation_win_rate}.pkl"
     model_path = os.path.join(output_dir, model_name)
 
     model_data = {
