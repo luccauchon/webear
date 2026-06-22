@@ -1115,7 +1115,7 @@ def entry(args):
     if args.real_time:
         return real_time_mode(args, close_col, high_col, low_col)
     assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
-    print_startup_banner(args)
+    if args.verbose: print_startup_banner(args)
     # Default params (used if not optimizing)
     params = {'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5}
 
@@ -1144,9 +1144,9 @@ def entry(args):
         # Ensure minimum data in each split
         min_bars = 1  # Adjust based on your strategy's warmup needs
         if split_idx < min_bars:
-            print(f"⚠️  Train split too small ({split_idx} < {min_bars}), using full dataset")
+            if args.verbose: print(f"⚠️  Train split too small ({split_idx} < {min_bars}), using full dataset")
         elif len(df_base) - split_idx < min_bars:
-            print(f"⚠️  Validation split too small ({len(df_base) - split_idx} < {min_bars}), using full dataset")
+            if args.verbose: print(f"⚠️  Validation split too small ({len(df_base) - split_idx} < {min_bars}), using full dataset")
         else:
             df_train = df_base.iloc[:split_idx].copy()
             df_val = df_base.iloc[split_idx:].copy()
@@ -1186,10 +1186,11 @@ def entry(args):
             f"la{args.lookahead_bars}_"
             f"{args.method}"
         )
-        print(f"\n🔍 Initializing Optuna study: {study_name}")
-        print(f"   📂 Storage: {db_path_display}")
+        if args.verbose:
+            print(f"\n🔍 Initializing Optuna study: {study_name}")
+            print(f"   📂 Storage: {db_path_display}")
         if df_val is not None:
-            print(f"   🔄 Optimizing on TRAINING set only (validation held out)")
+            if args.verbose: print(f"   🔄 Optimizing on TRAINING set only (validation held out)")
 
         # Create or load the study
         study = optuna.create_study(
@@ -1217,7 +1218,7 @@ def entry(args):
             print("─" * 80)
             print(f"   🔄 Will append {args.n_trials} additional trials to the existing study...\n")
         else:
-            print("📦 No stored trials found. Initializing fresh optimization run.\n")
+            if args.verbose: print("📦 No stored trials found. Initializing fresh optimization run.\n")
 
         # ==============================================================================
         # 🚀 RUN OPTIMIZATION
@@ -1238,11 +1239,12 @@ def entry(args):
         )
 
         best_trial = study.best_trial
-        print(f"\n✅ Optimization Complete!")
-        print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
-        print("   🧠 Best Hyperparameters:")
+        if args.verbose:
+            print(f"\n✅ Optimization Complete!")
+            print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
+            print("   🧠 Best Hyperparameters:")
         for k, v in best_trial.params.items():
-            print(f"      {k}: {v}")
+            if args.verbose: print(f"      {k}: {v}")
             params[k] = v
 
         # ==============================================================================
@@ -1291,7 +1293,7 @@ def entry(args):
         validation_score = None
 
     # Final Evaluation & Output on FULL dataset (unless in real-time mode)
-    print(f"\n⚙️  Running final evaluation with params: {params}")
+    if args.verbose: print(f"\n⚙️  Running final evaluation with params: {params}")
     buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df_final = \
         run_strategy_and_evaluate(df_base, args, close_col, high_col, low_col, **params)
 
