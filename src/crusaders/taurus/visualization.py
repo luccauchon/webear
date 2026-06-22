@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
 from datetime import datetime
+import os
 
 
 # ---------- IO helpers ----------
@@ -254,7 +255,7 @@ def parse_args():
 
 
 def entry(args):
-    if not args.filepath.exists():
+    if not os.path.exists(args.filepath):
         print(f"❌ File not found: {args.filepath}");
         return
 
