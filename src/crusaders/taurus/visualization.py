@@ -20,6 +20,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
+from datetime import datetime
 
 
 # ---------- IO helpers ----------
@@ -213,7 +214,12 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
     fig.update_xaxes(title_text="Threshold (target / current price)")
 
     # --- STANDALONE HTML EXPORT ---
-    out_html = Path('credit_spread_interactive.html').resolve()
+    current_date = datetime.now()
+
+    # Format the date as YYYY_MM_DD
+    date_string = current_date.strftime("%Y_%m_%d")
+
+    out_html = Path(f'credit_spread_interactive_{date_string}.html').resolve()
 
     # include_plotlyjs=True bakes the entire JS library into the file.
     # This guarantees it works 100% offline as a single standalone file.
@@ -248,7 +254,6 @@ def parse_args():
 
 
 def entry(args):
-    args.filepath = Path('taurus_report_2026_06_22.json')
     if not args.filepath.exists():
         print(f"❌ File not found: {args.filepath}");
         return
