@@ -48,6 +48,10 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             if _indicator == "prime_rsi":
                 prime_rsi_args = _args
                 all_results_computed.extend(prime_rsi_player(prime_rsi_args))
+            if _indicator == "autotune":
+                prime_rsi_args = _args
+                all_results_computed.extend(autotune_player(prime_rsi_args))
+
     out__shared.put(all_results_computed)
 
 
@@ -203,6 +207,12 @@ def entry(args):
                 assert os.path.exists(target_file)
                 prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
                 use_cases.append({'indicator': 'prime_rsi', 'args': prime_rsi_args})
+        for root, dirs, files in os.walk(autotune_target_dir):
+            for file in files:
+                target_file = os.path.join(str(root), str(file))
+                assert os.path.exists(target_file)
+                autotune_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
+                use_cases.append({'indicator': 'autotune', 'args': autotune_args})
         # Variables partagées
         use_cases__shared, master_cmd__shared = Queue(99999), Value("i", 0)
         out__shared = [Queue(1) for k in range(0, nb_worker)]

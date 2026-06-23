@@ -175,6 +175,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
                         "threshold": threshold, "method": optimization_target, "app": "AutoTune"})
     return results
 
+
 # =============================================================================
 # 1. MAIN
 # =============================================================================
