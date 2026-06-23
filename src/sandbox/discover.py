@@ -1,3 +1,14 @@
+try:
+    from version import sys__name, sys__version
+except ImportError:
+    # Fallback: dynamically add parent directory to path if 'version' module isn't found
+    import sys
+    import pathlib
+
+    current_dir = pathlib.Path(__file__).resolve()
+    parent_dir = current_dir.parent.parent
+    sys.path.insert(0, str(parent_dir))
+    from version import sys__name, sys__version
 import os
 import argparse
 import numpy as np
@@ -15,7 +26,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.svm import SVR
 from sklearn.neighbors import KNeighborsRegressor
 from xgboost import XGBRegressor
-
+import time
 from curl_cffi import requests
 import urllib3
 from constants import FRED_API_KEY, IS_RUNNING_IREQ
@@ -463,8 +474,8 @@ def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dic
 
 def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) -> float:
     """Optuna objective with conditional hyperparameters for the specified model."""
-    mow, pow_val = -0.25, 0.25
-
+    # mow, pow_val = -0.25, 0.25
+    t1 = time.time()
     params = {
         "rank_window": trial.suggest_int("rank_window", 50, 1000),
         "zscore_window": trial.suggest_int("zscore_window", 20, 500),
@@ -477,11 +488,18 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
         "value_of_roll_yield_curve": trial.suggest_int("value_of_roll_yield_curve", 20, 500),
         "value_of_roll_fc": trial.suggest_int("value_of_roll_fc", 20, 500),
         "value_of_roll_final_score": trial.suggest_int("value_of_roll_final_score", 20, 500),
-        "trend_score_weight": trial.suggest_float("trend_score_weight", 0.25 + mow, 0.35 + pow_val),
-        "volume_score_weight": trial.suggest_float("volume_score_weight", 0.20 + mow, 0.30 + pow_val),
-        "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15 + mow, 0.25 + pow_val),
-        "curve_score_weight": trial.suggest_float("curve_score_weight", 0.10 + mow, 0.20 + pow_val),
-        "fc_score_weight": trial.suggest_float("fc_score_weight", 0.05 + mow, 0.15 + pow_val),
+
+        # "trend_score_weight": trial.suggest_float("trend_score_weight", 0.25 + mow, 0.35 + pow_val),
+        # "volume_score_weight": trial.suggest_float("volume_score_weight", 0.20 + mow, 0.30 + pow_val),
+        # "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15 + mow, 0.25 + pow_val),
+        # "curve_score_weight": trial.suggest_float("curve_score_weight", 0.10 + mow, 0.20 + pow_val),
+        # "fc_score_weight": trial.suggest_float("fc_score_weight", 0.05 + mow, 0.15 + pow_val),
+        "trend_score_weight":  trial.suggest_float("trend_score_weight", 0.65, 0.65),
+        "volume_score_weight": trial.suggest_float("volume_score_weight", 0.45, 0.45),
+        "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15, 0.15),
+        "curve_score_weight":  trial.suggest_float("curve_score_weight", 0.10, 0.10),
+        "fc_score_weight":     trial.suggest_float("fc_score_weight", 0.05, 0.05),
+
         "lookahead_bars": trial.suggest_int("lookahead_bars", kwargs['lookahead_bars'], kwargs['lookahead_bars']),
         "epsilon": trial.suggest_float("epsilon", kwargs['epsilon'], kwargs['epsilon']),
         "density": trial.suggest_float("density", kwargs['density'], kwargs['density']),
@@ -528,7 +546,7 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
     tscv = TimeSeriesSplit(n_splits=5)
     sharpe_scores = []
 
-    # FIXED: Split directly on valid_df to guarantee clean, contiguous time-series folds
+    # Split directly on valid_df to guarantee clean, contiguous time-series folds
     for train_idx, val_idx in tscv.split(valid_df):
         df_train = valid_df.iloc[train_idx]
         df_val = valid_df.iloc[val_idx]
@@ -547,12 +565,13 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
             model.fit(X_train_s, y_train)
             y_pred = model.predict(X_val_s)
 
-            # Use the centralized metric calculator (removed the dead weighted_sharpe code)
+            # Use the centralized metric calculator
             _, _, sharpe = _calculate_metrics(y_val, y_pred, params)
             sharpe_scores.append(sharpe)
         except Exception:
             continue
 
+    t2 = time.time()
     return np.mean(sharpe_scores) if sharpe_scores else -1e9
 
 
