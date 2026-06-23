@@ -707,12 +707,12 @@ def entry(args=None):
         return
 
     # --- STANDARD OPTIMIZATION MODE ---
-    train_val_split_ratio = args.train_val_split_ratio
-    lookahead_bars = args.lookahead_bars
-    epsilon = args.epsilon
-    density = args.density
-    n_trials = args.n_trials
-    timeout = args.timeout
+    train_val_split_ratio = float(args.train_val_split_ratio)
+    lookahead_bars = int(args.lookahead_bars)
+    epsilon = float(args.epsilon)
+    density = float(args.density)
+    n_trials = int(args.n_trials)
+    timeout = int(args.timeout)
     model_type = args.model  # User-specified model
 
     df = load_data(filename=args.data_filename)
