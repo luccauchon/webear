@@ -674,8 +674,6 @@ def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, predic
     df_feat['forward_return'] = (df_feat["ground_truth_spx"] / df_feat["spx"]) - 1.0
 
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
-    if len(valid_df) < 20:
-        return "Unknown", 0.0, 0.0
 
     X_train = valid_df[features]
     y_train = valid_df['forward_return']
@@ -737,7 +735,7 @@ def entry(args=None):
 
         print(f"Loading model from {args.model_path}...")
         model_data = joblib.load(args.model_path)
-
+        timeframe = model_data['params']['timeframe']
         model = model_data["model"]
         scaler = model_data["scaler"]
         params = model_data["params"]
@@ -746,29 +744,31 @@ def entry(args=None):
         max_abs_ret = model_data["max_abs_ret"]
 
         # Display Train vs Test results
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 73)
         print("MODEL PERFORMANCE SUMMARY (Train vs Test)")
-        print("=" * 70)
-        print(f"{'Metric':<22} | {'Train':<18} | {'Test':<18}")
-        print("-" * 70)
+        print("=" * 73)
+        print(f"{'Metric':<22} | {'Train':<18} | {'Test':<18} | {'All':<18}")
+        print("-" * 73)
 
+        all_r2 = model_data.get("all_r2")
         train_r2 = model_data.get("train_r2")
         test_r2 = model_data.get("test_r2")
         train_wr = model_data.get("train_wr")
         test_wr = model_data.get("test_wr")
+        all_wr = model_data.get("all_wr")
         train_sharpe = model_data.get("train_sharpe")
         test_sharpe = model_data.get("test_sharpe")
-
+        all_sharpe = model_data.get("all_sharpe")
         def fmt(val, is_pct=False):
             if val is None:
                 return "N/A"
             return f"{val:.2%}" if is_pct else f"{val:.4f}"
 
-        print(f"{'R-squared':<22} | {fmt(train_r2):<18} | {fmt(test_r2):<18}")
-        print(f"{'3-Class Win Rate':<22} | {fmt(train_wr, is_pct=True):<18} | {fmt(test_wr, is_pct=True):<18}")
-        print(f"{'Simulated Sharpe':<22} | {fmt(train_sharpe):<18} | {fmt(test_sharpe):<18}")
-        print("=" * 70 + "\n")
-
+        print(f"{'R-squared':<22} | {fmt(train_r2):<18} | {fmt(test_r2):<18} | {fmt(all_r2):<18}")
+        print(f"{'3-Class Win Rate':<22} | {fmt(train_wr, is_pct=True):<18} | {fmt(test_wr, is_pct=True):<18} | {fmt(all_wr, is_pct=True):<18}")
+        print(f"{'Simulated Sharpe':<22} | {fmt(train_sharpe):<18} | {fmt(test_sharpe):<18} | {fmt(all_sharpe):<18}")
+        print("=" * 73 + "\n")
+        print(f"{model_data.get('test_str_keeped')}")
         print("Fetching latest data...")
         df = load_data(filename=args.data_filename, timeframe=timeframe)
 
@@ -798,6 +798,8 @@ def entry(args=None):
                 next_date += pd.Timedelta(days=1)
 
         tomorrow_date = next_date.strftime('%Y-%m-%d')
+        if timeframe == "month":
+            tomorrow_date = next_date.strftime('%Y-%m')
         tomorrow_ml = np.clip((pred_return / max_abs_ret) * 100, -100, 100) if max_abs_ret > 1e-6 else 0.0
 
         print("\n" + "=" * 60)
@@ -837,7 +839,7 @@ def entry(args=None):
     print(f"Train&Val Set : {df_train.index[0].strftime('%Y-%m-%d')} :: {df_train.index[-1].strftime('%Y-%m-%d')} ({len(df_train)} rows)")
     print(f"Test Set      : {df_test.index[0].strftime('%Y-%m-%d')} :: {df_test.index[-1].strftime('%Y-%m-%d')} ({len(df_test)} rows)")
     print(f"LA:{lookahead_bars} | Epsilon:{epsilon} | Density:{density} | Timeframe:{timeframe}")
-    print(f"\n>>> Optimizing {model_type.upper()} Model via Walk-Forward Validation (Maximizing Sharpe Ratio) <<<\n")
+    print(f"\n>>> Optimizing {model_type.upper()} Model with Walk-Forward Validation (Maximizing Sharpe Ratio) <<<\n")
     study = optuna.create_study(direction="maximize")
     print("Starting Optuna optimization on Training Set (5-fold TimeSeriesSplit)...")
 
@@ -863,23 +865,22 @@ def entry(args=None):
 
     print("\n--- Evaluating on Training and Hold-Out Test Set ---")
     train_r2, train_wr, train_sharpe, train_correct_direction, test_r2, test_wr, test_sharpe, test_correction_direction = evaluate_datasets(df_train, df_test, best_params, features, best_model_type)
+    alldata_r2, alldata_wr, alldata_sharpe, alldata_correct_direction, train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2 = evaluate_datasets(df, df_train, best_params, features, best_model_type)
+    recomputed_test_win_rate = np.mean(alldata_correct_direction.reindex(df_test.index))
     if train_wr in [0.] and test_wr in [0.] and train_r2 in [-1e9] and train_sharpe in [-1e9] and test_sharpe in [-1e9]:
-        alldata_r2, alldata_wr, alldata_sharpe, alldata_correct_direction, train_r2, train_wr, train_sharpe, train_correction_direction = evaluate_datasets(df, df_train, best_params, features, best_model_type)
-        print("\n--- Cannot evaluate on Test Set ---")
-        print(f"* All DF Set R-squared           : {alldata_r2:.4f}")
-        print(f"* All DF Set 3-Class Win Rate    : {alldata_wr:.2%}")
-        print(f"* All DF Set Simulated Sharpe    : {alldata_sharpe:.4f}")
-        print(f"* Train Set R-squared            : {train_r2:.4f}")
-        print(f"* Train Set 3-Class Win Rate     : {train_wr:.2%}")
-        print(f"* Train Set Simulated Sharpe     : {train_sharpe:.4f}")
-        print(f"*** Win Rate on the Test Dataset : {np.mean(alldata_correct_direction.reindex(df_test.index)):.2%}   ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})")
-    else:
-        print(f"Train Set R-squared        : {train_r2:.4f}")
-        print(f"Train Set 3-Class Win Rate : {train_wr:.2%}")
-        print(f"Train Set Simulated Sharpe : {train_sharpe:.4f}")
-        print(f"Test Set R-squared         : {test_r2:.4f}")
-        print(f"Test Set 3-Class Win Rate  : {test_wr:.2%}")
-        print(f"Test Set Simulated Sharpe  : {test_sharpe:.4f}")
+        train_r2, train_wr, train_sharpe, train_correct_direction = train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2
+        test_wr = recomputed_test_win_rate
+    _test_str_keeped =f"*** Win Rate on the Test Dataset : {recomputed_test_win_rate:.2%}  (recomputed) ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})"
+    print(f"* All DF Set R-squared           : {alldata_r2:.4f}")
+    print(f"* All DF Set 3-Class Win Rate    : {alldata_wr:.2%}")
+    print(f"* All DF Set Simulated Sharpe    : {alldata_sharpe:.4f}")
+    print(f"* Train Set R-squared            : {train_r2:.4f}")
+    print(f"* Train Set 3-Class Win Rate     : {train_wr:.2%}")
+    print(f"* Train Set Simulated Sharpe     : {train_sharpe:.4f}")
+    print(f"* Test Set R-squared             : {test_r2:.4f}")
+    print(f"* Test Set 3-Class Win Rate      : {test_wr:.2%}")
+    print(f"* Test Set Simulated Sharpe      : {test_sharpe:.4f}")
+    print(_test_str_keeped)
 
     # --- SAVE THE OPTIMIZED MODEL ---
     print("\n" + "=" * 60)
@@ -909,12 +910,17 @@ def entry(args=None):
         "model_type": best_model_type,
         "features": __FEATURES__,
         "max_abs_ret": max_abs_ret,
+        "all_r2": alldata_r2,
+        "all_wr": alldata_wr,
+        "all_sharpe": alldata_sharpe,
         "train_r2": train_r2,
         "train_wr": train_wr,
         "train_sharpe": train_sharpe,
         "test_r2": test_r2,
         "test_wr": test_wr,
-        "test_sharpe": test_sharpe
+        "test_sharpe": test_sharpe,
+        "recomputed_test_win_rate": recomputed_test_win_rate,
+        "test_str_keeped": _test_str_keeped,
     }
     joblib.dump(model_data, model_filename)
     print(f"Model successfully saved to '{model_filename}'")
