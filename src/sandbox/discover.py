@@ -72,7 +72,17 @@ def _calculate_metrics(y_true: pd.Series, y_pred: np.ndarray, params: dict) -> t
 
     mean_ret = np.mean(strategy_returns)
     std_ret = np.std(strategy_returns) + 1e-8
-    sharpe_ratio = (mean_ret / std_ret) * np.sqrt(252 / params["lookahead_bars"])
+
+    # Adjust annualization factor based on timeframe
+    timeframe = params.get("timeframe", "day")
+    if timeframe == "week":
+        periods_per_year = 52
+    elif timeframe == "month":
+        periods_per_year = 12
+    else:
+        periods_per_year = 252
+
+    sharpe_ratio = (mean_ret / std_ret) * np.sqrt(periods_per_year / params["lookahead_bars"])
 
     density = params.get("density", 0.15)
     active_days = np.sum(positions != 0)
@@ -80,7 +90,7 @@ def _calculate_metrics(y_true: pd.Series, y_pred: np.ndarray, params: dict) -> t
     penalty = max(0, density - activity_ratio)
     sharpe_ratio -= penalty * 10
 
-    return r2_score(y_true, y_pred), win_rate, sharpe_ratio
+    return r2_score(y_true, y_pred), win_rate, sharpe_ratio, correct_direction
 
 
 def get_parser():
@@ -90,16 +100,23 @@ def get_parser():
     )
 
     parser.add_argument(
+        "--timeframe",
+        type=str,
+        default="day",
+        choices=["day", "week", "month"],
+        help="Timeframe for the data: day, week, or month (default: day)"
+    )
+    parser.add_argument(
         "--model",
         type=str,
-        default="random_forest",
+        default="ridge",
         choices=["ridge", "lasso", "random_forest", "gradient_boosting", "extra_trees", "svr", "knn", "xgboost"],
         help="Model to use for prediction. Options: ridge, lasso, random_forest, gradient_boosting, extra_trees, svr, knn, xgboost (default: random_forest)"
     )
     parser.add_argument(
         "--train-val-split-ratio",
         type=float,
-        default=0.7,
+        default=0.8,
         help="Ratio of data to use for training and validation (default: 0.7)"
     )
     parser.add_argument(
@@ -141,7 +158,7 @@ def get_parser():
     parser.add_argument(
         "--skip-tomorrow",
         action="store_true",
-        help="Skip the 'Tomorrow's Market Anticipation' section in the final output."
+        help="Skip the 'Next Period Market Anticipation' section in the final output."
     )
     parser.add_argument(
         "--real-time",
@@ -158,11 +175,11 @@ def get_parser():
     return parser
 
 
-def load_data(filename: str = None) -> pd.DataFrame:
+def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
     """Loads market data from disk or fetches it from Yahoo Finance and FRED."""
     if filename is None:
         current_date_str = datetime.now().strftime("%Y%m%d")
-        filename = f"market_data_{current_date_str}.csv"
+        filename = f"market_data_{timeframe}_{current_date_str}.csv"
 
     if os.path.exists(filename):
         print(f"File '{filename}' exists. Reloading data from disk...")
@@ -180,14 +197,22 @@ def load_data(filename: str = None) -> pd.DataFrame:
 
             # Yahoo Finance Data (Passing the non-verified curl_cffi session)
             spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True, session=session)
-            spx, spx_vol = spx_data["Close"].squeeze(), spx_data["Volume"].squeeze()
+            spx_open = spx_data["Open"].squeeze()
+            spx_high = spx_data["High"].squeeze()
+            spx_low = spx_data["Low"].squeeze()
+            spx = spx_data["Close"].squeeze()
+            spx_vol = spx_data["Volume"].squeeze()
             vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True, session=session)["Close"].squeeze()
             hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True, session=session)["Close"].squeeze()
             lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True, session=session)["Close"].squeeze()
         else:
             # Yahoo Finance Data
             spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True)
-            spx, spx_vol = spx_data["Close"].squeeze(), spx_data["Volume"].squeeze()
+            spx_open = spx_data["Open"].squeeze()
+            spx_high = spx_data["High"].squeeze()
+            spx_low = spx_data["Low"].squeeze()
+            spx = spx_data["Close"].squeeze()
+            spx_vol = spx_data["Volume"].squeeze()
             vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True)["Close"].squeeze()
             hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
             lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
@@ -202,6 +227,9 @@ def load_data(filename: str = None) -> pd.DataFrame:
 
         # Align and merge data
         df = pd.DataFrame(index=spx.index)
+        df["spx_open"] = spx_open
+        df["spx_high"] = spx_high
+        df["spx_low"] = spx_low
         df["spx"] = spx
         df["spx_vol"] = spx_vol
         df["vix"] = vix
@@ -213,6 +241,34 @@ def load_data(filename: str = None) -> pd.DataFrame:
 
         # Filter to post-2008 financial crisis data and forward-fill missing values
         df = df.loc["2008-01-01":].ffill()
+
+        # Resample to Week or Month if requested
+        if timeframe != 'day':
+            if timeframe == 'week':
+                rule = 'W-FRI'
+            else:
+                # Handle pandas version differences for month-end ('ME' vs 'M')
+                try:
+                    pd.Series([1], index=pd.date_range('2020-01-01', periods=1)).resample('ME').sum()
+                    rule = 'ME'
+                except ValueError:
+                    rule = 'M'
+
+            agg_funcs = {
+                'spx_open': 'first',
+                'spx_high': 'max',
+                'spx_low': 'min',
+                'spx': 'last',
+                'spx_vol': 'sum',
+                'vix': 'last',
+                'hyg': 'last',
+                'lqd': 'last',
+                'curve': 'last',
+                'baa10y': 'last',
+                'nfci': 'last'
+            }
+            df = df.resample(rule).agg(agg_funcs).dropna()
+
         df.to_csv(filename)
         print(f"Data successfully saved to '{filename}'")
 
@@ -314,10 +370,10 @@ def compute_features(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     final_score = (raw_score - raw_score.rolling(final_win).mean()) / raw_score.rolling(final_win).std()
 
     # --- NEW PERTINENT FEATURES (Momentum, Diff, Shift) ---
-    df["spx_momentum_21d"] = df["spx"].pct_change(21)
-    df["vix_diff_5d"] = df["vix"].diff(5)
-    df["credit_ratio_diff_10d"] = hyg_lqd.diff(10)
-    df["curve_diff_20d"] = df["curve"].diff(20)
+    df["spx_momentum_21d"] = df["spx"].pct_change(params["spx_momentum_21d"])
+    df["vix_diff_5d"] = df["vix"].diff(params["vix_diff_5d"])
+    df["credit_ratio_diff_10d"] = hyg_lqd.diff(params["credit_ratio_diff_10d"])
+    df["curve_diff_20d"] = df["curve"].diff(params["curve_diff_20d"])
     df["spx_return_1d_lag"] = df["spx"].pct_change(1).shift(1)
     # --------------------------------------------------------
 
@@ -445,9 +501,6 @@ def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dic
     df_test_feat['forward_return'] = (df_test_feat["ground_truth_spx"] / df_test_feat["spx"]) - 1.0
     valid_test = df_test_feat.dropna(subset=features + ['forward_return'])
 
-    if len(valid_train) < 100 or len(valid_test) < 100:
-        return -1e9, 0.0, -1e9, -1e9, 0.0, -1e9
-
     X_train, y_train = valid_train[features], valid_train['forward_return']
     X_test, y_test = valid_test[features], valid_test['forward_return']
 
@@ -461,49 +514,87 @@ def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dic
 
         # Evaluate on Train
         y_pred_train = model.predict(X_train_s)
-        train_r2, train_wr, train_sharpe = _calculate_metrics(y_train, y_pred_train, params)
+        train_r2, train_wr, train_sharpe, train_correct_direction = _calculate_metrics(y_train, y_pred_train, params)
 
         # Evaluate on TEST (Out-of-sample)
         y_pred_test = model.predict(X_test_s)
-        test_r2, test_wr, test_sharpe = _calculate_metrics(y_test, y_pred_test, params)
+        test_r2, test_wr, test_sharpe, test_correction_direction = _calculate_metrics(y_test, y_pred_test, params)
 
-        return train_r2, train_wr, train_sharpe, test_r2, test_wr, test_sharpe
+        return train_r2, train_wr, train_sharpe, train_correct_direction, test_r2, test_wr, test_sharpe, test_correction_direction
     except Exception:
-        return -1e9, 0.0, -1e9, -1e9, 0.0, -1e9
+        return -1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0
 
 
 def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) -> float:
     """Optuna objective with conditional hyperparameters for the specified model."""
-    # mow, pow_val = -0.25, 0.25
     t1 = time.time()
-    params = {
-        "rank_window": trial.suggest_int("rank_window", 50, 1000),
-        "zscore_window": trial.suggest_int("zscore_window", 20, 500),
-        "value_of_ma50": trial.suggest_int("value_of_ma50", 10, 100),
-        "value_of_ma200": trial.suggest_int("value_of_ma200", 100, 300),
-        "trend_raw_weight_1": trial.suggest_float("trend_raw_weight_1", 0.0, 1.0, step=0.01),
-        "trend_raw_weight_2": trial.suggest_float("trend_raw_weight_2", 0.0, 1.0, step=0.01),
-        "value_of_roll_volatility": trial.suggest_int("value_of_roll_volatility", 20, 500),
-        "value_of_roll_credit_score": trial.suggest_int("value_of_roll_credit_score", 20, 500),
-        "value_of_roll_yield_curve": trial.suggest_int("value_of_roll_yield_curve", 20, 500),
-        "value_of_roll_fc": trial.suggest_int("value_of_roll_fc", 20, 500),
-        "value_of_roll_final_score": trial.suggest_int("value_of_roll_final_score", 20, 500),
 
-        # "trend_score_weight": trial.suggest_float("trend_score_weight", 0.25 + mow, 0.35 + pow_val),
-        # "volume_score_weight": trial.suggest_float("volume_score_weight", 0.20 + mow, 0.30 + pow_val),
-        # "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15 + mow, 0.25 + pow_val),
-        # "curve_score_weight": trial.suggest_float("curve_score_weight", 0.10 + mow, 0.20 + pow_val),
-        # "fc_score_weight": trial.suggest_float("fc_score_weight", 0.05 + mow, 0.15 + pow_val),
-        "trend_score_weight":  trial.suggest_float("trend_score_weight", 0.65, 0.65),
-        "volume_score_weight": trial.suggest_float("volume_score_weight", 0.45, 0.45),
-        "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15, 0.15),
-        "curve_score_weight":  trial.suggest_float("curve_score_weight", 0.10, 0.10),
-        "fc_score_weight":     trial.suggest_float("fc_score_weight", 0.05, 0.05),
+    # Dynamically cap rolling windows based on dataset size to prevent all-NaN features
+    max_window = max(10, len(df) // 2)
+    max_ma = max(5, len(df) // 4)
+    max_ma200 = min(max_ma * 2, len(df) - 2)
+    if max_ma200 <= max_ma:
+        max_ma200 = max_ma + 1
+    max_diff = max(1, len(df) // 10)
 
-        "lookahead_bars": trial.suggest_int("lookahead_bars", kwargs['lookahead_bars'], kwargs['lookahead_bars']),
-        "epsilon": trial.suggest_float("epsilon", kwargs['epsilon'], kwargs['epsilon']),
-        "density": trial.suggest_float("density", kwargs['density'], kwargs['density']),
-    }
+    if kwargs["timeframe"] == "day":
+        params = {
+            "timeframe": kwargs["timeframe"],
+            "rank_window": trial.suggest_int("rank_window", 50, min(1000, max_window)),
+            "zscore_window": trial.suggest_int("zscore_window", 20, min(500, max_window)),
+            "value_of_ma50": trial.suggest_int("value_of_ma50", 10, min(100, max_ma)),
+            "value_of_ma200": trial.suggest_int("value_of_ma200", min(100, max_ma) + 1, min(300, max_ma200)),
+            "trend_raw_weight_1": trial.suggest_float("trend_raw_weight_1", 0.0, 1.0, step=0.01),
+            "trend_raw_weight_2": trial.suggest_float("trend_raw_weight_2", 0.0, 1.0, step=0.01),
+            "value_of_roll_volatility": trial.suggest_int("value_of_roll_volatility", 20, min(500, max_window)),
+            "value_of_roll_credit_score": trial.suggest_int("value_of_roll_credit_score", 20, min(500, max_window)),
+            "value_of_roll_yield_curve": trial.suggest_int("value_of_roll_yield_curve", 20, min(500, max_window)),
+            "value_of_roll_fc": trial.suggest_int("value_of_roll_fc", 20, min(500, max_window)),
+            "value_of_roll_final_score": trial.suggest_int("value_of_roll_final_score", 20, min(500, max_window)),
+
+            "trend_score_weight": trial.suggest_float("trend_score_weight", 0.65, 0.65),
+            "volume_score_weight": trial.suggest_float("volume_score_weight", 0.45, 0.45),
+            "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15, 0.15),
+            "curve_score_weight": trial.suggest_float("curve_score_weight", 0.10, 0.10),
+            "fc_score_weight": trial.suggest_float("fc_score_weight", 0.05, 0.05),
+
+            "lookahead_bars": trial.suggest_int("lookahead_bars", kwargs['lookahead_bars'], kwargs['lookahead_bars']),
+            "epsilon": trial.suggest_float("epsilon", kwargs['epsilon'], kwargs['epsilon']),
+            "density": trial.suggest_float("density", kwargs['density'], kwargs['density']),
+        }
+        params["spx_momentum_21d"] = trial.suggest_int("spx_momentum_21d", min(21, max_diff), min(21, max_diff))
+        params["vix_diff_5d"] = trial.suggest_int("vix_diff_5d", min(5, max_diff), min(5, max_diff))
+        params["credit_ratio_diff_10d"] = trial.suggest_int("credit_ratio_diff_10d", min(10, max_diff), min(10, max_diff))
+        params["curve_diff_20d"] = trial.suggest_int("curve_diff_20d", min(20, max_diff), min(20, max_diff))
+    else:
+        params = {
+            "timeframe": kwargs["timeframe"],
+            "rank_window": trial.suggest_int("rank_window", 3, max_window),
+            "zscore_window": trial.suggest_int("zscore_window", 3, max_window),
+            "value_of_ma50": trial.suggest_int("value_of_ma50", 2, max_ma),
+            "value_of_ma200": trial.suggest_int("value_of_ma200", max_ma + 1, max_ma200),
+            "trend_raw_weight_1": trial.suggest_float("trend_raw_weight_1", 0.0, 1.0, step=0.01),
+            "trend_raw_weight_2": trial.suggest_float("trend_raw_weight_2", 0.0, 1.0, step=0.01),
+            "value_of_roll_volatility": trial.suggest_int("value_of_roll_volatility", 3, max_window),
+            "value_of_roll_credit_score": trial.suggest_int("value_of_roll_credit_score", 3, max_window),
+            "value_of_roll_yield_curve": trial.suggest_int("value_of_roll_yield_curve", 3, max_window),
+            "value_of_roll_fc": trial.suggest_int("value_of_roll_fc", 3, max_window),
+            "value_of_roll_final_score": trial.suggest_int("value_of_roll_final_score", 3, max_window),
+
+            "trend_score_weight": trial.suggest_float("trend_score_weight", 0.65, 0.65),
+            "volume_score_weight": trial.suggest_float("volume_score_weight", 0.45, 0.45),
+            "credit_score_weight": trial.suggest_float("credit_score_weight", 0.15, 0.15),
+            "curve_score_weight": trial.suggest_float("curve_score_weight", 0.10, 0.10),
+            "fc_score_weight": trial.suggest_float("fc_score_weight", 0.05, 0.05),
+
+            "lookahead_bars": trial.suggest_int("lookahead_bars", kwargs['lookahead_bars'], kwargs['lookahead_bars']),
+            "epsilon": trial.suggest_float("epsilon", kwargs['epsilon'], kwargs['epsilon']),
+            "density": trial.suggest_float("density", kwargs['density'], kwargs['density']),
+        }
+        params["spx_momentum_21d"] = trial.suggest_int("spx_momentum_21d", 1, min(21, max_diff))
+        params["vix_diff_5d"] = trial.suggest_int("vix_diff_5d", 1, min(5, max_diff))
+        params["credit_ratio_diff_10d"] = trial.suggest_int("credit_ratio_diff_10d", 1, min(10, max_diff))
+        params["curve_diff_20d"] = trial.suggest_int("curve_diff_20d", 1, min(20, max_diff))
 
     params["model_type"] = model_type
 
@@ -538,11 +629,11 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
     features = __FEATURES__
     df_feat = compute_features(df, params)
     df_feat['forward_return'] = (df_feat["ground_truth_spx"] / df_feat["spx"]) - 1.0
+
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
 
-    if len(valid_df) < 100:
+    if len(valid_df) < 6:
         return -1e9
-
     tscv = TimeSeriesSplit(n_splits=5)
     sharpe_scores = []
 
@@ -551,7 +642,7 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
         df_train = valid_df.iloc[train_idx]
         df_val = valid_df.iloc[val_idx]
 
-        if len(df_train) < 50 or len(df_val) < 50:
+        if len(df_train) < 3 or len(df_val) < 3:
             continue
 
         X_train, y_train = df_train[features], df_train['forward_return']
@@ -566,7 +657,7 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
             y_pred = model.predict(X_val_s)
 
             # Use the centralized metric calculator
-            _, _, sharpe = _calculate_metrics(y_val, y_pred, params)
+            _, _, sharpe, _ = _calculate_metrics(y_val, y_pred, params)
             sharpe_scores.append(sharpe)
         except Exception:
             continue
@@ -575,7 +666,7 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
     return np.mean(sharpe_scores) if sharpe_scores else -1e9
 
 
-def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, predict_tomorrow: bool = False) -> tuple:
+def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, predict_next_period: bool = False) -> tuple:
     """Trains the final ML model on the ENTIRE dataset and outputs a scaled market score."""
     features = __FEATURES__
 
@@ -583,7 +674,7 @@ def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, predic
     df_feat['forward_return'] = (df_feat["ground_truth_spx"] / df_feat["spx"]) - 1.0
 
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
-    if len(valid_df) < 50:
+    if len(valid_df) < 20:
         return "Unknown", 0.0, 0.0
 
     X_train = valid_df[features]
@@ -593,13 +684,25 @@ def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, predic
     X_train_scaled = scaler.fit_transform(X_train) if scaler else X_train.values
     model.fit(X_train_scaled, y_train)
 
-    if predict_tomorrow:
+    if predict_next_period:
         last_row = df_feat.iloc[[-1]]
         X_last = last_row[features].ffill().bfill()
         X_last_scaled = scaler.transform(X_last) if scaler else X_last.values
         pred_return = model.predict(X_last_scaled)[0]
         latest_heuristic_score = last_row['heuristic_market_score'].iloc[0]
-        next_date = last_row.index[-1] + pd.Timedelta(days=1)
+
+        timeframe = params.get("timeframe", "day")
+        if timeframe == "week":
+            next_date = last_row.index[-1] + pd.Timedelta(weeks=1)
+        elif timeframe == "month":
+            next_date = last_row.index[-1] + pd.DateOffset(months=1)
+        else:
+            next_date = last_row.index[-1] + pd.Timedelta(days=1)
+            if next_date.weekday() == 5:  # Saturday
+                next_date += pd.Timedelta(days=2)
+            elif next_date.weekday() == 6:  # Sunday
+                next_date += pd.Timedelta(days=1)
+
         latest_date = next_date.strftime('%Y-%m-%d')
     else:
         last_valid_idx = valid_df.index[-1]
@@ -622,6 +725,8 @@ def entry(args=None):
     if args is None:
         parser = get_parser()
         args = parser.parse_args()
+
+    timeframe = args.timeframe
 
     # --- REAL-TIME PREDICTION MODE ---
     if args.real_time:
@@ -665,7 +770,7 @@ def entry(args=None):
         print("=" * 70 + "\n")
 
         print("Fetching latest data...")
-        df = load_data(filename=args.data_filename)
+        df = load_data(filename=args.data_filename, timeframe=timeframe)
 
         print("Computing features for the latest datapoint...")
         df_feat = compute_features(df, params)
@@ -677,18 +782,26 @@ def entry(args=None):
         pred_return = model.predict(X_last_scaled)[0]
         latest_heuristic_score = last_row['heuristic_market_score'].iloc[0]
 
-        # Calculate tomorrow's date, skipping weekends
-        next_date = last_row.index[-1] + pd.Timedelta(days=1)
-        if next_date.weekday() == 5:  # Saturday
-            next_date += pd.Timedelta(days=2)
-        elif next_date.weekday() == 6:  # Sunday
-            next_date += pd.Timedelta(days=1)
+        # Calculate next period's date based on timeframe
+        if timeframe == "week":
+            period_name = "Next Week's"
+            next_date = last_row.index[-1] + pd.Timedelta(weeks=1)
+        elif timeframe == "month":
+            period_name = "Next Month's"
+            next_date = last_row.index[-1] + pd.DateOffset(months=1)
+        else:
+            period_name = "Tomorrow's"
+            next_date = last_row.index[-1] + pd.Timedelta(days=1)
+            if next_date.weekday() == 5:  # Saturday
+                next_date += pd.Timedelta(days=2)
+            elif next_date.weekday() == 6:  # Sunday
+                next_date += pd.Timedelta(days=1)
 
         tomorrow_date = next_date.strftime('%Y-%m-%d')
         tomorrow_ml = np.clip((pred_return / max_abs_ret) * 100, -100, 100) if max_abs_ret > 1e-6 else 0.0
 
         print("\n" + "=" * 60)
-        print("REAL-TIME TOMORROW'S MARKET ANTICIPATION")
+        print(f"REAL-TIME {period_name.upper()} MARKET ANTICIPATION")
         print("=" * 60)
         print(f"Date of Prediction : {tomorrow_date}")
         print(f"Heuristic Score    : {latest_heuristic_score:+.1f} / 100")
@@ -715,7 +828,7 @@ def entry(args=None):
     timeout = int(args.timeout)
     model_type = args.model  # User-specified model
 
-    df = load_data(filename=args.data_filename)
+    df = load_data(filename=args.data_filename, timeframe=timeframe)
     idx = int(len(df) * train_val_split_ratio)
     df_train = df.iloc[:idx].copy()
     df_test = df.iloc[idx:].copy()
@@ -723,20 +836,20 @@ def entry(args=None):
     print(f"Total Data    : {df.index[0].strftime('%Y-%m-%d')} :: {df.index[-1].strftime('%Y-%m-%d')} ({len(df)} rows)")
     print(f"Train&Val Set : {df_train.index[0].strftime('%Y-%m-%d')} :: {df_train.index[-1].strftime('%Y-%m-%d')} ({len(df_train)} rows)")
     print(f"Test Set      : {df_test.index[0].strftime('%Y-%m-%d')} :: {df_test.index[-1].strftime('%Y-%m-%d')} ({len(df_test)} rows)")
-
+    print(f"LA:{lookahead_bars} | Epsilon:{epsilon} | Density:{density} | Timeframe:{timeframe}")
     print(f"\n>>> Optimizing {model_type.upper()} Model via Walk-Forward Validation (Maximizing Sharpe Ratio) <<<\n")
-
     study = optuna.create_study(direction="maximize")
     print("Starting Optuna optimization on Training Set (5-fold TimeSeriesSplit)...")
 
     study.optimize(
-        lambda trial: objective(trial, df_train, model_type=model_type, lookahead_bars=lookahead_bars, epsilon=epsilon, density=density),
+        lambda trial: objective(trial, df_train, model_type=model_type, lookahead_bars=lookahead_bars, epsilon=epsilon, density=density, timeframe=timeframe),
         n_trials=n_trials,
         timeout=timeout,
         show_progress_bar=True
     )
 
     best_params = study.best_params
+    best_params["timeframe"] = timeframe
     best_model_type = model_type  # Use the user-specified model
 
     print("\n--- Optimization Finished ---")
@@ -749,17 +862,24 @@ def entry(args=None):
     features = __FEATURES__
 
     print("\n--- Evaluating on Training and Hold-Out Test Set ---")
-    train_r2, train_wr, train_sharpe, test_r2, test_wr, test_sharpe = evaluate_datasets(
-        df_train, df_test, best_params, features, best_model_type
-    )
-
-    print(f"Train Set R-squared        : {train_r2:.4f}")
-    print(f"Train Set 3-Class Win Rate : {train_wr:.2%}")
-    print(f"Train Set Simulated Sharpe : {train_sharpe:.4f}")
-
-    print(f"Test Set R-squared         : {test_r2:.4f}")
-    print(f"Test Set 3-Class Win Rate  : {test_wr:.2%}")
-    print(f"Test Set Simulated Sharpe  : {test_sharpe:.4f}")
+    train_r2, train_wr, train_sharpe, train_correct_direction, test_r2, test_wr, test_sharpe, test_correction_direction = evaluate_datasets(df_train, df_test, best_params, features, best_model_type)
+    if train_wr in [0.] and test_wr in [0.] and train_r2 in [-1e9] and train_sharpe in [-1e9] and test_sharpe in [-1e9]:
+        alldata_r2, alldata_wr, alldata_sharpe, alldata_correct_direction, train_r2, train_wr, train_sharpe, train_correction_direction = evaluate_datasets(df, df_train, best_params, features, best_model_type)
+        print("\n--- Cannot evaluate on Test Set ---")
+        print(f"* All DF Set R-squared           : {alldata_r2:.4f}")
+        print(f"* All DF Set 3-Class Win Rate    : {alldata_wr:.2%}")
+        print(f"* All DF Set Simulated Sharpe    : {alldata_sharpe:.4f}")
+        print(f"* Train Set R-squared            : {train_r2:.4f}")
+        print(f"* Train Set 3-Class Win Rate     : {train_wr:.2%}")
+        print(f"* Train Set Simulated Sharpe     : {train_sharpe:.4f}")
+        print(f"*** Win Rate on the Test Dataset : {np.mean(alldata_correct_direction.reindex(df_test.index)):.2%}   ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})")
+    else:
+        print(f"Train Set R-squared        : {train_r2:.4f}")
+        print(f"Train Set 3-Class Win Rate : {train_wr:.2%}")
+        print(f"Train Set Simulated Sharpe : {train_sharpe:.4f}")
+        print(f"Test Set R-squared         : {test_r2:.4f}")
+        print(f"Test Set 3-Class Win Rate  : {test_wr:.2%}")
+        print(f"Test Set Simulated Sharpe  : {test_sharpe:.4f}")
 
     # --- SAVE THE OPTIMIZED MODEL ---
     print("\n" + "=" * 60)
@@ -781,7 +901,7 @@ def entry(args=None):
     p05 = np.percentile(y_train, 5)
     max_abs_ret = max(abs(p95), abs(p05))
 
-    model_filename = f"market_model_{best_model_type}_la{lookahead_bars}_eps{epsilon}_d{density}__{datetime.now().strftime('%Y%m%d')}.joblib"
+    model_filename = f"market_model_{best_model_type}_{timeframe}_la{lookahead_bars}_eps{epsilon}_d{density}__{datetime.now().strftime('%Y%m%d')}.joblib"
     model_data = {
         "model": final_model,
         "scaler": final_scaler,
@@ -804,7 +924,7 @@ def entry(args=None):
     print(f"LATEST MARKET PREDICTION (Retrained on Full Dataset)")
     print("=" * 60)
 
-    latest_date, heuristic_score, ml_score = predict_latest_score(df, best_params, best_model_type, predict_tomorrow=False)
+    latest_date, heuristic_score, ml_score = predict_latest_score(df, best_params, best_model_type, predict_next_period=False)
 
     print(f"Date of Prediction : {latest_date}")
     print(f"Heuristic Score    : {heuristic_score:+.1f} / 100")
@@ -821,11 +941,18 @@ def entry(args=None):
         print("Market Bias      : 🟡 NEUTRAL / CHOPPY")
 
     if not args.skip_tomorrow:
+        if timeframe == "week":
+            period_name = "Next Week's"
+        elif timeframe == "month":
+            period_name = "Next Month's"
+        else:
+            period_name = "Tomorrow's"
+
         print("\n" + "=" * 60)
-        print("TOMORROW'S MARKET ANTICIPATION")
+        print(f"{period_name.upper()} MARKET ANTICIPATION")
         print("=" * 60)
 
-        tomorrow_date, tomorrow_heuristic, tomorrow_ml = predict_latest_score(df, best_params, best_model_type, predict_tomorrow=True)
+        tomorrow_date, tomorrow_heuristic, tomorrow_ml = predict_latest_score(df, best_params, best_model_type, predict_next_period=True)
 
         print(f"Date of Prediction : {tomorrow_date}")
         print(f"Heuristic Score    : {tomorrow_heuristic:+.1f} / 100")
@@ -843,7 +970,7 @@ def entry(args=None):
         print("=" * 60)
     else:
         print("\n" + "=" * 60)
-        print("Tomorrow's market anticipation skipped (--skip-tomorrow).")
+        print("Next period market anticipation skipped (--skip-tomorrow).")
         print("=" * 60)
 
 
