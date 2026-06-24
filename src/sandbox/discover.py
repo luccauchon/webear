@@ -54,6 +54,7 @@ __FEATURES__ = [
 
 def _calculate_metrics(y_true: pd.Series, y_pred: np.ndarray, params: dict) -> tuple:
     """Helper to calculate R2, Win Rate, and Sharpe for a given true/pred pair."""
+    assert "epsilon" in params
     epsilon = params.get("epsilon", 0.001)
 
     actual_up = y_true > epsilon
