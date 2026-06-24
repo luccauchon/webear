@@ -84,7 +84,7 @@ def _calculate_metrics(y_true: pd.Series, y_pred: np.ndarray, params: dict) -> t
         periods_per_year = 252
 
     sharpe_ratio = (mean_ret / std_ret) * np.sqrt(periods_per_year / params["lookahead_bars"])
-
+    assert "density" in params
     density = params.get("density", 0.15)
     active_days = np.sum(positions != 0)
     activity_ratio = active_days / len(y_true)
