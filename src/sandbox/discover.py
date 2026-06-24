@@ -902,7 +902,7 @@ def entry(args=None):
     p05 = np.percentile(y_train, 5)
     max_abs_ret = max(abs(p95), abs(p05))
 
-    model_filename = f"market_model_{best_model_type}_{timeframe}_la{lookahead_bars}_eps{epsilon}_d{density}__{datetime.now().strftime('%Y%m%d')}.joblib"
+    model_filename = f"market_model_{best_model_type}_{timeframe}_la{lookahead_bars}_eps{epsilon}_d{density}_{train_wr:.6f}_{test_wr:.6f}__{datetime.now().strftime('%Y%m%d')}.joblib"
     model_data = {
         "model": final_model,
         "scaler": final_scaler,
