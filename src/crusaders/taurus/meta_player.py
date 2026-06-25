@@ -56,6 +56,7 @@ def parse_args():
         default=False,
         help="Enable verbose output during processing"
     )
+    parser.add_argument('--dataset-id', type=str, default='day')
     return parser.parse_args()
 
 
@@ -96,7 +97,7 @@ def entry(args):
                     prime_rsi_target_dir=None, nb_workers=None, verbose=False,
                     autotune_target_dir=None, dgdr_target_dir=None, oerh_target_dir=None,
                     load_from=save_to, save_to=None,
-                    info=["^GSPC", "::day", f"::{lookahead} "],
+                    info=["^GSPC", f"::{args.dataset_id}", f"::{lookahead} "],
                     threshold=[thresh_str], min_val_rate=None, min_train_rate=None,
                     hide_zero_signal=True, signal=None, indicator=None, method=None,
                     optimize_target=optimize_target
