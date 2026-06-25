@@ -633,9 +633,9 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
 
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
 
-    if len(valid_df) < 6:
+    if len(valid_df) < 11:
         return -1e9
-    tscv = TimeSeriesSplit(n_splits=5)
+    tscv = TimeSeriesSplit(n_splits=10)
     sharpe_scores = []
 
     # Split directly on valid_df to guarantee clean, contiguous time-series folds
@@ -842,7 +842,7 @@ def entry(args=None):
     print(f"LA:{lookahead_bars} | Epsilon:{epsilon} | Density:{density} | Timeframe:{timeframe}")
     print(f"\n>>> Optimizing {model_type.upper()} Model with Walk-Forward Validation (Maximizing Sharpe Ratio) <<<\n")
     study = optuna.create_study(direction="maximize")
-    print("Starting Optuna optimization on Training Set (5-fold TimeSeriesSplit)...")
+    print("Starting Optuna optimization on Training Set (10-fold TimeSeriesSplit)...")
 
     study.optimize(
         lambda trial: objective(trial, df_train, model_type=model_type, lookahead_bars=lookahead_bars, epsilon=epsilon, density=density, timeframe=timeframe),
