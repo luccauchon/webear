@@ -492,18 +492,18 @@ def entry(args):
             print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Validation win rate: {saved_model['validation_win_rate']:.6%}")
             print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type}")
             print(f"Datapoint used: {last_date} | Signal computed: {last_signal} {signal_str}")
-        target_price = 0.
 
+        target_price = 0.
         if last_signal != 0:
             training_score, validation_score = saved_model['train_score'], saved_model['val_score']
             if saved_model['optimize_metric'] == 'hold_floor':
                 if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    floor_price = last_price * (1 - rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY ABOVE {floor_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                    target_price = last_price * (1 - rt_win_threshold)
+                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY ABOVE {target_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'hold_ceiling':
                 if last_signal == -1. and rt_signal_type in ('short', 'both'):
-                    ceiling_price = last_price * (1 + rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY BELOW {ceiling_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+                    target_price = last_price * (1 + rt_win_threshold)
+                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY BELOW {target_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'finish_above':
                 if last_signal == 1. and rt_signal_type in ('long', 'both'):
                     target_price = last_price * (1 + rt_win_threshold)
