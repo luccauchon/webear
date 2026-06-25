@@ -195,14 +195,13 @@ def entry(args):
         print("=" * total_width)
     results = []
     for row in table_rows:
-        info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, method, thresholds = row
+        info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, method, threshold = row
         format_date = "%Y-%m-%d"
-        put_threshold, call_threshold = thresholds, thresholds
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(0) if target_price == "N/A" else float(target_price),
                         "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_win_rate.strip('%')) / 100.,
                         "val_win_rate": float(val_win_rate.strip('%')) / 100., "optimize_target": optimization_target,
-                        "threshold": f"{put_threshold}::{call_threshold}", "method": method, "app": "Prime RSI"})
+                        "threshold": f"{threshold}", "method": method, "app": "Prime RSI"})
     return results
 
 
