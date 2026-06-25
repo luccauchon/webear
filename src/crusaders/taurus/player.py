@@ -213,8 +213,9 @@ def entry(args):
                 assert os.path.exists(target_file)
                 autotune_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
                 use_cases.append({'indicator': 'autotune', 'args': autotune_args})
+        assert len(use_cases) < 256000
         # Variables partagées
-        use_cases__shared, master_cmd__shared = Queue(99999), Value("i", 0)
+        use_cases__shared, master_cmd__shared = Queue(256000), Value("i", 0)
         out__shared = [Queue(1) for k in range(0, nb_worker)]
         # Lancement des workers
         for k in range(0, nb_worker):
