@@ -25,21 +25,31 @@ def create_argument_parser() -> argparse.ArgumentParser:
         description="Sequentially runs the autotune optimizer on files in a specified directory.",
         epilog="Example: python script.py -d ./configs -e .pkl --dataset-id day --ticker ^GSPC -v"
     )
-
     parser.add_argument(
         "-d", "--target-dir",
         type=str,
         default="./models",
         help="Directory containing .pkl model files (default: ./models)"
     )
-
+    parser.add_argument(
+        "-f", "--target-files",
+        type=str,
+        nargs='+',
+        help="List of specific .pkl model files to process"
+    )
     parser.add_argument(
         "--hide-zero-signal",
         action="store_true",
         default=False,
         help="Hide rows where signal is 0 (default: False)"
     )
-
+    parser.add_argument('--dataset-id', type=str, default='day')
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose output during processing"
+    )
     return parser
 
 
@@ -56,55 +66,50 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         parser = create_argument_parser()
         args = parser.parse_args()
 
-    # Support both argparse.Namespace and dict for backward compatibility
-    if isinstance(args, dict):
-        target_dir   = args.get('target_dir', '.')
-        extension    = args.get('extension', '.pkl')
+    files, extension = [], ".pkl"
+    if args.target_files:
+        # Process specific files provided by the user
+        files = [pathlib.Path(f).resolve() for f in args.target_files]
+        files = sorted([f for f in files if f.is_file() and f.suffix.lower() == ".pkl"])
     else:
-        target_dir   = getattr(args, 'target_dir', '.')
-        extension    = getattr(args, 'extension', '.pkl')
-
-    # Normalize extension to ensure it starts with a dot
-    extension = extension.lower() if extension.startswith('.') else f".{extension.lower()}"
-
-    dir_path = pathlib.Path(target_dir).resolve()
+        # Fallback to directory scanning
+        target_dir = pathlib.Path(args.target_dir or "./models").resolve()
+        try:
+            files = sorted([
+                f for f in target_dir.iterdir()
+                if f.is_file() and f.suffix.lower() == ".pkl"
+            ])
+        except Exception:
+            files = []
 
     results = []
-    try:
-        # Filter files by the specified extension
-        files = sorted([
-            f for f in dir_path.iterdir()
-            if f.is_file() and f.suffix.lower() == extension
-        ])
-    except:
-        files = []
 
-    if 0 == len(files):
-        print(f"No {extension} files found in {dir_path}")
+    if not files:
+        if args.verbose: print(f"⚠️ No valid {extension} files found.")
         return results
 
-    print(f"Found {len(files)} {extension} file(s) in {dir_path}. Starting sequential autotune...\n")
-
+    if args.verbose: print(f"Found {len(files)} {extension} file(s). Starting sequential autotune...\n")
+    dir_path = pathlib.Path(".").resolve()
     # Loop through files one by one
     for file_path in files:
-        print(f"\n{'=' * 60}")
-        print(f"STARTING AUTOTUNE FOR: {file_path.name}")
-        print(f"{'=' * 60}")
+        if args.verbose:
+            print(f"\n{'=' * 60}")
+            print(f"STARTING AUTOTUNE FOR: {file_path.name}")
+            print(f"{'=' * 60}")
 
         # Build configuration for the current file using CLI arguments
         configuration = Namespace(
             real_time=True,
             model_path=str(file_path),
             verbose_short=False,
-            dataset_id="day",
+            dataset_id=args.dataset_id,
             ticker="^GSPC",
-            verbose=True,
+            verbose=False,
             output_dir=str(dir_path),
             length_dataset=999999,
             optimize=False,
             clip=False,
         )
-
         try:
             result = autotune(configuration)
             result["file"]: file_path.name
@@ -157,14 +162,15 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         def format_row(cells):
             return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
 
-        print("\n" + "=" * total_width)
-        print(f"{'AUTOTUNE RESULTS SUMMARY':^{total_width}}")
-        print("=" * total_width)
-        print(format_row(headers))
-        print("-" * total_width)
+        if args.verbose:
+            print("\n" + "=" * total_width)
+            print(f"{'AUTOTUNE RESULTS SUMMARY':^{total_width}}")
+            print("=" * total_width)
+            print(format_row(headers))
+            print("-" * total_width)
         for row in table_rows:
-            print(format_row(row))
-        print("=" * total_width)
+            if args.verbose: print(format_row(row))
+        if args.verbose: print("=" * total_width)
     results = []
     for row in table_rows:
         info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, threshold = row
