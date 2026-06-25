@@ -49,8 +49,8 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                 prime_rsi_args = _args
                 all_results_computed.extend(prime_rsi_player(prime_rsi_args))
             if _indicator == "autotune":
-                prime_rsi_args = _args
-                all_results_computed.extend(autotune_player(prime_rsi_args))
+                autotune_args = _args
+                all_results_computed.extend(autotune_player(autotune_args))
 
     out__shared.put(all_results_computed)
 
