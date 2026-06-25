@@ -60,7 +60,7 @@ def parse_entry(entry, lookahead, optimize, thresh):
         cur = float(entry.get('current_price_str', 0))
     except ValueError:
         return None
-
+    indicator = entry.get("indicator", "?")
     return {
         'lookahead': lookahead,
         'optimize': optimize,
@@ -71,6 +71,7 @@ def parse_entry(entry, lookahead, optimize, thresh):
         'current_price': cur,
         'pct_move': (tgt / cur - 1) * 100 if cur else 0,
         'target_date': entry.get('target_date_str', ''),
+        'indicator': indicator,
     }
 
 
@@ -183,7 +184,8 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
                     f"<b>Threshold:</b> {th:.3f} ({(th - 1) * 100:+.1f}%)<br>"
                     f"<b>Val Win Rate:</b> {row['val_win_rate']:.2f}%<br>"
                     f"<b>Target Price:</b> {row['target_price']:.2f}<br>"
-                    f"<b>Target Date:</b> {row['target_date']}"
+                    f"<b>Target Date:</b> {row['target_date']}<br>"
+                    f"<b>Indicator:</b> {row['indicator']}<br>"
                 )
 
         # Store the original matrices for the slider logic

@@ -75,7 +75,7 @@ def entry(args):
                                   autotune_target_dir=args.autotune_target_dir,
                                   dgdr_target_dir=args.dgdr_target_dir,
                                   oerh_target_dir=args.oerh_target_dir,
-                                  load_from=None, nb_workers=20, save_to=save_to, info=None, threshold=None, verbose=False,
+                                  load_from=None, nb_workers=20, save_to=save_to, info=None, threshold=None, verbose=False, dataset_id=args.dataset_id,
                                   min_val_rate=None, min_train_rate=None, hide_zero_signal=False, signal=None, indicator=None, method=None, optimize_target=None)
         player_entry(args=configuration)
 
@@ -83,26 +83,22 @@ def entry(args):
     for lookahead in tqdm(range(1, 21), desc="Progression lookahead"):
         lookahead_str = f"{lookahead}"
         result[lookahead_str] = {}
-
         for optimize_target in ["buy_wr", "sell_wr"]:
             result[lookahead_str][optimize_target] = {}
-            _ranges = np.arange(0.999, 0.94, -0.001)
+            _ranges = np.arange(0.999, 0.90, -0.001)
             if optimize_target in ["sell_wr"]:
-                _ranges = np.arange(1.001, 1.06, 0.001)
+                _ranges = np.arange(1.001, 1.10, 0.001)
             for threshold in _ranges:
-                thresh_str = f"{threshold:.3f}::"
-                if optimize_target in ["sell_wr"]:
-                    thresh_str = f"::{threshold:.3f}"
+                thresh_str = f"{threshold:.3f}"
                 configuration = Namespace(
                     prime_rsi_target_dir=None, nb_workers=None, verbose=False,
                     autotune_target_dir=None, dgdr_target_dir=None, oerh_target_dir=None,
-                    load_from=save_to, save_to=None,
+                    load_from=save_to, save_to=None, dataset_id=args.dataset_id,
                     info=["^GSPC", f"::{args.dataset_id}", f"::{lookahead} "],
                     threshold=[thresh_str], min_val_rate=None, min_train_rate=None,
                     hide_zero_signal=True, signal=None, indicator=None, method=None,
                     optimize_target=optimize_target
                 )
-
                 result[lookahead_str][optimize_target][thresh_str] = player_entry(args=configuration)
 
 

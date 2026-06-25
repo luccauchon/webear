@@ -266,7 +266,7 @@ def entry(args):
         val_win_rate = res['val_win_rate']
         optimize = str(res["optimize_target"])
         method = str(res["method"])
-        threshold = str(res["threshold"])
+        threshold = f'{float(res["threshold"]):.3f}'
         indicator = str(res["app"])
 
         # ==========================================
