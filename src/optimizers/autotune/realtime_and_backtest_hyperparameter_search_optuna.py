@@ -414,31 +414,13 @@ def perfect_score_callback(study, trial):
 def entry(args):
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     os.makedirs(args.output_dir, exist_ok=True)
-    dataset_id = args.dataset_id
-    ticker = args.ticker
     verbose = args.verbose
     verbose_short = args.verbose_short
     real_time = args.real_time
     output_dir = args.output_dir
     length_dataset = args.length_dataset
     optimize = args.optimize
-    clip = args.clip
     np.random.seed(42)
-    filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
-    if verbose: print(f"📂 Loading dataset from: {filename}")
-    with open(filename, "rb") as f:
-        cache = pickle.load(f)
-    spx = cache[ticker].copy()
-    spx = spx.iloc[-length_dataset:].copy()
-
-    if verbose:
-        first_date = spx.index[0]
-        last_date = spx.index[-1]
-        num_bars = len(spx)
-        print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-        print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
-
-    closes = spx['Close'].squeeze().dropna().copy()
 
     # =============================================================================
     # 🔄 REAL-TIME MODE
@@ -464,9 +446,22 @@ def entry(args):
         assert 'signal_type' in saved_model
         rt_signal_type = saved_model.get('signal_type', 0)
         strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
-        assert dataset_id == saved_model['dataset_id'], f"{dataset_id} == {saved_model['dataset_id']}"
-        assert ticker == saved_model['ticker'], f"{ticker} == {saved_model['ticker']}"
-        if clip:
+        dataset_id = saved_model['dataset_id']
+        ticker     = saved_model['ticker']
+        filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
+        if verbose: print(f"📂 Loading dataset from: {filename}")
+        with open(filename, "rb") as f:
+            cache = pickle.load(f)
+        spx = cache[ticker].copy()
+        spx = spx.iloc[-length_dataset:].copy()
+        if verbose:
+            first_date = spx.index[0]
+            last_date = spx.index[-1]
+            num_bars = len(spx)
+            print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
+            print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
+        closes = spx['Close'].squeeze().dropna().copy()
+        if args.clip:
             fd1 = closes.index[-1].strftime('%Y-%m-%d')
             closes = closes.iloc[:-1].copy()
             fd2 = closes.index[-1].strftime('%Y-%m-%d')
@@ -546,9 +541,22 @@ def entry(args):
                 'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'], 'method': method,
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
 
+    dataset_id, ticker = args.dataset_id, args.ticker
+    filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
+    if verbose: print(f"📂 Loading dataset from: {filename}")
+    with open(filename, "rb") as f:
+        cache = pickle.load(f)
+    spx = cache[ticker].copy()
+    spx = spx.iloc[-length_dataset:].copy()
+    if verbose:
+        first_date = spx.index[0]
+        last_date = spx.index[-1]
+        num_bars = len(spx)
+        print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
+        print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
+    closes = spx['Close'].squeeze().dropna().copy()
     if verbose:
         print(__doc__)
-
     # =============================================================================
     # 🎯 OPTIMIZATION MODE
     # =============================================================================
