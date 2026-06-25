@@ -132,7 +132,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         )
 
         # Print results
-        headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Threshold"]
+        headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold"]
         table_rows = []
         for res in results:
             sig = str(res["signal"]) if res["signal"] is not None else "N/A"
@@ -145,9 +145,10 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
             train_win_rate = f"{res['train_win_rate']:.4%}"
             val_win_rate = f"{res['val_win_rate']:.4%}"
             optimize = str(res["optimization_metric"])
-            threshold = f'{res["threshold"]:.2%}'
+            method = f'{res["method"]}'
+            threshold = f'{res["threshold"]}'
             info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
-            table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimize, threshold])
+            table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimize, method, threshold])
 
         # Calculate column widths
         col_widths = [len(h) for h in headers]
@@ -173,10 +174,10 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
         if args.verbose: print("=" * total_width)
     results = []
     for row in table_rows:
-        info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, threshold = row
+        info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, method, threshold = row
         format_date = "%Y-%m-%d"
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
-                        "target_price": float(target_price), "target_date": datetime.strptime(target_date, format_date),
+                        "target_price": float(target_price), "target_date": datetime.strptime(target_date, format_date), "method": method,
                         "train_win_rate": float(train_win_rate.strip('%')) /100., "val_win_rate": float(val_win_rate.strip('%')) /100., "optimize_target": optimization_target,
                         "threshold": threshold, "method": optimization_target, "app": "AutoTune"})
     return results

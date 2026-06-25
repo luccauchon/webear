@@ -162,9 +162,12 @@ def entry(args):
         train_win_rate = f"{res['train_win_rate']:.4%}"
         val_win_rate = f"{res['val_win_rate']:.4%}"
         optimize = str(res["optimize_target"])
+        assert optimize in ["buy_wr", "sell_wr"]
         method = str(res["method"])
         info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
-        threshold = f"P{res['put_threshold']}::C{res['call_threshold']}"
+        threshold = f"{res['put_threshold']}"
+        if optimize == "sell_wr":
+            threshold = f"{res['call_threshold']}"
         table_rows.append([info, sig, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimize, method, threshold])
 
     # Calculate column widths
@@ -194,7 +197,7 @@ def entry(args):
     for row in table_rows:
         info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, method, thresholds = row
         format_date = "%Y-%m-%d"
-        put_threshold, call_threshold = thresholds.split("::")[0][1:], thresholds.split("::")[1][1:]
+        put_threshold, call_threshold = thresholds, thresholds
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(0) if target_price == "N/A" else float(target_price),
                         "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_win_rate.strip('%')) / 100.,

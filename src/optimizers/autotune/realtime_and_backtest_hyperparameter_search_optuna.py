@@ -535,9 +535,15 @@ def entry(args):
                     pass  # Ok
                 else:
                     last_signal = 0.
+        # Normalize the returned information
+        assert saved_model['optimize_metric'] in ["hold_ceiling", "hold_floor", "finish_above", "finish_below"]
+        optimization_metric, method = "buy_wr", "final_close"
+        if saved_model['optimize_metric'] in ["hold_ceiling", "finish_below"]:
+            optimization_metric = "sell_wr"
+        rt_win_threshold = 1 - rt_win_threshold if optimization_metric == "buy_wr" else 1 + rt_win_threshold
         return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
-                'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': saved_model['optimize_metric'],
-                'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'],
+                'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': optimization_metric,
+                'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'], 'method': method,
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
 
     if verbose:
