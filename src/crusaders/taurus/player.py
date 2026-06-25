@@ -175,7 +175,7 @@ def parse_args():
         default=None,
         help="Load data_from_workers from the specified file and bypass computation."
     )
-    parser.add_argument('--dataset-id', type=str, default='day')
+    # parser.add_argument('--dataset-id', type=str, default='day')
     return parser.parse_args()
 
 
@@ -211,7 +211,7 @@ def entry(args):
             for file in files:
                 target_file = os.path.join(str(root), str(file))
                 assert os.path.exists(target_file)
-                autotune_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False, dataset_id=args.dataset_id)
+                autotune_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
                 use_cases.append({'indicator': 'autotune', 'args': autotune_args})
         # Variables partagées
         use_cases__shared, master_cmd__shared = Queue(99999), Value("i", 0)
@@ -240,41 +240,6 @@ def entry(args):
                 pickle.dump(data_from_workers, f)
 
     results = data_from_workers
-
-    # # Pass hide_zero_signal dynamically from the main args
-    # autotune_args = Namespace(
-    #     verbose=True,
-    #     target_dir=autotune_target_dir,
-    #     clip=False,
-    #     hide_zero_signal=args.hide_zero_signal
-    # )
-    # results.extend(autotune_player(autotune_args))
-    #
-    # dgdr_args = Namespace(
-    #     verbose=True,
-    #     target_dir=dgdr_target_dir,
-    #     clip=False,
-    #     hide_zero_signal=False
-    # )
-    # results.extend(dgdr_player(dgdr_args))
-    #
-    # oerh_args = Namespace(
-    #     verbose=True,
-    #     target_dir=oerh_target_dir,
-    #     clip=False,
-    #     hide_zero_signal=False
-    # )
-    # results.extend(oerh_player(oerh_args))
-    #
-    # # Prime RSI
-    # for root, dirs, files in os.walk(prime_rsi_target_dir):
-    #     prime_rsi_args = Namespace(
-    #         verbose=True,
-    #         target_dir=root,
-    #         clip=False,
-    #         hide_zero_signal=False
-    #     )
-    #     results.extend(prime_rsi_player(prime_rsi_args))
 
     # Helper to parse percentage (allows passing 80 instead of 0.8)
     def get_min_rate(val):
