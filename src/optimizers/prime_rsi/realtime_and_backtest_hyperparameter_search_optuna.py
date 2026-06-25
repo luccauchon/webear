@@ -646,7 +646,7 @@ def generate_model_name(args, params, score):
     return filename
 
 
-def save_model(params, score, args, df_final=None, validation_score=None, train_val_split=None):
+def save_model(params, score, args, validation_score=None, train_val_split=None):
     """
     Save model parameters and metadata to a file with descriptive name.
     """
@@ -672,7 +672,6 @@ def save_model(params, score, args, df_final=None, validation_score=None, train_
             'train_ratio': getattr(args, 'train_ratio', 1.0),
         },
         'timestamp': datetime.now().isoformat(),
-        'final_df': df_final  # Optional: include final dataframe if needed
     }
 
     with open(model_path, 'wb') as f:
@@ -1323,10 +1322,9 @@ def entry(args):
     if args.optimize or args.model_path is None:  # Only save new model if we optimized or didn't load one
         score = combined_wr if args.optimize_target == 'combined_wr' else (buy_wr if args.optimize_target == 'buy_wr' else sell_wr)
         saved_path = save_model(
-            params,
-            score,
-            args,
-            df_final if args.verbose else None,
+            params=params,
+            score=score,
+            args=args,
             validation_score=validation_score,
             train_val_split=train_val_split_info
         )
