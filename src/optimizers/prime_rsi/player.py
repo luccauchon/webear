@@ -97,7 +97,7 @@ def entry(args):
             verbose=verbose,
             verbose_short=verbose,
             clip=args.clip,
-            dataset_id="day",
+            dataset_id=None,
             ticker="^GSPC",
             length_dataset=999999,
         )
