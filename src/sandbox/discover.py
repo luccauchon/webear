@@ -94,6 +94,49 @@ def _calculate_metrics(y_true: pd.Series, y_pred: np.ndarray, params: dict) -> t
     return r2_score(y_true, y_pred), win_rate, sharpe_ratio, correct_direction
 
 
+def _calculate_consensus_metrics(y_true: pd.Series, cons_pred: np.ndarray, params: dict) -> tuple:
+    """Helper to calculate Win Rate and Sharpe for the Consensus strategy."""
+    assert "epsilon" in params
+    epsilon = params.get("epsilon", 0.001)
+
+    actual_up = y_true > epsilon
+    actual_down = y_true < -epsilon
+    actual_neutral = (y_true >= -epsilon) & (y_true <= epsilon)
+
+    # Consensus thresholds match real-time logic (BULLISH >= 30, BEARISH <= -30)
+    pred_up = cons_pred >= 30
+    pred_down = cons_pred <= -30
+    pred_neutral = (cons_pred > -30) & (cons_pred < 30)
+
+    correct_direction = ((actual_up & pred_up) | (actual_down & pred_down) | (actual_neutral & pred_neutral))
+    win_rate = np.mean(correct_direction)
+
+    # Positions for Sharpe calculation
+    positions = np.where(cons_pred >= 30, 1, np.where(cons_pred <= -30, -1, 0))
+    strategy_returns = positions * y_true.values
+
+    mean_ret = np.mean(strategy_returns)
+    std_ret = np.std(strategy_returns) + 1e-8
+
+    timeframe = params.get("timeframe", "day")
+    if timeframe == "week":
+        periods_per_year = 52
+    elif timeframe == "month":
+        periods_per_year = 12
+    else:
+        periods_per_year = 252
+
+    sharpe_ratio = (mean_ret / std_ret) * np.sqrt(periods_per_year / params["lookahead_bars"])
+    assert "density" in params
+    density = params.get("density", 0.15)
+    active_days = np.sum(positions != 0)
+    activity_ratio = active_days / len(y_true)
+    penalty = max(0, density - activity_ratio)
+    sharpe_ratio -= penalty * 10
+
+    return 0.0, win_rate, sharpe_ratio, correct_direction
+
+
 def get_parser():
     """Creates and configures the argument parser for the script."""
     parser = argparse.ArgumentParser(
@@ -517,13 +560,44 @@ def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dic
         y_pred_train = model.predict(X_train_s)
         train_r2, train_wr, train_sharpe, train_correct_direction = _calculate_metrics(y_train, y_pred_train, params)
 
+        # Calculate Consensus for Train
+        p95_train = np.percentile(y_train, 95)
+        p05_train = np.percentile(y_train, 5)
+        max_abs_ret_train = max(abs(p95_train), abs(p05_train))
+        if max_abs_ret_train > 1e-6:
+            ml_train_scaled = np.clip((y_pred_train / max_abs_ret_train) * 100, -100, 100)
+        else:
+            ml_train_scaled = np.zeros_like(y_pred_train)
+
+        heur_train = valid_train['heuristic_market_score'].values
+        cons_pred_train = (ml_train_scaled + heur_train) / 2.0
+
+        train_cons_r2, train_cons_wr, train_cons_sharpe, train_cons_correct_direction = _calculate_consensus_metrics(y_train, cons_pred_train, params)
+
         # Evaluate on TEST (Out-of-sample)
         y_pred_test = model.predict(X_test_s)
         test_r2, test_wr, test_sharpe, test_correction_direction = _calculate_metrics(y_test, y_pred_test, params)
 
-        return train_r2, train_wr, train_sharpe, train_correct_direction, test_r2, test_wr, test_sharpe, test_correction_direction
+        # Calculate Consensus for Test (using Train's max_abs_ret to simulate real-time scaling)
+        if max_abs_ret_train > 1e-6:
+            ml_test_scaled = np.clip((y_pred_test / max_abs_ret_train) * 100, -100, 100)
+        else:
+            ml_test_scaled = np.zeros_like(y_pred_test)
+
+        heur_test = valid_test['heuristic_market_score'].values
+        cons_pred_test = (ml_test_scaled + heur_test) / 2.0
+
+        test_cons_r2, test_cons_wr, test_cons_sharpe, test_cons_correction_direction = _calculate_consensus_metrics(y_test, cons_pred_test, params)
+
+        return (train_r2, train_wr, train_sharpe, train_correct_direction,
+                test_r2, test_wr, test_sharpe, test_correction_direction,
+                train_cons_r2, train_cons_wr, train_cons_sharpe, train_cons_correct_direction,
+                test_cons_r2, test_cons_wr, test_cons_sharpe, test_cons_correction_direction)
     except Exception:
-        return -1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0
+        return (-1e9, 0.0, -1e9, 0.0,
+                -1e9, 0.0, -1e9, 0.0,
+                -1e9, 0.0, -1e9, 0.0,
+                -1e9, 0.0, -1e9, 0.0)
 
 
 def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) -> float:
@@ -760,16 +834,28 @@ def entry(args=None):
         train_sharpe = model_data.get("train_sharpe")
         test_sharpe = model_data.get("test_sharpe")
         all_sharpe = model_data.get("all_sharpe")
+
+        all_cons_wr = model_data.get("all_cons_wr")
+        train_cons_wr = model_data.get("train_cons_wr")
+        test_cons_wr = model_data.get("test_cons_wr")
+        all_cons_sharpe = model_data.get("all_cons_sharpe")
+        train_cons_sharpe = model_data.get("train_cons_sharpe")
+        test_cons_sharpe = model_data.get("test_cons_sharpe")
+
         def fmt(val, is_pct=False):
             if val is None:
                 return "N/A"
             return f"{val:.2%}" if is_pct else f"{val:.4f}"
 
         print(f"{'R-squared':<22} | {fmt(train_r2):<18} | {fmt(test_r2):<18} | {fmt(all_r2):<18}")
-        print(f"{'3-Class Win Rate':<22} | {fmt(train_wr, is_pct=True):<18} | {fmt(test_wr, is_pct=True):<18} | {fmt(all_wr, is_pct=True):<18}")
-        print(f"{'Simulated Sharpe':<22} | {fmt(train_sharpe):<18} | {fmt(test_sharpe):<18} | {fmt(all_sharpe):<18}")
+        print(f"{'ML Win Rate':<22} | {fmt(train_wr, is_pct=True):<18} | {fmt(test_wr, is_pct=True):<18} | {fmt(all_wr, is_pct=True):<18}")
+        print(f"{'ML Simulated Sharpe':<22} | {fmt(train_sharpe):<18} | {fmt(test_sharpe):<18} | {fmt(all_sharpe):<18}")
+        print("-" * 73)
+        print(f"{'Consensus Win Rate':<22} | {fmt(train_cons_wr, is_pct=True):<18} | {fmt(test_cons_wr, is_pct=True):<18} | {fmt(all_cons_wr, is_pct=True):<18}")
+        print(f"{'Consensus Sharpe':<22} | {fmt(train_cons_sharpe):<18} | {fmt(test_cons_sharpe):<18} | {fmt(all_cons_sharpe):<18}")
         print("=" * 73 + "\n")
         print(f"{model_data.get('test_str_keeped')}")
+        print(f"{model_data.get('test_str_keeped_cons')}")
         print("Fetching latest data...")
         df = load_data(filename=args.data_filename, timeframe=timeframe)
 
@@ -865,23 +951,51 @@ def entry(args=None):
     features = __FEATURES__
 
     print("\n--- Evaluating on Training and Hold-Out Test Set ---")
-    train_r2, train_wr, train_sharpe, train_correct_direction, test_r2, test_wr, test_sharpe, test_correction_direction = evaluate_datasets(df_train, df_test, best_params, features, best_model_type)
-    alldata_r2, alldata_wr, alldata_sharpe, alldata_correct_direction, train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2 = evaluate_datasets(df, df_train, best_params, features, best_model_type)
+
+    (train_r2, train_wr, train_sharpe, train_correct_direction,
+     test_r2, test_wr, test_sharpe, test_correction_direction,
+     train_cons_r2, train_cons_wr, train_cons_sharpe, train_cons_correct_direction,
+     test_cons_r2, test_cons_wr, test_cons_sharpe, test_cons_correction_direction) = evaluate_datasets(df_train, df_test, best_params, features, best_model_type)
+
+    (alldata_r2, alldata_wr, alldata_sharpe, alldata_correct_direction,
+     train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2,
+     alldata_cons_r2, alldata_cons_wr, alldata_cons_sharpe, alldata_cons_correct_direction,
+     train_cons_r2_2, train_cons_wr_2, train_cons_sharpe_2, train_cons_correction_direction_2) = evaluate_datasets(df, df_train, best_params, features, best_model_type)
+
     recomputed_test_win_rate = np.mean(alldata_correct_direction.reindex(df_test.index))
+    recomputed_test_cons_win_rate = np.mean(alldata_cons_correct_direction.reindex(df_test.index))
+
     if train_wr in [0.] and test_wr in [0.] and train_r2 in [-1e9] and train_sharpe in [-1e9] and test_sharpe in [-1e9]:
         train_r2, train_wr, train_sharpe, train_correct_direction = train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2
         test_wr = recomputed_test_win_rate
-    _test_str_keeped =f"*** Win Rate on the Test Dataset : {recomputed_test_win_rate:.2%}  (recomputed) ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})"
+
+        train_cons_wr = train_cons_wr_2
+        train_cons_sharpe = train_cons_sharpe_2
+        test_cons_wr = recomputed_test_cons_win_rate
+
+    _test_str_keeped = f"*** ML Win Rate on the Test Dataset : {recomputed_test_win_rate:.2%}  (recomputed) ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})"
+    _test_str_keeped_cons = f"*** Consensus Win Rate on the Test Dataset : {recomputed_test_cons_win_rate:.2%}  (recomputed) ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})"
+
     print(f"* All DF Set R-squared           : {alldata_r2:.4f}")
-    print(f"* All DF Set 3-Class Win Rate    : {alldata_wr:.2%}")
-    print(f"* All DF Set Simulated Sharpe    : {alldata_sharpe:.4f}")
+    print(f"* All DF Set ML Win Rate         : {alldata_wr:.2%}")
+    print(f"* All DF Set ML Sharpe           : {alldata_sharpe:.4f}")
+    print(f"* All DF Set Consensus Win Rate  : {alldata_cons_wr:.2%}")
+    print(f"* All DF Set Consensus Sharpe    : {alldata_cons_sharpe:.4f}")
+
     print(f"* Train Set R-squared            : {train_r2:.4f}")
-    print(f"* Train Set 3-Class Win Rate     : {train_wr:.2%}")
-    print(f"* Train Set Simulated Sharpe     : {train_sharpe:.4f}")
+    print(f"* Train Set ML Win Rate          : {train_wr:.2%}")
+    print(f"* Train Set ML Sharpe            : {train_sharpe:.4f}")
+    print(f"* Train Set Consensus Win Rate   : {train_cons_wr:.2%}")
+    print(f"* Train Set Consensus Sharpe     : {train_cons_sharpe:.4f}")
+
     print(f"* Test Set R-squared             : {test_r2:.4f}")
-    print(f"* Test Set 3-Class Win Rate      : {test_wr:.2%}")
-    print(f"* Test Set Simulated Sharpe      : {test_sharpe:.4f}")
+    print(f"* Test Set ML Win Rate           : {test_wr:.2%}")
+    print(f"* Test Set ML Sharpe             : {test_sharpe:.4f}")
+    print(f"* Test Set Consensus Win Rate    : {test_cons_wr:.2%}")
+    print(f"* Test Set Consensus Sharpe      : {test_cons_sharpe:.4f}")
+
     print(_test_str_keeped)
+    print(_test_str_keeped_cons)
 
     # --- SAVE THE OPTIMIZED MODEL ---
     print("\n" + "=" * 60)
@@ -922,6 +1036,14 @@ def entry(args=None):
         "test_sharpe": test_sharpe,
         "recomputed_test_win_rate": recomputed_test_win_rate,
         "test_str_keeped": _test_str_keeped,
+        "all_cons_wr": alldata_cons_wr,
+        "all_cons_sharpe": alldata_cons_sharpe,
+        "train_cons_wr": train_cons_wr,
+        "train_cons_sharpe": train_cons_sharpe,
+        "test_cons_wr": test_cons_wr,
+        "test_cons_sharpe": test_cons_sharpe,
+        "recomputed_test_cons_win_rate": recomputed_test_cons_win_rate,
+        "test_str_keeped_cons": _test_str_keeped_cons,
     }
     joblib.dump(model_data, model_filename)
     print(f"Model successfully saved to '{model_filename}'")
