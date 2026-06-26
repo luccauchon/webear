@@ -120,6 +120,7 @@ import pickle
 import os
 import glob
 import sys
+from sklearn.model_selection import TimeSeriesSplit
 
 # =============================================================================
 # 📊 CENTRAL METRIC MAPPING (Single Source of Truth)
@@ -563,8 +564,8 @@ def entry(args):
     train_ratio = args.train_ratio
     assert 0.0 < train_ratio < 1.0, "--train-ratio must be between 0.0 and 1.0"
     split_idx = int(len(closes) * train_ratio)
-    train_closes = closes.iloc[:split_idx]
-    valid_closes = closes.iloc[split_idx:]
+    train_closes = closes.iloc[:split_idx].copy()
+    valid_closes = closes.iloc[split_idx:].copy()
 
     if verbose:
         print(f"📊 Train/Validation Split: {train_ratio:.0%} / {1 - train_ratio:.0%}")
@@ -588,7 +589,7 @@ def entry(args):
     signal_label = {1: 'long', -1: 'short', 0: 'both'}[signal_type]
 
     # 🔧 OPTIMIZATION SETUP
-    window_min, window_max, window_step          = 2, 160, 1
+    window_min, window_max, window_step = 2, 160, 1
     bandwidth_min, bandwidth_max, bandwidth_step = 0.00015, 0.99015, 0.01
     threshold_min, threshold_max, threshold_step = -0.9996, -0.0096, 0.01
 
@@ -610,23 +611,40 @@ def entry(args):
                 lookahead_bars=_lookahead_bars, win_threshold=win_threshold,
                 signal_type=signal_type, enable_above_baseline=enable_above_baseline, enable_below_baseline=enable_below_baseline,
             )
-            results = strat.generate_signals(train_closes)
+
+            # Generate signals for the entire training set once (filters are strictly causal)
+            results = strat.generate_signals(train_closes.copy())
             df = results.copy()
-            signals = df[df['signal'] != 0].copy()
 
-            n_signals = len(signals)
-            if n_signals == 0: return 0.0
-
-            # ✅ DYNAMICALLY SELECT CORRECT COLUMN & METRIC BASED ON OPTIMIZE
+            # 🆕 Apply TimeSeriesSplit for cross-validation
+            tscv = TimeSeriesSplit(n_splits=20)
             col_fmt = METRIC_MAP[optimize]['col'].format(_lookahead_bars)
-            obj = METRIC_MAP[optimize]['calc'](signals[col_fmt].values, win_threshold)
 
-            signal_density = n_signals / len(df)
-            if signal_density < required_signal_density:
-                gap = required_signal_density - signal_density
-                penalty = max(0.0, 1.0 - gap * 5.0)
-                return obj * penalty
-            return obj
+            fold_scores = []
+            for _, test_idx in tscv.split(train_closes):
+                # Slice the results for the current test fold
+                fold_df = df.iloc[test_idx]
+                fold_signals = fold_df[fold_df['signal'] != 0].copy()
+
+                n_signals = len(fold_signals)
+                if n_signals == 0:
+                    fold_scores.append(0.0)
+                    continue
+
+                # ✅ DYNAMICALLY SELECT CORRECT COLUMN & METRIC BASED ON OPTIMIZE
+                obj = METRIC_MAP[optimize]['calc'](fold_signals[col_fmt].values, win_threshold)
+
+                signal_density = n_signals / len(fold_df)
+                if signal_density < required_signal_density:
+                    gap = required_signal_density - signal_density
+                    penalty = max(0.0, 1.0 - gap * 5.0)
+                    fold_scores.append(obj * penalty)
+                else:
+                    fold_scores.append(obj)
+
+            # Return the mean score across all 20 folds
+            return float(np.mean(fold_scores))
+
         except Exception as e:
             print(f"[WARNING] Trial failed: {e}")
             return 0.0
@@ -819,8 +837,10 @@ def plot_strategy_results(results: pd.DataFrame, params: dict, metrics: dict,
     ax3.set_title('Rate of Change (Momentum)', fontweight='bold')
     ax3.grid(True, alpha=0.3)
 
-    n_long_win = len(long_success); n_long_fail = len(long_fail)
-    n_short_win = len(short_success); n_short_fail = len(short_fail)
+    n_long_win = len(long_success);
+    n_long_fail = len(long_fail)
+    n_short_win = len(short_success);
+    n_short_fail = len(short_fail)
     total_signals = len(signals)
     plot_success_rate = (n_long_win + n_short_win) / total_signals if total_signals > 0 else 0.0
 
