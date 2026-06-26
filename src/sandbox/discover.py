@@ -45,6 +45,10 @@ __FEATURES__ = [
     'curve_pct_rank', 'curve_zscore',
     'baa10y_pct_rank', 'baa10y_zscore',
     'nfci_pct_rank', 'nfci_zscore',
+    'walcl_pct_rank', 'walcl_zscore',
+    'wm2ns_pct_rank', 'wm2ns_zscore',
+    'dfii10_pct_rank', 'dfii10_zscore',
+    'usphci_pct_rank', 'usphci_zscore',
     'trend_score', 'vol_score', 'credit_score', 'curve_score',
     'fc_score', 'final_score', 'heuristic_market_score',
     'spx_momentum_21d', 'vix_diff_5d', 'credit_ratio_diff_10d',
@@ -225,10 +229,20 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
         current_date_str = datetime.now().strftime("%Y%m%d")
         filename = f"market_data_{timeframe}_{current_date_str}.csv"
 
+    fetch_data = False
     if os.path.exists(filename):
         print(f"File '{filename}' exists. Reloading data from disk...")
         df = pd.read_csv(filename, index_col=0, parse_dates=True)
+        # Safeguard: Ensure old CSVs have the newly added macro columns
+        required_cols = ['spx', 'vix', 'hyg', 'lqd', 'curve', 'baa10y', 'nfci', 'walcl', 'wm2ns', 'dfii10', 'usphci']
+        if not all(col in df.columns for col in required_cols):
+            print(f"File '{filename}' is missing new macroeconomic columns. Refetching data...")
+            os.remove(filename)
+            fetch_data = True
     else:
+        fetch_data = True
+
+    if fetch_data:
         if IS_RUNNING_IREQ:
             # Globally disable SSL warnings in the console
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -268,6 +282,10 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
         curve = fred.get_series("T10Y2Y")
         baa10y = fred.get_series("BAA10Y")
         nfci = fred.get_series("NFCI")
+        walcl = fred.get_series("WALCL")      # Fed Total Assets
+        wm2ns = fred.get_series("WM2NS")      # M2 Money Stock
+        dfii10 = fred.get_series("DFII10")    # 10-Year Real Yield
+        usphci = fred.get_series("USPHCI")    # Coincident Economic Activity Index
 
         # Align and merge data
         df = pd.DataFrame(index=spx.index)
@@ -282,6 +300,10 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
         df["curve"] = curve
         df["baa10y"] = baa10y
         df["nfci"] = nfci
+        df["walcl"] = walcl
+        df["wm2ns"] = wm2ns
+        df["dfii10"] = dfii10
+        df["usphci"] = usphci
 
         # Filter to post-2008 financial crisis data and forward-fill missing values
         df = df.loc["2008-01-01":].ffill()
@@ -309,7 +331,11 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
                 'lqd': 'last',
                 'curve': 'last',
                 'baa10y': 'last',
-                'nfci': 'last'
+                'nfci': 'last',
+                'walcl': 'last',
+                'wm2ns': 'last',
+                'dfii10': 'last',
+                'usphci': 'last'
             }
             df = df.resample(rule).agg(agg_funcs).dropna()
 
@@ -456,6 +482,19 @@ def compute_features(df: pd.DataFrame, params: dict) -> pd.DataFrame:
 
     df["nfci_pct_rank"] = rolling_percentile_rank(df["nfci"], rank_window)
     df["nfci_zscore"] = rolling_zscore(df["nfci"], zscore_window)
+
+    # New Macro Features
+    df["walcl_pct_rank"] = rolling_percentile_rank(df["walcl"], rank_window)
+    df["walcl_zscore"] = rolling_zscore(df["walcl"], zscore_window)
+
+    df["wm2ns_pct_rank"] = rolling_percentile_rank(df["wm2ns"], rank_window)
+    df["wm2ns_zscore"] = rolling_zscore(df["wm2ns"], zscore_window)
+
+    df["dfii10_pct_rank"] = rolling_percentile_rank(df["dfii10"], rank_window)
+    df["dfii10_zscore"] = rolling_zscore(df["dfii10"], zscore_window)
+
+    df["usphci_pct_rank"] = rolling_percentile_rank(df["usphci"], rank_window)
+    df["usphci_zscore"] = rolling_zscore(df["usphci"], zscore_window)
 
     return df
 
