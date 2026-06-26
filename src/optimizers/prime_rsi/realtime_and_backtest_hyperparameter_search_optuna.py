@@ -20,6 +20,7 @@ import os
 import optuna
 import json
 from datetime import datetime
+from sklearn.model_selection import TimeSeriesSplit
 
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -680,7 +681,8 @@ def save_model(params, score, args, validation_score=None, train_val_split=None)
     if args.verbose:
         print(f"💾 Model saved to: {model_path}")
         if validation_score is not None:
-            print(f"   📊 Validation Score: {validation_score:.4f}")
+            print(f"   📊 Validation Score: {validation_score:.8f}")
+            print(f"   📊 Training Score  : {score:.8f}")
 
     return model_path
 
@@ -851,9 +853,9 @@ def real_time_mode(args, close_col, high_col, low_col):
     current_price, target_price, target_date = result['close'], None, None
     assert df_base[close_col].iloc[-1] == current_price
     if args.verbose: print(f"💰 Last Close Price: ${current_price:.2f}")
-    buy_signal_detected   = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
-    sell_signal_detected  = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
-    result['buy_signal_detected']  = buy_signal_detected
+    buy_signal_detected  = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
+    sell_signal_detected = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
+    result['buy_signal_detected'] = buy_signal_detected
     result['sell_signal_detected'] = sell_signal_detected
     if buy_signal_detected:
         if args.verbose:
@@ -912,22 +914,22 @@ def real_time_mode(args, close_col, high_col, low_col):
             target_price = strike_price
         if buy_signal_detected and sell_signal_detected:
             print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
-        if args.verbose:print(f"{'─' * 60}\n")
+        if args.verbose: print(f"{'─' * 60}\n")
 
-    result['train_score']     = train_score
-    result['val_score']       = val_score
-    result['train_win_rate']  = train_win_rate
-    result['val_win_rate']    = val_win_rate
+    result['train_score'] = train_score
+    result['val_score'] = val_score
+    result['train_win_rate'] = train_win_rate
+    result['val_win_rate'] = val_win_rate
     result['optimize_target'] = optimize_target
-    result['current_price']   = current_price
-    result['current_date']    = entry_date
-    result['target_price']    = target_price
-    result['target_date']     = target_date
-    result['dataset_id']      = _dataset_id
-    result['ticker']          = _ticker
-    result['lookahead']       = lookahead
-    result['method']          = method
-    result['put_strike_pct']  = put_strike_pct
+    result['current_price'] = current_price
+    result['current_date'] = entry_date
+    result['target_price'] = target_price
+    result['target_date'] = target_date
+    result['dataset_id'] = _dataset_id
+    result['ticker'] = _ticker
+    result['lookahead'] = lookahead
+    result['method'] = method
+    result['put_strike_pct'] = put_strike_pct
     result['call_strike_pct'] = call_strike_pct
     return result
 
@@ -970,29 +972,76 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
     sma_len = trial.suggest_int('sma_len', 10, 200)
     fib_lookback = trial.suggest_int('fib_lookback', 2, 200)
     div_window = trial.suggest_int('div_window', 3, 20)
+
     try:
-        buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df = \
-            run_strategy_and_evaluate(df_base=df_base, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col, rsi_length=rsi_length,
-                                      rsi_signal_len=rsi_signal_len, sma_len=sma_len, fib_lookback=fib_lookback, div_window=div_window)
+        # Compute indicators on the full df_base once per trial for efficiency
+        df = df_base.copy()
+        df, rsi_col, pullback_buy_col, pullback_sell_col, ema_cross_buy_col, ema_cross_sell_col, ma_conf_buy_col = \
+            implement_rsi_strategies(df, close_col, _args.ticker, rsi_length, rsi_signal_len, sma_len)
+        df, reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col = \
+            find_divergences(df, high_col, low_col, rsi_col, _args.ticker, div_window)
+        df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, fib_lookback)
+
+        buy_cols = [pullback_buy_col, ema_cross_buy_col, ma_conf_buy_col, fib_rsi_buy_col, reg_bull_div_col, hid_bull_div_col]
+        sell_cols = [pullback_sell_col, ema_cross_sell_col, reg_bear_div_col, hid_bear_div_col]
+
+        buy_sig_col = ('Signal_Buy', _args.ticker)
+        sell_sig_col = ('Signal_Sell', _args.ticker)
+
+        df[buy_sig_col] = df[buy_cols].fillna(False).any(axis=1)
+        df[sell_sig_col] = df[sell_cols].fillna(False).any(axis=1)
+
+        # Initialize TimeSeriesSplit with 20 folds
+        tscv = TimeSeriesSplit(n_splits=20)
+        fold_scores = []
+
+        # Evaluate score across all chronological passes
+        for train_index, test_index in tscv.split(df):
+            # Temporarily mask signals outside the current test fold
+            orig_buy = df[buy_sig_col].to_numpy().copy()
+            orig_sell = df[sell_sig_col].to_numpy().copy()
+
+            mask = np.zeros(len(df), dtype=bool)
+            mask[test_index] = True
+
+            df.loc[~mask, buy_sig_col] = False
+            df.loc[~mask, sell_sig_col] = False
+
+            # Calculate win rates only for the signals occurring in the test fold
+            buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell = \
+                calculate_win_rates_vectorized(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
+
+            # Calculate densities based on the masked signals (only those in the test fold)
+            total_bars = len(test_index)
+            buy_density = int(df[buy_sig_col].sum()) / total_bars if total_bars > 0 else 0
+            sell_density = int(df[sell_sig_col].sum()) / total_bars if total_bars > 0 else 0
+
+            # Restore original signals for the next fold iteration
+            df[buy_sig_col] = orig_buy
+            df[sell_sig_col] = orig_sell
+
+            if _args.optimize_target == 'buy_wr':
+                target = buy_wr
+                density = buy_density
+            elif _args.optimize_target == 'sell_wr':
+                target = sell_wr
+                density = sell_density
+            else:
+                target = combined_wr
+                density = min(buy_density, sell_density)
+
+            # Apply density penalty if needed
+            if density < _args.min_signal_density:
+                target = target - _args.density_penalty
+
+            fold_scores.append(target)
+
+        # Return the mean score of all the passes
+        return np.mean(fold_scores) if fold_scores else -1.0
+
     except Exception as ee:
         print(ee)
         return -1.0  # Discard invalid trials
-
-    if _args.optimize_target == 'buy_wr':
-        target = buy_wr
-        density = buy_density
-    elif _args.optimize_target == 'sell_wr':
-        target = sell_wr
-        density = sell_density
-    else:
-        target = combined_wr
-        density = min(buy_density, sell_density)
-
-    # Density penalty
-    if density < _args.min_signal_density:
-        return target - _args.density_penalty
-
-    return target
 
 
 def setup_argparse() -> argparse.ArgumentParser:
@@ -1061,7 +1110,7 @@ def print_startup_banner(args):
 ║  🔹 Lookahead    : {args.lookahead_bars:02d} bars{' ' * 51}║
 ║  🔹 Method       : {args.method:<58}║
 ║  🔹 Min Density  : {args.min_signal_density:<58}║
-║  🔹 Strike Pct   : Put {args.put_strike_pct:.2%} | Call {args.call_strike_pct:.2%}{' ' * 33}║{train_info if train_info else ' ' * 78}║
+║  🔹 Strike Pct   : Put {args.put_strike_pct:.2%} | Call {args.call_strike_pct:.2%}{' ' * 1}{train_info if train_info else ' ' * 78}{' ' * 11}║
 ╚{'═' * 78}╝
 """
     print(banner)
@@ -1179,7 +1228,7 @@ def entry(args):
             storage = f"sqlite:///{db_path}"
             db_path_display = db_path
         study_name = (
-            f"{args.ticker}_"            
+            f"{args.ticker}_"
             f"{args.dataset_id}_"
             f"{args.optimize_target}_"
             f"la{args.lookahead_bars}_"
@@ -1226,7 +1275,7 @@ def entry(args):
             lambda trial: optuna_objective(
                 trial=trial,
                 _args=args,
-                df_base=df_train,  # ← Use training set for optimization
+                df_base=df_train,
                 close_col=close_col,
                 high_col=high_col,
                 low_col=low_col
@@ -1330,10 +1379,6 @@ def entry(args):
         )
 
     os.makedirs(args.output_dir, exist_ok=True)
-    # output_path = os.path.join(args.output_dir, f"{args.ticker}_{args.dataset_id}_signals.pkl")
-    # with open(output_path, 'wb') as f:
-    #     pickle.dump(df_final, f)
-    # if args.verbose: print(f"💾 Updated dataframe saved to: {output_path}")
 
     if args.plot:
         fib_50_col = ('Fib_50', args.ticker)
