@@ -600,7 +600,7 @@ def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dic
                 -1e9, 0.0, -1e9, 0.0)
 
 
-def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) -> float:
+def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, n_fold: int, **kwargs) -> float:
     """Optuna objective with conditional hyperparameters for the specified model."""
     t1 = time.time()
 
@@ -707,9 +707,9 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, **kwargs) 
 
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
 
-    if len(valid_df) < 11:
+    if len(valid_df) < n_fold+1:
         return -1e9
-    tscv = TimeSeriesSplit(n_splits=10)
+    tscv = TimeSeriesSplit(n_splits=n_fold)
     sharpe_scores = []
 
     # Split directly on valid_df to guarantee clean, contiguous time-series folds
@@ -928,10 +928,11 @@ def entry(args=None):
     print(f"LA:{lookahead_bars} | Epsilon:{epsilon} | Density:{density} | Timeframe:{timeframe}")
     print(f"\n>>> Optimizing {model_type.upper()} Model with Walk-Forward Validation (Maximizing Sharpe Ratio) <<<\n")
     study = optuna.create_study(direction="maximize")
-    print("Starting Optuna optimization on Training Set (10-fold TimeSeriesSplit)...")
-
+    n_fold = 20
+    print(f"Starting Optuna optimization on Training Set ({n_fold}-fold TimeSeriesSplit)...")
     study.optimize(
-        lambda trial: objective(trial, df_train, model_type=model_type, lookahead_bars=lookahead_bars, epsilon=epsilon, density=density, timeframe=timeframe),
+
+        lambda trial: objective(trial=trial, df=df_train, n_fold=n_fold, model_type=model_type, lookahead_bars=lookahead_bars, epsilon=epsilon, density=density, timeframe=timeframe),
         n_trials=n_trials,
         timeout=timeout,
         show_progress_bar=True
