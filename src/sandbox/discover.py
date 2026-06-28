@@ -495,7 +495,7 @@ def compute_features(df: pd.DataFrame, params: dict) -> pd.DataFrame:
 
     df["usphci_pct_rank"] = rolling_percentile_rank(df["usphci"], rank_window)
     df["usphci_zscore"] = rolling_zscore(df["usphci"], zscore_window)
-
+    df.fillna(0, inplace=True)
     return df
 
 
