@@ -8,6 +8,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
+
 import argparse
 import glob
 import json
@@ -15,12 +16,15 @@ import os
 import pickle
 from datetime import datetime
 from typing import Optional, Tuple
+
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
 import pandas_ta as ta
+from sklearn.model_selection import TimeSeriesSplit
 from utils import get_filename_for_dataset, get_next_step
+
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -147,13 +151,14 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group.add_argument('--call-strike-pct', type=float, default=1.04, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
-    strat_group.add_argument('--signal-type', type=str, default='both', choices=['both', 'buy', 'sell'], help='Filter signals for optimization. Post-hoc breakdown always evaluates both.')
+    strat_group.add_argument('--signal-type', type=str, default='buy', choices=['both', 'buy', 'sell'], help='Filter signals for optimization. Post-hoc breakdown always evaluates both.')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials')
     opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
     opt_group.add_argument('--train-ratio', type=float, default=0.7, help='Fraction of data used for training/optimization (rest for validation)')
+    opt_group.add_argument('--n-splits', type=int, default=20, help='Number of splits for TimeSeriesSplit cross-validation')
 
     # 🆕 OPTUNA PERSISTENCE ARGUMENTS
     opt_group.add_argument('--optuna-storage', type=str, default=None,
@@ -165,6 +170,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
     flag_group.add_argument('--model-path', type=str, default=None, help='Specific .pkl model path')
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
+    flag_group.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False, help='Short real-time output')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
     flag_group.add_argument('--plot', action='store_true', default=False, help='Plot results')
@@ -308,29 +314,16 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
     return pnl_df
 
 
-def compute_optimization_score(win_rate, trade_density, min_trade_density=0.04, wr_weight=0.9, td_weight=0.1):
+def compute_optimization_score(win_rate, trade_density, min_trade_density, wr_weight, td_weight):
     """Returns a score strictly between 0 and 1."""
     wr_norm = win_rate / 100.0
     td_norm = min(1.0, trade_density / min_trade_density)
-    base_score = (wr_weight * wr_norm) + (td_weight * td_norm)
-    # Option 1
-    final_score = base_score
-
-    # # Option 2
-    # final_score = base_score * (trade_density / min_trade_density) if trade_density < min_trade_density else base_score
-    #
-    # # Option 3
-    # density_ratio = trade_density / min_trade_density
-    # if density_ratio < 1:
-    #     final_score = base_score * np.sqrt(density_ratio)
-    # else:
-    #     final_score = base_score
-
+    final_score = (wr_weight * wr_norm) + (td_weight * td_norm)
     return max(0.0, min(1.0, final_score))
 
 
 def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
-              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type):
+              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits):
     put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
     call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
     st_multipler = trial.suggest_int("st_multipler", 1, 5, step=1)
@@ -341,25 +334,60 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
     buy_rsi_threshold = trial.suggest_int("buy_rsi_threshold", 50, 95, step=1)
     sell_rsi_threshold = trial.suggest_int("sell_rsi_threshold", 5, 50, step=1)
 
-    signals = dgdr_strategy_vectorized(df=df, close_col=close_col, volume_col=volume_col, open_col=open_col, high_col=high_col, low_col=low_col, ticker=ticker,
-                                       st_multipler=st_multipler, st_length=st_length, sup_wick_null_coef=sup_wick_null_coef, inf_wick_null_coef=inf_wick_null_coef,
-                                       buy_rsi_threshold=buy_rsi_threshold, sell_rsi_threshold=sell_rsi_threshold, rsi_length=rsi_length)
+    # Time Series Cross-Validation
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    scores = []
 
-    if signal_type == 'buy':
-        signals = [s for s in signals if s['Type'] == 'BUY']
-    elif signal_type == 'sell':
-        signals = [s for s in signals if s['Type'] == 'SELL']
+    for train_idx, test_idx in tscv.split(df):
+        if len(test_idx) == 0:
+            continue
 
-    pnl_df = calculate_pnl_report(signals=signals, df=df, close_col=close_col, high_col=high_col, low_col=low_col,
-                                  B=B, method=method, put__strike_pct=put__strike_pct, call__strike_pct=call__strike_pct, silent=True)
-    if pnl_df.empty:
-        return 0.0
+        end_pos = test_idx[-1]
+        # Use data up to the end of the test fold to preserve indicator warmup (lookback)
+        df_warmup = df.iloc[:end_pos + 1]
 
-    return compute_optimization_score(win_rate=pnl_df['win_rate'].iloc[0], trade_density=pnl_df['trade_density'].iloc[0],
-                                      min_trade_density=min_trade_density, wr_weight=wr_weight, td_weight=td_weight)
+        signals = dgdr_strategy_vectorized(
+            df=df_warmup.copy(), close_col=close_col, volume_col=volume_col,
+            open_col=open_col, high_col=high_col, low_col=low_col, ticker=ticker,
+            st_multipler=st_multipler, st_length=st_length,
+            sup_wick_null_coef=sup_wick_null_coef, inf_wick_null_coef=inf_wick_null_coef,
+            buy_rsi_threshold=buy_rsi_threshold, sell_rsi_threshold=sell_rsi_threshold,
+            rsi_length=rsi_length
+        )
+
+        # Filter signals to only those generated strictly within the current test fold
+        test_indices_set = set(df.index[test_idx])
+        signals = [s for s in signals if s['Index'] in test_indices_set]
+
+        if signal_type == 'buy':
+            signals = [s for s in signals if s['Type'] == 'BUY']
+        elif signal_type == 'sell':
+            signals = [s for s in signals if s['Type'] == 'SELL']
+
+        # Pass full df to calculate_pnl_report so it can look ahead B bars for PnL calculation
+        pnl_df = calculate_pnl_report(
+            signals=signals, df=df.copy(), close_col=close_col, high_col=high_col, low_col=low_col,
+            B=B, method=method, put__strike_pct=put__strike_pct, call__strike_pct=call__strike_pct, silent=True
+        )
+
+        if pnl_df.empty:
+            scores.append(0.0)
+        else:
+            # Recalculate trade density specifically for this fold's length to maintain accurate scaling
+            fold_trade_density = len(pnl_df) / len(test_idx)
+            score = compute_optimization_score(
+                win_rate=pnl_df['win_rate'].iloc[0],
+                trade_density=fold_trade_density,
+                min_trade_density=min_trade_density,
+                wr_weight=wr_weight,
+                td_weight=td_weight
+            )
+            scores.append(score)
+
+    return np.mean(scores) if scores else 0.0
 
 
-def save_optimized_model(study, config, output_dir, ticker, dataset_id,train_metrics, val_metrics):
+def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_metrics, val_metrics):
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -369,14 +397,15 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id,train_met
     wr_tag = config.get('wr_weight', 'NA')
     td_tag = config.get('td_weight', 'NA')
     st_tag = config.get('signal_type', 'NA')
-
+    train_win_rate = train_metrics.get("win_rate")
+    val_win_rate = val_metrics.get("win_rate")
     best_score = getattr(study.best_trial, 'value', None)
-    score_tag = f"score{best_score:.4f}".replace('.', 'p') if best_score is not None else "scoreNA"
-    params_str = f"B{p_tag}_{m_tag}_md{md_tag}_wr{wr_tag}_td{td_tag}_{st_tag}_{score_tag}"
+    score_tag = f"score{best_score:.8f}".replace('.', 'p') if best_score is not None else "scoreNA"
+    params_str = f"B{p_tag}_{m_tag}_md{md_tag}_wr{wr_tag}_td{td_tag}_{st_tag}_{score_tag}_{train_win_rate:.4f}_{val_win_rate:.4f}"
 
     safe_ticker = ticker.replace('^', '')
     safe_dataset = dataset_id.replace('/', '_').replace('\\', '_')
-    base_name = f"{safe_ticker}_{safe_dataset}_{params_str}_{timestamp}"
+    base_name = f"{safe_ticker}_{safe_dataset}_{params_str}__{timestamp}"
 
     pkl_path = os.path.join(output_dir, f"{base_name}.pkl")
 
@@ -469,10 +498,10 @@ def run_real_time_mode(args, df, config_cols):
         print(" ⚪ NO SIGNAL on latest closed bar.")
     print("─" * 40 + "\n")
     result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': val_score, 'val_trade_density': val_trade_density,
-              'train_win_rate': train_win_rate/100., 'val_win_rate': val_win_rate/100.,
+              'train_win_rate': train_win_rate / 100., 'val_win_rate': val_win_rate / 100.,
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
               'dataset_id': dataset_id, 'ticker': args.ticker, 'lookahead': lookahead, 'method': method,
-              'buy_signal_detected':buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
+              'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
               'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call__strike_pct']}
     return result
 
@@ -544,11 +573,12 @@ def entry(args):
     # ✅ TRAIN / VALIDATION CHRONOLOGICAL SPLIT
     split_idx = int(len(df) * args.train_ratio)
     df_train = df.iloc[:split_idx].copy()
-    df_val = df.iloc[split_idx:].copy()
+    df_test  = df.iloc[split_idx:].copy()
 
-    print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Val: {len(df_val):,} ({1 - args.train_ratio:.0%})")
-    if len(df_val) < 50:
-        print(f"⚠️  Validation set is small ({len(df_val)} bars). Out-of-sample metrics may be noisy.\n")
+    print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Test: {len(df_test):,} ({1 - args.train_ratio:.0%})")
+    print(f"📐 Train from {df_train.index[0].strftime('%Y-%m-%d')} to {df_train.index[-1].strftime('%Y-%m-%d')} | Test from {df_test.index[0].strftime('%Y-%m-%d')} to {df_test.index[-1].strftime('%Y-%m-%d')}")
+    if len(df_test) < 50:
+        print(f"⚠️  Validation set is small ({len(df_test)} bars). Out-of-sample metrics may be noisy.\n")
 
     B = args.lookahead_bars
     method = args.method
@@ -560,7 +590,8 @@ def entry(args):
     print(f"🔍 Starting Optuna optimization on TRAINING SET ({len(df_train):,} bars)...")
     print(f"📉 Min Trade Density: {min_density:.2%} | Look Ahead: {B} | Method: {method.upper()}")
     print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()}")
-    print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.4f}, {call_base:.4f}]\n")
+    print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.4f}, {call_base:.4f}]")
+    print(f"🔄 Time Series Cross-Validation: {args.n_splits} splits\n")
 
     # 🆕 OPTUNA PERSISTENCE SETUP
     storage = args.optuna_storage
@@ -591,11 +622,12 @@ def entry(args):
         print(f"🆕 Created new {'ín-memory' if not storage else ''} study.\n")
 
     study.optimize(
-        lambda trial: objective(trial, df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
-                                B, method, min_density, wr_w, td_w, put_base, call_base, signal_type=args.signal_type),
+        lambda trial: objective(trial, df_train.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
+                                B, method, min_density, wr_w, td_w, put_base, call_base,
+                                signal_type=args.signal_type, n_splits=args.n_splits),
         n_trials=args.n_trials,
         timeout=args.timeout,
-        show_progress_bar=True,
+        show_progress_bar=args.verbose_study_progress_bar,
         callbacks=[perfect_score_callback]
     )
 
@@ -605,10 +637,10 @@ def entry(args):
         print(f"   {k:<25}: {v}")
     print(f"   {'Objective Score':<25}: {study.best_trial.value:.4f} (max=1.0)\n")
 
-    # ✅ FINAL VALIDATION BACKTEST
-    print("📉 Running final validation backtest on VALIDATION SET...")
+    # ✅ FINAL TEST BACKTEST
+    print("📉 Running final test backtest on TEST SET...")
     best = study.best_trial.params
-    signals_val = dgdr_strategy_vectorized(df_val, close_col, volume_col, open_col, high_col, low_col, ticker,
+    signals_val = dgdr_strategy_vectorized(df_test.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
                                            st_multipler=best['st_multipler'], st_length=best['st_length'],
                                            sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
                                            buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'])
@@ -619,15 +651,15 @@ def entry(args):
     elif args.signal_type == 'sell':
         main_signals = [s for s in signals_val if s['Type'] == 'SELL']
 
-    pnl_df = calculate_pnl_report(main_signals, df_val, close_col, high_col, low_col,
+    pnl_df = calculate_pnl_report(main_signals, df_test.copy(), close_col, high_col, low_col,
                                   B, method, best['put__strike_pct'], best['call__strike_pct'], silent=False)
 
-    print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc Validation)")
+    print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc Test)")
     print("─" * 65)
     for dir_type in ['BUY', 'SELL']:
         dir_signals = [s for s in signals_val if s['Type'] == dir_type]
         if dir_signals:
-            dir_pnl = calculate_pnl_report(dir_signals, df_val, close_col, high_col, low_col,
+            dir_pnl = calculate_pnl_report(dir_signals, df_test, close_col, high_col, low_col,
                                            B, method, best['put__strike_pct'], best['call__strike_pct'], silent=True)
             if not dir_pnl.empty:
                 wr = dir_pnl['win_rate'].iloc[0]
@@ -644,7 +676,7 @@ def entry(args):
     if args.plot and not pnl_df.empty:
         plot_signals = main_signals
         if plot_signals:
-            df_plot = prepare_plot_dataframe(df_val, ticker, plot_signals, price_col_name="Close")
+            df_plot = prepare_plot_dataframe(df_test, ticker, plot_signals, price_col_name="Close")
             plot_forecast_results(df_plot, price_col='Close', sample=2000, highlight_signals=True)
         else:
             print("⚠️ No signals of the selected type found to plot.")
@@ -658,7 +690,7 @@ def entry(args):
 
     # Re-evaluate training set with BEST parameters for fair comparison
     signals_train_best = dgdr_strategy_vectorized(
-        df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
+        df_train.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
         st_multipler=best['st_multipler'], st_length=best['st_length'],
         sup_wick_null_coef=best['sup_wick_null_coef'],
         inf_wick_null_coef=best['inf_wick_null_coef'],
@@ -673,12 +705,12 @@ def entry(args):
         signals_train_best = [s for s in signals_train_best if s['Type'] == 'SELL']
 
     pnl_train = calculate_pnl_report(
-        signals_train_best, df_train, close_col, high_col, low_col,
+        signals_train_best, df_train.copy(), close_col, high_col, low_col,
         B, method, best['put__strike_pct'], best['call__strike_pct'], silent=True
     )
 
     # Extract comparable metrics
-    def extract_metrics(pnl_df, dataset_name):
+    def extract_metrics(pnl_df):
         if pnl_df.empty:
             return {'trades': 0, 'win_rate': 0.0, 'trade_density': 0.0, 'score': 0.0}
         wr = pnl_df['win_rate'].iloc[0]
@@ -691,25 +723,25 @@ def entry(args):
             'score': score
         }
 
-    train_metrics = extract_metrics(pnl_train, "Train")
-    val_metrics = extract_metrics(pnl_df, "Validation")
+    train_metrics = extract_metrics(pnl_train)
+    test_metrics = extract_metrics(pnl_df)
 
     # Display comparison table
-    print(f"\n{'Metric':<20} {'Train':>12} {'Validation':>12} {'Δ (Val-Train)':>15}")
+    print(f"\n{'Metric':<20} {'Train':>12} {'Test':>12} {'Δ (Test-Train)':>15}")
     print("-" * 70)
-    print(f"{'Trades':<20} {train_metrics['trades']:>12,} {val_metrics['trades']:>12,} {val_metrics['trades'] - train_metrics['trades']:>15,}")
-    print(f"{'Win Rate (%)':<20} {train_metrics['win_rate']:>12.2f} {val_metrics['win_rate']:>12.2f} {val_metrics['win_rate'] - train_metrics['win_rate']:>15.2f}")
-    print(f"{'Trade Density':<20} {train_metrics['trade_density']:>12.4f} {val_metrics['trade_density']:>12.4f} {val_metrics['trade_density'] - train_metrics['trade_density']:>15.4f}")
-    print(f"{'Optimization Score':<20} {train_metrics['score']:>12.4f} {val_metrics['score']:>12.4f} {val_metrics['score'] - train_metrics['score']:>15.4f}")
+    print(f"{'Trades':<20} {train_metrics['trades']:>12,} {test_metrics['trades']:>12,} {test_metrics['trades'] - train_metrics['trades']:>15,}")
+    print(f"{'Win Rate (%)':<20} {train_metrics['win_rate']:>12.2f} {test_metrics['win_rate']:>12.2f} {test_metrics['win_rate'] - train_metrics['win_rate']:>15.2f}")
+    print(f"{'Trade Density':<20} {train_metrics['trade_density']:>12.4f} {test_metrics['trade_density']:>12.4f} {test_metrics['trade_density'] - train_metrics['trade_density']:>15.4f}")
+    print(f"{'Optimization Score':<20} {train_metrics['score']:>12.4f} {test_metrics['score']:>12.4f} {test_metrics['score'] - train_metrics['score']:>15.4f}")
 
     # Generalization assessment
     print("\n" + "🔍 GENERALIZATION ASSESSMENT:")
     print("-" * 70)
 
-    wr_diff = abs(val_metrics['win_rate'] - train_metrics['win_rate'])
-    score_diff = abs(val_metrics['score'] - train_metrics['score'])
+    wr_diff = abs(test_metrics['win_rate'] - train_metrics['win_rate'])
+    score_diff = abs(test_metrics['score'] - train_metrics['score'])
 
-    if val_metrics['trades'] < 10:
+    if test_metrics['trades'] < 10:
         print("⚠️  WARNING: Validation set has very few trades (<10). Metrics may be noisy.")
     elif wr_diff <= 5 and score_diff <= 0.05:
         print("✅ EXCELLENT: Validation performance closely matches training. Strong generalization!")
@@ -721,9 +753,9 @@ def entry(args):
         print("❌ POOR: Large performance drop on validation. Likely overfitting detected.")
 
     # Additional insights
-    if val_metrics['win_rate'] > train_metrics['win_rate']:
+    if test_metrics['win_rate'] > train_metrics['win_rate']:
         print("💡 Bonus: Validation win rate EXCEEDS training – model may be robust!")
-    elif val_metrics['trade_density'] < train_metrics['trade_density'] * 0.5:
+    elif test_metrics['trade_density'] < train_metrics['trade_density'] * 0.5:
         print("💡 Note: Much lower trade density in validation – market regime may differ.")
 
     print("═" * 70 + "\n")
@@ -732,10 +764,10 @@ def entry(args):
     # ========================================================================
 
     config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method, 'train_ratio': args.train_ratio,
-              'train_range':f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
-              'val_range':f"({df_val.index[0].strftime('%Y-%m-%d')}::{df_val.index[-1].strftime('%Y-%m-%d')})",
+              'train_range': f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
+              'val_range': f"({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})",
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
-    save_optimized_model(study, config, args.output_dir, ticker, dataset_id, train_metrics, val_metrics )
+    save_optimized_model(study, config, args.output_dir, ticker, dataset_id, train_metrics, test_metrics)
 
 
 if __name__ == "__main__":
