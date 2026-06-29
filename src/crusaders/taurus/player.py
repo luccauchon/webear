@@ -175,7 +175,7 @@ def parse_args():
         default=None,
         help="Load data_from_workers from the specified file and bypass computation."
     )
-    # parser.add_argument('--dataset-id', type=str, default='day')
+    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
     return parser.parse_args()
 
 
@@ -205,13 +205,13 @@ def entry(args):
             for file in files:
                 target_file = os.path.join(str(root), str(file))
                 assert os.path.exists(target_file)
-                prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
+                prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
                 use_cases.append({'indicator': 'prime_rsi', 'args': prime_rsi_args})
         for root, dirs, files in os.walk(autotune_target_dir):
             for file in files:
                 target_file = os.path.join(str(root), str(file))
                 assert os.path.exists(target_file)
-                autotune_args = Namespace(verbose=False, target_files=[target_file], clip=False, hide_zero_signal=False)
+                autotune_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
                 use_cases.append({'indicator': 'autotune', 'args': autotune_args})
         assert len(use_cases) < 256000
         # Variables partagées
