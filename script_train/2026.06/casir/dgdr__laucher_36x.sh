@@ -76,7 +76,7 @@ for msr in "${MIN_SIGNAL_DENSITIES[@]}"; do
       --dataset-id "$WEBEAR__DATASET_ID" \
       --lookahead-bars "$WEBEAR__LOOKAHEAD" \
       --min-signal-density "$msr" \
-      --train-ratio 0.7 \
+      --train-ratio 0.95 \
       --wr-weight 0.9 \
       --td-weight 0.1 \
       --put-strike-pct "$WEBEAR__PUT_STRIKE_PCT" \
