@@ -58,6 +58,12 @@ def parse_args():
         help="Enable verbose output during processing"
     )
     parser.add_argument('--dataset-id', type=str, default='day')
+    parser.add_argument(
+        "--json-file",
+        required=False,
+        default=None,
+        help="Specify the output JSON file name. If not provided, defaults to 'taurus_visualization_{dataset_id}_{date}.json'"
+    )
     return parser.parse_args()
 
 
@@ -67,7 +73,7 @@ def entry(args):
 
     ###########################################################################
     # Process all use cases and save the result
-    filename_extracted_information  = f"taurus_played__{date_string}.pkl"
+    filename_extracted_information = f"taurus_played__{date_string}.pkl"
     if not os.path.exists(filename_extracted_information):
         configuration = Namespace(prime_rsi_target_dir=args.prime_rsi_target_dir,
                                   autotune_target_dir=args.autotune_target_dir,
@@ -124,7 +130,13 @@ def entry(args):
                 result[lookahead_str][optimize_target][thresh_str] = player_entry(args=configuration)
     if args.verbose:
         pprint(result)
-    json_file = f"taurus_visualization_{args.dataset_id}_{date_string}.json"
+
+    # Determine the output JSON file name
+    if args.json_file:
+        json_file = args.json_file
+    else:
+        json_file = f"taurus_visualization_{args.dataset_id}_{date_string}.json"
+
     with open(json_file, 'w') as f:
         json.dump(result, f, indent=4)
 

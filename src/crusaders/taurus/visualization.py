@@ -269,12 +269,7 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id):
     fig.update_xaxes(title_text="Threshold (target / current price)")
 
     # --- STANDALONE HTML EXPORT ---
-    current_date = datetime.now()
-
-    # Format the date as YYYY_MM_DD
-    date_string = current_date.strftime("%Y_%m_%d")
-
-    out_html = Path(f'credit_spread_interactive_{date_string}.html').resolve()
+    out_html = Path(f'credit_spread_interactive_{now}_{dataset_id}.html').resolve()
 
     # include_plotlyjs=True bakes the entire JS library into the file.
     # This guarantees it works 100% offline as a single standalone file.
