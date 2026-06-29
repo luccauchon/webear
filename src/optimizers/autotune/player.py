@@ -50,6 +50,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=False,
         help="Enable verbose output during processing"
     )
+    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
     return parser
 
 
@@ -108,7 +109,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
             output_dir=str(dir_path),
             length_dataset=999999,
             optimize=False,
-            clip=False,
+            clip=args.clip,
         )
         try:
             result = autotune(configuration)
