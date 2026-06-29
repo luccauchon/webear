@@ -77,6 +77,7 @@ def parse_entry(entry, lookahead, optimize, thresh):
 
 def parse_data(raw):
     data = strip_ws(raw)
+    now, dataset_id = data["now"], data["dataset_id"]
     records = []
     all_thresholds = set()
     all_lookaheads = set()
@@ -111,27 +112,28 @@ def parse_data(raw):
 
     # Fallback to Layout B if Layout A found nothing
     if not records:
-        day_re = re.compile(r'::day\s*::(\d+)')
-        for th_str, entries in data.items():
-            if not isinstance(entries, list): continue
-            th = get_thresh_from_key(th_str)
-            if th is None: continue
-            all_thresholds.add(th)
-            for e in entries:
-                m = day_re.search(e.get('info', ''))
-                if not m: continue
-                la = int(m.group(1))
-                all_lookaheads.add(la)
-                opt = e.get('optimize', '')
-                r = parse_entry(e, la, opt, th)
-                if r: records.append(r)
+        print("fffffffffffffff")
+        # day_re = re.compile(r'::day\s*::(\d+)')
+        # for th_str, entries in data.items():
+        #     if not isinstance(entries, list): continue
+        #     th = get_thresh_from_key(th_str)
+        #     if th is None: continue
+        #     all_thresholds.add(th)
+        #     for e in entries:
+        #         m = day_re.search(e.get('info', ''))
+        #         if not m: continue
+        #         la = int(m.group(1))
+        #         all_lookaheads.add(la)
+        #         opt = e.get('optimize', '')
+        #         r = parse_entry(e, la, opt, th)
+        #         if r: records.append(r)
 
     df = pd.DataFrame(records)
-    return df, sorted(list(all_thresholds)), sorted(list(all_lookaheads))
+    return df, sorted(list(all_thresholds)), sorted(list(all_lookaheads)), now, dataset_id
 
 
 # ---------- Plotting & Export ----------
-def plot_and_export(df, all_thresholds, all_lookaheads):
+def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id):
     put_df = df[df['optimize'] == 'buy_wr']
     call_df = df[df['optimize'] == 'sell_wr']
 
@@ -174,13 +176,15 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
             for _, row in best.iterrows():
                 la = row['lookahead']
                 th = row['threshold']
+                if la not in y_vals: continue
                 y_idx = y_vals.index(la)
+                if th not in x_vals: continue
                 x_idx = x_vals.index(th)
 
                 z[y_idx, x_idx] = row['val_win_rate']
                 # Build the rich tooltip text
                 text[y_idx, x_idx] = (
-                    f"<b>Lookahead:</b> {la} days<br>"
+                    f"<b>Lookahead:</b> {la} {dataset_id}<br>"
                     f"<b>Threshold:</b> {th:.3f} ({(th - 1) * 100:+.1f}%)<br>"
                     f"<b>Val Win Rate:</b> {row['val_win_rate']:.2f}%<br>"
                     f"<b>Target Price:</b> {row['target_price']:.2f}<br>"
@@ -236,7 +240,7 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
         steps.append(step)
 
     fig.update_layout(
-        title_text="<b>Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal and/or no data)</sup>",
+        title_text=f"<b>[{now}]Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal and/or no data)</sup>",
         title_x=0.5,
         height=750,
         width=1400,
@@ -261,7 +265,7 @@ def plot_and_export(df, all_thresholds, all_lookaheads):
         )]
     )
 
-    fig.update_yaxes(title_text="Lookahead (days ahead)", autorange="reversed", tickmode='linear')
+    fig.update_yaxes(title_text=f"Lookahead ({dataset_id} ahead)", autorange="reversed", tickmode='linear')
     fig.update_xaxes(title_text="Threshold (target / current price)")
 
     # --- STANDALONE HTML EXPORT ---
@@ -312,7 +316,7 @@ def entry(args):
     raw = load_data(args.filepath)
     print(f"Total top-level keys: {len(raw)}\n")
 
-    df, all_thresholds, all_lookaheads = parse_data(raw)
+    df, all_thresholds, all_lookaheads, now, dataset_id = parse_data(raw)
     print(f"Records kept after signal filtering: {len(df)}")
     if df.empty:
         print("Nothing to plot. Check the file structure.");
@@ -326,7 +330,7 @@ def entry(args):
     print(f"Put thresholds   : {len(put_thresholds)}")
     print(f"Call thresholds  : {len(call_thresholds)}\n")
 
-    plot_and_export(df, all_thresholds, all_lookaheads)
+    plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id)
 
 
 if __name__ == '__main__':
