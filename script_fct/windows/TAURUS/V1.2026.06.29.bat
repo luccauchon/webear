@@ -13,6 +13,6 @@ set DATE_UNDERSCORE=%YEAR%_%MONTH%_%DAY%
 set DATE_DOT=%YEAR%.%MONTH%.%%DAY%
 
 python generate_json_for_visualization.py --json-file taurus_visualization_day_%DATE_UNDERSCORE%.json --prime-rsi-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\prime_rsi --autotune-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\autotune --dgdr-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\dgdr --dataset-id day
-python generate_json_for_visualization.py --json-file taurus_visualization_week_%DATE_UNDERSCORE%.json --prime-rsi-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\prime_rsi --autotune-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\autotune --dgdr-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\dgdr --dataset-id week
+python generate_json_for_visualization.py --json-file taurus_visualization_clipped_week_%DATE_UNDERSCORE%.json --prime-rsi-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\prime_rsi --autotune-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\autotune --dgdr-target-dir D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\dgdr --dataset-id week
 python visualization.py --filepath taurus_visualization_day_%DATE_UNDERSCORE%.json
-python visualization.py --filepath taurus_visualization_week_%DATE_UNDERSCORE%.json
+python visualization.py --filepath taurus_visualization_clipped_week_%DATE_UNDERSCORE%.json

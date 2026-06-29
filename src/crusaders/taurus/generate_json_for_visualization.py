@@ -64,6 +64,7 @@ def parse_args():
         default=None,
         help="Specify the output JSON file name. If not provided, defaults to 'taurus_visualization_{dataset_id}_{date}.json'"
     )
+    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
     return parser.parse_args()
 
 
@@ -74,12 +75,14 @@ def entry(args):
     ###########################################################################
     # Process all use cases and save the result
     filename_extracted_information = f"taurus_played__{date_string}.pkl"
+    if args.clip:
+        filename_extracted_information = f"taurus_played_clipped__{date_string}.pkl"
     if not os.path.exists(filename_extracted_information):
         configuration = Namespace(prime_rsi_target_dir=args.prime_rsi_target_dir,
                                   autotune_target_dir=args.autotune_target_dir,
                                   dgdr_target_dir=args.dgdr_target_dir,
                                   oerh_target_dir=args.oerh_target_dir,
-                                  load_from=None, nb_workers=20, save_to=filename_extracted_information, info=None, threshold=None, verbose=False,
+                                  load_from=None, nb_workers=20, save_to=filename_extracted_information, info=None, threshold=None, verbose=False, clip=args.clip,
                                   min_val_rate=None, min_train_rate=None, hide_zero_signal=False, signal=None, indicator=None, method=None, optimize_target=None)
         player_entry(args=configuration)
 
