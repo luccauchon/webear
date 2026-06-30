@@ -240,7 +240,7 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id):
         steps.append(step)
 
     fig.update_layout(
-        title_text=f"<b>[{now}]Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal and/or no data)</sup>",
+        title_text=f"<b>[{now}]Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal)</sup>",
         title_x=0.5,
         height=750,
         width=1400,
