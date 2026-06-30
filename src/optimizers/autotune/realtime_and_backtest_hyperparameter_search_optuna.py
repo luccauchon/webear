@@ -292,9 +292,9 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
 # 2. CLASS WRAPPER
 # =============================================================================
 class AutoTuneStrategy:
-    def __init__(self, window: int = 26, bandwidth: float = 0.22, threshold: float = -0.22,
-                 lookahead_bars: int = 5, win_threshold: float = 0.01, signal_type: int = 0,
-                 enable_above_baseline: int = 1, enable_below_baseline: int = 1):
+    def __init__(self, window: int, bandwidth: float, threshold: float,
+                 lookahead_bars: int, win_threshold: float, signal_type: int,
+                 enable_above_baseline: int, enable_below_baseline: int):
         self.window = window
         self.bandwidth = bandwidth
         self.threshold = threshold
@@ -399,6 +399,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group.add_argument('--model-path', type=str, default=None)
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False)
+    flag_group.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     flag_group.add_argument('--plot', action=argparse.BooleanOptionalAction, default=False)
     return parser
 
@@ -682,7 +683,7 @@ def entry(args):
         if verbose: print(f"\n📂 Starting new Optuna study '{study_name or 'in-memory'}'.")
 
     if verbose: print(f"\n⚙️ Running Optuna search ({n_trials} trials, {timeout}s timeout) on TRAINING SET...")
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False, gc_after_trial=True, timeout=timeout, callbacks=[perfect_score_callback])
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=args.verbose_study_progress_bar, gc_after_trial=True, timeout=timeout, callbacks=[perfect_score_callback])
 
     if verbose:
         print(f"\n✅ Best Trial Completed (Training Set):")
