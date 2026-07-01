@@ -238,8 +238,8 @@ def get_parser():
                         help="Number of folds for TimeSeriesSplit (default: 20). Lower is much faster.")
 
     # FEATURE SELECTION ARGUMENTS
-    parser.add_argument("--min-features", type=int, default=10,
-                        help="Minimum number of features to select (default: 10). -1 will set it to max-features.")
+    parser.add_argument("--min-features", type=int, default=-1,
+                        help="Minimum number of features to select (default: -1). -1 will set it to max-features.")
     parser.add_argument("--max-features", type=int, default=None,
                         help="Maximum number of features to select (default: all available).")
 
