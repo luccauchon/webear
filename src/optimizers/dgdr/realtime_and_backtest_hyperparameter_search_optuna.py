@@ -438,9 +438,9 @@ def run_real_time_mode(args, config_cols):
     train_win_rate = model_data['train_metrics']['win_rate']
     train_score = model_data['train_metrics']['score']
     train_trade_density = model_data['train_metrics']['trade_density']
-    val_win_rate = model_data['val_metrics']['win_rate']
-    val_score = model_data['val_metrics']['score']
-    val_trade_density = model_data['val_metrics']['trade_density']
+    test_win_rate = model_data['val_metrics']['win_rate']
+    test_score = model_data['val_metrics']['score']
+    test_trade_density = model_data['val_metrics']['trade_density']
 
     cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
     print(f"📂 Loading dataset from: {cache_filename}")
@@ -485,7 +485,7 @@ def run_real_time_mode(args, config_cols):
     print("─" * 40)
     print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type}")
     print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
-    print(f" Val score   : {val_score:.2%} | Val Win Rate  : {val_win_rate:.2f}% | Val Density  : {val_trade_density:.2%} | {config['val_range']}")
+    print(f" Test score  : {test_score:.2%}  | Test Win Rate : {test_win_rate:.2f}%  | Test Density : {test_trade_density:.2%}  | {config['val_range']}")
     print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
     print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
     print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
@@ -500,8 +500,8 @@ def run_real_time_mode(args, config_cols):
     else:
         print(" ⚪ NO SIGNAL on latest closed bar.")
     print("─" * 40 + "\n")
-    result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': val_score, 'val_trade_density': val_trade_density,
-              'train_win_rate': train_win_rate / 100., 'val_win_rate': val_win_rate / 100.,
+    result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': test_score, 'val_trade_density': test_trade_density,
+              'train_win_rate': train_win_rate / 100., 'val_win_rate': test_win_rate / 100.,
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
               'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead, 'method': method,
               'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
