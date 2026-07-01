@@ -419,30 +419,19 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     return pkl_path
 
 
-def run_real_time_mode(args, df, config_cols):
+def run_real_time_mode(args, config_cols):
     model_path = args.model_path
-    if not model_path:
-        search_pattern = os.path.join(args.output_dir, f"*{args.ticker.replace('^', '')}*{args.dataset_id}*.pkl")
-        matches = glob.glob(search_pattern)
-        if not matches:
-            print("❌ No saved models found. Run optimization first or provide --model-path.")
-            return
-        model_path = max(matches, key=os.path.getmtime)
-    if args.verbose:
-        print(f"📦 Loading real-time model: {model_path}")
+    assert model_path
+    print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
-    assert model_data['config']['dataset_id'] == args.dataset_id
-    assert model_data['config']['ticker'] == args.ticker
     best_params = model_data['study_best_trial'].params
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
     print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
-    assert ticker == args.ticker
     dataset_id = model_data['config']['dataset_id']
-    assert dataset_id == args.dataset_id
     lookahead = model_data['config']['B']
     method = model_data['config']['method']
     min_signal_density = model_data['config']['min_signal_density']
@@ -452,6 +441,20 @@ def run_real_time_mode(args, df, config_cols):
     val_win_rate = model_data['val_metrics']['win_rate']
     val_score = model_data['val_metrics']['score']
     val_trade_density = model_data['val_metrics']['trade_density']
+
+    cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
+    print(f"📂 Loading dataset from: {cache_filename}")
+    with open(cache_filename, 'rb') as f:
+        master_data_cache = pickle.load(f)
+
+    df = master_data_cache[ticker].sort_index()
+
+    first_date = df.index[0]
+    last_date = df.index[-1]
+    num_bars = len(df)
+    print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
+    print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
+
     lookback_needed = 100
     df_tail = df.tail(lookback_needed).copy()
     close_col, volume_col, open_col, high_col, low_col, ticker = config_cols
@@ -500,7 +503,7 @@ def run_real_time_mode(args, df, config_cols):
     result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': val_score, 'val_trade_density': val_trade_density,
               'train_win_rate': train_win_rate / 100., 'val_win_rate': val_win_rate / 100.,
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
-              'dataset_id': dataset_id, 'ticker': args.ticker, 'lookahead': lookahead, 'method': method,
+              'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead, 'method': method,
               'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
               'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call__strike_pct']}
     return result
@@ -548,6 +551,9 @@ def entry(args):
     low_col = ('Low', ticker)
     config_cols = (close_col, volume_col, open_col, high_col, low_col, ticker)
 
+    if args.real_time:
+        return run_real_time_mode(args, config_cols)
+
     cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
     if args.verbose:
         print(f"📂 Loading dataset from: {cache_filename}")
@@ -566,9 +572,6 @@ def entry(args):
     num_bars = len(df)
     print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
     print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
-
-    if args.real_time:
-        return run_real_time_mode(args, df, config_cols)
 
     # ✅ TRAIN / VALIDATION CHRONOLOGICAL SPLIT
     split_idx = int(len(df) * args.train_ratio)
