@@ -742,21 +742,21 @@ def entry(args):
     score_diff = abs(test_metrics['score'] - train_metrics['score'])
 
     if test_metrics['trades'] < 10:
-        print("⚠️  WARNING: Validation set has very few trades (<10). Metrics may be noisy.")
+        print("⚠️  WARNING: Test set has very few trades (<10). Metrics may be noisy.")
     elif wr_diff <= 5 and score_diff <= 0.05:
-        print("✅ EXCELLENT: Validation performance closely matches training. Strong generalization!")
+        print("✅ EXCELLENT: Test performance closely matches training. Strong generalization!")
     elif wr_diff <= 10 and score_diff <= 0.10:
-        print("✅ GOOD: Minor performance drop on validation. Acceptable generalization.")
+        print("✅ GOOD: Minor performance drop on Test. Acceptable generalization.")
     elif wr_diff <= 15 and score_diff <= 0.15:
         print("⚠️  MODERATE: Noticeable performance gap. Monitor for overfitting.")
     else:
-        print("❌ POOR: Large performance drop on validation. Likely overfitting detected.")
+        print("❌ POOR: Large performance drop on Test. Likely overfitting detected.")
 
     # Additional insights
     if test_metrics['win_rate'] > train_metrics['win_rate']:
-        print("💡 Bonus: Validation win rate EXCEEDS training – model may be robust!")
+        print("💡 Bonus: Test win rate EXCEEDS training – model may be robust!")
     elif test_metrics['trade_density'] < train_metrics['trade_density'] * 0.5:
-        print("💡 Note: Much lower trade density in validation – market regime may differ.")
+        print("💡 Note: Much lower trade density in Test – market regime may differ.")
 
     print("═" * 70 + "\n")
     # ========================================================================
