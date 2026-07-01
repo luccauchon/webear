@@ -239,9 +239,17 @@ def get_parser():
 
     # FEATURE SELECTION ARGUMENTS
     parser.add_argument("--min-features", type=int, default=10,
-                        help="Minimum number of features to select (default: 10).")
+                        help="Minimum number of features to select (default: 10). -1 will set it to max-features.")
     parser.add_argument("--max-features", type=int, default=None,
                         help="Maximum number of features to select (default: all available).")
+
+    # OPTUNA PERSISTENCE AND SAMPLER ARGUMENTS
+    parser.add_argument("--storage", type=str, default=None,
+                        help="Optuna storage URL (e.g., 'sqlite:///optuna.db') to persist the study.")
+    parser.add_argument("--study-name", type=str, default="market_prediction_study",
+                        help="Name of the Optuna study (used with --storage).")
+    parser.add_argument("--random-sampler", action="store_true",
+                        help="Use RandomSampler instead of the default TPESampler.")
 
     return parser
 
@@ -648,7 +656,7 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, n_fold: in
 
     feature_weights = {}
     for feat in __FEATURES__:
-        feature_weights[feat] = trial.suggest_float(f"fw_{feat}", 0.0, 1.0)
+        feature_weights[feat] = trial.suggest_float(f"fw_{feat}", 0.0, 1.0, step=0.01)
 
     # Select the top features based on the weights suggested by Optuna
     selected_features = sorted(feature_weights, key=feature_weights.get, reverse=True)[:num_features]
@@ -901,8 +909,8 @@ def entry(args=None):
     model_type = args.model
     n_fold = int(args.n_fold)  # OPTIMIZATION: Use configurable n-fold
 
-    min_features = args.min_features
     max_features = args.max_features if args.max_features is not None else len(__FEATURES__)
+    min_features = args.min_features if args.min_features != -1 else max_features
 
     df = load_data(filename=args.data_filename, timeframe=timeframe)
     idx = int(len(df) * train_val_split_ratio)
@@ -919,7 +927,38 @@ def entry(args=None):
 
     # OPTIMIZATION: Add MedianPruner to skip poorly performing trials early
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5)
-    study = optuna.create_study(direction="maximize", pruner=pruner)
+
+    # Setup Sampler
+    sampler = optuna.samplers.RandomSampler() if args.random_sampler else None
+
+    # Create or load study
+    study_kwargs = {
+        "study_name": args.study_name,
+        "direction": "maximize",
+        "pruner": pruner,
+        "sampler": sampler
+    }
+    if args.storage:
+        study_kwargs["storage"] = args.storage
+        study_kwargs["load_if_exists"] = True
+
+    study = optuna.create_study(**study_kwargs)
+
+    # If persisted, print best stats and candidates before running
+    if args.storage and len(study.trials) > 0:
+        print("\n" + "=" * 60)
+        print("RESUMING PERSISTED STUDY")
+        print("=" * 60)
+        completed_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+        if completed_trials:
+            print(f"Total completed trials found: {len(completed_trials)}")
+            print(f"Previous Best CV Mean Sharpe Ratio : {study.best_value:.4f}")
+            print("Previous Best parameters:")
+            for k, v in study.best_params.items():
+                print(f"  {k}: {v}")
+        else:
+            print("Study exists in storage but has no completed trials yet.")
+        print("=" * 60 + "\n")
 
     print(f"Starting Optuna optimization on Training Set ({n_fold}-fold TimeSeriesSplit)...")
     study.optimize(
