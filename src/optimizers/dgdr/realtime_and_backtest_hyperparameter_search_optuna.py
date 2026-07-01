@@ -578,7 +578,7 @@ def entry(args):
     print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Test: {len(df_test):,} ({1 - args.train_ratio:.0%})")
     print(f"📐 Train from {df_train.index[0].strftime('%Y-%m-%d')} to {df_train.index[-1].strftime('%Y-%m-%d')} | Test from {df_test.index[0].strftime('%Y-%m-%d')} to {df_test.index[-1].strftime('%Y-%m-%d')}")
     if len(df_test) < 50:
-        print(f"⚠️  Validation set is small ({len(df_test)} bars). Out-of-sample metrics may be noisy.\n")
+        print(f"⚠️  Test set is small ({len(df_test)} bars). Out-of-sample metrics may be noisy.\n")
 
     B = args.lookahead_bars
     method = args.method
