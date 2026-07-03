@@ -489,7 +489,7 @@ def run_real_time_mode(args, config_cols):
     if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
     if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
     print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
-    print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')}")
+    print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-2]:.2f}")
     buy_signal_detected, sell_signal_detected = False, False
     if latest_signals:
         sig = latest_signals[-1]
