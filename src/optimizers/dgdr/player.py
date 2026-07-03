@@ -126,7 +126,7 @@ def entry(args):
     )
 
     # Print results
-    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Val Win Rate", "Optimize Target", "Method", "Threshold"]
+    headers = ["Info", "Signal", "Current Price", "Current Date", "Target Price", "Target Date", "Train Win Rate", "Test Win Rate", "Optimize Target", "Method", "Threshold"]
     table_rows = []
     for res in results:
         sig = str(res["signal"]) if res["signal"] is not None else "N/A"
