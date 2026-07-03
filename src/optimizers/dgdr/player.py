@@ -75,8 +75,6 @@ def entry(args):
             verbose=True,
             verbose_short=True,
             clip=args.clip,
-            dataset_id="day",
-            ticker="^GSPC",
             length_dataset=999999,
         )
         try:

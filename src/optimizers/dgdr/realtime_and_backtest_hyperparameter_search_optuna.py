@@ -142,6 +142,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group.add_argument('--dataset-id', type=str, default='day', help='Dataset identifier')
     data_group.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     data_group.add_argument('--length-dataset', type=int, default=999999, help='Trailing data points')
+    data_group.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=20, dest='lookahead_bars', help='Forward-looking window')
@@ -419,8 +420,7 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     return pkl_path
 
 
-def run_real_time_mode(args, config_cols):
-    model_path = args.model_path
+def run_real_time_mode(model_path, clip):
     assert model_path
     print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
@@ -448,7 +448,8 @@ def run_real_time_mode(args, config_cols):
         master_data_cache = pickle.load(f)
 
     df = master_data_cache[ticker].sort_index()
-
+    if clip:
+        df = df.iloc[:-1].copy()
     first_date = df.index[0]
     last_date = df.index[-1]
     num_bars = len(df)
@@ -457,7 +458,11 @@ def run_real_time_mode(args, config_cols):
     print(f"📂 Command line used for training: '{model_data['command_line']}'")
     lookback_needed = 100
     df_tail = df.tail(lookback_needed).copy()
-    close_col, volume_col, open_col, high_col, low_col, ticker = config_cols
+    close_col = ('Close', ticker)
+    volume_col = ('Volume', ticker)
+    open_col = ('Open', ticker)
+    high_col = ('High', ticker)
+    low_col = ('Low', ticker)
 
     signals = dgdr_strategy_vectorized(df_tail, close_col, volume_col, open_col, high_col, low_col, ticker,
                                        **{k: best_params[k] for k in ['st_multipler', 'st_length', 'sup_wick_null_coef', 'inf_wick_null_coef', 'buy_rsi_threshold', 'sell_rsi_threshold']})
@@ -540,20 +545,19 @@ def entry(args):
     print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
     print("═" * 62 + "\n")
     command_line = " ".join(sys.argv)
-    ticker = args.ticker
-    dataset_id = args.dataset_id
     np.random.seed(args.seed)
 
+    if args.real_time:
+        return run_real_time_mode(model_path=args.model_path, clip=args.clip)
+
+    ticker = args.ticker
+    dataset_id = args.dataset_id
     close_col = ('Close', ticker)
     volume_col = ('Volume', ticker)
     open_col = ('Open', ticker)
     high_col = ('High', ticker)
     low_col = ('Low', ticker)
     config_cols = (close_col, volume_col, open_col, high_col, low_col, ticker)
-
-    if args.real_time:
-        return run_real_time_mode(args, config_cols)
-
     cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
     if args.verbose:
         print(f"📂 Loading dataset from: {cache_filename}")
