@@ -252,7 +252,6 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
     """Evaluates credit spread signals and generates a P&L report."""
     results = []
     assert method in ["touched", "final_close"]
-    assert 0 < put__strike_pct <= 1 <= call__strike_pct < 2
 
     for sig in signals:
         idx = sig['Index']
