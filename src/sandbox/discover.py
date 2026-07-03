@@ -234,8 +234,8 @@ def get_parser():
     parser.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
 
     # OPTIMIZATION: Added n-fold argument to reduce CV overhead
-    parser.add_argument("--n-fold", type=int, default=20,
-                        help="Number of folds for TimeSeriesSplit (default: 20). Lower is much faster.")
+    parser.add_argument("--n-fold", type=int, default=10,
+                        help="Number of folds for TimeSeriesSplit (default: 10). Lower is much faster.")
 
     # FEATURE SELECTION ARGUMENTS
     parser.add_argument("--min-features", type=int, default=-1,

@@ -618,7 +618,7 @@ def entry(args):
             df = results.copy()
 
             # 🆕 Apply TimeSeriesSplit for cross-validation
-            tscv = TimeSeriesSplit(n_splits=20)
+            tscv = TimeSeriesSplit(n_splits=10)
             col_fmt = METRIC_MAP[optimize]['col'].format(_lookahead_bars)
 
             fold_scores = []

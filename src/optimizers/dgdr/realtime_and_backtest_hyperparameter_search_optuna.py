@@ -158,7 +158,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
     opt_group.add_argument('--train-ratio', type=float, default=0.7, help='Fraction of data used for training/optimization (rest for validation)')
-    opt_group.add_argument('--n-splits', type=int, default=20, help='Number of splits for TimeSeriesSplit cross-validation')
+    opt_group.add_argument('--n-splits', type=int, default=10, help='Number of splits for TimeSeriesSplit cross-validation')
 
     # 🆕 OPTUNA PERSISTENCE ARGUMENTS
     opt_group.add_argument('--optuna-storage', type=str, default=None,
