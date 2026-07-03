@@ -8,7 +8,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+import sys
 import argparse
 import glob
 import json
@@ -387,7 +387,7 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
     return np.mean(scores) if scores else 0.0
 
 
-def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_metrics, val_metrics):
+def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_metrics, test_metrics, command_line):
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -398,10 +398,10 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     td_tag = config.get('td_weight', 'NA')
     st_tag = config.get('signal_type', 'NA')
     train_win_rate = train_metrics.get("win_rate")
-    val_win_rate = val_metrics.get("win_rate")
+    test_win_rate = test_metrics.get("win_rate")
     best_score = getattr(study.best_trial, 'value', None)
     score_tag = f"score{best_score:.8f}".replace('.', 'p') if best_score is not None else "scoreNA"
-    params_str = f"B{p_tag}_{m_tag}_md{md_tag}_wr{wr_tag}_td{td_tag}_{st_tag}_{score_tag}_{train_win_rate:.4f}_{val_win_rate:.4f}"
+    params_str = f"B{p_tag}_{m_tag}_md{md_tag}_wr{wr_tag}_td{td_tag}_{st_tag}_{score_tag}_{train_win_rate:.4f}_{test_win_rate:.4f}"
 
     safe_ticker = ticker.replace('^', '')
     safe_dataset = dataset_id.replace('/', '_').replace('\\', '_')
@@ -412,7 +412,7 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     meta = {'ticker': ticker, 'dataset_id': dataset_id, 'best_params': study.best_trial.params,
             'best_value': study.best_trial.value, 'n_trials': len(study.trials), 'timestamp': timestamp, 'filename_tag': params_str}
     with open(pkl_path, 'wb') as f:
-        pickle.dump({'study_best_trial': study.best_trial, 'config': config, 'timestamp': timestamp, 'meta': meta, 'train_metrics': train_metrics, 'val_metrics': val_metrics}, f)
+        pickle.dump({'command_line': command_line, 'study_best_trial': study.best_trial, 'config': config, 'timestamp': timestamp, 'meta': meta, 'train_metrics': train_metrics, 'test_metrics': test_metrics}, f)
 
     print(f"✅ Model saved to: {pkl_path}")
 
@@ -438,9 +438,9 @@ def run_real_time_mode(args, config_cols):
     train_win_rate = model_data['train_metrics']['win_rate']
     train_score = model_data['train_metrics']['score']
     train_trade_density = model_data['train_metrics']['trade_density']
-    test_win_rate = model_data['val_metrics']['win_rate']
-    test_score = model_data['val_metrics']['score']
-    test_trade_density = model_data['val_metrics']['trade_density']
+    test_win_rate = model_data['test_metrics']['win_rate']
+    test_score = model_data['test_metrics']['score']
+    test_trade_density = model_data['test_metrics']['trade_density']
 
     cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
     print(f"📂 Loading dataset from: {cache_filename}")
@@ -454,7 +454,7 @@ def run_real_time_mode(args, config_cols):
     num_bars = len(df)
     print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
     print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
-
+    print(f"📂 Command line used for training: '{model_data['command_line']}'")
     lookback_needed = 100
     df_tail = df.tail(lookback_needed).copy()
     close_col, volume_col, open_col, high_col, low_col, ticker = config_cols
@@ -539,7 +539,7 @@ def entry(args):
     print("    • Backtests credit-spread outcomes over lookahead window (B)")
     print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
     print("═" * 62 + "\n")
-
+    command_line = " ".join(sys.argv)
     ticker = args.ticker
     dataset_id = args.dataset_id
     np.random.seed(args.seed)
@@ -770,7 +770,7 @@ def entry(args):
               'train_range': f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
               'val_range': f"({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})",
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
-    save_optimized_model(study, config, args.output_dir, ticker, dataset_id, train_metrics, test_metrics)
+    save_optimized_model(study=study, config=config, output_dir=args.output_dir, ticker=ticker, dataset_id=dataset_id, train_metrics=train_metrics, test_metrics=test_metrics, command_line=command_line)
 
 
 if __name__ == "__main__":
