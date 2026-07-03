@@ -675,7 +675,7 @@ def entry(args):
             if not dir_pnl.empty:
                 wr = dir_pnl['win_rate'].iloc[0]
                 td = dir_pnl['trade_density'].iloc[0]
-                desc = "PUT CREDIT SPREAD (bearish)" if dir_type == 'BUY' else "CALL CREDIT SPREAD (bullish)"
+                desc = "PUT CREDIT SPREAD" if dir_type == 'BUY' else "CALL CREDIT SPREAD"
                 trades = len(dir_pnl)
                 print(f"  {dir_type:<6} | Trades: {trades:>4} | Win Rate: {wr:>5.2f}% | Density: {td:.4f} | {desc}")
             else:
