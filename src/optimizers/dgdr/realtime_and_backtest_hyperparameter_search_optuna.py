@@ -172,7 +172,6 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group.add_argument('--model-path', type=str, default=None, help='Specific .pkl model path')
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
     flag_group.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
-    flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False, help='Short real-time output')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
     flag_group.add_argument('--plot', action='store_true', default=False, help='Plot results')
 
@@ -420,7 +419,7 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     return pkl_path
 
 
-def run_real_time_mode(model_path, clip, verbose_short):
+def run_real_time_mode(model_path, clip):
     assert model_path
     print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
@@ -478,12 +477,11 @@ def run_real_time_mode(model_path, clip, verbose_short):
     elif signal_type == 'sell':
         latest_signals = [s for s in latest_signals if s['Type'] == 'SELL']
 
-    if verbose_short:
-        if latest_signals:
-            sig = latest_signals[-1]
-            print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
-        else:
-            print("⚪ REAL-TIME: No new signal on latest closed bar.")
+    if latest_signals:
+        sig = latest_signals[-1]
+        print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
+    else:
+        print("⚪ REAL-TIME: No new signal on latest closed bar.")
 
     print("\n" + "─" * 40)
     print(" 🕒 REAL-TIME SIGNAL CHECK")
@@ -548,7 +546,7 @@ def entry(args):
     np.random.seed(args.seed)
 
     if args.real_time:
-        return run_real_time_mode(model_path=args.model_path, clip=args.clip, verbose_short=args.verbose_short)
+        return run_real_time_mode(model_path=args.model_path, clip=args.clip)
 
     ticker = args.ticker
     dataset_id = args.dataset_id
