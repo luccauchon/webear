@@ -420,7 +420,7 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     return pkl_path
 
 
-def run_real_time_mode(model_path, clip):
+def run_real_time_mode(model_path, clip, verbose_short):
     assert model_path
     print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
@@ -478,7 +478,7 @@ def run_real_time_mode(model_path, clip):
     elif signal_type == 'sell':
         latest_signals = [s for s in latest_signals if s['Type'] == 'SELL']
 
-    if args.verbose_short:
+    if verbose_short:
         if latest_signals:
             sig = latest_signals[-1]
             print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
@@ -548,7 +548,7 @@ def entry(args):
     np.random.seed(args.seed)
 
     if args.real_time:
-        return run_real_time_mode(model_path=args.model_path, clip=args.clip)
+        return run_real_time_mode(model_path=args.model_path, clip=args.clip, verbose_short=args.verbose_short)
 
     ticker = args.ticker
     dataset_id = args.dataset_id
