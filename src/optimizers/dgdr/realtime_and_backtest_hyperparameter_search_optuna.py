@@ -660,6 +660,12 @@ def entry(args):
     print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc Test)")
     print("─" * 65)
     for dir_type in ['BUY', 'SELL']:
+        if dir_type == "BUY":
+            if args.signal_type not in ["buy", "both"]:
+                continue
+        if dir_type == "SELL":
+            if args.signal_type not in ["sell", "both"]:
+                continue
         dir_signals = [s for s in signals_val if s['Type'] == dir_type]
         if dir_signals:
             dir_pnl = calculate_pnl_report(dir_signals, df_test, close_col, high_col, low_col,
