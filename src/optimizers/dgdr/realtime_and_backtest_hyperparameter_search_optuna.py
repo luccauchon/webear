@@ -486,8 +486,8 @@ def run_real_time_mode(args, config_cols):
     print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type}")
     print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
     print(f" Test score  : {test_score:.2%} | Test Win Rate : {test_win_rate:.2f}% | Test Density : {test_trade_density:.2%} | {config['val_range']}")
-    print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
-    print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
+    if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
+    if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
     print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
     print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')}")
     buy_signal_detected, sell_signal_detected = False, False
