@@ -17,21 +17,15 @@ for /L %%L in (1,1,20) do (
             set "STRK_SUF=%%P"
             set "STRK_SUF=!STRK_SUF:.=!"
 
-            :: Le titre de la fenetre inclut le lookahead actuel pour le cibler plus tard
             start "DGDR_OPTUNA_L%%L" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\dgdr && python .\realtime_and_backtest_hyperparameter_search_optuna.py --dataset-id day --lookahead-bars %%L --method final_close --min-signal-density %%D --put-strike-pct %%P --call-strike-pct 1. --n-trials 99999 --timeout 3600 --train-ratio 0.90 --signal-type buy --output-dir day_perspective --optuna-storage sqlite:///day_perspective\\day_day_buy_!STRK_SUF!_dens!DENS_SUF!_lookahead%%L.db --optuna-study-name doesnotmatter"
         )
     )
 
-    :: Boucle d'attente : Vérifie toutes les 10 secondes si des fenetres de ce lookahead tournent encore
-    echo Attente de la fin des 30 processus du groupe %%L...
-    :WAIT_LOOP
-    timeout /t 10 /nobreak >nul
-    tasklist /v /fi "IMAGENAME eq cmd.exe" | findstr /I "DGDR_OPTUNA_L%%L" >nul
-    if !errorlevel! equ 0 (
-        goto :WAIT_LOOP
-    )
+    :: Attente de 3700 secondes (1 heure) avant le lookahead suivant
+    echo Les 30 processus tournent. Pause de 1 heure...
+    timeout /t 3700 /nobreak
 
-    echo Le groupe pour lookahead-bars = %%L est termine.
+    echo Le temps imparti pour lookahead-bars = %%L est ecoule.
     echo.
 )
 
