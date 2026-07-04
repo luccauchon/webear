@@ -1,20 +1,39 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Boucle sur les valeurs de densité de signal
-for %%D in (0.050 0.100 0.150 0.200 0.250 0.300) do (
+:: Boucle externe de 1 à 20 pour lookahead-bars
+for /L %%L in (1,1,20) do (
 
-    :: Extraction propre pour le nom du fichier DB (ex: 0.05 devient 005, 0.1 devient 01)
-    set "DENS_SUF=%%D"
-    set "DENS_SUF=!DENS_SUF:.=!"
+    echo ========================================================
+    echo Lancement du groupe complet pour lookahead-bars = %%L
+    echo ========================================================
 
-    :: Boucle sur les valeurs de put-strike-pct
-    for %%P in (0.999 0.995 0.990 0.9875 0.985) do (
+    :: Lancement des 30 processus en parallèle
+    for %%D in (0.050 0.100 0.150 0.200 0.250 0.300) do (
+        set "DENS_SUF=%%D"
+        set "DENS_SUF=!DENS_SUF:.=!"
 
-        :: Extraction propre pour le nom du fichier DB (ex: 0.99 devient 099)
-        set "STRK_SUF=%%P"
-        set "STRK_SUF=!STRK_SUF:.=!"
+        for %%P in (0.999 0.995 0.990 0.9875 0.985) do (
+            set "STRK_SUF=%%P"
+            set "STRK_SUF=!STRK_SUF:.=!"
 
-        start "DGDR Optuna Day-Day" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\dgdr && python .\realtime_and_backtest_hyperparameter_search_optuna.py --dataset-id day --lookahead-bars 1 --method final_close --min-signal-density %%D --put-strike-pct %%P --call-strike-pct 1. --n-trials 99999 --timeout 3600 --train-ratio 0.90 --signal-type buy --output-dir day_perspective --optuna-storage sqlite:///day_perspective\\day_day_buy_!STRK_SUF!_dens!DENS_SUF!.db --optuna-study-name doesnotmatter"
+            :: Le titre de la fenetre inclut le lookahead actuel pour le cibler plus tard
+            start "DGDR_OPTUNA_L%%L" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\dgdr && python .\realtime_and_backtest_hyperparameter_search_optuna.py --dataset-id day --lookahead-bars %%L --method final_close --min-signal-density %%D --put-strike-pct %%P --call-strike-pct 1. --n-trials 99999 --timeout 3600 --train-ratio 0.90 --signal-type buy --output-dir day_perspective --optuna-storage sqlite:///day_perspective\\day_day_buy_!STRK_SUF!_dens!DENS_SUF!_lookahead%%L.db --optuna-study-name doesnotmatter"
+        )
     )
+
+    :: Boucle d'attente : Vérifie toutes les 10 secondes si des fenetres de ce lookahead tournent encore
+    echo Attente de la fin des 30 processus du groupe %%L...
+    :WAIT_LOOP
+    timeout /t 10 /nobreak >nul
+    tasklist /v /fi "IMAGENAME eq cmd.exe" | findstr /I "DGDR_OPTUNA_L%%L" >nul
+    if !errorlevel! equ 0 (
+        goto :WAIT_LOOP
+    )
+
+    echo Le groupe pour lookahead-bars = %%L est termine.
+    echo.
 )
+
+echo Tous les lookahead-bars de 1 a 20 sont termines.
+pause
