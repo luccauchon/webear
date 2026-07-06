@@ -143,6 +143,9 @@ def entry(args):
     with open(json_file, 'w') as f:
         json.dump(result, f, indent=4)
 
+    # Remove working file
+    os.remove(filename_extracted_information)
+
 
 if __name__ == "__main__":
     args = parse_args()

@@ -133,7 +133,7 @@ def parse_data(raw):
 
 
 # ---------- Plotting & Export ----------
-def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id):
+def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id, output_dir):
     put_df = df[df['optimize'] == 'buy_wr']
     call_df = df[df['optimize'] == 'sell_wr']
 
@@ -269,7 +269,7 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id):
     fig.update_xaxes(title_text="Threshold (target / current price)")
 
     # --- STANDALONE HTML EXPORT ---
-    out_html = Path(f'credit_spread_interactive_{now}_{dataset_id}.html').resolve()
+    out_html = Path(os.path.join(output_dir, f'credit_spread_interactive_{now}_{dataset_id}.html')).resolve()
 
     # include_plotlyjs=True bakes the entire JS library into the file.
     # This guarantees it works 100% offline as a single standalone file.
@@ -300,6 +300,10 @@ def parse_args():
         required=True,
         help="Path to the JSON file to parse"
     )
+    parser.add_argument(
+        "--output-dir", type=str, default=".",
+        help=f"Directory where to save the html file"
+    )
     return parser.parse_args()
 
 
@@ -325,7 +329,7 @@ def entry(args):
     print(f"Put thresholds   : {len(put_thresholds)}")
     print(f"Call thresholds  : {len(call_thresholds)}\n")
 
-    plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id)
+    plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id, args.output_dir)
 
 
 if __name__ == '__main__':
