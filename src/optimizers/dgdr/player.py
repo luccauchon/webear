@@ -72,8 +72,8 @@ def entry(args):
             real_time=True,
             seed=123,
             model_path=str(file_path),
-            verbose=True,
-            verbose_short=True,
+            verbose=False,
+            verbose_short=False,
             clip=args.clip,
             length_dataset=999999,
         )
