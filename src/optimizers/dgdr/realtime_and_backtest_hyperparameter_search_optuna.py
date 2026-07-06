@@ -479,9 +479,9 @@ def run_real_time_mode(model_path, clip, verbose):
 
     if latest_signals:
         sig = latest_signals[-1]
-        print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
+        if verbose: print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
     else:
-        print("⚪ REAL-TIME: No new signal on latest closed bar.")
+        if verbose: print("⚪ REAL-TIME: No new signal on latest closed bar.")
     if verbose:
         print("\n" + "─" * 40)
         print(" 🕒 REAL-TIME SIGNAL CHECK")
