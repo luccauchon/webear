@@ -418,16 +418,16 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     return pkl_path
 
 
-def run_real_time_mode(model_path, clip):
+def run_real_time_mode(model_path, clip, verbose):
     assert model_path
-    print(f"📦 Loading real-time model: {model_path}")
+    if verbose: print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
         model_data = pickle.load(f)
     best_params = model_data['study_best_trial'].params
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
-    print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
+    if verbose: print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
     dataset_id = model_data['config']['dataset_id']
     lookahead = model_data['config']['B']
@@ -441,7 +441,7 @@ def run_real_time_mode(model_path, clip):
     test_trade_density = model_data['test_metrics']['trade_density']
 
     cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
-    print(f"📂 Loading dataset from: {cache_filename}")
+    if verbose: print(f"📂 Loading dataset from: {cache_filename}")
     with open(cache_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
 
@@ -451,9 +451,10 @@ def run_real_time_mode(model_path, clip):
     first_date = df.index[0]
     last_date = df.index[-1]
     num_bars = len(df)
-    print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-    print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
-    print(f"📂 Command line used for training: '{model_data['command_line']}'")
+    if verbose:
+        print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
+        print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
+        print(f"📂 Command line used for training: '{model_data['command_line']}'")
     lookback_needed = 100
     df_tail = df.tail(lookback_needed).copy()
     close_col = ('Close', ticker)
@@ -481,27 +482,28 @@ def run_real_time_mode(model_path, clip):
         print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
     else:
         print("⚪ REAL-TIME: No new signal on latest closed bar.")
-
-    print("\n" + "─" * 40)
-    print(" 🕒 REAL-TIME SIGNAL CHECK")
-    print("─" * 40)
-    print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type}")
-    print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
-    print(f" Test score  : {test_score:.2%} | Test Win Rate : {test_win_rate:.2f}% | Test Density : {test_trade_density:.2%} | {config['val_range']}")
-    if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
-    if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
-    print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
-    print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-2]:.2f}")
+    if verbose:
+        print("\n" + "─" * 40)
+        print(" 🕒 REAL-TIME SIGNAL CHECK")
+        print("─" * 40)
+        print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type}")
+        print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
+        print(f" Test score  : {test_score:.2%} | Test Win Rate : {test_win_rate:.2f}% | Test Density : {test_trade_density:.2%} | {config['val_range']}")
+        if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
+        if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
+        print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
+        print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-2]:.2f}")
     buy_signal_detected, sell_signal_detected = False, False
     if latest_signals:
         sig = latest_signals[-1]
-        print(f"TODO --> {sig}")
-        print(f" 🟢 SIGNAL DETECTED: {sig['Type']}")
-        print(f"    Entry Price : ${sig['Price']:.2f}")
+        if verbose:
+            print(f"TODO --> {sig}")
+            print(f" 🟢 SIGNAL DETECTED: {sig['Type']}")
+            print(f"    Entry Price : ${sig['Price']:.2f}")
         buy_signal_detected, sell_signal_detected = True, True
     else:
-        print(" ⚪ NO SIGNAL on latest closed bar.")
-    print("─" * 40 + "\n")
+        if verbose: print(" ⚪ NO SIGNAL on latest closed bar.")
+    if verbose: print("─" * 40 + "\n")
     result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': test_score, 'val_trade_density': test_trade_density,
               'train_win_rate': train_win_rate / 100., 'val_win_rate': test_win_rate / 100.,
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
@@ -518,34 +520,35 @@ def perfect_score_callback(study, trial):
 
 
 def entry(args):
-    print("\n" + "═" * 62)
-    print(" 🎯 DGDR ALGORITHM INITIALIZED")
-    print("    Double Green / Double Red Momentum")
-    print("═" * 62)
-    print(" 📖 CORE CONCEPT:")
-    print("    A price-action momentum system that detects accelerating")
-    print("    2-bar continuations. Filters market noise using dynamic")
-    print("    trend alignment, VWAP positioning, and RSI(2) oscillators.")
-    print("")
-    print(" 🔍 SIGNAL LOGIC:")
-    print("    🟢 DOUBLE GREEN  → Body expansion, structure breakout,")
-    print("       minimal upper-wick rejection. Confirmed by: Price > VWAP")
-    print("       & SuperTrend ↑ & RSI > Buy Threshold")
-    print("    🔴 DOUBLE RED    → Body expansion, structure breakdown,")
-    print("       minimal lower-wick rejection. Confirmed by: Price < VWAP")
-    print("       & SuperTrend ↓ & RSI < Sell Threshold")
-    print("")
-    print(" ⚙️ OPTIMIZATION & EXECUTION:")
-    print("    • Optuna auto-tunes SuperTrend, RSI & Wick thresholds")
-    print("    • Composite scoring: Weighted Win-Rate + Trade-Density")
-    print("    • Backtests credit-spread outcomes over lookahead window (B)")
-    print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
-    print("═" * 62 + "\n")
+    if args.verbose:
+        print("\n" + "═" * 62)
+        print(" 🎯 DGDR ALGORITHM INITIALIZED")
+        print("    Double Green / Double Red Momentum")
+        print("═" * 62)
+        print(" 📖 CORE CONCEPT:")
+        print("    A price-action momentum system that detects accelerating")
+        print("    2-bar continuations. Filters market noise using dynamic")
+        print("    trend alignment, VWAP positioning, and RSI(2) oscillators.")
+        print("")
+        print(" 🔍 SIGNAL LOGIC:")
+        print("    🟢 DOUBLE GREEN  → Body expansion, structure breakout,")
+        print("       minimal upper-wick rejection. Confirmed by: Price > VWAP")
+        print("       & SuperTrend ↑ & RSI > Buy Threshold")
+        print("    🔴 DOUBLE RED    → Body expansion, structure breakdown,")
+        print("       minimal lower-wick rejection. Confirmed by: Price < VWAP")
+        print("       & SuperTrend ↓ & RSI < Sell Threshold")
+        print("")
+        print(" ⚙️ OPTIMIZATION & EXECUTION:")
+        print("    • Optuna auto-tunes SuperTrend, RSI & Wick thresholds")
+        print("    • Composite scoring: Weighted Win-Rate + Trade-Density")
+        print("    • Backtests credit-spread outcomes over lookahead window (B)")
+        print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
+        print("═" * 62 + "\n")
     command_line = " ".join(sys.argv)
     np.random.seed(args.seed)
 
     if args.real_time:
-        return run_real_time_mode(model_path=args.model_path, clip=args.clip)
+        return run_real_time_mode(model_path=args.model_path, clip=args.clip, verbose=args.verbose)
 
     ticker = args.ticker
     dataset_id = args.dataset_id
