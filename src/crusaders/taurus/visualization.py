@@ -219,8 +219,8 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id, output_
 
     # --- Create Slider for filtering by Val Win Rate ---
     steps = []
-    # Create steps from 50% to 99% in increments of 1%
-    for T in range(50, 100, 1):
+    # Create steps from 33% to 99% in increments of 1%
+    for T in range(33, 100, 1):
         # For Put side: keep values >= T, set others to NaN (white gap)
         z_put_T = np.where(z_put >= T, z_put, np.nan)
         text_put_T = np.where(z_put >= T, text_put, '')
