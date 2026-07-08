@@ -77,7 +77,7 @@ def parse_entry(entry, lookahead, optimize, thresh):
 
 def parse_data(raw):
     data = strip_ws(raw)
-    now, dataset_id = data["now"], data["dataset_id"]
+    now, dataset_id, current_price = data["now"], data["dataset_id"], data["current_price"]
     records = []
     all_thresholds = set()
     all_lookaheads = set()
@@ -129,11 +129,11 @@ def parse_data(raw):
         #         if r: records.append(r)
 
     df = pd.DataFrame(records)
-    return df, sorted(list(all_thresholds)), sorted(list(all_lookaheads)), now, dataset_id
+    return df, sorted(list(all_thresholds)), sorted(list(all_lookaheads)), now, dataset_id, current_price
 
 
 # ---------- Plotting & Export ----------
-def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id, output_dir):
+def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, dataset_id, output_dir):
     put_df = df[df['optimize'] == 'buy_wr']
     call_df = df[df['optimize'] == 'sell_wr']
 
@@ -240,7 +240,7 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id, output_
         steps.append(step)
 
     fig.update_layout(
-        title_text=f"<b>[{now}]Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal)</sup>",
+        title_text=f"<b>[{now}:{current_price:.0f}]Best Validation Win Rate per Lookahead × Price Level</b><br><sup>(Hover over colored boxes for details. White boxes = No signal)</sup>",
         title_x=0.5,
         height=750,
         width=1400,
@@ -315,7 +315,7 @@ def entry(args):
     raw = load_data(args.filepath)
     print(f"Total top-level keys: {len(raw)}\n")
 
-    df, all_thresholds, all_lookaheads, now, dataset_id = parse_data(raw)
+    df, all_thresholds, all_lookaheads, now, dataset_id, current_price = parse_data(raw)
     print(f"Records kept after signal filtering: {len(df)}")
     if df.empty:
         print("Nothing to plot. Check the file structure.");
@@ -329,7 +329,7 @@ def entry(args):
     print(f"Put thresholds   : {len(put_thresholds)}")
     print(f"Call thresholds  : {len(call_thresholds)}\n")
 
-    plot_and_export(df, all_thresholds, all_lookaheads, now, dataset_id, args.output_dir)
+    plot_and_export(df=df, all_thresholds=all_thresholds, all_lookaheads=all_lookaheads, now=now, current_price=current_price, dataset_id=dataset_id, output_dir=args.output_dir)
 
 
 if __name__ == '__main__':

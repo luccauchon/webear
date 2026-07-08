@@ -124,7 +124,7 @@ def entry(args):
         if not args.pkl_file:
             print(f"Computed results are in {filename_extracted_information}")
     ranges_for__optimize_target, ranges_for__put_threshold, ranges_for__call_threshold = [], [], []
-    ranges_for__lookahead = []
+    ranges_for__lookahead, current_price = [], -1
     for one_use_case in data_from_workers:
         assert 3 == len(one_use_case["info"].split("::"))
         if str(one_use_case["info"].split("::")[1]).strip() not in [args.dataset_id]:
@@ -136,6 +136,9 @@ def entry(args):
             ranges_for__put_threshold.append(float(one_use_case["threshold"]))
         if one_use_case["optimize_target"] == "sell_wr":
             ranges_for__call_threshold.append(float(one_use_case["threshold"]))
+        if current_price == -1:
+            current_price = one_use_case["current_price"]
+        assert current_price == one_use_case["current_price"]
     ranges_for__optimize_target = list(set(ranges_for__optimize_target))
     ranges_for__put_threshold = list(sorted(set(ranges_for__put_threshold)))
     ranges_for__call_threshold = list(sorted(set(ranges_for__call_threshold)))
@@ -144,7 +147,7 @@ def entry(args):
 
     ###########################################################################
     # Generate the json to be used for visualization
-    result = {"now": f"{date_string}", "dataset_id": args.dataset_id}
+    result = {"now": f"{date_string}", "dataset_id": args.dataset_id, "current_price": current_price}
     outer_loop = tqdm(ranges_for__lookahead, desc="Lookahead") if args.verbose else ranges_for__lookahead
     for lookahead in outer_loop:
         lookahead_str = f"{lookahead}"
