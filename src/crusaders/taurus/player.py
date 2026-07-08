@@ -12,7 +12,7 @@ except ImportError:
     from version import sys__name, sys__version
 from multiprocessing import freeze_support, Lock, Process, Queue, Value
 import argparse
-import pathlib
+import sys
 import psutil
 from argparse import Namespace
 import os
@@ -159,7 +159,18 @@ def parse_args():
         default=None,
         help="Filter by threshold substring (e.g., 0.987)"
     )
-
+    parser.add_argument(
+        "--min-threshold",
+        type=float,
+        default=None,
+        help="Minimum threshold (e.g., 0.981)"
+    )
+    parser.add_argument(
+        "--max-threshold",
+        type=float,
+        default=None,
+        help="Maximum threshold (e.g., 1.001)"
+    )
     # ==========================================
     # SAVE / LOAD ARGUMENTS
     # ==========================================
@@ -167,7 +178,7 @@ def parse_args():
         "--save-to",
         type=str,
         default=None,
-        help="Save data_from_workers to the specified file after computation."
+        help="Save data_from_workers to the specified file after computation. Exit program."
     )
     parser.add_argument(
         "--load-from",
@@ -239,6 +250,7 @@ def entry(args):
             if args.verbose: print(f"Saving data to {args.save_to}...")
             with open(args.save_to, 'wb') as f:
                 pickle.dump(data_from_workers, f)
+            sys.exit(0)
 
     results = data_from_workers
 
@@ -300,6 +312,12 @@ def entry(args):
             continue
 
         if args.threshold is not None and not any(sub in threshold for sub in args.threshold):
+            continue
+
+        if args.min_threshold is not None and float(threshold) < float(args.min_threshold):
+            continue
+
+        if args.max_threshold is not None and float(threshold) > float(args.max_threshold):
             continue
 
         # Format strings for display (only for rows that passed filters)
