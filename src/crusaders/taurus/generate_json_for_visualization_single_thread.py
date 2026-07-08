@@ -9,7 +9,6 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
 import json
 import argparse
 import pickle
@@ -22,7 +21,6 @@ from pprint import pprint
 import numpy as np
 from tqdm import tqdm
 import sys
-import concurrent.futures  # <--- NEW IMPORT FOR MULTIPROCESSING
 
 
 def parse_args():
@@ -30,52 +28,64 @@ def parse_args():
         prog="",
         description=""
     )
-    parser.add_argument("--autotune-target-dir", required=False, default=".", help="Target directory for autotune models")
-    parser.add_argument("--dgdr-target-dir", required=False, default=".", help="Target directory for dgdr models")
-    parser.add_argument("--oerh-target-dir", required=False, default=".", help="Target directory for oerh models")
-    parser.add_argument("--prime-rsi-target-dir", required=False, default=".", help="Target directory for prime_rsi models")
-    parser.add_argument("-v", "--verbose", action="store_true", default=False, help="Enable verbose output during processing")
+    parser.add_argument(
+        "--autotune-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for autotune models"
+    )
+    parser.add_argument(
+        "--dgdr-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for dgdr models"
+    )
+    parser.add_argument(
+        "--oerh-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for oerh models"
+    )
+    parser.add_argument(
+        "--prime-rsi-target-dir",
+        required=False,
+        default=".",
+        help="Target directory for prime_rsi models"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=False,
+        help="Enable verbose output during processing"
+    )
     parser.add_argument('--dataset-id', type=str, default='day')
-    parser.add_argument("--json-file", required=False, default=None, help="Specify the output JSON file name.")
-    parser.add_argument("--pkl-file", required=False, default=None, help="Specify the input .pkl file to load extracted information from.")
+    parser.add_argument(
+        "--json-file",
+        required=False,
+        default=None,
+        help="Specify the output JSON file name. If not provided, defaults to 'taurus_visualization_{dataset_id}_{date}.json'"
+    )
+    parser.add_argument(
+        "--pkl-file",
+        required=False,
+        default=None,
+        help="Specify the input .pkl file to load extracted information from. If not provided, defaults to a generated filename based on the date and clip flag."
+    )
     parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
-    parser.add_argument("-r", "--remove-results", action="store_true", default=False, help="Remove the file that contains results computed by workers")
+    parser.add_argument(
+        "-r", "--remove-results",
+        action="store_true",
+        default=False,
+        help="Remove the file that contains results computed by workers"
+    )
     return parser.parse_args()
 
 
-def process_lookahead(lookahead, dataset_id, ranges_for__optimize_target, ranges_for__put_threshold, ranges_for__call_threshold, filename_extracted_information):
-    """
-    Processes a single lookahead value.
-    MUST be at the module level to be picklable by ProcessPoolExecutor.
-    """
-    lookahead_str = f"{lookahead}"
-    lookahead_result = {}
-
-    for optimize_target in ranges_for__optimize_target:
-        lookahead_result[optimize_target] = {}
-        _ranges = ranges_for__put_threshold
-        if optimize_target == "sell_wr":
-            _ranges = ranges_for__call_threshold
-
-        for threshold in _ranges:
-            thresh_str = f"{threshold:.3f}"
-            configuration = Namespace(
-                prime_rsi_target_dir=None, nb_workers=None, verbose=False,
-                autotune_target_dir=None, dgdr_target_dir=None, oerh_target_dir=None,
-                load_from=filename_extracted_information, save_to=None, dataset_id=dataset_id,
-                info=["^GSPC", f"::{dataset_id}", f"::{lookahead} "], min_threshold=None, max_threshold=None,
-                threshold=[thresh_str], min_val_rate=None, min_train_rate=None,
-                hide_zero_signal=True, signal=None, indicator=None, method=None,
-                optimize_target=optimize_target
-            )
-            lookahead_result[optimize_target][thresh_str] = player_entry(args=configuration)
-
-    return lookahead_str, lookahead_result
-
-
 def entry(args):
+    # Get the current date and time and format the date as YYYY_MM_DD
     date_string = datetime.now().strftime("%Y_%m_%d")
 
+    # Determine the output JSON file name
     if args.json_file:
         json_file = args.json_file
     else:
@@ -131,7 +141,6 @@ def entry(args):
         if current_price == -1:
             current_price = one_use_case["current_price"]
         assert current_price == one_use_case["current_price"]
-
     ranges_for__optimize_target = list(set(ranges_for__optimize_target))
     ranges_for__put_threshold = list(sorted(set(ranges_for__put_threshold)))
     ranges_for__call_threshold = list(sorted(set(ranges_for__call_threshold)))
@@ -139,38 +148,30 @@ def entry(args):
     ranges_for__lookahead = list(range(1, max(ranges_for__lookahead) + 1))
 
     ###########################################################################
-    # Generate the json to be used for visualization (MULTIPROCESSING)
+    # Generate the json to be used for visualization
     result = {"now": f"{date_string}", "dataset_id": args.dataset_id, "current_price": current_price}
-
-    # Use ProcessPoolExecutor to run lookaheads in parallel
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        # Submit all tasks to the executor
-        futures = [
-            executor.submit(
-                process_lookahead,
-                lookahead,
-                args.dataset_id,
-                ranges_for__optimize_target,
-                ranges_for__put_threshold,
-                ranges_for__call_threshold,
-                filename_extracted_information
-            )
-            for lookahead in ranges_for__lookahead
-        ]
-
-        # Track progress with tqdm as futures complete
-        iterator = tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Lookahead") if args.verbose else concurrent.futures.as_completed(futures)
-
-        for future in iterator:
-            lookahead_str, lookahead_result = future.result()
-            result[lookahead_str] = lookahead_result
-
-    # Optional: Sort the lookahead keys numerically to match the original sequential JSON structure
-    sorted_keys = ["now", "dataset_id", "current_price"] + sorted(
-        [k for k in result.keys() if k not in ("now", "dataset_id", "current_price")],
-        key=int
-    )
-    result = {k: result[k] for k in sorted_keys}
+    outer_loop = tqdm(ranges_for__lookahead, desc="Lookahead") if args.verbose else ranges_for__lookahead
+    for lookahead in outer_loop:
+        lookahead_str = f"{lookahead}"
+        result[lookahead_str] = {}
+        for optimize_target in ranges_for__optimize_target:
+            result[lookahead_str][optimize_target] = {}
+            _ranges = ranges_for__put_threshold
+            if optimize_target in ["sell_wr"]:
+                _ranges = ranges_for__call_threshold
+            inner_loop = tqdm(_ranges, desc=f"Target (LH {lookahead} / OT {optimize_target})", leave=False) if args.verbose else _ranges
+            for threshold in inner_loop:
+                thresh_str = f"{threshold:.3f}"
+                configuration = Namespace(
+                    prime_rsi_target_dir=None, nb_workers=None, verbose=False,
+                    autotune_target_dir=None, dgdr_target_dir=None, oerh_target_dir=None,
+                    load_from=filename_extracted_information, save_to=None, dataset_id=args.dataset_id,
+                    info=["^GSPC", f"::{args.dataset_id}", f"::{lookahead} "], min_threshold=None, max_threshold=None,
+                    threshold=[thresh_str], min_val_rate=None, min_train_rate=None,
+                    hide_zero_signal=True, signal=None, indicator=None, method=None,
+                    optimize_target=optimize_target
+                )
+                result[lookahead_str][optimize_target][thresh_str] = player_entry(args=configuration)
 
     # Write the result
     with open(json_file, 'w') as f:
