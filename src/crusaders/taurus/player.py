@@ -20,7 +20,7 @@ from optimizers.autotune.player import entry as autotune_player
 from optimizers.dgdr.player import entry as dgdr_player
 from optimizers.oerh.player import entry as oerh_player
 from optimizers.prime_rsi.player import entry as prime_rsi_player
-import time
+import sys
 
 
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
@@ -202,6 +202,10 @@ def entry(args):
 
     data_from_workers = []
 
+    if args.save_to:
+        if os.path.exists(args.save_to):
+            print(f"File {args.save_to} already generated. Exiting.")
+            sys.exit(0)
     # ==========================================
     # LOAD FROM FILE OR COMPUTE
     # ==========================================
