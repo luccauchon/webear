@@ -20,6 +20,7 @@ import os
 from pprint import pprint
 import numpy as np
 from tqdm import tqdm
+import sys
 
 
 def parse_args():
@@ -64,7 +65,19 @@ def parse_args():
         default=None,
         help="Specify the output JSON file name. If not provided, defaults to 'taurus_visualization_{dataset_id}_{date}.json'"
     )
+    parser.add_argument(
+        "--pkl-file",
+        required=False,
+        default=None,
+        help="Specify the input .pkl file to load extracted information from. If not provided, defaults to a generated filename based on the date and clip flag."
+    )
     parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    parser.add_argument(
+        "-r", "--remove-results",
+        action="store_true",
+        default=False,
+        help="Remove the file that contains results computed by workers"
+    )
     return parser.parse_args()
 
 
@@ -72,11 +85,25 @@ def entry(args):
     # Get the current date and time and format the date as YYYY_MM_DD
     date_string = datetime.now().strftime("%Y_%m_%d")
 
+    # Determine the output JSON file name
+    if args.json_file:
+        json_file = args.json_file
+    else:
+        json_file = f"taurus_visualization_{args.dataset_id}_{date_string}.json"
+
+    if os.path.exists(json_file):
+        print(f"Found {json_file}. Exiting.")
+        sys.exit(0)
+
     ###########################################################################
     # Process all use cases and save the result
-    filename_extracted_information = f"taurus_played__{date_string}.pkl"
-    if args.clip:
-        filename_extracted_information = f"taurus_played_clipped__{date_string}.pkl"
+    if args.pkl_file:
+        filename_extracted_information = args.pkl_file
+    else:
+        filename_extracted_information = f"taurus_played__{date_string}.pkl"
+        if args.clip:
+            filename_extracted_information = f"taurus_played_clipped__{date_string}.pkl"
+
     if not os.path.exists(filename_extracted_information):
         configuration = Namespace(prime_rsi_target_dir=args.prime_rsi_target_dir,
                                   autotune_target_dir=args.autotune_target_dir,
@@ -90,6 +117,12 @@ def entry(args):
     # Extract boudaries information from all the use cases processed
     with open(filename_extracted_information, 'rb') as f:
         data_from_workers = pickle.load(f)
+    # Remove working file
+    if args.remove_results and not args.pkl_file:
+        os.remove(filename_extracted_information)
+    else:
+        if not args.pkl_file:
+            print(f"Computed results are in {filename_extracted_information}")
     ranges_for__optimize_target, ranges_for__put_threshold, ranges_for__call_threshold = [], [], []
     ranges_for__lookahead = []
     for one_use_case in data_from_workers:
@@ -107,11 +140,13 @@ def entry(args):
     ranges_for__put_threshold = list(sorted(set(ranges_for__put_threshold)))
     ranges_for__call_threshold = list(sorted(set(ranges_for__call_threshold)))
     ranges_for__lookahead = list(sorted(set(ranges_for__lookahead)))
+    ranges_for__lookahead = list(range(1, max(ranges_for__lookahead) + 1))
 
     ###########################################################################
     # Generate the json to be used for visualization
     result = {"now": f"{date_string}", "dataset_id": args.dataset_id}
-    for lookahead in ranges_for__lookahead:
+    outer_loop = tqdm(ranges_for__lookahead, desc="Lookahead") if args.verbose else ranges_for__lookahead
+    for lookahead in outer_loop:
         lookahead_str = f"{lookahead}"
         result[lookahead_str] = {}
         for optimize_target in ranges_for__optimize_target:
@@ -119,32 +154,23 @@ def entry(args):
             _ranges = ranges_for__put_threshold
             if optimize_target in ["sell_wr"]:
                 _ranges = ranges_for__call_threshold
-            for threshold in _ranges:
+            inner_loop = tqdm(_ranges, desc=f"Target (LH {lookahead} / OT {optimize_target})", leave=False) if args.verbose else _ranges
+            for threshold in inner_loop:
                 thresh_str = f"{threshold:.3f}"
                 configuration = Namespace(
                     prime_rsi_target_dir=None, nb_workers=None, verbose=False,
                     autotune_target_dir=None, dgdr_target_dir=None, oerh_target_dir=None,
                     load_from=filename_extracted_information, save_to=None, dataset_id=args.dataset_id,
-                    info=["^GSPC", f"::{args.dataset_id}", f"::{lookahead} "],
+                    info=["^GSPC", f"::{args.dataset_id}", f"::{lookahead} "], min_threshold=None, max_threshold=None,
                     threshold=[thresh_str], min_val_rate=None, min_train_rate=None,
                     hide_zero_signal=True, signal=None, indicator=None, method=None,
                     optimize_target=optimize_target
                 )
                 result[lookahead_str][optimize_target][thresh_str] = player_entry(args=configuration)
-    if args.verbose:
-        pprint(result)
 
-    # Determine the output JSON file name
-    if args.json_file:
-        json_file = args.json_file
-    else:
-        json_file = f"taurus_visualization_{args.dataset_id}_{date_string}.json"
-
+    # Write the result
     with open(json_file, 'w') as f:
         json.dump(result, f, indent=4)
-
-    # Remove working file
-    os.remove(filename_extracted_information)
 
 
 if __name__ == "__main__":
