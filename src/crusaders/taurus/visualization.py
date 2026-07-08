@@ -20,7 +20,8 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
+import calendar
 import os
 
 
@@ -45,6 +46,70 @@ def get_thresh_from_key(s):
     """Extract the numeric threshold from keys like '0.986::' or '::1.014'."""
     m = re.search(r'([\d.]+)', s)
     return float(m.group(1)) if m else None
+
+
+# ---------- Date Math Helpers (Trading System Logic) ----------
+def add_trading_days(start_dt, num_days):
+    """Adds exactly num_days of trading days (Mon-Fri), skipping weekends."""
+    current = start_dt
+    added = 0
+    while added < num_days:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # 0=Mon, 4=Fri
+            added += 1
+    return current
+
+
+def add_months_and_adjust(start_dt, num_months):
+    """Adds calendar months and rolls forward to Monday if it lands on a weekend."""
+    month = start_dt.month - 1 + num_months
+    year = start_dt.year + month // 12
+    month = month % 12 + 1
+    day = min(start_dt.day, calendar.monthrange(year, month)[1])
+    dt = start_dt.replace(year=year, month=month, day=day)
+
+    if dt.weekday() == 5:  # Saturday
+        dt += timedelta(days=2)
+    elif dt.weekday() == 6:  # Sunday
+        dt += timedelta(days=1)
+    return dt
+
+
+def get_lookahead_date(now_str, dataset_id, la):
+    """Convert an integer lookahead to a formatted date string YYYYMMDD, skipping weekends."""
+    now_str_clean = str(now_str).replace("-", "_").replace("/", "_")
+    try:
+        dt = datetime.strptime(now_str_clean, "%Y_%m_%d")
+    except ValueError:
+        try:
+            dt = datetime.strptime(now_str_clean, "%Y%m%d")
+        except ValueError:
+            return str(la)  # Fallback to integer string if parsing fails
+
+    if dataset_id == "day":
+        dt = add_trading_days(dt, la)
+    elif dataset_id == "week":
+        # 1 trading week = 5 trading days
+        dt = add_trading_days(dt, la * 5)
+    elif dataset_id == "month":
+        dt = add_months_and_adjust(dt, la)
+    elif dataset_id in ["quaterly", "quarterly"]:
+        dt = add_months_and_adjust(dt, la * 3)
+    elif dataset_id == "year":
+        try:
+            dt = dt.replace(year=dt.year + la)
+        except ValueError:  # Handle leap year (e.g., Feb 29 to non-leap year)
+            dt = dt.replace(year=dt.year + la, day=28)
+    else:
+        dt = add_trading_days(dt, la)  # Fallback to trading days
+
+    # Final weekend adjustment just in case la=0 lands on a weekend
+    if dt.weekday() == 5:
+        dt += timedelta(days=2)
+    elif dt.weekday() == 6:
+        dt += timedelta(days=1)
+
+    return dt.strftime("%Y%m%d")
 
 
 # ---------- Parsing ----------
@@ -137,6 +202,9 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
     put_df = df[df['optimize'] == 'buy_wr']
     call_df = df[df['optimize'] == 'sell_wr']
 
+    # Precompute date strings for all integer lookaheads to format the Y-Axis
+    la_to_date = {la: get_lookahead_date(now, dataset_id, la) for la in all_lookaheads}
+
     # Separate thresholds logically: Put (<1.0) and Call (>1.0)
     put_thresholds = sorted([t for t in all_thresholds if t < 1.0])
     call_thresholds = sorted([t for t in all_thresholds if t > 1.0])
@@ -163,7 +231,8 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
     z_call, text_call = None, None
 
     for subset, thresholds, col_idx in specs_list:
-        y_vals = all_lookaheads
+        # Replace numeric lookaheads with mapped YYYYMMDD string dates
+        y_vals = [la_to_date[la] for la in all_lookaheads]
         x_vals = thresholds
 
         # Initialize grid with NaN (which Plotly renders as white/transparent gaps)
@@ -176,15 +245,18 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
             for _, row in best.iterrows():
                 la = row['lookahead']
                 th = row['threshold']
-                if la not in y_vals: continue
-                y_idx = y_vals.index(la)
+                if la not in all_lookaheads: continue
+
+                y_idx = all_lookaheads.index(la)
                 if th not in x_vals: continue
                 x_idx = x_vals.index(th)
 
                 z[y_idx, x_idx] = row['val_win_rate']
-                # Build the rich tooltip text
+
+                # Build the rich tooltip text with the updated date string
+                date_str = la_to_date[la]
                 text[y_idx, x_idx] = (
-                    f"<b>Lookahead:</b> {la} {dataset_id}<br>"
+                    f"<b>Lookahead:</b> {date_str} ({la} {dataset_id})<br>"
                     f"<b>Threshold:</b> {th:.3f} ({(th - 1) * 100:+.1f}%)<br>"
                     f"<b>Val Win Rate:</b> {row['val_win_rate']:.2f}%<br>"
                     f"<b>Target Price:</b> {row['target_price']:.2f}<br>"
@@ -265,7 +337,8 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
         )]
     )
 
-    fig.update_yaxes(title_text=f"Lookahead ({dataset_id} ahead)", autorange="reversed", tickmode='linear')
+    # tickmode='linear' is removed because we are now passing string arrays to the Y axis.
+    fig.update_yaxes(title_text=f"Lookahead Date ({dataset_id} ahead)", autorange="reversed")
     fig.update_xaxes(title_text="Threshold (target / current price)")
 
     # --- STANDALONE HTML EXPORT ---
