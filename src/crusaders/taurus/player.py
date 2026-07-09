@@ -21,6 +21,7 @@ from optimizers.dgdr.player import entry as dgdr_player
 from optimizers.oerh.player import entry as oerh_player
 from optimizers.prime_rsi.player import entry as prime_rsi_player
 import sys
+import time
 
 
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
@@ -51,6 +52,12 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             if _indicator == "autotune":
                 autotune_args = _args
                 all_results_computed.extend(autotune_player(autotune_args))
+            if _indicator == "dgdr":
+                dgdr_args = _args
+                all_results_computed.extend(dgdr_player(dgdr_args))
+            if _indicator == "oerh":
+                oerh_args = _args
+                all_results_computed.extend(dgdr_player(oerh_args))
 
     out__shared.put(all_results_computed)
 
@@ -228,6 +235,18 @@ def entry(args):
                 assert os.path.exists(target_file)
                 autotune_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
                 use_cases.append({'indicator': 'autotune', 'args': autotune_args})
+        for root, dirs, files in os.walk(dgdr_target_dir):
+            for file in files:
+                target_file = os.path.join(str(root), str(file))
+                assert os.path.exists(target_file)
+                dgdr_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                use_cases.append({'indicator': 'dgdr', 'args': dgdr_args})
+        for root, dirs, files in os.walk(oerh_target_dir):
+            for file in files:
+                target_file = os.path.join(str(root), str(file))
+                assert os.path.exists(target_file)
+                oerh_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                use_cases.append({'indicator': 'oerh', 'args': oerh_args})
         assert len(use_cases) < 256000
         # Variables partagées
         use_cases__shared, master_cmd__shared = Queue(256000), Value("i", 0)
