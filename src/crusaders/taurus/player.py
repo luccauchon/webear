@@ -239,7 +239,7 @@ def entry(args):
             for file in files:
                 target_file = os.path.join(str(root), str(file))
                 assert os.path.exists(target_file)
-                dgdr_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                dgdr_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False, verbose_table=False)
                 use_cases.append({'indicator': 'dgdr', 'args': dgdr_args})
         for root, dirs, files in os.walk(oerh_target_dir):
             for file in files:

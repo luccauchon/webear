@@ -474,9 +474,11 @@ def run_real_time_mode(model_path, clip, verbose):
     target_price = "N/A"
     if signal_type == 'buy':
         latest_signals = [s for s in latest_signals if s['Type'] == 'BUY']
+        target_price = current_price * model_data['meta']['best_params']['put__strike_pct']
     elif signal_type == 'sell':
         latest_signals = [s for s in latest_signals if s['Type'] == 'SELL']
-
+        target_price = current_price * model_data['meta']['best_params']['call__strike_pct']
+    assert target_price not in ["N/A"]
     if latest_signals:
         sig = latest_signals[-1]
         if verbose: print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")

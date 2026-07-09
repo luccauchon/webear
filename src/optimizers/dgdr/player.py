@@ -191,7 +191,8 @@ def entry(args):
         info, signal, current_price, current_date, target_price, target_date, train_win_rate, val_win_rate, optimization_target, method, thresholds = row
         format_date = "%Y-%m-%d"
         put_threshold, call_threshold = thresholds.split("::")[0][1:], thresholds.split("::")[1][1:]
-        threshold = put_threshold if optimization_target == "buy" else call_threshold
+        assert optimization_target in ["buy_wr", "sell_wr"]
+        threshold = put_threshold if optimization_target == "buy_wr" else call_threshold
         results.append({"info": info, "signal": float(signal), "current_price": float(current_price), "current_date": datetime.strptime(current_date, format_date),
                         "target_price": float(0) if target_price == "N/A" else float(target_price),
                         "target_date": datetime.strptime(target_date, format_date), "train_win_rate": float(train_win_rate.strip('%'))/100.,
