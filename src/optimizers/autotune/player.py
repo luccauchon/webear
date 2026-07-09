@@ -146,6 +146,7 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
             train_win_rate = f"{res['train_win_rate']:.4%}"
             val_win_rate = f"{res['val_win_rate']:.4%}"
             optimize = str(res["optimization_metric"])
+            assert optimize in ["sell_wr", "buy_wr"]
             method = f'{res["method"]}'
             threshold = f'{res["threshold"]}'
             info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"

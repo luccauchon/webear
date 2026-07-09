@@ -41,6 +41,12 @@ def parse_args():
         help="Enable verbose output during processing"
     )
     parser.add_argument(
+        "-vt", "--verbose-table",
+        action="store_true",
+        default=False,
+        help="Print table at the end of processing"
+    )
+    parser.add_argument(
         "--hide-zero-signal",
         action="store_true",
         default=False,
@@ -52,6 +58,7 @@ def parse_args():
 
 def entry(args):
     verbose = args.verbose
+    verbose_table = args.verbose_table or verbose
     files, extension = [], ".pkl"
     if args.target_files:
         # Process specific files provided by the user
@@ -148,6 +155,10 @@ def entry(args):
         val_win_rate = f"{res['val_win_rate']:.4%}"
         optimize = str(res["optimize_target"])
         assert optimize in ["buy", "sell"]
+        if optimize == "buy":
+            optimize = "buy_wr"
+        if optimize == "sell":
+            optimize = "sell_wr"
         method = str(res["method"])
         info = f"{res['ticker']:<8}::{res['dataset_id']:<8}::{res['lookahead']:<3}"
         threshold = f"P{res['put_threshold']}::C{res['call_threshold']}"
@@ -165,15 +176,15 @@ def entry(args):
     # Formatting helper
     def format_row(cells):
         return "".join(f"{str(cell):<{w}}" for cell, w in zip(cells, col_widths)).rstrip()
-    if verbose:
+    if verbose_table:
         print("\n" + "=" * total_width)
         print(f"{'DGDR RESULTS SUMMARY':^{total_width}}")
         print("=" * total_width)
-    if verbose:
+        print(format_row(headers))
         print("-" * total_width)
     for row in table_rows:
-        if verbose: print(format_row(row))
-    if verbose:
+        if verbose_table: print(format_row(row))
+    if verbose_table:
         print("=" * total_width)
     results = []
     for row in table_rows:
