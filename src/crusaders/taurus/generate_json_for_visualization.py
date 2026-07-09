@@ -115,7 +115,7 @@ def entry(args):
             print(f"Computed results are in {filename_extracted_information}")
 
     ranges_for__optimize_target, ranges_for__put_threshold, ranges_for__call_threshold = [], [], []
-    ranges_for__lookahead, current_price = [], -1
+    ranges_for__lookahead, current_price = [1] if 0 == len(data_from_workers) else [], -1
 
     for one_use_case in data_from_workers:
         assert 3 == len(one_use_case["info"].split("::"))
