@@ -71,14 +71,14 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
     if args.target_files:
         # Process specific files provided by the user
         files = [pathlib.Path(f).resolve() for f in args.target_files]
-        files = sorted([f for f in files if f.is_file() and f.suffix.lower() == ".pkl"])
+        files = sorted([f for f in files if f.is_file() and f.suffix.lower() == extension])
     else:
         # Fallback to directory scanning
         target_dir = pathlib.Path(args.target_dir or "./models").resolve()
         try:
             files = sorted([
                 f for f in target_dir.iterdir()
-                if f.is_file() and f.suffix.lower() == ".pkl"
+                if f.is_file() and f.suffix.lower() == extension
             ])
         except Exception:
             files = []

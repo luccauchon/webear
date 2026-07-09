@@ -29,6 +29,12 @@ def parse_args():
         help="Directory containing .pkl model files (default: ./models)"
     )
     parser.add_argument(
+        "-f", "--target-files",
+        type=str,
+        nargs='+',
+        help="List of specific .pkl model files to process"
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         default=False,
@@ -46,19 +52,25 @@ def parse_args():
 
 def entry(args):
     verbose = args.verbose
-    target_dir = pathlib.Path(args.target_dir).resolve()
-    try:
-        files = sorted([
-            f for f in target_dir.iterdir()
-            if f.is_file() and f.suffix.lower() == ".pkl"
-        ])
-    except:
-        files = []
+    files, extension = [], ".pkl"
+    if args.target_files:
+        # Process specific files provided by the user
+        files = [pathlib.Path(f).resolve() for f in args.target_files]
+        files = sorted([f for f in files if f.is_file() and f.suffix.lower() == extension])
+    else:
+        target_dir = pathlib.Path(args.target_dir).resolve()
+        try:
+            files = sorted([
+                f for f in target_dir.iterdir()
+                if f.is_file() and f.suffix.lower() == extension
+            ])
+        except:
+            files = []
 
     results = []
 
     if not files:
-        print(f"⚠️ No .pkl files found in {target_dir}")
+        print(f"⚠️ No {extension} files found in {target_dir}")
         return results
 
     # Parse all files
