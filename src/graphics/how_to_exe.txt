@@ -1,0 +1,6 @@
+1)
+(PY312_HT) D:\PyCharmProjects\webear\src\sandbox>python -c "import customtkinter, os; print(os.path.dirname(customtkinter.__file__))"
+C:\Users\cj3272\miniconda3\envs\PY312_HT\Lib\site-packages\customtkinter
+
+2)
+pyinstaller --noconfirm --onefile --windowed --add-data "PASTE_YOUR_PATH_HERE;customtkinter/" --name "OptionsExpectancy" compute_premium_gui.py
