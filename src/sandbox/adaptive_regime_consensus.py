@@ -811,7 +811,59 @@ def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, featur
     return latest_date, latest_heuristic_score, latest_ml_score
 
 
+def print_algorithm_explanation():
+    """Prints a detailed explanation of the algorithm's purpose and architecture."""
+    print("\n" + "=" * 80)
+    print("ARC                  : ADAPTIVE REGIME CONSENSUS")
+    print("ALGORITHM EXPLANATION: MARKET PREDICTION & OPTIMIZATION PIPELINE")
+    print("=" * 80)
+    print("""
+This script is a comprehensive Machine Learning pipeline designed for financial 
+market prediction, specifically targeting the S&P 500 (SPX). It combines 
+heuristic macroeconomic/technical analysis with advanced machine learning models 
+to forecast market movements and generate trading signals.
+
+Key Components:
+1. DATA INGESTION:
+   - Fetches historical price data (SPX, VIX, HYG, LQD) via Yahoo Finance.
+   - Fetches macroeconomic indicators (yield curves, Fed balance sheet, credit 
+     spreads, financial conditions) via the FRED API.
+
+2. FEATURE ENGINEERING:
+   - Transforms raw data into regime-normalized features using rolling percentile 
+     ranks and z-scores.
+   - Computes composite heuristic scores for Trend, Volatility, Credit, Yield 
+     Curve, and Financial Conditions.
+   - Adds momentum and differential features.
+
+3. HYPERPARAMETER OPTIMIZATION (OPTUNA):
+   - Uses Optuna to search for the best model hyperparameters, rolling window 
+     sizes, and optimal feature subsets.
+   - Employs Time Series Cross-Validation (Walk-Forward) to prevent data leakage.
+   - Optimizes specifically for a risk-adjusted metric: the Sharpe Ratio, 
+     incorporating a penalty for trading frequency (density).
+
+4. MACHINE LEARNING MODELS:
+   - Supports multiple regression algorithms (Ridge, Lasso, Random Forest, 
+     XGBoost, SVR, KNN, etc.) to predict forward returns.
+
+5. CONSENSUS STRATEGY:
+   - Blends the ML model's statistical prediction with a rule-based "heuristic 
+     market score" to create a consensus signal, balancing ML with financial logic.
+
+6. EVALUATION & DEPLOYMENT:
+   - Evaluates performance on a hold-out test set (R-squared, Win Rate, Sharpe).
+   - Saves the optimized model and parameters using `joblib`.
+   - Includes a '--real-time' mode to load a saved model and output actionable 
+     trading signals (Bullish, Bearish, or Neutral) for the next period.
+""")
+    print("=" * 80 + "\n")
+
+
 def entry(args=None):
+    # Call the explanation function at the start of the program
+    print_algorithm_explanation()
+
     if args is None:
         parser = get_parser()
         args = parser.parse_args()
