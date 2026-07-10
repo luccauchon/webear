@@ -57,7 +57,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                 all_results_computed.extend(dgdr_player(dgdr_args))
             if _indicator == "oerh":
                 oerh_args = _args
-                all_results_computed.extend(dgdr_player(oerh_args))
+                all_results_computed.extend(oerh_player(oerh_args))
 
     out__shared.put(all_results_computed)
 
@@ -76,25 +76,25 @@ def parse_args():
     parser.add_argument(
         "--autotune-target-dir",
         required=False,
-        default=".",
+        default=None,
         help="Target directory for autotune models"
     )
     parser.add_argument(
         "--dgdr-target-dir",
         required=False,
-        default=".",
+        default=None,
         help="Target directory for dgdr models"
     )
     parser.add_argument(
         "--oerh-target-dir",
         required=False,
-        default=".",
+        default=None,
         help="Target directory for oerh models"
     )
     parser.add_argument(
         "--prime-rsi-target-dir",
         required=False,
-        default=".",
+        default=None,
         help="Target directory for prime_rsi models"
     )
     parser.add_argument(
@@ -223,30 +223,42 @@ def entry(args):
     else:
         # Construction des cas à traiter
         use_cases = []
-        for root, dirs, files in os.walk(prime_rsi_target_dir):
-            for file in files:
-                target_file = os.path.join(str(root), str(file))
-                assert os.path.exists(target_file)
-                prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
-                use_cases.append({'indicator': 'prime_rsi', 'args': prime_rsi_args})
-        for root, dirs, files in os.walk(autotune_target_dir):
-            for file in files:
-                target_file = os.path.join(str(root), str(file))
-                assert os.path.exists(target_file)
-                autotune_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
-                use_cases.append({'indicator': 'autotune', 'args': autotune_args})
-        for root, dirs, files in os.walk(dgdr_target_dir):
-            for file in files:
-                target_file = os.path.join(str(root), str(file))
-                assert os.path.exists(target_file)
-                dgdr_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False, verbose_table=False)
-                use_cases.append({'indicator': 'dgdr', 'args': dgdr_args})
-        for root, dirs, files in os.walk(oerh_target_dir):
-            for file in files:
-                target_file = os.path.join(str(root), str(file))
-                assert os.path.exists(target_file)
-                oerh_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
-                use_cases.append({'indicator': 'oerh', 'args': oerh_args})
+        try:
+            for root, dirs, files in os.walk(prime_rsi_target_dir):
+                for file in files:
+                    target_file = os.path.join(str(root), str(file))
+                    assert os.path.exists(target_file)
+                    prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                    use_cases.append({'indicator': 'prime_rsi', 'args': prime_rsi_args})
+        except:
+            pass
+        try:
+            for root, dirs, files in os.walk(autotune_target_dir):
+                for file in files:
+                    target_file = os.path.join(str(root), str(file))
+                    assert os.path.exists(target_file)
+                    autotune_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                    use_cases.append({'indicator': 'autotune', 'args': autotune_args})
+        except:
+            pass
+        try:
+            for root, dirs, files in os.walk(dgdr_target_dir):
+                for file in files:
+                    target_file = os.path.join(str(root), str(file))
+                    assert os.path.exists(target_file)
+                    dgdr_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False, verbose_table=False)
+                    use_cases.append({'indicator': 'dgdr', 'args': dgdr_args})
+        except:
+            pass
+        try:
+            for root, dirs, files in os.walk(oerh_target_dir):
+                for file in files:
+                    target_file = os.path.join(str(root), str(file))
+                    assert os.path.exists(target_file)
+                    oerh_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                    use_cases.append({'indicator': 'oerh', 'args': oerh_args})
+        except:
+            pass
         assert len(use_cases) < 256000
         # Variables partagées
         use_cases__shared, master_cmd__shared = Queue(256000), Value("i", 0)
