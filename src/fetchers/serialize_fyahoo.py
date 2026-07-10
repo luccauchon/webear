@@ -25,6 +25,7 @@ from tqdm import tqdm
 from curl_cffi.requests import Session
 from constants import IS_RUNNING_ON_LINUX_VMWARE, IS_RUNNING_ON_CASIR
 
+
 from constants import (
     FYAHOO__OUTPUTFILENAME_YEAR,
     FYAHOO__OUTPUTFILENAME,
@@ -38,6 +39,7 @@ from constants import (
     FYAHOO__OUTPUTFILENAME_QUARTER,
     FYAHOO_GITHUB_DIRECTORY
 )
+
 
 def entry(
     use_all_tickers=True,
@@ -238,6 +240,7 @@ def entry(
                 _dst = os.path.join(FYAHOO_GITHUB_DIRECTORY, Path(a_file).name)
                 shutil.copyfile(src=_scr, dst=_dst)
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Download and resample financial data from Yahoo Finance.")
     parser.add_argument(
@@ -279,6 +282,7 @@ def parse_args():
         "--skip-economic", action="store_true", help="Skip downloading Top10 S&P500 economic data."
     )
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = parse_args()
