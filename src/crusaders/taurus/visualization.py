@@ -23,6 +23,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import calendar
 import os
+import math
 
 
 # ---------- IO helpers ----------
@@ -175,24 +176,6 @@ def parse_data(raw):
                     if r:
                         records.append(r)
 
-    # Fallback to Layout B if Layout A found nothing
-    if not records:
-        print("fffffffffffffff")
-        # day_re = re.compile(r'::day\s*::(\d+)')
-        # for th_str, entries in data.items():
-        #     if not isinstance(entries, list): continue
-        #     th = get_thresh_from_key(th_str)
-        #     if th is None: continue
-        #     all_thresholds.add(th)
-        #     for e in entries:
-        #         m = day_re.search(e.get('info', ''))
-        #         if not m: continue
-        #         la = int(m.group(1))
-        #         all_lookaheads.add(la)
-        #         opt = e.get('optimize', '')
-        #         r = parse_entry(e, la, opt, th)
-        #         if r: records.append(r)
-
     df = pd.DataFrame(records)
     return df, sorted(list(all_thresholds)), sorted(list(all_lookaheads)), now, dataset_id, current_price
 
@@ -230,6 +213,11 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
     z_put, text_put = None, None
     z_call, text_call = None, None
 
+    # Variables for JS filtering
+    val_wr_put, val_wr_call = [], []
+    indicator_put, indicator_call = [], []
+    text_put_list, text_call_list = [], []
+
     for subset, thresholds, col_idx in specs_list:
         # Replace numeric lookaheads with mapped YYYYMMDD string dates
         y_vals = [la_to_date[la] for la in all_lookaheads]
@@ -239,6 +227,9 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
         z = np.full((len(y_vals), len(x_vals)), np.nan)
         text = np.empty((len(y_vals), len(x_vals)), dtype=object)
         text[:] = ''  # Default empty string for gaps
+
+        z_val_wr = np.full((len(y_vals), len(x_vals)), np.nan)
+        z_indicator = np.full((len(y_vals), len(x_vals)), '', dtype=object)
 
         if not subset.empty:
             best = subset.loc[subset.groupby(['lookahead', 'threshold'])['val_win_rate'].idxmax()]
@@ -252,14 +243,24 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
                 x_idx = x_vals.index(th)
 
                 z[y_idx, x_idx] = row['val_win_rate']
+                z_val_wr[y_idx, x_idx] = row['val_win_rate']
+                z_indicator[y_idx, x_idx] = row['indicator']
 
                 # Build the rich tooltip text with the updated date string
                 date_str = la_to_date[la]
+
+                # Calculate rounded target price based on Put or Call section
+                price = row['target_price']
+                if col_idx == 1:  # Put section: round down to nearest 5
+                    rounded_price = math.floor(price / 5) * 5
+                else:  # Call section: round up to nearest 5
+                    rounded_price = math.ceil(price / 5) * 5
+
                 text[y_idx, x_idx] = (
                     f"<b>Lookahead:</b> {date_str} ({la} {dataset_id})<br>"
                     f"<b>Threshold:</b> {th:.3f} ({(th - 1) * 100:+.1f}%)<br>"
                     f"<b>Val Win Rate:</b> {row['val_win_rate']:.2f}%<br>"
-                    f"<b>Target Price:</b> {row['target_price']:.2f}<br>"
+                    f"<b>Target Rounded Price:</b> {rounded_price:.2f}<br>"
                     f"<b>Target Date:</b> {row['target_date']}<br>"
                     f"<b>Indicator:</b> {row['indicator']}<br>"
                 )
@@ -267,8 +268,16 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
         # Store the original matrices for the slider logic
         if col_idx == 1:
             z_put, text_put = z.copy(), text.copy()
+            val_wr_put = z_val_wr.tolist()
+            val_wr_put = [[None if pd.isna(v) else v for v in row] for row in val_wr_put]
+            indicator_put = z_indicator.tolist()
+            text_put_list = text.tolist()
         else:
             z_call, text_call = z.copy(), text.copy()
+            val_wr_call = z_val_wr.tolist()
+            val_wr_call = [[None if pd.isna(v) else v for v in row] for row in val_wr_call]
+            indicator_call = z_indicator.tolist()
+            text_call_list = text.tolist()
 
         # Format x-axis labels to show both the multiplier and the % distance
         x_labels = [f"{(t - 1) * 100:+.1f}%" for t in x_vals]
@@ -344,14 +353,103 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
     # --- STANDALONE HTML EXPORT ---
     out_html = Path(os.path.join(output_dir, f'{file_id}_{now}_{dataset_id}.html')).resolve()
 
-    # include_plotlyjs=True bakes the entire JS library into the file.
-    # This guarantees it works 100% offline as a single standalone file.
-    fig.write_html(
-        out_html,
+    # Generate HTML string
+    html_str = fig.to_html(
         include_plotlyjs=True,
         full_html=True,
         config={'displayModeBar': True, 'modeBarButtonsToAdd': ['resetScale2d']}
     )
+
+    # Custom HTML and JS for checkboxes
+    custom_html = f"""
+<div id="indicator-checkboxes" style="text-align: center; margin: 20px 0; font-family: sans-serif; font-size: 16px; color: #333;">
+    <label style="margin-right: 20px; cursor: pointer; user-select: none;">
+        <input type="checkbox" id="chkPrimeRSI" checked style="margin-right: 5px; transform: scale(1.2); cursor: pointer; vertical-align: middle;"> 
+        <span style="vertical-align: middle;">Prime RSI</span>
+    </label>
+    <label style="cursor: pointer; user-select: none;">
+        <input type="checkbox" id="chkDGDR" checked style="margin-right: 5px; transform: scale(1.2); cursor: pointer; vertical-align: middle;"> 
+        <span style="vertical-align: middle;">DGDR</span>
+    </label>
+</div>
+<script>
+const valWrPut = {json.dumps(val_wr_put)};
+const valWrCall = {json.dumps(val_wr_call)};
+const indicatorPut = {json.dumps(indicator_put)};
+const indicatorCall = {json.dumps(indicator_call)};
+const origTextPut = {json.dumps(text_put_list)};
+const origTextCall = {json.dumps(text_call_list)};
+
+function applyFilters() {{
+    const plotDiv = document.querySelector('.plotly-graph-div');
+    if (!plotDiv) return;
+
+    // Get current slider threshold
+    const activeIdx = plotDiv.layout.sliders[0].active;
+    const currentThreshold = activeIdx + 33;
+
+    const showPrimeRSI = document.getElementById('chkPrimeRSI').checked;
+    const showDGDR = document.getElementById('chkDGDR').checked;
+
+    let newZPut = valWrPut.map((row, i) => 
+        row.map((val, j) => {{
+            if (val === null || val < currentThreshold) return null;
+            let ind = indicatorPut[i][j];
+            if (ind === "Prime RSI" && !showPrimeRSI) return null;
+            if (ind === "DGDR" && !showDGDR) return null;
+            return val;
+        }})
+    );
+
+    let newTextPut = origTextPut.map((row, i) => 
+        row.map((txt, j) => {{
+            if (newZPut[i][j] === null) return '';
+            return txt;
+        }})
+    );
+
+    let newZCall = valWrCall.map((row, i) => 
+        row.map((val, j) => {{
+            if (val === null || val < currentThreshold) return null;
+            let ind = indicatorCall[i][j];
+            if (ind === "Prime RSI" && !showPrimeRSI) return null;
+            if (ind === "DGDR" && !showDGDR) return null;
+            return val;
+        }})
+    );
+
+    let newTextCall = origTextCall.map((row, i) => 
+        row.map((txt, j) => {{
+            if (newZCall[i][j] === null) return '';
+            return txt;
+        }})
+    );
+
+    Plotly.restyle(plotDiv, {{'z': [newZPut, newZCall], 'text': [newTextPut, newTextCall]}});
+}}
+
+document.addEventListener('DOMContentLoaded', (event) => {{
+    document.getElementById('chkPrimeRSI').addEventListener('change', applyFilters);
+    document.getElementById('chkDGDR').addEventListener('change', applyFilters);
+
+    const plotDiv = document.querySelector('.plotly-graph-div');
+    if (plotDiv) {{
+        plotDiv.on('plotly_sliderchange', function(eventData) {{
+            setTimeout(applyFilters, 50);
+        }});
+        plotDiv.on('plotly_restyle', function(eventData) {{
+            setTimeout(applyFilters, 50);
+        }});
+    }}
+}});
+</script>
+"""
+
+    # Insert custom HTML before closing body tag
+    final_html = html_str.replace('</body>', custom_html + '\n</body>')
+
+    with open(out_html, 'w', encoding='utf-8') as f:
+        f.write(final_html)
 
     print(f"\n✅ Successfully generated standalone HTML file:")
     print(f"👉 {out_html}")
