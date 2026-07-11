@@ -113,6 +113,15 @@ def get_lookahead_date(now_str, dataset_id, la):
     return dt.strftime("%Y%m%d")
 
 
+def break_even_credit(win_rate, spread_width):
+    # 2. Core Math
+    loss_rate = 1.0 - win_rate / 100.
+
+    # The Break-Even Credit formula: Credit = Loss_Rate * Spread_Width
+    breakeven_credit = loss_rate * spread_width
+    return breakeven_credit
+
+
 # ---------- Parsing ----------
 def parse_entry(entry, lookahead, optimize, thresh):
     signal = entry.get('signal', 0)
@@ -255,13 +264,14 @@ def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, data
                     rounded_price = math.floor(price / 5) * 5
                 else:  # Call section: round up to nearest 5
                     rounded_price = math.ceil(price / 5) * 5
-
+                minimum_break_even_credit = break_even_credit(win_rate=row['val_win_rate'], spread_width=500)
                 text[y_idx, x_idx] = (
                     f"<b>Lookahead:</b> {date_str} ({la} {dataset_id})<br>"
                     f"<b>Threshold:</b> {th:.3f} ({(th - 1) * 100:+.1f}%)<br>"
                     f"<b>Val Win Rate:</b> {row['val_win_rate']:.2f}%<br>"
                     f"<b>Target Rounded Price:</b> {rounded_price:.2f}<br>"
                     f"<b>Target Date:</b> {row['target_date']}<br>"
+                    f"<b>Break-Even (500$ Max Loss):</b> {minimum_break_even_credit:.0f}$<br>"
                     f"<b>Indicator:</b> {row['indicator']}<br>"
                 )
 
