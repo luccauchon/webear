@@ -33,7 +33,7 @@ except ImportError:
     root.withdraw()
     messagebox.showerror("Module Not Found", "Please ensure 'runners.atr' is correctly configured in your Python path.")
     sys.exit(1)
-
+import traceback
 # --- Monkey Patching to Capture Data ---
 captured_data = {}
 original_display_report = mp.display_report_with_vix
@@ -72,7 +72,7 @@ def mock_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, 
         regime = 'Normal'
     captured_data['regime'] = regime
 
-    original_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params)
+    original_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params, True)
 
 
 def mock_display_dataset_info(train_info, test_info, ticker, dataset_id, atr_window):
@@ -130,7 +130,7 @@ class App(ctk.CTk):
         self.sld_split.grid(row=9, column=0, padx=20, pady=(0, 10), sticky="ew")
 
         self.tight_var = ctk.DoubleVar(value=0.3)
-        self.sld_tight = ctk.CTkSlider(self.sidebar, from_=0.0, to=2.0, command=self.update_tight_label)
+        self.sld_tight = ctk.CTkSlider(self.sidebar, from_=0.0, to=4.0, command=self.update_tight_label)
         self.sld_tight.set(0.3)
         self.lbl_tight = ctk.CTkLabel(self.sidebar, text="Tightness Weight: 0.30")
         self.lbl_tight.grid(row=10, column=0, padx=20, pady=(10, 0), sticky="w")
@@ -243,6 +243,7 @@ class App(ctk.CTk):
             mp.entry(args)
             self.after(0, self.update_ui_success)
         except Exception as e:
+            traceback.print_exc()
             self.after(0, self.update_ui_error, str(e))
 
     def clear_results(self):
