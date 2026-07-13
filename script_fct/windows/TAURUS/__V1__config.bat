@@ -27,6 +27,8 @@ set OUTPUT_DIR_VIZ=D:\Finance\data\taurus\V1\_html
 ::
 set PRIME_RSI_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\prime_rsi
 set PRIME_RSI_DAY_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\prime_rsi\day_perspective
+set PRIME_RSI_WEEK_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\prime_rsi\week_perspective
+set PRIME_RSI_MONTH_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\prime_rsi\month_perspective
 ::
 set DGDR_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\dgdr\
 set DGDR_DAY_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\dgdr\day_perspective
