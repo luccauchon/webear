@@ -17,21 +17,14 @@ from tqdm import tqdm
 class BacktestStep:
     past_df: pd.DataFrame
     future_df: Optional[pd.DataFrame]
-    close_col: Any
-    open_col: Any
-    high_col: Any
-    low_col: Any
-    volume_col: Any
 
 
 class BacktestIterator:
     def __init__(self, df: pd.DataFrame, step_back_range: int,
-                 close_col: Any, open_col: Any, high_col: Any,
-                 low_col: Any, volume_col: Any, verbose: bool = False):
+                 verbose: bool = False):
         # Clean once to avoid repeated dropna() overhead
         self.df = df.dropna().copy()
         self.step_back_range = step_back_range
-        self.cols = (close_col, open_col, high_col, low_col, volume_col)
         self.verbose = verbose
         self._current_step = -1
 
@@ -58,11 +51,6 @@ class BacktestIterator:
         return BacktestStep(
             past_df=past_df,
             future_df=future_df,
-            close_col=self.cols[0],
-            open_col=self.cols[1],
-            high_col=self.cols[2],
-            low_col=self.cols[3],
-            volume_col=self.cols[4]
         )
 
     def __len__(self) -> int:
@@ -109,11 +97,6 @@ if __name__ == "__main__":
     bt_iter = BacktestIterator(
         df=args.df,
         step_back_range=args.step_back_range,
-        close_col=args.close_col,
-        open_col=args.open_col,
-        high_col=args.high_col,
-        low_col=args.low_col,
-        volume_col=args.volume_col,
         verbose=args.verbose
     )
 

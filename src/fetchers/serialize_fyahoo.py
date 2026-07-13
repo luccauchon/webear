@@ -41,6 +41,110 @@ from constants import (
 )
 
 
+def realtime(tickers=("^GSPC", "^VIX")):
+    # Default dates if not provided
+    today = datetime.today()
+    end_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+    skip_daily, skip_weekly, skip_monthly, skip_quarterly, skip_yearly = False, False, False, False, False
+
+    session = Session()
+    session.verify = False
+    daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = {}, {}, {}, {}, {}
+
+    ###########################################################################
+    # 1 day (long history)
+    ###########################################################################
+    if not skip_daily:
+        daily_start = "1962-01-01"
+        daily_end = end_date
+        for ticker in tqdm(tickers, desc="Daily"):
+            if IS_RUNNING_ON_LINUX_VMWARE:
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False, session=session)
+            else:
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
+            daily_data_cache[ticker] = data
+
+    ###########################################################################
+    # Weekly
+    ###########################################################################
+    if not skip_weekly:
+        for ticker in tqdm(tickers, desc="Weekly"):
+            df = daily_data_cache[ticker]
+            if ticker == '^VIX':
+                agg_logic = {
+                    ('Open', ticker): 'mean',
+                    ('High', ticker): 'mean',
+                    ('Low', ticker): 'mean',
+                    ('Close', ticker): 'mean',
+                    ('Volume', ticker): 'sum'
+                }
+                weekly_data_cache['^VIX_MEAN'] = df.resample('W-FRI').agg(agg_logic).copy()
+            agg_logic = df.resample('W-FRI').agg({
+                ('Open', ticker): 'first',
+                ('High', ticker): 'max',
+                ('Low', ticker): 'min',
+                ('Close', ticker): 'last',
+                ('Volume', ticker): 'sum'
+            }).copy()
+            weekly_data_cache[ticker] = agg_logic
+
+    ###########################################################################
+    # Monthly
+    ###########################################################################
+    if not skip_monthly:
+        for ticker in tqdm(tickers, desc="Monthly"):
+            df = daily_data_cache[ticker]
+            if ticker == '^VIX':
+                agg_logic = {
+                    ('Open', ticker): 'mean',
+                    ('High', ticker): 'mean',
+                    ('Low', ticker): 'mean',
+                    ('Close', ticker): 'mean',
+                    ('Volume', ticker): 'sum'
+                }
+                monthly_data_cache['^VIX_MEAN'] = df.resample('ME').agg(agg_logic).copy()
+            resampled = df.resample('ME').agg({
+                ('Open', ticker): 'first',
+                ('High', ticker): 'max',
+                ('Low', ticker): 'min',
+                ('Close', ticker): 'last',
+                ('Volume', ticker): 'sum'
+            }).copy()
+            monthly_data_cache[ticker] = resampled
+
+    ###########################################################################
+    # Quarterly
+    ###########################################################################
+    if not skip_quarterly:
+        for ticker in tqdm(tickers, desc="Quarterly"):
+            df = daily_data_cache[ticker]
+            resampled = df.resample('QE').agg({
+                ('Open', ticker): 'first',
+                ('High', ticker): 'max',
+                ('Low', ticker): 'min',
+                ('Close', ticker): 'last',
+                ('Volume', ticker): 'sum'
+            })
+            quaterly_data_cache[ticker] = resampled
+
+    ###########################################################################
+    # Yearly
+    ###########################################################################
+    if not skip_yearly:
+        for ticker in tqdm(tickers, desc="Yearly"):
+            df = daily_data_cache[ticker]
+            resampled = df.resample('YE').agg({
+                ('Open', ticker): 'first',
+                ('High', ticker): 'max',
+                ('Low', ticker): 'min',
+                ('Close', ticker): 'last',
+                ('Volume', ticker): 'sum'
+            })
+            yearly_data_cache[ticker] = resampled
+
+    return daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache
+
+
 def entry(
     use_all_tickers=True,
     start_date=None,
