@@ -12,8 +12,8 @@ for /L %%L in (1,1,20) do (
     for %%D in (0.050 0.100 0.150 0.200 0.250 0.300) do (
         set "DENS_SUF=%%D"
         set "DENS_SUF=!DENS_SUF:.=!"
-
-        for %%P in (1.001 1.005 1.010 1.0125 1.015) do (
+        ::  La bourse monte en escalier et descend en ascenseur.
+        for %%P in (1.001 1.010 1.025 1.050 1.075) do (
             set "STRK_SUF=%%P"
             set "STRK_SUF=!STRK_SUF:.=!"
 
