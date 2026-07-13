@@ -11,7 +11,7 @@ call "%~dp0__V1__config.bat"
 cd ..\..\..\src\crusaders\taurus
 
 :: 
-python player.py --nb-workers 20 --prime-rsi-target-dir %PRIME_RSI_TARGET_DIR% --dgdr-target-dir %DGDR_TARGET_DIR%  --autotune-target-dir %AUTOTUNE_TARGET_DIR% --oerh-target-dir %OERH_TARGET_DIR%  --save-to %OUTPUT_FILE_PKL%
+python player.py --nb-workers 20 --prime-rsi-target-dir %PRIME_RSI_DAY_TARGET_DIR% --dgdr-target-dir %DGDR_DAY_TARGET_DIR%  --autotune-target-dir %AUTOTUNE_TARGET_DIR% --oerh-target-dir %OERH_TARGET_DIR%  --save-to %OUTPUT_FILE_PKL%
 
 ::
 python generate_json_for_visualization.py --json-file %OUTPUT_FILE_DAY_JSON% --pkl-file %OUTPUT_FILE_PKL% --dataset-id day --verbose
