@@ -32,5 +32,9 @@ set DGDR_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\d
 set DGDR_DAY_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\dgdr\day_perspective
 ::
 set AUTOTUNE_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\autotune
+set AUTOTUNE_DAY_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\autotune\day_perspective
+set AUTOTUNE_WEEK_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\autotune\week_perspective
+set AUTOTUNE_MONTH_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.07.06\optimizers\autotune\month_perspective
+
 ::
 set OERH_TARGET_DIR=D:\Finance\compiled_models\taurus\v1\2026.06.29\optimizers\oerh
