@@ -21,6 +21,7 @@ from runners.atr import entry as atr_entry_point
 from argparse import Namespace
 import pickle
 from utils import get_filename_for_dataset
+import datetime
 
 
 def get_parser():
@@ -173,17 +174,20 @@ def entry(args):
         if is_total_win:
             iron_condor_wins += 1
 
-    # 4️⃣ Display Statistics
+    # 4️⃣ Display Statistics & Calculate Rates
+    if total_trades > 0:
+        iron_condor_wr = (iron_condor_wins / total_trades) * 100
+        call_spread_wr = (call_spread_wins / total_trades) * 100
+        put_spread_wr = (put_spread_wins / total_trades) * 100
+    else:
+        iron_condor_wr = call_spread_wr = put_spread_wr = 0.0
+
     if args.verbose:
         print("\n" + "=" * 60)
         print(" BACKTEST STATISTICS ".center(60, "="))
         print("=" * 60)
 
         if total_trades > 0:
-            iron_condor_wr = (iron_condor_wins / total_trades) * 100
-            call_spread_wr = (call_spread_wins / total_trades) * 100
-            put_spread_wr = (put_spread_wins / total_trades) * 100
-
             print(f"Total Valid Trades      : {total_trades}")
             print("-" * 60)
 
@@ -203,6 +207,46 @@ def entry(args):
             print("No valid trades evaluated.")
 
         print("=" * 60 + "\n")
+
+    # 5️⃣ Save Results to TXT File
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Clean up ticker for filename (remove special characters like '^')
+    clean_ticker = args.ticker.replace("^", "")
+    filename = f"backtest_results_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__{iron_condor_wr}__{timestamp}.txt"
+
+    with open(filename, 'w') as f:
+        f.write("BACKTEST PARAMETERS\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Ticker              : {args.ticker}\n")
+        f.write(f"Dataset ID          : {args.dataset_id}\n")
+        f.write(f"Step Back Range     : {args.step_back_range}\n")
+        f.write(f"ATR Window          : {args.atr_window}\n")
+        f.write(f"Tightness Weight    : {args.tightness_weight}\n")
+        f.write(f"Number of Trials    : {args.n_trials}\n")
+        f.write(f"Train/Test Split    : {args.n_split}\n")
+        f.write("=" * 60 + "\n\n")
+
+        f.write("BACKTEST RESULTS\n")
+        f.write("=" * 60 + "\n")
+
+        if total_trades > 0:
+            f.write(f"Total Valid Trades      : {total_trades}\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"Iron Condor Win Rate   : {iron_condor_wr:6.2f}% ({iron_condor_wins}/{total_trades})\n")
+            f.write(f"  -> Win if: Predicted High > Actual High\n")
+            f.write(f"             AND Predicted Low < Actual Low\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"Call Credit Spread WR  : {call_spread_wr:6.2f}% ({call_spread_wins}/{total_trades})\n")
+            f.write(f"  -> Win if: Predicted High > Actual High\n")
+            f.write("-" * 60 + "\n")
+            f.write(f"Put Credit Spread WR   : {put_spread_wr:6.2f}% ({put_spread_wins}/{total_trades})\n")
+            f.write(f"  -> Win if: Predicted Low < Actual Low\n")
+        else:
+            f.write("No valid trades evaluated.\n")
+
+        f.write("=" * 60 + "\n")
+
+    print(f"\n[INFO] Results successfully saved to: {filename}")
 
 
 if __name__ == "__main__":
