@@ -1,0 +1,1 @@
+start "ATR Optuna Day" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\runners && python .\atr_backtesting.py --dataset-id day --step-back-range 1 --verbose --atr-window 14 --tightness-weight 0.66 --n-trials 500 --n-split 0.8"
