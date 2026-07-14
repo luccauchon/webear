@@ -1,5 +1,5 @@
 @echo off
-title Script Planificateur Actif
+title Planificateur Actif Yahoo+HTML
 chcp 65001 > nul
 
 :BOUCLE_INFINIE
