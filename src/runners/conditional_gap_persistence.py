@@ -59,15 +59,15 @@ def calculate_sp500_probabilities(args):
     high_t_1_col = ('High_t-1', args.ticker)
 
     # 2. Create lagged columns for t-1
-    df_ticker[close_t_1_col] = df_ticker['Close'].shift(1)
-    df_ticker[low_t_1_col] = df_ticker['Low'].shift(1)
-    df_ticker[high_t_1_col] = df_ticker['High'].shift(1)
+    df_ticker[close_t_1_col] = df_ticker[close_col].shift(1)
+    df_ticker[low_t_1_col] = df_ticker[low_col].shift(1)
+    df_ticker[high_t_1_col] = df_ticker[high_col].shift(1)
 
     # Drop the first row which contains NaNs due to the shift
     df_ticker.dropna(inplace=True)
 
-    total_days = len(df_ticker)
-    print(f"Successfully loaded {total_days} trading bars.\n")
+    total_bars = len(df_ticker)
+    print(f"Successfully loaded {total_bars} trading bars.\n")
 
     # ==========================================
     # PROBABILITY 1
@@ -117,6 +117,30 @@ def calculate_sp500_probabilities(args):
     prob4 = target4[cond4].mean()
     count4 = cond4.sum()
 
+    # ==========================================
+    # PROBABILITY 5
+    # Condition: Open_t > Close_t-1 * (1 + epsilon) (Gap Up)
+    # Target: Close_t > Close_t-1 * (1 + epsilon)
+    # ==========================================
+    cond5 = df_ticker[open_col] > (df_ticker[close_t_1_col] * (1 + epsilon))
+    target5 = df_ticker[close_col] > (df_ticker[close_t_1_col] * (1 + epsilon))
+
+    # Calculate probability and sample size
+    prob5 = target5[cond5].mean()
+    count5 = cond5.sum()
+
+    # ==========================================
+    # PROBABILITY 6
+    # Condition: Open_t < Close_t-1 * (1 + epsilon)
+    # Target: Close_t < Close_t-1 * (1 + epsilon)
+    # ==========================================
+    cond6 = df_ticker[open_col] < (df_ticker[close_t_1_col] * (1 + epsilon))
+    target6 = df_ticker[close_col] < (df_ticker[close_t_1_col] * (1 + epsilon))
+
+    # Calculate probability and sample size
+    prob6 = target6[cond6].mean()
+    count6 = cond6.sum()
+
     daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = realtime()
     if args.dataset_id == "day":
         _master_data_cache[args.ticker] = daily_data_cache[args.ticker]
@@ -143,24 +167,27 @@ def calculate_sp500_probabilities(args):
     df_ticker = _master_data_cache[args.ticker].sort_index()
 
     # Get today's Open and yesterday's Close
-    latest_open  = df_ticker[open_col].iloc[-1]
+    latest_open = df_ticker[open_col].iloc[-1]
     yesterday_close = df_ticker[close_col].iloc[-2]  # iloc[-2] gets the previous day
 
     # Format epsilon as a percentage string for readability
     eps_pct_str = f"{epsilon * 100:.2f}%"
 
-    # Determine which "Given That" we are currently in (using percentage epsilon)
+    # Determine which "Given That" we are currently in
+    # Note: Added [6] to Gap Down and No Significant Gap branches, since < (1+epsilon) covers both conditions.
     if latest_open > (yesterday_close * (1 + epsilon)):
-        current_condition = f"[1]/[4] GIVEN THAT Open_t > Close_t-1 + {eps_pct_str} (Gap Up)"
+        current_condition = f"[1]/[4]/[5] GIVEN THAT Open_t > Close_t-1 + {eps_pct_str} (Gap Up)"
     elif latest_open < (yesterday_close * (1 - epsilon)):
-        current_condition = f"[2]/[3] GIVEN THAT Open_t < Close_t-1 - {eps_pct_str} (Gap Down)"
+        current_condition = f"[2]/[3]/[6] GIVEN THAT Open_t < Close_t-1 - {eps_pct_str} (Gap Down)"
     else:
-        current_condition = "[X] No Significant Gap (Open_t ~ Close_t-1)"
+        current_condition = f"[X] No Significant Gap (Open_t ~ Close_t-1)"
+
     close_t__str = f"{df_ticker[close_col].iloc[-1]:.0f}$"
     open_t__str = f"{df_ticker[open_col].iloc[-1]:.0f}$"
     low_t_1__str = f"{df_ticker[low_col].iloc[-2]:.0f}$"
     high_t_1__str = f"{df_ticker[high_col].iloc[-2]:.0f}$"
     close_t_1__str = f"{df_ticker[close_col].iloc[-2]:.0f}$"
+
     # ==========================================
     # OUTPUT RESULTS
     # ==========================================
@@ -177,23 +204,33 @@ def calculate_sp500_probabilities(args):
 
     print(f"\n[1] Probability that Close_t({close_t__str}) > Low_t-1({low_t_1__str}) + {eps_pct_str}  (Put Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
-    print(f"    -> Sample Size (Occurrences): {count1}  ({(count1/len(df_ticker)):.2%} :: total of {len(df_ticker)} bars)")
+    print(f"    -> Sample Size (Occurrences): {count1}  ({(count1 / total_bars):.2%} :: total of {total_bars} bars)")
     print(f"    -> Probability: {prob1:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob1, 500):.2f}$")
 
     print(f"\n[2] Probability that Close_t({close_t__str}) < High_t-1({high_t_1__str}) - {eps_pct_str}  (Call Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)")
-    print(f"    -> Sample Size (Occurrences): {count2}  ({(count2/len(df_ticker)):.2%} :: total of {len(df_ticker)} bars)")
+    print(f"    -> Sample Size (Occurrences): {count2}  ({(count2 / total_bars):.2%} :: total of {total_bars} bars)")
     print(f"    -> Probability: {prob2:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob2, 500):.2f}$")
 
     print(f"\n[3] Probability that Close_t({close_t__str}) < Low_t-1({low_t_1__str}) - {eps_pct_str}  (Breaks Previous Low :: Put Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)")
-    print(f"    -> Sample Size (Occurrences): {count3}  ({(count3/len(df_ticker)):.2%} :: total of {len(df_ticker)} bars)")
+    print(f"    -> Sample Size (Occurrences): {count3}  ({(count3 / total_bars):.2%} :: total of {total_bars} bars)")
     print(f"    -> Probability: {prob3:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob3, 500):.2f}$")
 
     print(f"\n[4] Probability that Close_t({close_t__str}) > High_t-1({high_t_1__str}) + {eps_pct_str}  (Breaks Previous High :: Call Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
-    print(f"    -> Sample Size (Occurrences): {count4}  ({(count4/len(df_ticker)):.2%} :: total of {len(df_ticker)} bars)")
+    print(f"    -> Sample Size (Occurrences): {count4}  ({(count4 / total_bars):.2%} :: total of {total_bars} bars)")
     print(f"    -> Probability: {prob4:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob4, 500):.2f}$")
+
+    print(f"\n[5] Probability that Close_t({close_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Higher Than Yesterday's Close)")
+    print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
+    print(f"    -> Sample Size (Occurrences): {count5}  ({(count5 / total_bars):.2%} :: total of {total_bars} bars)")
+    print(f"    -> Probability: {prob5:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob5, 500):.2f}$")
+
+    print(f"\n[6] Probability that Close_t({close_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Lower Than Yesterday's Close + Epsilon)")
+    print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}")
+    print(f"    -> Sample Size (Occurrences): {count6}  ({(count6 / total_bars):.2%} :: total of {total_bars} bars)")
+    print(f"    -> Probability: {prob6:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob6, 500):.2f}$")
     print("-" * 50)
 
 
