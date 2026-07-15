@@ -215,7 +215,7 @@ def entry(args):
     # Clean up ticker for filename (remove special characters like '^')
     clean_ticker = args.ticker.replace("^", "")
     ucfr = "close_for_range" if args.use_close_for_range else ""
-    filename = f"backtest_results_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__ic{iron_condor_wr}__{timestamp}__{ucfr}.txt"
+    filename = f"backtest_results_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__ic{iron_condor_wr:6.2f}__{timestamp}__{ucfr}.txt"
 
     with open(filename, 'w') as f:
         f.write("BACKTEST PARAMETERS\n")
