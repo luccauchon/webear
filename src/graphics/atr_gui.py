@@ -16,11 +16,13 @@ import numpy as np
 import pandas as pd
 import sys
 import os
+
 try:
     from version import sys__name, sys__version
 except ImportError:
     import sys
     import pathlib
+
     current_dir = pathlib.Path(__file__).resolve()
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
@@ -34,6 +36,7 @@ except ImportError:
     messagebox.showerror("Module Not Found", "Please ensure 'runners.atr' is correctly configured in your Python path.")
     sys.exit(1)
 import traceback
+
 # --- Monkey Patching to Capture Data ---
 captured_data = {}
 original_display_report = mp.display_report_with_vix
@@ -48,7 +51,7 @@ def mock_display_report(global_metrics, regime_metrics, total_bars):
     original_display_report(global_metrics, regime_metrics, total_bars)
 
 
-def mock_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params):
+def mock_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params, verbose):
     captured_data['df_bt'] = df_bt
     captured_data['ticker'] = ticker
     captured_data['optimized_params'] = optimized_params
@@ -190,6 +193,8 @@ class App(ctk.CTk):
         self.chart_dates = None
         self.pred_high = None
         self.pred_low = None
+        self.be_high = 0.0
+        self.be_low = 0.0
         self._last_hover_idx = -1
 
         # Connect mouse motion event once
@@ -379,6 +384,18 @@ class App(ctk.CTk):
         self.pred_low = pred_low
         self._last_hover_idx = -1
 
+        # --- Calculate Break-even Premiums ---
+        rm = captured_data.get('regime_metrics', {})
+        metrics = rm.get(regime, {})
+
+        # Use reliability (high/low bound respected) as win_rate, falling back to global hit rate
+        win_rate_high = metrics.get('Borne Haute Respectée', metrics.get('Hit Rate Global (Range Tenu)', 0)) / 100.0
+        win_rate_low = metrics.get('Borne Basse Respectée', metrics.get('Hit Rate Global (Range Tenu)', 0)) / 100.0
+
+        spread_width = 500.0
+        self.be_high = (1.0 - win_rate_high) * spread_width
+        self.be_low = (1.0 - win_rate_low) * spread_width
+
         # --- Create tooltip annotation ---
         self.annot = self.ax.annotate(
             "",
@@ -448,7 +465,7 @@ class App(ctk.CTk):
         date_str = self.chart_dates[idx]
 
         if idx == len(self.chart_x) - 1:
-            # Last bar: show date + actual high/low + predicted high/low
+            # Last bar: show date + actual high/low + predicted high/low + BE Premiums
             text = (
                 f"  Date: {date_str}\n"
                 f"  ─────────────────\n"
@@ -456,7 +473,10 @@ class App(ctk.CTk):
                 f"  Actual Low  : {self.chart_lows[idx]:>10.2f}\n"
                 f"  ─────────────────\n"
                 f"  Pred High   : {self.pred_high:>10.2f}\n"
-                f"  Pred Low    : {self.pred_low:>10.2f}"
+                f"  Pred Low    : {self.pred_low:>10.2f}\n"
+                f"  ─────────────────\n"
+                f"  BE Prem (H) : {self.be_high:>10.2f} $\n"
+                f"  BE Prem (L) : {self.be_low:>10.2f} $"
             )
         else:
             # Other bars: show date + high + low
