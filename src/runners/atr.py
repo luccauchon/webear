@@ -48,6 +48,8 @@ def get_parser():
                         help="Train/Test split ratio (default: 0.80).")
     parser.add_argument("--tightness-weight", type=float, default=0.3,
                         help="Weight for tightness penalty in Optuna objective (default: 0.3).")
+    parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=False,
+                        help="If True, consider range Held if close is within [Predicted Low, Predicted High], ignoring intraday High/Low breaches.")
 
     return parser
 
@@ -74,7 +76,7 @@ def calculate_atr(df, close_col, high_col, low_col, ticker, window):
     return df.dropna(subset=cols_to_check).copy(), atr_col, prev_close_col
 
 
-def run_backtest_with_vix(df_bt, open_col, atr_col, high_col, low_col, optimized_params):
+def run_backtest_with_vix(df_bt, open_col, close_col, atr_col, high_col, low_col, optimized_params, use_close_for_range=False):
     """
     Exécute le backtest en utilisant soit les params optimisés par Optuna,
     soit les heuristiques par défaut.
@@ -85,10 +87,10 @@ def run_backtest_with_vix(df_bt, open_col, atr_col, high_col, low_col, optimized
     df_bt.loc[df_bt['VIX_Rolling_Rank'] > 0.70, 'VIX_Regime'] = 'High'
     assert optimized_params is not None
     k_params = {
-            'Low': {'k_up': optimized_params['k_up_low'], 'k_down': optimized_params['k_down_low']},
-            'Normal': {'k_up': optimized_params['k_up_normal'], 'k_down': optimized_params['k_down_normal']},
-            'High': {'k_up': optimized_params['k_up_high'], 'k_down': optimized_params['k_down_high']}
-        }
+        'Low': {'k_up': optimized_params['k_up_low'], 'k_down': optimized_params['k_down_low']},
+        'Normal': {'k_up': optimized_params['k_up_normal'], 'k_down': optimized_params['k_down_normal']},
+        'High': {'k_up': optimized_params['k_up_high'], 'k_down': optimized_params['k_down_high']}
+    }
 
     df_bt['k_up_val'] = df_bt['VIX_Regime'].map(lambda r: k_params[r]['k_up'])
     df_bt['k_down_val'] = df_bt['VIX_Regime'].map(lambda r: k_params[r]['k_down'])
@@ -96,8 +98,13 @@ def run_backtest_with_vix(df_bt, open_col, atr_col, high_col, low_col, optimized
     df_bt['High_Pred'] = df_bt[open_col] + (df_bt[atr_col] * df_bt['k_up_val'])
     df_bt['Low_Pred'] = df_bt[open_col] - (df_bt[atr_col] * df_bt['k_down_val'])
 
-    high_respected = df_bt[high_col] <= df_bt['High_Pred']
-    low_respected = df_bt[low_col] >= df_bt['Low_Pred']
+    if use_close_for_range:
+        high_respected = df_bt[close_col] <= df_bt['High_Pred']
+        low_respected = df_bt[close_col] >= df_bt['Low_Pred']
+    else:
+        high_respected = df_bt[high_col] <= df_bt['High_Pred']
+        low_respected = df_bt[low_col] >= df_bt['Low_Pred']
+
     range_held = high_respected & low_respected
 
     global_metrics = {
@@ -110,9 +117,15 @@ def run_backtest_with_vix(df_bt, open_col, atr_col, high_col, low_col, optimized
     for regime in ['Low', 'Normal', 'High']:
         df_reg = df_bt[df_bt['VIX_Regime'] == regime]
         if len(df_reg) > 0:
-            hr = (df_reg[high_col] <= df_reg['High_Pred']) & (df_reg[low_col] >= df_reg['Low_Pred'])
-            h_res = df_reg[high_col] <= df_reg['High_Pred']
-            l_res = df_reg[low_col] >= df_reg['Low_Pred']
+            if use_close_for_range:
+                hr = (df_reg[close_col] <= df_reg['High_Pred']) & (df_reg[close_col] >= df_reg['Low_Pred'])
+                h_res = df_reg[close_col] <= df_reg['High_Pred']
+                l_res = df_reg[close_col] >= df_reg['Low_Pred']
+            else:
+                hr = (df_reg[high_col] <= df_reg['High_Pred']) & (df_reg[low_col] >= df_reg['Low_Pred'])
+                h_res = df_reg[high_col] <= df_reg['High_Pred']
+                l_res = df_reg[low_col] >= df_reg['Low_Pred']
+
             regime_metrics[regime] = {
                 'Hit Rate Global (Range Tenu)': hr.mean() * 100,
                 'Borne Haute Respectée': h_res.mean() * 100,
@@ -165,7 +178,7 @@ def display_dataset_info(train_info, test_info, ticker, dataset_id, atr_window):
     print("=" * 60 + "\n")
 
 
-def optimize_vix_multipliers(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, n_trials=200, tightness_weight=0.3, verbose=True):
+def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, n_trials=200, tightness_weight=0.3, use_close_for_range=False, verbose=True):
     """
     Utilise Optuna pour trouver les meilleurs k_up/k_down pour chaque régime de VIX.
     Objectif : Maximiser le Hit Rate tout en MINIMISANT la largeur du range (k values).
@@ -179,6 +192,7 @@ def optimize_vix_multipliers(df_bt, vix_col, open_col, atr_col, high_col, low_co
 
     # Extraire les séries nécessaires pour la performance
     opens = df_bt[open_col].values
+    closes = df_bt[close_col].values
     atrs = df_bt[atr_col].values
     highs = df_bt[high_col].values
     lows = df_bt[low_col].values
@@ -213,21 +227,30 @@ def optimize_vix_multipliers(df_bt, vix_col, open_col, atr_col, high_col, low_co
             p = params['Low']
             h_pred = opens[idx_low] + (atrs[idx_low] * p['up'])
             l_pred = opens[idx_low] - (atrs[idx_low] * p['down'])
-            hits[idx_low] = (highs[idx_low] <= h_pred) & (lows[idx_low] >= l_pred)
+            if use_close_for_range:
+                hits[idx_low] = (closes[idx_low] <= h_pred) & (closes[idx_low] >= l_pred)
+            else:
+                hits[idx_low] = (highs[idx_low] <= h_pred) & (lows[idx_low] >= l_pred)
 
         # Régime Normal
         if len(idx_normal) > 0:
             p = params['Normal']
             h_pred = opens[idx_normal] + (atrs[idx_normal] * p['up'])
             l_pred = opens[idx_normal] - (atrs[idx_normal] * p['down'])
-            hits[idx_normal] = (highs[idx_normal] <= h_pred) & (lows[idx_normal] >= l_pred)
+            if use_close_for_range:
+                hits[idx_normal] = (closes[idx_normal] <= h_pred) & (closes[idx_normal] >= l_pred)
+            else:
+                hits[idx_normal] = (highs[idx_normal] <= h_pred) & (lows[idx_normal] >= l_pred)
 
         # Régime High
         if len(idx_high) > 0:
             p = params['High']
             h_pred = opens[idx_high] + (atrs[idx_high] * p['up'])
             l_pred = opens[idx_high] - (atrs[idx_high] * p['down'])
-            hits[idx_high] = (highs[idx_high] <= h_pred) & (lows[idx_high] >= l_pred)
+            if use_close_for_range:
+                hits[idx_high] = (closes[idx_high] <= h_pred) & (closes[idx_high] >= l_pred)
+            else:
+                hits[idx_high] = (highs[idx_high] <= h_pred) & (lows[idx_high] >= l_pred)
 
         hit_rate = hits.mean()
         avg_k_sum = (k_up_low + k_down_low + k_up_normal + k_down_normal + k_up_high + k_down_high) / 6.0
@@ -245,13 +268,14 @@ def optimize_vix_multipliers(df_bt, vix_col, open_col, atr_col, high_col, low_co
 
     # Afficher le hit_rate réel et la tightness séparément pour transparence
     final_hr = run_backtest_with_vix(
-        df_bt=df_bt, open_col=open_col,
+        df_bt=df_bt, open_col=open_col, close_col=close_col,
         atr_col=atr_col, high_col=high_col, low_col=low_col,
         optimized_params={
             'k_up_low': best_params['k_up_low'], 'k_down_low': best_params['k_down_low'],
             'k_up_normal': best_params['k_up_normal'], 'k_down_normal': best_params['k_down_normal'],
             'k_up_high': best_params['k_up_high'], 'k_down_high': best_params['k_down_high']
-        }
+        },
+        use_close_for_range=use_close_for_range
     )[0]['Hit Rate Global (Range Tenu)']
 
     avg_k = sum(best_params.values()) / 6.0
@@ -260,7 +284,7 @@ def optimize_vix_multipliers(df_bt, vix_col, open_col, atr_col, high_col, low_co
     return best_params, best_value
 
 
-def display_realtime_prediction(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params, verbose):
+def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, optimized_params, use_close_for_range=False, verbose=True):
     """Displays a formatted real-time prediction for the last available bar."""
     if df_bt.empty:
         print("\n⚠️  No data available for real-time prediction.")
@@ -291,8 +315,15 @@ def display_realtime_prediction(df_bt, vix_col, open_col, atr_col, high_col, low
     # Actual values (may be NaN if bar is incomplete / real-time)
     actual_high = last_row[high_col]
     actual_low = last_row[low_col]
-    high_status = "✅" if pd.notna(actual_high) and actual_high <= predicted_high else ("❌" if pd.notna(actual_high) else "⏳")
-    low_status = "✅" if pd.notna(actual_low) and actual_low >= predicted_low else ("❌" if pd.notna(actual_low) else "⏳")
+    actual_close = last_row[close_col]
+
+    if use_close_for_range:
+        high_status = "✅" if pd.notna(actual_close) and actual_close <= predicted_high else ("❌" if pd.notna(actual_close) else "⏳")
+        low_status = "✅" if pd.notna(actual_close) and actual_close >= predicted_low else ("❌" if pd.notna(actual_close) else "⏳")
+    else:
+        high_status = "✅" if pd.notna(actual_high) and actual_high <= predicted_high else ("❌" if pd.notna(actual_high) else "⏳")
+        low_status = "✅" if pd.notna(actual_low) and actual_low >= predicted_low else ("❌" if pd.notna(actual_low) else "⏳")
+
     range_status = "✅" if high_status == "✅" and low_status == "✅" else ("❌" if high_status == "❌" or low_status == "❌" else "⏳")
     if verbose:
         print("\n" + "=" * 60)
@@ -303,12 +334,19 @@ def display_realtime_prediction(df_bt, vix_col, open_col, atr_col, high_col, low
         print(f"  Current Open    : {current_open:,.2f}")
         print(f"  Current ATR     : {current_atr:,.2f}")
         print("-" * 60)
-        print(f"  📈 Predicted High : {predicted_high:.2f}   Actual: {actual_high:.2f}  {high_status}")
-        print(f"  📉 Predicted Low  : {predicted_low:.2f}   Actual: {actual_low:.2f}  {low_status}")
+        if use_close_for_range:
+            print(f"  📈 Predicted High : {predicted_high:.2f}   Actual Close: {actual_close:.2f}  {high_status}")
+            print(f"  📉 Predicted Low  : {predicted_low:.2f}   Actual Close: {actual_close:.2f}  {low_status}")
+        else:
+            print(f"  📈 Predicted High : {predicted_high:.2f}   Actual: {actual_high:.2f}  {high_status}")
+            print(f"  📉 Predicted Low  : {predicted_low:.2f}   Actual: {actual_low:.2f}  {low_status}")
         print("-" * 60)
         print(f"  🎯 Range Held     : {range_status}")
         print("=" * 60)
-    return {'realtime': {'predicted_high': predicted_high, 'predicted_low': predicted_low, 'actual_high': actual_high, 'actual_low': actual_low,
+
+    return {'realtime': {'predicted_high': predicted_high, 'predicted_low': predicted_low,
+                         'actual_high': actual_close if use_close_for_range else actual_high,
+                         'actual_low': actual_close if use_close_for_range else actual_low,
                          'vix_regime': regime.upper(), 'vix_rank': vix_rank, 'ticker': ticker, 'last_date': last_date}}
 
 
@@ -413,12 +451,15 @@ def entry(args=None):
         df_bt=df_bt_train,
         vix_col=vix_col,
         open_col=open_col,
+        close_col=close_col,
         atr_col=atr_col,
         high_col=high_col,
         low_col=low_col,
         ticker=args.ticker,
         n_trials=args.n_trials,
-        tightness_weight=args.tightness_weight, verbose=args.verbose
+        tightness_weight=args.tightness_weight,
+        use_close_for_range=args.use_close_for_range,
+        verbose=args.verbose
     )
     timings['optuna_optimization'] = time.time() - t0
 
@@ -427,10 +468,12 @@ def entry(args=None):
     global_stats, regime_stats, bars_analyzed, df_bt_test = run_backtest_with_vix(
         df_bt=df_bt_test,
         open_col=open_col,
+        close_col=close_col,
         atr_col=atr_col,
         high_col=high_col,
         low_col=low_col,
-        optimized_params=optimized_params
+        optimized_params=optimized_params,
+        use_close_for_range=args.use_close_for_range
     )
     timings['backtest'] = time.time() - t0
 
@@ -442,11 +485,14 @@ def entry(args=None):
         df_bt=df_bt_test,
         vix_col=vix_col,
         open_col=open_col,
+        close_col=close_col,
         atr_col=atr_col,
         high_col=high_col,
         low_col=low_col,
         ticker=args.ticker,
-        optimized_params=optimized_params, verbose=args.verbose,
+        optimized_params=optimized_params,
+        use_close_for_range=args.use_close_for_range,
+        verbose=args.verbose,
     )
     timings['realtime_prediction'] = time.time() - t0
 

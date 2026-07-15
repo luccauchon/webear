@@ -51,14 +51,16 @@ def mock_display_report(global_metrics, regime_metrics, total_bars):
     original_display_report(global_metrics, regime_metrics, total_bars)
 
 
-def mock_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params, verbose):
+def mock_display_realtime(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, optimized_params, use_close_for_range=False, verbose=True):
     captured_data['df_bt'] = df_bt
     captured_data['ticker'] = ticker
     captured_data['optimized_params'] = optimized_params
     captured_data['open_col'] = open_col
+    captured_data['close_col'] = close_col
     captured_data['high_col'] = high_col
     captured_data['low_col'] = low_col
     captured_data['atr_col'] = atr_col
+    captured_data['use_close_for_range'] = use_close_for_range
     captured_data['last_row'] = df_bt.iloc[-1]
     captured_data['last_date'] = df_bt.index[-1]
 
@@ -75,7 +77,7 @@ def mock_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, 
         regime = 'Normal'
     captured_data['regime'] = regime
 
-    original_display_realtime(df_bt, vix_col, open_col, atr_col, high_col, low_col, ticker, optimized_params, True)
+    original_display_realtime(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, optimized_params, use_close_for_range, verbose)
 
 
 def mock_display_dataset_info(train_info, test_info, ticker, dataset_id, atr_window):
@@ -115,6 +117,7 @@ class App(ctk.CTk):
         self.ticker_var = ctk.StringVar(value="^GSPC")
         self.dataset_var = ctk.StringVar(value="day")
         self.realtime_var = ctk.BooleanVar(value=True)
+        self.close_range_var = ctk.BooleanVar(value=False)
         self.atr_var = ctk.StringVar(value="14")
         self.trials_var = ctk.StringVar(value="50")  # Lower default for GUI speed
 
@@ -122,31 +125,32 @@ class App(ctk.CTk):
         self.create_input("Ticker Symbol", self.ticker_var, 1)
         self.create_dropdown("Dataset Frequency", self.dataset_var, ["day", "week", "month"], 3)
         ctk.CTkCheckBox(self.sidebar, text="Use Real-time Data", variable=self.realtime_var).grid(row=5, column=0, padx=20, pady=10, sticky="w")
-        self.create_input("ATR Window", self.atr_var, 6)
+        ctk.CTkCheckBox(self.sidebar, text="Use Close for Range", variable=self.close_range_var).grid(row=6, column=0, padx=20, pady=10, sticky="w")
+        self.create_input("ATR Window", self.atr_var, 8)
 
         # Sliders
         self.split_var = ctk.DoubleVar(value=0.80)
         self.sld_split = ctk.CTkSlider(self.sidebar, from_=0.5, to=0.9, command=self.update_split_label)
         self.sld_split.set(0.80)
         self.lbl_split = ctk.CTkLabel(self.sidebar, text="Train Split: 0.80")
-        self.lbl_split.grid(row=8, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.sld_split.grid(row=9, column=0, padx=20, pady=(0, 10), sticky="ew")
+        self.lbl_split.grid(row=10, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.sld_split.grid(row=11, column=0, padx=20, pady=(0, 10), sticky="ew")
 
         self.tight_var = ctk.DoubleVar(value=0.3)
         self.sld_tight = ctk.CTkSlider(self.sidebar, from_=0.0, to=4.0, command=self.update_tight_label)
         self.sld_tight.set(0.3)
         self.lbl_tight = ctk.CTkLabel(self.sidebar, text="Tightness Weight: 0.30")
-        self.lbl_tight.grid(row=10, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.sld_tight.grid(row=11, column=0, padx=20, pady=(0, 10), sticky="ew")
+        self.lbl_tight.grid(row=12, column=0, padx=20, pady=(10, 0), sticky="w")
+        self.sld_tight.grid(row=13, column=0, padx=20, pady=(0, 10), sticky="ew")
 
-        self.create_input("Optuna Trials", self.trials_var, 12)
+        self.create_input("Optuna Trials", self.trials_var, 15)
 
         # Action Button
         self.run_btn = ctk.CTkButton(self.sidebar, text="🚀 Run Analysis", command=self.run_analysis, height=45, font=ctk.CTkFont(size=16, weight="bold"))
-        self.run_btn.grid(row=14, column=0, padx=20, pady=(30, 10), sticky="ew")
+        self.run_btn.grid(row=17, column=0, padx=20, pady=(30, 10), sticky="ew")
 
         self.status_label = ctk.CTkLabel(self.sidebar, text="Ready", text_color="gray")
-        self.status_label.grid(row=15, column=0, padx=20, pady=10)
+        self.status_label.grid(row=18, column=0, padx=20, pady=10)
 
         # --- RIGHT PANEL (RESULTS) ---
         self.main_frame = ctk.CTkFrame(self, corner_radius=10)
@@ -190,12 +194,14 @@ class App(ctk.CTk):
         self.chart_x = None
         self.chart_highs = None
         self.chart_lows = None
+        self.chart_closes = None
         self.chart_dates = None
         self.pred_high = None
         self.pred_low = None
         self.be_high = 0.0
         self.be_low = 0.0
         self._last_hover_idx = -1
+        self.use_close_for_range = False
 
         # Connect mouse motion event once
         self.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
@@ -243,6 +249,7 @@ class App(ctk.CTk):
                 atr_window=int(self.atr_var.get()),
                 n_split=self.sld_split.get(),
                 tightness_weight=self.sld_tight.get(),
+                use_close_for_range=self.close_range_var.get(),
                 dataframe=None, verbose=True,
             )
             mp.entry(args)
@@ -326,10 +333,14 @@ class App(ctk.CTk):
         if 'df_bt' not in captured_data or captured_data['df_bt'].empty: return
 
         df = captured_data['df_bt'].tail(30)
-        open_col, high_col, low_col = captured_data['open_col'], captured_data['high_col'], captured_data['low_col']
+        open_col = captured_data['open_col']
+        close_col = captured_data['close_col']
+        high_col = captured_data['high_col']
+        low_col = captured_data['low_col']
         last_row = captured_data['last_row']
         opt_params = captured_data['optimized_params']
         regime = captured_data['regime']
+        self.use_close_for_range = captured_data.get('use_close_for_range', False)
 
         k_up = opt_params[f'k_up_{regime.lower()}']
         k_down = opt_params[f'k_down_{regime.lower()}']
@@ -341,11 +352,13 @@ class App(ctk.CTk):
 
         act_high = last_row[high_col]
         act_low = last_row[low_col]
+        act_close = last_row[close_col]
 
         x = np.arange(len(df))
         opens = df[open_col].values
         highs = df[high_col].values
         lows = df[low_col].values
+        closes = df[close_col].values
 
         # Draw historical candles
         for i in range(len(df) - 1):
@@ -363,8 +376,12 @@ class App(ctk.CTk):
         self.ax.plot([x[i], x[i]], [lows[i], highs[i]], color='orange', linewidth=2)
         self.ax.scatter(x[i], opens[i], color='yellow', s=30, zorder=6)
 
-        if pd.notna(act_high): self.ax.scatter(x[i], act_high, color='red', s=60, marker='v', zorder=7, label=f'Actual High ({act_high:.2f})')
-        if pd.notna(act_low): self.ax.scatter(x[i], act_low, color='green', s=60, marker='^', zorder=7, label=f'Actual Low ({act_low:.2f})')
+        if self.use_close_for_range:
+            if pd.notna(act_close):
+                self.ax.scatter(x[i], act_close, color='magenta', s=60, marker='o', zorder=7, label=f'Actual Close ({act_close:.2f})')
+        else:
+            if pd.notna(act_high): self.ax.scatter(x[i], act_high, color='red', s=60, marker='v', zorder=7, label=f'Actual High ({act_high:.2f})')
+            if pd.notna(act_low): self.ax.scatter(x[i], act_low, color='green', s=60, marker='^', zorder=7, label=f'Actual Low ({act_low:.2f})')
 
         # Formatting
         self.ax.set_xticks(x)
@@ -379,6 +396,7 @@ class App(ctk.CTk):
         self.chart_x = x
         self.chart_highs = highs
         self.chart_lows = lows
+        self.chart_closes = closes
         self.chart_dates = [dt.strftime('%Y-%m-%d') for dt in df.index]
         self.pred_high = pred_high
         self.pred_low = pred_low
@@ -465,19 +483,32 @@ class App(ctk.CTk):
         date_str = self.chart_dates[idx]
 
         if idx == len(self.chart_x) - 1:
-            # Last bar: show date + actual high/low + predicted high/low + BE Premiums
-            text = (
-                f"  Date: {date_str}\n"
-                f"  ─────────────────\n"
-                f"  Actual High : {self.chart_highs[idx]:>10.2f}\n"
-                f"  Actual Low  : {self.chart_lows[idx]:>10.2f}\n"
-                f"  ─────────────────\n"
-                f"  Pred High   : {self.pred_high:>10.2f}\n"
-                f"  Pred Low    : {self.pred_low:>10.2f}\n"
-                f"  ─────────────────\n"
-                f"  BE Prem (H) : {self.be_high:>10.2f} $\n"
-                f"  BE Prem (L) : {self.be_low:>10.2f} $"
-            )
+            # Last bar: show date + actual high/low/close + predicted high/low + BE Premiums
+            if self.use_close_for_range:
+                text = (
+                    f"  Date: {date_str}\n"
+                    f"  ─────────────────\n"
+                    f"  Actual Close: {self.chart_closes[idx]:>10.2f}\n"
+                    f"  ─────────────────\n"
+                    f"  Pred High   : {self.pred_high:>10.2f}\n"
+                    f"  Pred Low    : {self.pred_low:>10.2f}\n"
+                    f"  ─────────────────\n"
+                    f"  BE Prem (H) : {self.be_high:>10.2f} $\n"
+                    f"  BE Prem (L) : {self.be_low:>10.2f} $"
+                )
+            else:
+                text = (
+                    f"  Date: {date_str}\n"
+                    f"  ─────────────────\n"
+                    f"  Actual High : {self.chart_highs[idx]:>10.2f}\n"
+                    f"  Actual Low  : {self.chart_lows[idx]:>10.2f}\n"
+                    f"  ─────────────────\n"
+                    f"  Pred High   : {self.pred_high:>10.2f}\n"
+                    f"  Pred Low    : {self.pred_low:>10.2f}\n"
+                    f"  ─────────────────\n"
+                    f"  BE Prem (H) : {self.be_high:>10.2f} $\n"
+                    f"  BE Prem (L) : {self.be_low:>10.2f} $"
+                )
         else:
             # Other bars: show date + high + low
             text = (

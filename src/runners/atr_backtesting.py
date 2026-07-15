@@ -80,7 +80,8 @@ def get_parser():
         default=0.8,
         help="Train/test split ratio for the data (e.g., 0.8 means 80%% training, 20%% testing)."
     )
-
+    parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=False,
+                        help="If True, consider range Held if close is within [Predicted Low, Predicted High], ignoring intraday High/Low breaches.")
     return parser
 
 
@@ -145,6 +146,7 @@ def entry(args):
                            dataset_id=args.dataset_id,
                            n_trials=args.n_trials,
                            tightness_weight=args.tightness_weight,
+                           use_close_for_range=args.use_close_for_range,
                            verbose=False)
         realtime_results = atr_entry_point(args=config)
 
@@ -212,7 +214,8 @@ def entry(args):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     # Clean up ticker for filename (remove special characters like '^')
     clean_ticker = args.ticker.replace("^", "")
-    filename = f"backtest_results_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__ic{iron_condor_wr}__{timestamp}.txt"
+    ucfr = "close_for_range" if args.use_close_for_range else ""
+    filename = f"backtest_results_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__ic{iron_condor_wr}__{timestamp}__{ucfr}.txt"
 
     with open(filename, 'w') as f:
         f.write("BACKTEST PARAMETERS\n")
