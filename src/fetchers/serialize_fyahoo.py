@@ -41,6 +41,30 @@ from constants import (
 )
 
 
+def get_realtime_dataset(dataset_id, tickers=("^GSPC", "^VIX")):
+    _master_data_cache = {}
+    daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = realtime(tickers=tickers)
+    if dataset_id == "day":
+        _master_data_cache["^GSPC"] = daily_data_cache["^GSPC"]
+        _master_data_cache["^VIX"] = daily_data_cache["^VIX"]
+    elif dataset_id == "week":
+        _master_data_cache["^GSPC"] = weekly_data_cache["^GSPC"]
+        _master_data_cache["^VIX_MEAN"] = weekly_data_cache["^VIX_MEAN"]
+    elif dataset_id == "month":
+        _master_data_cache["^GSPC"] = monthly_data_cache["^GSPC"]
+        _master_data_cache["^VIX_MEAN"] = monthly_data_cache["^VIX_MEAN"]
+    elif dataset_id == "quarter":
+        _master_data_cache["^GSPC"] = quaterly_data_cache["^GSPC"]
+        _master_data_cache["^VIX_MEAN"] = quaterly_data_cache["^VIX_MEAN"]
+    elif dataset_id == "year":
+        _master_data_cache["^GSPC"] = yearly_data_cache["^GSPC"]
+        _master_data_cache["^VIX_MEAN"] = yearly_data_cache["^VIX_MEAN"]
+    else:
+        assert False, f"{dataset_id} is not a valid dataset id"
+    return _master_data_cache
+
+
+
 def realtime(tickers=("^GSPC", "^VIX")):
     # Default dates if not provided
     today = datetime.today()

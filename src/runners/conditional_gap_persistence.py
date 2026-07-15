@@ -16,7 +16,7 @@ import pandas as pd
 import argparse
 import pickle
 from utils import get_filename_for_dataset, get_next_step
-from fetchers.serialize_fyahoo import realtime
+from fetchers.serialize_fyahoo import get_realtime_dataset
 
 
 def compute_break_even_credit(win_rate, spread_width):
@@ -48,11 +48,8 @@ def calculate_sp500_probabilities(args):
 
     # Extract epsilon for use in comparisons
     epsilon = args.epsilon
-
-    with open(get_filename_for_dataset(args.dataset_id, older_dataset=None), 'rb') as f:
-        _master_data_cache = pickle.load(f)
-    assert _master_data_cache is not None
-    df_ticker = _master_data_cache[args.ticker].sort_index()
+    _master_data_cache = get_realtime_dataset(dataset_id=args.dataset_id)
+    df_ticker = _master_data_cache[args.ticker].sort_index().copy()
 
     close_t_1_col = ('Close_t-1', args.ticker)
     low_t_1_col = ('Low_t-1', args.ticker)
@@ -141,30 +138,29 @@ def calculate_sp500_probabilities(args):
     prob6 = target6[cond6].mean()
     count6 = cond6.sum()
 
-    daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = realtime()
-    if args.dataset_id == "day":
-        _master_data_cache[args.ticker] = daily_data_cache[args.ticker]
-        _master_data_cache["^VIX"] = daily_data_cache["^VIX"]
-    elif args.dataset_id == "week":
-        _master_data_cache[args.ticker] = weekly_data_cache[args.ticker]
-        _master_data_cache["^VIX_MEAN"] = weekly_data_cache["^VIX_MEAN"]
-    elif args.dataset_id == "month":
-        _master_data_cache[args.ticker] = monthly_data_cache[args.ticker]
-        _master_data_cache["^VIX_MEAN"] = monthly_data_cache["^VIX_MEAN"]
-    elif args.dataset_id == "quarter":
-        _master_data_cache[args.ticker] = quaterly_data_cache[args.ticker]
-        _master_data_cache["^VIX_MEAN"] = quaterly_data_cache["^VIX_MEAN"]
-    elif args.dataset_id == "year":
-        _master_data_cache[args.ticker] = yearly_data_cache[args.ticker]
-        _master_data_cache["^VIX_MEAN"] = yearly_data_cache["^VIX_MEAN"]
-    else:
-        assert False, f"{args.dataset_id} is not a valid dataset id"
+    # ==========================================
+    # PROBABILITY 7
+    # Condition: Open_t > High_t-1
+    # Target: Close_t > Close_t-1
+    # ==========================================
+    cond7 = df_ticker[open_col] > df_ticker[high_t_1_col]
+    target7 = df_ticker[close_col] > df_ticker[close_t_1_col]
+
+    # Calculate probability and sample size
+    prob7 = target7[cond7].mean()
+    count7 = cond7.sum()
 
     # ==========================================
-    # PINPOINT CURRENT STATE (NEW LOGIC)
+    # PROBABILITY 8
+    # Condition: Open_t < Low_t-1
+    # Target: Close_t < Close_t-1
     # ==========================================
-    # Re-sort the newly updated data
-    df_ticker = _master_data_cache[args.ticker].sort_index()
+    cond8 = df_ticker[open_col] < df_ticker[low_t_1_col]
+    target8 = df_ticker[close_col] < df_ticker[close_t_1_col]
+
+    # Calculate probability and sample size
+    prob8 = target8[cond8].mean()
+    count8 = cond8.sum()
 
     # Get today's Open and yesterday's Close
     latest_open = df_ticker[open_col].iloc[-1]
@@ -174,13 +170,23 @@ def calculate_sp500_probabilities(args):
     eps_pct_str = f"{epsilon * 100:.2f}%"
 
     # Determine which "Given That" we are currently in
-    # Note: Added [6] to Gap Down and No Significant Gap branches, since < (1+epsilon) covers both conditions.
     if latest_open > (yesterday_close * (1 + epsilon)):
         current_condition = f"[1]/[4]/[5] GIVEN THAT Open_t > Close_t-1 + {eps_pct_str} (Gap Up)"
+        active_probs = [1, 4, 5]
     elif latest_open < (yesterday_close * (1 - epsilon)):
         current_condition = f"[2]/[3]/[6] GIVEN THAT Open_t < Close_t-1 - {eps_pct_str} (Gap Down)"
+        active_probs = [2, 3, 6]
     else:
         current_condition = f"[X] No Significant Gap (Open_t ~ Close_t-1)"
+        active_probs = []
+
+    # Add new conditions to active probs based on yesterday's High/Low
+    if latest_open > df_ticker[high_col].iloc[-2]:
+        active_probs.append(7)
+        current_condition += " | [7] Open_t > High_t-1"
+    if latest_open < df_ticker[low_col].iloc[-2]:
+        active_probs.append(8)
+        current_condition += " | [8] Open_t < Low_t-1"
 
     close_t__str = f"{df_ticker[close_col].iloc[-1]:.0f}$"
     open_t__str = f"{df_ticker[open_col].iloc[-1]:.0f}$"
@@ -191,6 +197,11 @@ def calculate_sp500_probabilities(args):
     # ==========================================
     # OUTPUT RESULTS
     # ==========================================
+
+    # ANSI escape codes for terminal bold text
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
     print("-" * 50)
     print(f"RESULTS FOR S&P 500 ({str(args.dataset_id).upper()} Candles)")
     print(f"Epsilon (Margin): {eps_pct_str}")
@@ -199,38 +210,57 @@ def calculate_sp500_probabilities(args):
     # Print the newly identified current state
     print(f"\nCURRENT STATE:")
     print(f"    -> Today we are in: {current_condition}")
-    print(f"    -> Today's Open: {latest_open:.2f}")
-    print(f"    -> Yesterday's Close: {yesterday_close:.2f}")
+    print(f"    -> Today's Open: {latest_open:.2f}  ({df_ticker.index[-1].strftime('%Y-%m-%d')})")
+    print(f"    -> Yesterday's Close: {yesterday_close:.2f}  ({df_ticker.index[-2].strftime('%Y-%m-%d')})")
 
-    print(f"\n[1] Probability that Close_t({close_t__str}) > Low_t-1({low_t_1__str}) + {eps_pct_str}  (Put Credit Spread)")
+    b1, e1 = (BOLD, RESET) if 1 in active_probs else ("", "")
+    print(f"{b1}\n[1] Probability that Close_t({close_t__str}) > Low_t-1({low_t_1__str}) + {eps_pct_str}  (Put Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
     print(f"    -> Sample Size (Occurrences): {count1}  ({(count1 / total_bars):.2%} :: total of {total_bars} bars)")
-    print(f"    -> Probability: {prob1:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob1, 500):.2f}$")
+    print(f"    -> Probability: {prob1:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob1, 500):.2f}${e1}")
 
-    print(f"\n[2] Probability that Close_t({close_t__str}) < High_t-1({high_t_1__str}) - {eps_pct_str}  (Call Credit Spread)")
+    b2, e2 = (BOLD, RESET) if 2 in active_probs else ("", "")
+    print(f"{b2}\n[2] Probability that Close_t({close_t__str}) < High_t-1({high_t_1__str}) - {eps_pct_str}  (Call Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)")
     print(f"    -> Sample Size (Occurrences): {count2}  ({(count2 / total_bars):.2%} :: total of {total_bars} bars)")
-    print(f"    -> Probability: {prob2:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob2, 500):.2f}$")
+    print(f"    -> Probability: {prob2:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob2, 500):.2f}${e2}")
 
-    print(f"\n[3] Probability that Close_t({close_t__str}) < Low_t-1({low_t_1__str}) - {eps_pct_str}  (Breaks Previous Low :: Put Credit Spread)")
+    b3, e3 = (BOLD, RESET) if 3 in active_probs else ("", "")
+    print(f"{b3}\n[3] Probability that Close_t({close_t__str}) < Low_t-1({low_t_1__str}) - {eps_pct_str}  (Breaks Previous Low :: Put Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)")
     print(f"    -> Sample Size (Occurrences): {count3}  ({(count3 / total_bars):.2%} :: total of {total_bars} bars)")
-    print(f"    -> Probability: {prob3:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob3, 500):.2f}$")
+    print(f"    -> Probability: {prob3:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob3, 500):.2f}${e3}")
 
-    print(f"\n[4] Probability that Close_t({close_t__str}) > High_t-1({high_t_1__str}) + {eps_pct_str}  (Breaks Previous High :: Call Credit Spread)")
+    b4, e4 = (BOLD, RESET) if 4 in active_probs else ("", "")
+    print(f"{b4}\n[4] Probability that Close_t({close_t__str}) > High_t-1({high_t_1__str}) + {eps_pct_str}  (Breaks Previous High :: Call Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
     print(f"    -> Sample Size (Occurrences): {count4}  ({(count4 / total_bars):.2%} :: total of {total_bars} bars)")
-    print(f"    -> Probability: {prob4:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob4, 500):.2f}$")
+    print(f"    -> Probability: {prob4:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob4, 500):.2f}${e4}")
 
-    print(f"\n[5] Probability that Close_t({close_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Higher Than Yesterday's Close)")
+    b5, e5 = (BOLD, RESET) if 5 in active_probs else ("", "")
+    print(f"{b5}\n[5] Probability that Close_t({close_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Higher Than Yesterday's Close)")
     print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
     print(f"    -> Sample Size (Occurrences): {count5}  ({(count5 / total_bars):.2%} :: total of {total_bars} bars)")
-    print(f"    -> Probability: {prob5:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob5, 500):.2f}$")
+    print(f"    -> Probability: {prob5:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob5, 500):.2f}${e5}")
 
-    print(f"\n[6] Probability that Close_t({close_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Lower Than Yesterday's Close + Epsilon)")
+    b6, e6 = (BOLD, RESET) if 6 in active_probs else ("", "")
+    print(f"{b6}\n[6] Probability that Close_t({close_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Lower Than Yesterday's Close + Epsilon)")
     print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}")
     print(f"    -> Sample Size (Occurrences): {count6}  ({(count6 / total_bars):.2%} :: total of {total_bars} bars)")
-    print(f"    -> Probability: {prob6:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob6, 500):.2f}$")
+    print(f"    -> Probability: {prob6:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob6, 500):.2f}${e6}")
+
+    b7, e7 = (BOLD, RESET) if 7 in active_probs else ("", "")
+    print(f"{b7}\n[7] Probability that Close_t({close_t__str}) > Close_t-1({close_t_1__str})")
+    print(f"    GIVEN THAT Open_t({open_t__str}) > High_t-1({high_t_1__str})")
+    print(f"    -> Sample Size (Occurrences): {count7}  ({(count7 / total_bars):.2%} :: total of {total_bars} bars)")
+    print(f"    -> Probability: {prob7:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob7, 500):.2f}${e7}")
+
+    b8, e8 = (BOLD, RESET) if 8 in active_probs else ("", "")
+    print(f"{b8}\n[8] Probability that Close_t({close_t__str}) < Close_t-1({close_t_1__str})")
+    print(f"    GIVEN THAT Open_t({open_t__str}) < Low_t-1({low_t_1__str})")
+    print(f"    -> Sample Size (Occurrences): {count8}  ({(count8 / total_bars):.2%} :: total of {total_bars} bars)")
+    print(f"    -> Probability: {prob8:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob8, 500):.2f}${e8}")
+
     print("-" * 50)
 
 

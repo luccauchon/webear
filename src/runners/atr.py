@@ -446,7 +446,7 @@ def entry(args=None):
         high_col=high_col,
         low_col=low_col,
         ticker=args.ticker,
-        optimized_params=optimized_params,
+        optimized_params=optimized_params, verbose=args.verbose,
     )
     timings['realtime_prediction'] = time.time() - t0
 
