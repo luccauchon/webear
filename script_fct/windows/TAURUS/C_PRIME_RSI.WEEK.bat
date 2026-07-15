@@ -12,6 +12,6 @@ cd ..\..\..\src\crusaders\taurus
 echo Using %PRIME_RSI_WEEK_TARGET_DIR%
 
 :: 
-python player.py --nb-workers 20 --prime-rsi-target-dir %PRIME_RSI_WEEK_TARGET_DIR% --dgdr-target-dir None --autotune-target-dir None --oerh-target-dir None  --verbose
+python player.py --nb-workers 20 --prime-rsi-target-dir %PRIME_RSI_WEEK_TARGET_DIR% --dgdr-target-dir None --autotune-target-dir None --oerh-target-dir None  --verbose --hide-zero-signal
 
 pause
