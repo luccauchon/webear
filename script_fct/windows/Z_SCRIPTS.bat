@@ -15,3 +15,9 @@ start "Download Futures" cmd /k "call "%CONDA_ACTIVATE_PATH%" PY312_HT && d: && 
 
 :: Script 4 : Lancement du second fichier .bat
 start "YFinance Subset HTML" cmd /k "call R_YFINANCE_SUBSET+HTML_DAY___16h05m.bat"
+
+:: Script 5 : 
+start "HTML Week" cmd /k "call R_HTML___Saturday.bat"
+
+:: Script 6 : 
+start "HTML End Month" cmd /k "call R_HTML___End_of_month.bat"

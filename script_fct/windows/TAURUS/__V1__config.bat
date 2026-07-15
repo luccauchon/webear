@@ -20,6 +20,10 @@ for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command ^
 :: Définition des fichiers de sortie
 set OUTPUT_FILE_PKL=%BASE_DIR_PKL%\taurus_v1_%CURRENT_DATE%.pkl
 set OUTPUT_FILE_DAY_JSON=%BASE_DIR_JSON%\taurus_visualization_day_%CURRENT_DATE%.json
+set OUTPUT_FILE_AUTOTUNE_WEEK_PKL=%BASE_DIR_PKL%\taurus_v1_autotune_week__%CURRENT_DATE%.pkl
+set OUTPUT_FILE_AUTOTUNE_WEEK_JSON=%BASE_DIR_JSON%\taurus_visualization_autotune_week__%CURRENT_DATE%.json
+set OUTPUT_FILE_AUTOTUNE_MONTH_PKL=%BASE_DIR_PKL%\taurus_v1_autotune_month__%CURRENT_DATE%.pkl
+set OUTPUT_FILE_AUTOTUNE_MONTH_JSON=%BASE_DIR_JSON%\taurus_visualization_autotune_month__%CURRENT_DATE%.json
 
 ::
 set OUTPUT_DIR_VIZ=D:\Finance\data\taurus\V1\_html
