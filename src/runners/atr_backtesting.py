@@ -162,11 +162,12 @@ def entry(args):
                            use_close_for_range=args.use_close_for_range,
                            verbose=False)
         realtime_results = atr_entry_point(args=config)
-
+        print(realtime_results)
         predicted_high = realtime_results["realtime"]["predicted_high"]
         predicted_low = realtime_results["realtime"]["predicted_low"]
         actual_high = realtime_results["realtime"]["actual_high"]
         actual_low = realtime_results["realtime"]["actual_low"]
+        actual_close = realtime_results["realtime"]["actual_close"]
         vix_regime = realtime_results["realtime"]["vix_regime"]
         vix_rank = realtime_results["realtime"]["vix_rank"]
         last_date = realtime_results["realtime"]["last_date"]
@@ -175,11 +176,23 @@ def entry(args):
         if pd.isna(predicted_high) or pd.isna(predicted_low) or pd.isna(actual_high) or pd.isna(actual_low):
             continue
 
+        # Also skip if actual_close is NaN when using close-for-range mode
+        if args.use_close_for_range and pd.isna(actual_close):
+            continue
+
         total_trades += 1
 
-        # Evaluate Win Conditions
-        is_high_win = predicted_high > actual_high
-        is_low_win = predicted_low < actual_low
+        # ─── Evaluate Win Conditions ───────────────────────────────────────────
+        if args.use_close_for_range:
+            # Win if Close stays within the predicted range:
+            #   close < predicted_high  AND  close > predicted_low
+            is_high_win = predicted_high > actual_close
+            is_low_win = predicted_low < actual_close
+        else:
+            # Default: Win if intraday High/Low stay within the predicted range
+            is_high_win = predicted_high > actual_high
+            is_low_win = predicted_low < actual_low
+
         is_total_win = is_high_win and is_low_win
 
         if is_high_win:
@@ -197,26 +210,36 @@ def entry(args):
     else:
         iron_condor_wr = call_spread_wr = put_spread_wr = 0.0
 
+    # Build human-readable condition strings for output
+    if args.use_close_for_range:
+        cond_high = "Predicted High > Actual Close"
+        cond_low = "Predicted Low < Actual Close"
+    else:
+        cond_high = "Predicted High > Actual High"
+        cond_low = "Predicted Low < Actual Low"
+
     if args.verbose:
         print("\n" + "=" * 60)
         print(" BACKTEST STATISTICS ".center(60, "="))
         print("=" * 60)
+        print(f"Range Mode: {'Close-based' if args.use_close_for_range else 'High/Low-based'}")
+        print("-" * 60)
 
         if total_trades > 0:
             print(f"Total Valid Trades      : {total_trades}")
             print("-" * 60)
 
             print(f"Iron Condor Win Rate   : {iron_condor_wr:6.2f}% ({iron_condor_wins}/{total_trades})")
-            print(f"  -> Win if: Predicted High > Actual High")
-            print(f"             AND Predicted Low < Actual Low")
+            print(f"  -> Win if: {cond_high}")
+            print(f"             AND {cond_low}")
             print("-" * 60)
 
             print(f"Call Credit Spread WR  : {call_spread_wr:6.2f}% ({call_spread_wins}/{total_trades})")
-            print(f"  -> Win if: Predicted High > Actual High")
+            print(f"  -> Win if: {cond_high}")
             print("-" * 60)
 
             print(f"Put Credit Spread WR   : {put_spread_wr:6.2f}% ({put_spread_wins}/{total_trades})")
-            print(f"  -> Win if: Predicted Low < Actual Low")
+            print(f"  -> Win if: {cond_low}")
 
         else:
             print("No valid trades evaluated.")
@@ -240,24 +263,27 @@ def entry(args):
         f.write(f"Tightness Weight    : {args.tightness_weight}\n")
         f.write(f"Number of Trials    : {args.n_trials}\n")
         f.write(f"Train/Test Split    : {args.n_split}\n")
+        f.write(f"Use Close For Range : {args.use_close_for_range}\n")
         f.write(f"Timeout             : {args.timeout}s\n")
         f.write("=" * 60 + "\n\n")
 
         f.write("BACKTEST RESULTS\n")
         f.write("=" * 60 + "\n")
+        f.write(f"Range Mode: {'Close-based' if args.use_close_for_range else 'High/Low-based'}\n")
+        f.write("-" * 60 + "\n")
 
         if total_trades > 0:
             f.write(f"Total Valid Trades      : {total_trades}\n")
             f.write("-" * 60 + "\n")
             f.write(f"Iron Condor Win Rate   : {iron_condor_wr:6.2f}% ({iron_condor_wins}/{total_trades})\n")
-            f.write(f"  -> Win if: Predicted High > Actual High\n")
-            f.write(f"             AND Predicted Low < Actual Low\n")
+            f.write(f"  -> Win if: {cond_high}\n")
+            f.write(f"             AND {cond_low}\n")
             f.write("-" * 60 + "\n")
             f.write(f"Call Credit Spread WR  : {call_spread_wr:6.2f}% ({call_spread_wins}/{total_trades})\n")
-            f.write(f"  -> Win if: Predicted High > Actual High\n")
+            f.write(f"  -> Win if: {cond_high}\n")
             f.write("-" * 60 + "\n")
             f.write(f"Put Credit Spread WR   : {put_spread_wr:6.2f}% ({put_spread_wins}/{total_trades})\n")
-            f.write(f"  -> Win if: Predicted Low < Actual Low\n")
+            f.write(f"  -> Win if: {cond_low}\n")
         else:
             f.write("No valid trades evaluated.\n")
 

@@ -347,6 +347,7 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
     return {'realtime': {'predicted_high': predicted_high, 'predicted_low': predicted_low,
                          'actual_high': actual_close if use_close_for_range else actual_high,
                          'actual_low': actual_close if use_close_for_range else actual_low,
+                         'actual_close': actual_close,
                          'vix_regime': regime.upper(), 'vix_rank': vix_rank, 'ticker': ticker, 'last_date': last_date}}
 
 
