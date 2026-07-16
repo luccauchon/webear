@@ -1,6 +1,6 @@
 @echo off
 call conda activate PY312_HT
-cd ..\..\src\crusaders\roulette
+cd ..\..\..\src\crusaders\roulette
 python GSPC_1lookahead_epsilon001_poseq.py
 pause
 
