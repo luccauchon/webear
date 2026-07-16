@@ -162,7 +162,7 @@ def entry(args):
                            use_close_for_range=args.use_close_for_range,
                            verbose=False)
         realtime_results = atr_entry_point(args=config)
-        print(realtime_results)
+
         predicted_high = realtime_results["realtime"]["predicted_high"]
         predicted_low = realtime_results["realtime"]["predicted_low"]
         actual_high = realtime_results["realtime"]["actual_high"]
