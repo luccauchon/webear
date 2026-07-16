@@ -22,6 +22,7 @@ from argparse import Namespace
 import pickle
 from utils import get_filename_for_dataset
 import datetime
+import time
 
 
 def get_parser():
@@ -82,6 +83,12 @@ def get_parser():
     )
     parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=False,
                         help="If True, consider range Held if close is within [Predicted Low, Predicted High], ignoring intraday High/Low breaches.")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=86400,
+        help="Maximum execution time in seconds for the backtest loop before it stops. Set to 0 or a negative value to disable."
+    )
     return parser
 
 
@@ -133,7 +140,13 @@ def entry(args):
     put_spread_wins = 0
 
     # 3️⃣ Run multiple algorithms cleanly
+    start_time = time.time()
     for step in iterator:
+        # Check if timeout is reached (allow user to disable timeout by passing <= 0)
+        if args.timeout > 0 and (time.time() - start_time) > args.timeout:
+            print(f"\n[INFO] Timeout reached ({args.timeout} seconds). Stopping the backtest loop.")
+            break
+
         past_df = step.past_df
         future_df = step.future_df
         if future_df is not None:
@@ -227,6 +240,7 @@ def entry(args):
         f.write(f"Tightness Weight    : {args.tightness_weight}\n")
         f.write(f"Number of Trials    : {args.n_trials}\n")
         f.write(f"Train/Test Split    : {args.n_split}\n")
+        f.write(f"Timeout             : {args.timeout}s\n")
         f.write("=" * 60 + "\n\n")
 
         f.write("BACKTEST RESULTS\n")

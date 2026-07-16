@@ -13,7 +13,7 @@ do
     (
         echo conda activate PY312_HT
         cd ../../../src/runners && \
-        python ./atr_backtesting.py --dataset-id day --step-back-range 1800 --atr-window "$i" --tightness-weight 0.66 --n-trials 1500 --n-split 0.8 --use-close-for-range
+        python ./atr_backtesting.py --dataset-id day --step-back-range 3600 --atr-window "$i" --tightness-weight 0.66 --n-trials 1500 --n-split 0.8 --use-close-for-range --timeout 85000
     ) &
 
     # Pause de 5 secondes entre chaque lancement
