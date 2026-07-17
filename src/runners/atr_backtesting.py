@@ -97,7 +97,9 @@ def entry(args):
     close_col = ('Close', args.ticker)
     high_col = ('High', args.ticker)
     low_col = ('Low', args.ticker)
-
+    if args.tightness_weight > 10:  # Ceci permet de passer un entier comme valeur
+        print(f"Convert {args.tightness_weight=} to {args.tightness_weight/100}")
+        args.tightness_weight = args.tightness_weight / 100
     one_dataset_filename = get_filename_for_dataset(dataset_choice=args.dataset_id, older_dataset=None)
 
     with open(one_dataset_filename, 'rb') as f:
