@@ -1,3 +1,71 @@
+"""
+Market Prediction Model with VIX-Based Volatility Regimes
+
+This script implements a market range prediction algorithm that forecasts the expected High and Low
+prices for a given financial instrument (e.g., S&P 500) over a specific timeframe (day, week, month).
+It dynamically adjusts its predictions based on current market volatility (VIX) using Average True Range (ATR)
+and optimizes its parameters using Optuna.
+
+### ALGORITHM WORKFLOW
+1. **Data Ingestion & Feature Engineering**:
+   - Loads historical OHLC data for the target asset and VIX (Volatility Index).
+   - Calculates the Average True Range (ATR) using Wilder's smoothing to gauge recent volatility.
+   - Computes a 252-period rolling percentile rank of the VIX to classify the market into three distinct volatility regimes:
+     - **Low** (VIX Rank < 0.30)
+     - **Normal** (0.30 <= VIX Rank <= 0.70)
+     - **High** (VIX Rank > 0.70)
+
+2. **Prediction Logic**:
+   - For each period, the model predicts a High and Low boundary based on the Opening price and the ATR:
+     - `Predicted_High = Open + (ATR * k_up)`
+     - `Predicted_Low = Open - (ATR * k_down)`
+   - The multipliers `k_up` and `k_down` are uniquely optimized for each of the three VIX regimes.
+
+3. **Optuna Optimization (Training)**:
+   - The script splits the data into training and testing sets.
+   - It uses Optuna (a hyperparameter optimization framework) with a Tree-structured Parzen Estimator (TPE) sampler
+     to find the optimal `k_up` and `k_down` multipliers for each regime by evaluating the training data.
+
+4. **Backtesting & Real-Time Prediction**:
+   - The optimized parameters are applied to the out-of-sample test set to evaluate performance (Hit Rate).
+   - Finally, the script outputs a real-time prediction for the most recent bar using the optimized parameters.
+
+---
+
+### THE OBJECTIVE FUNCTION
+The core of the optimization happens inside the `objective(trial)` function, which Optuna seeks to MAXIMIZE.
+The objective function calculates a composite score based on two competing metrics: the **Hit Rate** and the **Tightness Penalty**.
+
+**`Score = Hit_Rate - (tightness_weight * Avg_K)`**
+
+- **Hit Rate**: The fraction (0.0 to 1.0) of periods where the actual price action remained entirely within the predicted
+  `[Predicted_Low, Predicted_High]` boundaries. (Optionally based on Close prices if `use_close_for_range=True`).
+- **Avg_K**: The simple average of all 6 optimized multipliers (`k_up_low`, `k_down_low`, `k_up_normal`,
+  `k_down_normal`, `k_up_high`, `k_down_high`). This represents the overall width of the predicted ranges.
+
+---
+
+### HOW AND WHY `tightness_weight` WORKS
+**Why it is necessary:**
+If the objective function solely maximized the `Hit_Rate`, the optimization algorithm would easily achieve a ~100%
+hit rate by simply assigning massive values to the `k_up` and `k_down` multipliers (e.g., k=10.0). This would create
+extremely wide boundaries that the price would never breach. However, such massive ranges are practically useless
+for trading, risk management, or defining tight stop-loss/take-profit levels.
+
+**How it works:**
+The `tightness_weight` acts as a regularization penalty against overly wide predictions.
+By subtracting `(tightness_weight * Avg_K)` from the `Hit_Rate`, the optimizer is forced to solve a trade-off problem:
+It must find the narrowest possible range (lowest `Avg_K`) that still maintains an acceptable Hit Rate.
+
+- **Higher `tightness_weight` (e.g., 0.5 - 1.0)**: Heavily penalizes wide ranges. The model will prioritize narrow,
+  tight boundaries, which may result in a lower Hit Rate (more frequent breaches). Useful for aggressive scalping
+  or tight stop-loss placement.
+- **Lower `tightness_weight` (e.g., 0.1 - 0.2)**: Places more emphasis on the Hit Rate. The model will allow wider
+  boundaries to ensure the price stays inside the range more often. Useful for broader trend channels or risk-averse
+  envelope strategies.
+- **Default (0.3)**: Provides a balanced trade-off between accurate range containment and practical, tradeable boundary widths.
+"""
+
 try:
     from version import sys__name, sys__version
 except:
