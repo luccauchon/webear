@@ -84,6 +84,7 @@ import pickle
 import os
 import argparse
 import time
+import random
 import numpy as np
 import pandas as pd
 import optuna
@@ -106,7 +107,8 @@ def get_parser():
     # OPTUNA PERSISTENCE AND SAMPLER ARGUMENTS
     parser.add_argument("--n-trials", type=int, default=200,
                         help="Number of Optuna trials for VIX optimization (default: 200).")
-
+    parser.add_argument("--timeout", type=float, default=None,
+                        help="Timeout for Optuna optimization in seconds (default: None).")
     # USER-CONFIGURABLE PARAMETERS
     parser.add_argument("--use-realtime-data", action=argparse.BooleanOptionalAction, default=True,
                         help="Enable or disable real-time data fetching (default: True).")
@@ -114,6 +116,8 @@ def get_parser():
                         help="Window size for ATR calculation (default: 14).")
     parser.add_argument("--n-split", type=float, default=0.80,
                         help="Train/Test split ratio (default: 0.80).")
+    parser.add_argument('--clip-n', type=int, default=0,
+                        help="Do a .iloc[:-n] on the loaded dataset. A value of greater than 0 enable it.")
     parser.add_argument("--tightness-weight", type=float, default=0.3,
                         help="Weight for tightness penalty in Optuna objective (default: 0.3).")
     parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=False,
@@ -246,7 +250,7 @@ def display_dataset_info(train_info, test_info, ticker, dataset_id, atr_window):
     print("=" * 60 + "\n")
 
 
-def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, n_trials=200, tightness_weight=0.3, use_close_for_range=False, verbose=True):
+def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, n_trials=200, timeout=90, tightness_weight=0.3, use_close_for_range=False, verbose=True):
     """
     Utilise Optuna pour trouver les meilleurs k_up/k_down pour chaque régime de VIX.
     Objectif : Maximiser le Hit Rate tout en MINIMISANT la largeur du range (k values).
@@ -273,14 +277,14 @@ def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_
 
     def objective(trial):
         # Suggestion des paramètres avec bornes resserrées pour encourager la tightness
-        k_up_low = trial.suggest_float('k_up_low', 0.5, 1.5)
-        k_down_low = trial.suggest_float('k_down_low', 0.5, 1.5)
+        k_up_low = trial.suggest_float('k_up_low', low=0.5, high=1.5)
+        k_down_low = trial.suggest_float('k_down_low', low=0.5, high=1.5)
 
-        k_up_normal = trial.suggest_float('k_up_normal', 0.5, 1.5)
-        k_down_normal = trial.suggest_float('k_down_normal', 0.5, 1.5)
+        k_up_normal = trial.suggest_float('k_up_normal', low=0.5, high=1.5)
+        k_down_normal = trial.suggest_float('k_down_normal', low=0.5, high=1.5)
 
-        k_up_high = trial.suggest_float('k_up_high', 0.5, 1.5)
-        k_down_high = trial.suggest_float('k_down_high', 0.5, 1.5)
+        k_up_high = trial.suggest_float('k_up_high', low=0.5, high=1.5)
+        k_down_high = trial.suggest_float('k_down_high', low=0.5, high=1.5)
 
         params = {
             'Low': {'up': k_up_low, 'down': k_down_low},
@@ -325,8 +329,8 @@ def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_
         score = hit_rate - (tightness_weight * avg_k_sum)
         return score
 
-    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler())
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=42))
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True if verbose else False, n_jobs=1, timeout=timeout)
 
     best_params = study.best_params
     best_value = study.best_value
@@ -420,6 +424,10 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
 
 
 def entry(args=None):
+    # Set global random seeds for reproducibility
+    random.seed(42)
+    np.random.seed(42)
+
     total_start = time.time()
     timings = {}
 
@@ -467,7 +475,7 @@ def entry(args=None):
 
         timings['data_loading'] = time.time() - t0
 
-        print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | SPX Bars: {len(df_ticker)} | VIX Bars: {len(df_vix)} | ATR: {args.atr_window}")
+        if args.verbose: print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | SPX Bars: {len(df_ticker)} | VIX Bars: {len(df_vix)} | ATR: {args.atr_window}")
 
         # --- ATR CALCULATION ---
         t0 = time.time()
@@ -477,7 +485,7 @@ def entry(args=None):
         )
         timings['atr_calculation'] = time.time() - t0
 
-        print(f"{args.ticker} : {df_ticker.index[0].strftime('%Y-%m-%d')}::{df_ticker.index[-1].strftime('%Y-%m-%d')}    VIX: {df_vix.index[0].strftime('%Y-%m-%d')}::{df_vix.index[-1].strftime('%Y-%m-%d')}")
+        if args.verbose: print(f"{args.ticker} : {df_ticker.index[0].strftime('%Y-%m-%d')}::{df_ticker.index[-1].strftime('%Y-%m-%d')}    VIX: {df_vix.index[0].strftime('%Y-%m-%d')}::{df_vix.index[-1].strftime('%Y-%m-%d')}")
 
         # --- MERGE & SPLIT ---
         t0 = time.time()
@@ -493,7 +501,9 @@ def entry(args=None):
         df_bt = args.dataframe
         vix_col = next((col for col in df_bt.columns if isinstance(col, tuple) and 'Close' in col and 'VIX' in col[1]), None)
         atr_col = (f'ATR_{args.atr_window}', args.ticker)
-
+    if args.clip_n > 0:
+        df_bt = df_bt.iloc[:-args.clip_n].copy()
+    if args.verbose: print(f"WORKING DATASET : {df_bt.index[0].strftime('%Y-%m-%d')}::{df_bt.index[-1].strftime('%Y-%m-%d')}")
     _n = int(args.n_split * len(df_bt))
     df_bt_train = df_bt.iloc[:_n].copy()
     df_bt_test = df_bt.iloc[_n:].copy()
@@ -517,7 +527,7 @@ def entry(args=None):
     # --- OPTUNA OPTIMIZATION ---
     t0 = time.time()
     optimized_params, best_score = optimize_vix_multipliers(
-        df_bt=df_bt_train,
+        df_bt=df_bt_train.copy(),
         vix_col=vix_col,
         open_col=open_col,
         close_col=close_col,
@@ -526,16 +536,17 @@ def entry(args=None):
         low_col=low_col,
         ticker=args.ticker,
         n_trials=args.n_trials,
+        timeout=args.timeout,
         tightness_weight=args.tightness_weight,
         use_close_for_range=args.use_close_for_range,
-        verbose=args.verbose
+        verbose=args.verbose,
     )
     timings['optuna_optimization'] = time.time() - t0
 
     # --- BACKTEST ---
     t0 = time.time()
     global_stats, regime_stats, bars_analyzed, df_bt_test = run_backtest_with_vix(
-        df_bt=df_bt_test,
+        df_bt=df_bt_test.copy(),
         open_col=open_col,
         close_col=close_col,
         atr_col=atr_col,

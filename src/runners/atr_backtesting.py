@@ -11,18 +11,19 @@ except:
     # Add the current directory to sys.path
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
 import argparse
 import pandas as pd
 from campaigns.universal_playback import BacktestIterator, BacktestStep
 from tqdm import tqdm
 from runners.atr import calculate_atr
 from runners.atr import entry as atr_entry_point
+from runners.atr_vvix_momentum import entry as atr_vvix_momentum_entry_point
 from argparse import Namespace
 import pickle
 from utils import get_filename_for_dataset
 import datetime
 import time
+from tqdm import tqdm
 
 
 def get_parser():
@@ -32,12 +33,24 @@ def get_parser():
         # Automatically appends "(default: ...)" to the end of all help strings!
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
+    parser.add_argument(
+        "-i", "--iterations",
+        type=int,
+        default=10,
+        help="Nombre d'itérations à exécuter pour la boucle de backtest."
+    )
     parser.add_argument(
         "--step-back-range",
         type=int,
         default=8,
         help="Number of historical days to use as the lookback window for each backtest step."
+    )
+    parser.add_argument(
+        "--runner",
+        type=str,
+        default="atr",
+        choices=["atr", "atr_vvix_momentum"],
+        help="Sélectionne le point d'entrée du runner à exécuter ('atr' ou 'atr_vvix_momentum')."
     )
     parser.add_argument(
         "--verbose",
@@ -72,7 +85,7 @@ def get_parser():
     parser.add_argument(
         "--n-trials",
         type=int,
-        default=500,
+        default=9999,
         help="Number of optimization trials to run."
     )
     parser.add_argument(
@@ -86,7 +99,7 @@ def get_parser():
     parser.add_argument(
         "--timeout",
         type=int,
-        default=86400,
+        default=120,
         help="Maximum execution time in seconds for the backtest loop before it stops. Set to 0 or a negative value to disable."
     )
     return parser
@@ -98,7 +111,7 @@ def entry(args):
     high_col = ('High', args.ticker)
     low_col = ('Low', args.ticker)
     if args.tightness_weight > 10:  # Ceci permet de passer un entier comme valeur
-        print(f"Convert {args.tightness_weight=} to {args.tightness_weight/100}")
+        print(f"Convert {args.tightness_weight=} to {args.tightness_weight / 100}")
         args.tightness_weight = args.tightness_weight / 100
     one_dataset_filename = get_filename_for_dataset(dataset_choice=args.dataset_id, older_dataset=None)
 
@@ -125,15 +138,12 @@ def entry(args):
     # Calculates the rank of the current element within its rolling window automatically
     df_bt['VIX_Rolling_Rank'] = df_bt[vix_col].rolling(window=252, min_periods=20).rank(pct=True).copy()
 
-    # 1️⃣ Create the iterator
-    bt_iter = BacktestIterator(
-        df=df_bt.copy(),
-        step_back_range=args.step_back_range,
-        verbose=False
-    )
-
-    # 2️⃣ Wrap with tqdm only if verbose (tqdm uses __len__ for accurate progress)
-    iterator = tqdm(bt_iter) if args.verbose else bt_iter
+    if args.runner == "atr_vvix_momentum":
+        selected_entry_point = atr_vvix_momentum_entry_point
+    else:
+        selected_entry_point = atr_entry_point
+    algo_name = f"{selected_entry_point.__module__}.{selected_entry_point.__name__}"
+    print(f"Using: {algo_name}")
 
     # Initialize statistics counters
     total_trades = 0
@@ -142,28 +152,18 @@ def entry(args):
     put_spread_wins = 0
 
     # 3️⃣ Run multiple algorithms cleanly
-    start_time = time.time()
-    for step in iterator:
-        # Check if timeout is reached (allow user to disable timeout by passing <= 0)
-        if args.timeout > 0 and (time.time() - start_time) > args.timeout:
-            print(f"\n[INFO] Timeout reached ({args.timeout} seconds). Stopping the backtest loop.")
-            break
-
-        past_df = step.past_df
-        future_df = step.future_df
-        if future_df is not None:
-            assert past_df.index.intersection(future_df.index).empty
-
-        config = Namespace(dataframe=past_df.copy(),
+    loop_range = range(0, args.iterations)
+    for step_i in tqdm(loop_range) if args.verbose else loop_range:
+        config = Namespace(dataframe=None, no_use_realtime_data=True, use_realtime_data=False,
                            ticker=args.ticker,
-                           n_split=args.n_split,
+                           n_split=args.n_split, clip_n=step_i,
                            atr_window=args.atr_window,
                            dataset_id=args.dataset_id,
                            n_trials=args.n_trials,
                            tightness_weight=args.tightness_weight,
                            use_close_for_range=args.use_close_for_range,
-                           verbose=False)
-        realtime_results = atr_entry_point(args=config)
+                           verbose=False, use_vvix=False, timeout=args.timeout)
+        realtime_results = selected_entry_point(args=config)
 
         predicted_high = realtime_results["realtime"]["predicted_high"]
         predicted_low = realtime_results["realtime"]["predicted_low"]
@@ -253,7 +253,7 @@ def entry(args):
     # Clean up ticker for filename (remove special characters like '^')
     clean_ticker = args.ticker.replace("^", "")
     ucfr = "close_for_range" if args.use_close_for_range else ""
-    filename = f"backtest_results_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__ic{iron_condor_wr:6.2f}__{timestamp}__{ucfr}.txt"
+    filename = f"backtest_{algo_name}_{clean_ticker}_{args.dataset_id}__atr{args.atr_window}__tightness{args.tightness_weight}__ic{iron_condor_wr:6.2f}__{timestamp}__{ucfr}.txt"
 
     with open(filename, 'w') as f:
         f.write("BACKTEST PARAMETERS\n")
