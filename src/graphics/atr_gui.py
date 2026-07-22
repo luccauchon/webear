@@ -250,7 +250,7 @@ class App(ctk.CTk):
                 n_split=self.sld_split.get(),
                 tightness_weight=self.sld_tight.get(),
                 use_close_for_range=self.close_range_var.get(),
-                dataframe=None, verbose=True,
+                dataframe=None, verbose=True, clip_n=0, timeout=99999,
             )
             mp.entry(args)
             self.after(0, self.update_ui_success)
@@ -330,9 +330,10 @@ class App(ctk.CTk):
         self.ax.clear()
         self.ax.set_facecolor('#2b2b2b')
 
-        if 'df_bt' not in captured_data or captured_data['df_bt'].empty: return
+        if 'df_bt' not in captured_data or captured_data['df_bt'].empty:
+            return
 
-        df = captured_data['df_bt'].tail(30)
+        df = captured_data['df_bt']
         open_col = captured_data['open_col']
         close_col = captured_data['close_col']
         high_col = captured_data['high_col']
@@ -354,59 +355,89 @@ class App(ctk.CTk):
         act_low = last_row[low_col]
         act_close = last_row[close_col]
 
-        x = np.arange(len(df))
-        opens = df[open_col].values
-        highs = df[high_col].values
-        lows = df[low_col].values
-        closes = df[close_col].values
+        # Target index 0 for single-bar plotting
+        x_val = 0
 
-        # Draw historical candles
-        for i in range(len(df) - 1):
-            self.ax.plot([x[i], x[i]], [lows[i], highs[i]], color='gray', linewidth=1.5)
-            self.ax.scatter(x[i], opens[i], color='white', s=15, zorder=5)
-
-        # Prediction Box
-        i = len(df) - 1
-        rect = Rectangle((x[i] - 0.4, pred_low), 0.8, pred_high - pred_low, color='cyan', alpha=0.2, zorder=2, label='Predicted Range')
+        # --- Prediction Box ---
+        rect = Rectangle(
+            (x_val - 0.4, pred_low),
+            0.8,
+            pred_high - pred_low,
+            color='cyan',
+            alpha=0.15,
+            zorder=2,
+            label='Predicted Range'
+        )
         self.ax.add_patch(rect)
-        self.ax.plot([x[i] - 0.5, x[i] + 0.5], [pred_high, pred_high], color='cyan', linestyle='--', linewidth=2)
-        self.ax.plot([x[i] - 0.5, x[i] + 0.5], [pred_low, pred_low], color='cyan', linestyle='--', linewidth=2)
 
-        # Last Bar Actuals
-        self.ax.plot([x[i], x[i]], [lows[i], highs[i]], color='orange', linewidth=2)
-        self.ax.scatter(x[i], opens[i], color='yellow', s=30, zorder=6)
+        # --- Plot Last Bar Actuals ---
+        self.ax.plot([x_val, x_val], [act_low, act_high], color='orange', linewidth=3, zorder=5)
+        self.ax.scatter(x_val, current_open, color='yellow', s=60, zorder=6)
 
         if self.use_close_for_range:
             if pd.notna(act_close):
-                self.ax.scatter(x[i], act_close, color='magenta', s=60, marker='o', zorder=7, label=f'Actual Close ({act_close:.2f})')
+                self.ax.scatter(x_val, act_close, color='magenta', s=80, marker='o', zorder=7)
         else:
-            if pd.notna(act_high): self.ax.scatter(x[i], act_high, color='red', s=60, marker='v', zorder=7, label=f'Actual High ({act_high:.2f})')
-            if pd.notna(act_low): self.ax.scatter(x[i], act_low, color='green', s=60, marker='^', zorder=7, label=f'Actual Low ({act_low:.2f})')
+            if pd.notna(act_high):
+                self.ax.scatter(x_val, act_high, color='red', s=80, marker='v', zorder=7)
+            if pd.notna(act_low):
+                self.ax.scatter(x_val, act_low, color='green', s=80, marker='^', zorder=7)
 
-        # Formatting
-        self.ax.set_xticks(x)
-        self.ax.set_xticklabels([dt.strftime('%m-%d') for dt in df.index], rotation=45, ha='right', fontsize=9, color='white')
+        # --- Horizontal Price Level Lines & Labels ---
+        price_levels = [
+            ("Pred High", pred_high, 'cyan', '--', 1.8),
+            ("Pred Low", pred_low, 'cyan', '--', 1.8),
+            ("Open", current_open, 'yellow', ':', 1.5),
+        ]
+
+        if self.use_close_for_range:
+            if pd.notna(act_close):
+                price_levels.append(("Close", act_close, 'magenta', '-.', 1.5))
+        else:
+            if pd.notna(act_high):
+                price_levels.append(("High", act_high, '#ff4d4d', '-.', 1.5))
+            if pd.notna(act_low):
+                price_levels.append(("Low", act_low, '#4dff4d', '-.', 1.5))
+
+        # Draw horizontal lines and add level labels at x = 0.65
+        for label, price, color, linestyle, linewidth in price_levels:
+            self.ax.axhline(
+                y=price, color=color, linestyle=linestyle,
+                linewidth=linewidth, alpha=0.85, zorder=4
+            )
+            self.ax.text(
+                0.65, price, f" {label}: {price:.2f}",
+                color=color, verticalalignment='center', fontsize=9,
+                fontweight='bold', zorder=10,
+                bbox=dict(boxstyle="round,pad=0.2", fc="#1e1e1e", ec=color, lw=1, alpha=0.85)
+            )
+
+        # --- X-Axis & View Setup ---
+        self.ax.set_xlim(-1.2, 1.4)
+        self.ax.set_xticks([x_val])
+        self.ax.set_xticklabels([captured_data['last_date'].strftime('%Y-%m-%d')], fontsize=10, color='white')
         self.ax.tick_params(axis='y', colors='white')
         self.ax.set_ylabel("Price", color='white', fontsize=12)
-        self.ax.set_title(f"Real-Time Prediction | {captured_data['ticker']} | Regime: {regime.upper()} VIX", color='white', fontsize=14, fontweight='bold')
-        self.ax.grid(True, alpha=0.2, color='gray')
-        self.ax.legend(loc='upper left', facecolor='#2b2b2b', edgecolor='white', labelcolor='white')
+        self.ax.set_title(
+            f"Real-Time Prediction (Latest Bar) | {captured_data['ticker']} | Regime: {regime.upper()} VIX",
+            color='white', fontsize=14, fontweight='bold'
+        )
+        self.ax.grid(True, alpha=0.15, color='gray')
 
-        # --- Store data for tooltip ---
-        self.chart_x = x
-        self.chart_highs = highs
-        self.chart_lows = lows
-        self.chart_closes = closes
-        self.chart_dates = [dt.strftime('%Y-%m-%d') for dt in df.index]
+        # --- Save Data for Tooltip ---
+        self.chart_x = np.array([x_val])
+        self.chart_opens = [current_open]
+        self.chart_highs = [act_high]
+        self.chart_lows = [act_low]
+        self.chart_closes = [act_close]
+        self.chart_dates = [captured_data['last_date'].strftime('%Y-%m-%d')]
         self.pred_high = pred_high
         self.pred_low = pred_low
-        self._last_hover_idx = -1
 
-        # --- Calculate Break-even Premiums ---
+        # Break-Even Premiums Calculation
         rm = captured_data.get('regime_metrics', {})
         metrics = rm.get(regime, {})
 
-        # Use reliability (high/low bound respected) as win_rate, falling back to global hit rate
         win_rate_high = metrics.get('Borne Haute Respectée', metrics.get('Hit Rate Global (Range Tenu)', 0)) / 100.0
         win_rate_low = metrics.get('Borne Basse Respectée', metrics.get('Hit Rate Global (Range Tenu)', 0)) / 100.0
 
@@ -414,114 +445,81 @@ class App(ctk.CTk):
         self.be_high = (1.0 - win_rate_high) * spread_width
         self.be_low = (1.0 - win_rate_low) * spread_width
 
-        # --- Create tooltip annotation ---
+        # Tooltip Annotation Setup
         self.annot = self.ax.annotate(
             "",
             xy=(0, 0),
-            xytext=(-164, 20),
+            xytext=(-160, 20),
             textcoords="offset points",
             bbox=dict(
-                boxstyle="round,pad=0.5",
+                boxstyle="round,pad=0.6",
                 fc="#1a1a2e",
                 ec="#00d4ff",
                 lw=1.5,
-                alpha=0.92
+                alpha=0.95
             ),
             fontsize=9,
             color='#e0e0e0',
             fontfamily='monospace',
-            linespacing=1.5,
+            linespacing=1.4,
             zorder=100
         )
         self.annot.set_visible(False)
-
-        # --- Create hover indicator line ---
-        self.hover_line = self.ax.axvline(
-            x=-1, color='#00d4ff', linestyle=':', alpha=0, linewidth=0.8, zorder=50
-        )
 
         self.fig.tight_layout()
         self.canvas.draw()
 
     def on_mouse_move(self, event):
-        """Handle mouse motion over the chart to display bar tooltips."""
-        # Guard: no data loaded yet
+        """Hover handler to show trading parameters for the single bar."""
         if self.chart_x is None or self.annot is None:
             return
 
-        # Mouse left the axes area → hide tooltip
-        if event.inaxes != self.ax:
+        if event.inaxes != self.ax or event.xdata is None:
             if self.annot.get_visible():
                 self.annot.set_visible(False)
-                if self.hover_line:
-                    self.hover_line.set_alpha(0)
                 self.canvas.draw_idle()
             return
 
         mouse_x = event.xdata
-        if mouse_x is None:
-            return
-
-        # Snap to nearest bar
-        idx = int(round(mouse_x))
-
-        # Out of range or too far from any bar center
-        if idx < 0 or idx >= len(self.chart_x) or abs(mouse_x - idx) > 0.5:
+        if abs(mouse_x - 0) > 0.6:  # Show tooltip when near the bar center
             if self.annot.get_visible():
                 self.annot.set_visible(False)
-                if self.hover_line:
-                    self.hover_line.set_alpha(0)
                 self.canvas.draw_idle()
             return
 
-        # Update hover indicator line
-        if self.hover_line:
-            self.hover_line.set_xdata([idx, idx])
-            self.hover_line.set_alpha(0.4)
+        date_str = self.chart_dates[0]
 
-        # --- Build tooltip text ---
-        date_str = self.chart_dates[idx]
-
-        if idx == len(self.chart_x) - 1:
-            # Last bar: show date + actual high/low/close + predicted high/low + BE Premiums
-            if self.use_close_for_range:
-                text = (
-                    f"  Date: {date_str}\n"
-                    f"  ─────────────────\n"
-                    f"  Actual Close: {self.chart_closes[idx]:>10.2f}\n"
-                    f"  ─────────────────\n"
-                    f"  Pred High   : {self.pred_high:>10.2f}\n"
-                    f"  Pred Low    : {self.pred_low:>10.2f}\n"
-                    f"  ─────────────────\n"
-                    f"  BE Prem (H) : {self.be_high:>10.2f} $\n"
-                    f"  BE Prem (L) : {self.be_low:>10.2f} $"
-                )
-            else:
-                text = (
-                    f"  Date: {date_str}\n"
-                    f"  ─────────────────\n"
-                    f"  Actual High : {self.chart_highs[idx]:>10.2f}\n"
-                    f"  Actual Low  : {self.chart_lows[idx]:>10.2f}\n"
-                    f"  ─────────────────\n"
-                    f"  Pred High   : {self.pred_high:>10.2f}\n"
-                    f"  Pred Low    : {self.pred_low:>10.2f}\n"
-                    f"  ─────────────────\n"
-                    f"  BE Prem (H) : {self.be_high:>10.2f} $\n"
-                    f"  BE Prem (L) : {self.be_low:>10.2f} $"
-                )
-        else:
-            # Other bars: show date + high + low
+        if self.use_close_for_range:
             text = (
-                f"  Date: {date_str}\n"
-                f"  ─────────────────\n"
-                f"  High : {self.chart_highs[idx]:>10.2f}\n"
-                f"  Low  : {self.chart_lows[idx]:>10.2f}"
+                f"  TRADING SUMMARY ({date_str})\n"
+                f"  ──────────────────────────────\n"
+                f"  Open       : {self.chart_opens[0]:>10.2f}\n"
+                f"  Close      : {self.chart_closes[0]:>10.2f}\n"
+                f"  ──────────────────────────────\n"
+                f"  Pred High  : {self.pred_high:>10.2f}\n"
+                f"  Pred Low   : {self.pred_low:>10.2f}\n"
+                f"  ──────────────────────────────\n"
+                f"  BE Prem (H): {self.be_high:>10.2f} $\n"
+                f"  BE Prem (L): {self.be_low:>10.2f} $"
+            )
+        else:
+            text = (
+                f"  TRADING SUMMARY ({date_str})\n"
+                f"  ──────────────────────────────\n"
+                f"  Open       : {self.chart_opens[0]:>10.2f}\n"
+                f"  High       : {self.chart_highs[0]:>10.2f}\n"
+                f"  Low        : {self.chart_lows[0]:>10.2f}\n"
+                f"  ──────────────────────────────\n"
+                f"  Pred High  : {self.pred_high:>10.2f}\n"
+                f"  Pred Low   : {self.pred_low:>10.2f}\n"
+                f"  ──────────────────────────────\n"
+                f"  BE Prem (H): {self.be_high:>10.2f} $\n"
+                f"  BE Prem (L): {self.be_low:>10.2f} $"
             )
 
         self.annot.set_text(text)
-        self.annot.xy = (idx, event.ydata)
+        self.annot.xy = (0, event.ydata)
         self.annot.set_visible(True)
-
         self.canvas.draw_idle()
 
 

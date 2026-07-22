@@ -65,7 +65,7 @@ def get_realtime_dataset(dataset_id, tickers=("^GSPC", "^VIX")):
 
 
 
-def realtime(tickers=("^GSPC", "^VIX")):
+def realtime(tickers=("^GSPC", "^VIX"), verbose=False):
     # Default dates if not provided
     today = datetime.today()
     end_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -81,7 +81,7 @@ def realtime(tickers=("^GSPC", "^VIX")):
     if not skip_daily:
         daily_start = "1962-01-01"
         daily_end = end_date
-        for ticker in tqdm(tickers, desc="Daily"):
+        for ticker in tqdm(tickers, desc="Daily") if verbose else tickers:
             if IS_RUNNING_ON_LINUX_VMWARE:
                 data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False, session=session)
             else:
@@ -92,7 +92,7 @@ def realtime(tickers=("^GSPC", "^VIX")):
     # Weekly
     ###########################################################################
     if not skip_weekly:
-        for ticker in tqdm(tickers, desc="Weekly"):
+        for ticker in tqdm(tickers, desc="Weekly") if verbose else tickers:
             df = daily_data_cache[ticker]
             if ticker == '^VIX':
                 agg_logic = {
@@ -116,7 +116,7 @@ def realtime(tickers=("^GSPC", "^VIX")):
     # Monthly
     ###########################################################################
     if not skip_monthly:
-        for ticker in tqdm(tickers, desc="Monthly"):
+        for ticker in tqdm(tickers, desc="Monthly") if verbose else tickers:
             df = daily_data_cache[ticker]
             if ticker == '^VIX':
                 agg_logic = {
@@ -140,7 +140,7 @@ def realtime(tickers=("^GSPC", "^VIX")):
     # Quarterly
     ###########################################################################
     if not skip_quarterly:
-        for ticker in tqdm(tickers, desc="Quarterly"):
+        for ticker in tqdm(tickers, desc="Quarterly") if verbose else tickers:
             df = daily_data_cache[ticker]
             resampled = df.resample('QE').agg({
                 ('Open', ticker): 'first',
@@ -155,7 +155,7 @@ def realtime(tickers=("^GSPC", "^VIX")):
     # Yearly
     ###########################################################################
     if not skip_yearly:
-        for ticker in tqdm(tickers, desc="Yearly"):
+        for ticker in tqdm(tickers, desc="Yearly") if verbose else tickers:
             df = daily_data_cache[ticker]
             resampled = df.resample('YE').agg({
                 ('Open', ticker): 'first',
