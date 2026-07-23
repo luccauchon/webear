@@ -1,0 +1,29 @@
+BACKTEST PARAMETERS
+============================================================
+Ticker              : ^GSPC
+Dataset ID          : day
+Step Back Range     : 8
+ATR Window          : 14
+Tightness Weight    : 0.99
+Number of Trials    : 9999
+Train/Test Split    : 0.8
+Use Close For Range : True
+Timeout             : 120s
+============================================================
+
+BACKTEST RESULTS
+============================================================
+Range Mode: Close-based
+------------------------------------------------------------
+Total Valid Trades      : 720
+------------------------------------------------------------
+Iron Condor Win Rate   :  63.47% (457/720)
+  -> Win if: Predicted High > Actual Close
+             AND Predicted Low < Actual Close
+------------------------------------------------------------
+Call Credit Spread WR  :  80.83% (582/720)
+  -> Win if: Predicted High > Actual Close
+------------------------------------------------------------
+Put Credit Spread WR   :  82.64% (595/720)
+  -> Win if: Predicted Low < Actual Close
+============================================================
