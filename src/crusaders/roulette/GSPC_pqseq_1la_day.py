@@ -27,7 +27,7 @@ def entry(args):
     print(f"Construction du dataset dans {output_filename_for_dataset}...")
     configuration = Namespace(ticker="^GSPC", dataset_id="day", step_back_range=260, look_ahead=1, epsilon=0., target="SEQ_F1", convert_price_level_with_baseline="fraction",
                               verbose=False, older_dataset=None, enable_ema=True, enable_sma=True, sma_windows=[75,155], enable_rsi=True, rsi_windows=[9], shift_rsi_col=[3],
-                              shift_ema_col=[], ema_windows=[7,11],
+                              shift_ema_col=[], ema_windows=[7,11], clip_n=0,
                               enable_macd=True, enable_vwap=True, vwap_window=9, enable_day_data=True, shift_seq_col=2,min_percentage_to_keep_class=4.0,
                               base_models="xgb", add_only_vwap_z_and_vwap_triggers=False, compiled_dataset_filename=None, real_time_only=True, macd_params='{"fast":16,"slow":24,"signal":8}',
                               add_close_diff=True,shift_sma_col=[1], specific_wanted_class=[], load_model_path=None, shift_macd_col=[], real_time_only_num_classes=2,

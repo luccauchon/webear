@@ -13,7 +13,7 @@ from utils import get_filename_for_dataset, next_day
 from optimizers.roulette.realtime_and_backtest import main as roulette
 
 
-def entry():
+def entry(new_configuration=None):
     # ================================================================================
     # 🏆 Optimization Finished!
     # Best Score (pos_seq__f1): 0.88512940
@@ -40,14 +40,19 @@ def entry():
     # Ys are: [('POS_SEQ', '^GSPC')]
     output_filename_for_dataset = r"D:\Finance\data\roulette\2026.03.20.M1.data.npz"
     model_filename = r'D:\Finance\compiled_models\roulette\2026.03.20.M1.model'
-
+    clip_n = 0
     print(f"Construction du dataset dans {output_filename_for_dataset}...")
     configuration = Namespace(ticker="^GSPC", dataset_id="day", step_back_range=260, look_ahead=1, epsilon=0.01, target="POS_SEQ", convert_price_level_with_baseline="fraction",
                               verbose=False, older_dataset=None, enable_ema=False, enable_sma=True, sma_windows=[110,170], enable_rsi=True, rsi_windows=[3], shift_rsi_col=[2],
-                              enable_macd=False, enable_vwap=True, vwap_window=21, enable_day_data=True, shift_seq_col=3,min_percentage_to_keep_class=4.0,
+                              enable_macd=False, enable_vwap=True, vwap_window=21, enable_day_data=True, shift_seq_col=3,min_percentage_to_keep_class=4.0, clip_n=clip_n,
                               base_models="xgb", add_only_vwap_z_and_vwap_triggers=True, compiled_dataset_filename=None, real_time_only=True, macd_params=None,
                               add_close_diff=None,shift_sma_col=[], specific_wanted_class=[], load_model_path=None, shift_macd_col=[], real_time_only_num_classes=2,
                               model_overrides="{}", save_dataset_to_file_and_exit=output_filename_for_dataset, drop_when_out_of_range=False, optimization_strategy="classification")
+    if new_configuration is not None:
+        # Permet de supporter un dictionnaire classique ou un autre objet Namespace
+        config_dict = new_configuration if isinstance(new_configuration, dict) else vars(new_configuration)
+        for key, value in config_dict.items():
+            setattr(configuration, key, value)
     roulette(configuration)
 
     print(f"Excution du modèle {model_filename}...")
@@ -60,16 +65,20 @@ def entry():
     with open(one_dataset_filename, 'rb') as f:
         master_data_cache = pickle.load(f)
     close_col = ("Close", "^GSPC")
-    master_data_cache = master_data_cache['^GSPC'].sort_index()[close_col]
+    master_data_cache = master_data_cache['^GSPC'].sort_index()[close_col].copy()
+    if clip_n > 0:
+        master_data_cache = master_data_cache.iloc[:-clip_n].copy()
     assert master_data_cache.index[-1] == date_of_data_point_x_used
     close_value = master_data_cache.iloc[-1]
     lower_close_value, upper_close_value = 0.99 * close_value, 1.01*close_value
     if 0 == predicted_classes:
-        print(f"[POS SEQ={predicted_classes}] There is {prediction_probabilities[predicted_classes]*100:.0f}% chance of closing price be above {lower_close_value:.0f} on {next_day(date_of_data_point_x_used)}")
+        print(f"[POS SEQ={predicted_classes}] There is {prediction_probabilities[predicted_classes]*100:.0f}% chance of closing price be below {lower_close_value:.0f} on {next_day(date_of_data_point_x_used)}")
     elif 1 == predicted_classes:
         print(f"[POS SEQ={predicted_classes}] There is {prediction_probabilities[predicted_classes]*100:.0f}% chance of closing price be above {lower_close_value:.0f} on {next_day(date_of_data_point_x_used)}")
     else:
         assert False
+    return {"pos_seq": predicted_classes, "p": prediction_probabilities[predicted_classes], "lower_close_value": lower_close_value, "upper_close_value": upper_close_value,
+            "day_of_prediction": date_of_data_point_x_used, "next_day": next_day(date_of_data_point_x_used)}
 
 
 if __name__ == "__main__":
