@@ -1,3 +1,126 @@
+"""
+==============================================================================
+#  ▄▄▄█████▓ ██░ ██  ▄████▄   ██ ▄█▀ ▓█████▄  ██▓  ██████  ██▓███
+#  ▓  ██▒ ▓▒▓██░ ██▒▒██▀ ▀█   ██▄█▒  ▒██▀ ██▌▓██▒▒██    ▒ ▓██░  ██▒
+#  ▒ ▓██░ ▒░▒██▀▀██░▒▓█    ▄ ▓███▄░  ░██   █▌▒██▒░ ▓██▄   ▓██░ ██▓▒
+#  ░ ▓██▓ ░ ░▓█ ░██ ▒▓▓▄ ▄██▒▓██ █▄  ░▓█▄   ▌░██░  ▒   ██▒▓██▄█▓▒ ░
+#    ▒██▒ ░ ░▓█▒░██▓▒ ▓███▀ ░▒██▒ █▄ ░▒████▓ ░██░▒██████▒▒▓███▒░
+#    ▒ ░░    ▒ ░░▒░▒░ ░▒ ▒  ░▒ ▒▒ ▓▒  ▒▒▓  ▒ ░▓  ▒ ▒▓▒ ▒ ░▒ ▒▓▒░
+#      ░     ▒ ░▒░ ░  ░  ▒   ░ ░▒ ▒░  ░ ▒  ▒  ▒ ░░ ░▒  ░ ░░ ▒░░
+#    ░       ░  ░░ ░░        ░ ░   ░   ░  ░  ▒ ░░  ░  ░  ░ ░░
+#            ░  ░  ░░ ░      ░  ░      ░     ░        ░    ░
+#                         ░           ░
+==============================================================================
+🎯 MULTI-SIGNAL TECHNICAL STRATEGY OPTIMIZER & REAL-TIME MONITOR
+==============================================================================
+
+OVERVIEW:
+---------
+This script implements a robust, multi-signal technical analysis strategy
+specifically designed for validating options trading setups (specifically
+Put and Call Credit Spreads). It combines momentum, mean-reversion, and
+Fibonacci confluence indicators to generate high-probability BUY/SELL signals,
+which are then rigorously evaluated against forward-looking strike-price
+targets to simulate real-world options expiration outcomes.
+
+The system leverages Optuna for hyperparameter optimization, utilizing
+TimeSeriesSplit cross-validation to prevent look-ahead bias, and supports
+three distinct execution modes: Backtesting/Optimization, Offline Evaluation,
+and Real-Time Signal Monitoring.
+
+CORE STRATEGY COMPONENTS:
+-------------------------
+1. RSI Strategies:
+   - Pullback-to-50: Enters when price crosses SMA and RSI crosses back over 50.
+   - EMA Crossovers: Enters on RSI and RSI-EMA crossovers in overbought/oversold zones.
+   - MA Confluence: Combines SMA trends with RSI momentum shifts.
+
+2. Fibonacci Confluence:
+   - Calculates dynamic swing highs/lows over a configurable lookback.
+   - Identifies the "Golden Zone" (0.5 to 0.618 retracement).
+   - Triggers buys when price enters the Golden Zone alongside RSI momentum shifts.
+
+3. Divergence Detection:
+   - Scans for Regular and Hidden Bullish/Bearish divergences between
+     Price (Highs/Lows) and RSI over a rolling window.
+
+EVALUATION LOGIC (OPTIONS SIMULATION):
+--------------------------------------
+Signals are evaluated based on forward-looking price action over a defined
+`lookahead_bars` window to simulate holding an options contract to expiration.
+
+- BUY Signals (Put Credit Spread Simulation):
+  Generates a bullish signal. To "win", the underlying asset's price must
+  remain ABOVE a specified `put_strike_pct` (e.g., 0.96 * entry_price)
+  throughout the lookahead window (or at final close, depending on the method).
+
+- SELL Signals (Call Credit Spread Simulation):
+  Generates a bearish signal. To "win", the underlying asset's price must
+  remain BELOW a specified `call_strike_pct` (e.g., 1.04 * entry_price)
+  throughout the lookahead window (or at final close).
+
+Evaluation methods include:
+  - 'final_close': Only the closing price at the end of the lookahead window matters.
+  - 'touched': The price must not breach the strike threshold at ANY point
+    during the lookahead window (simulates touch/no-touch options or strict risk).
+
+ALGORITHM FLOW:
+---------------
+1. Data Ingestion & Feature Engineering:
+   - Loads cached OHLCV data.
+   - Computes technical indicators (RSI, SMA, EMA, Fibonacci retracements)
+     using `pandas_ta` wrapped in safe error-handling functions.
+   - Uses vectorized Pandas operations to generate boolean masks for individual
+     strategy setups (e.g., RSI pullbacks, divergences).
+
+2. Signal Aggregation:
+   - Combines individual setup masks using logical OR operations to form
+     unified `Signal_Buy` and `Signal_Sell` columns.
+
+3. Forward-Looking Vectorized Evaluation:
+   - Extracts signal indices and uses NumPy broadcasting to create a 2D matrix
+     of future price indices `[n_signals, lookahead_bars]`.
+   - Evaluates win conditions simultaneously across all signals without slow
+     Python `for` loops, comparing future Highs/Lows/Closes against the
+     calculated strike prices (`entry_price * strike_pct`).
+   - Computes Win Rate (Wins / Total Signals) and Signal Density.
+
+4. Hyperparameter Optimization (Optuna):
+   - Defines a search space for indicator lengths and windows.
+   - For each trial, splits the training data into 20 chronological folds
+     (`TimeSeriesSplit`).
+   - Calculates the win rate for each fold, applies a penalty if signal
+     density falls below the minimum threshold, and averages the scores.
+   - Uses Tree-structured Parzen Estimator (TPE) sampling to converge on
+     the optimal parameter set.
+
+5. Validation & Inference:
+   - Tests the optimized parameters on a hold-out validation set to measure
+     the train/validation performance gap (overfitting detection).
+   - In Real-Time mode, applies the saved parameters to the latest completed
+     bar and outputs precise options trade recommendations (strikes,
+     expiration dates, and win conditions).
+
+EXECUTION MODES:
+----------------
+1. Optimization Mode (`--optimize`):
+   - Splits data chronologically into Train/Validation sets (`--train-ratio`).
+   - Tunes hyperparameters on the training set using Optuna.
+   - Evaluates the best parameters on the hold-out validation set.
+   - Saves the optimal parameters and metadata to a `.pkl` file.
+
+2. Evaluation Mode (`--model-path <file>`):
+   - Loads a previously saved `.pkl` model.
+   - Applies the saved parameters to the full dataset.
+   - Outputs comprehensive win-rate statistics, yearly breakdowns, and optional plots.
+
+3. Real-Time Mode (`--real-time --model-path <file>`):
+   - Loads a saved model and the latest available market data.
+   - Checks the most recent completed bar for active BUY/SELL signals.
+   - Outputs specific recommended options trades (strikes, expirations, win conditions).
+
+==============================================================================
+"""
 try:
     from version import sys__name, sys__version
 except ImportError:
