@@ -215,7 +215,7 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
     # The entry bar MUST be the last bar of the dataframe for a live signal
     if entry_idx != last_bar_idx:
         return {"reason":
-            f"No signal on the last bar. Last confirmed turn at index {t3[1]} "
+            f"No signal on the last bar ({dates[last_bar_idx].strftime('%Y-%m-%d')}). Last confirmed turn at index {t3[1]} "
             f"(entry would be bar {entry_idx}), but last bar is {last_bar_idx}."}
 
 
