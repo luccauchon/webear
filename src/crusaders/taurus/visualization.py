@@ -190,7 +190,7 @@ def parse_data(raw):
 
 
 # ---------- Plotting & Export ----------
-def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, dataset_id, output_dir, file_id):
+def plot_and_export(df, all_thresholds, all_lookaheads, now, current_price, dataset_id, output_dir, file_id, open_html):
     put_df = df[df['optimize'] == 'buy_wr']
     call_df = df[df['optimize'] == 'sell_wr']
 
@@ -466,7 +466,7 @@ document.addEventListener('DOMContentLoaded', (event) => {{
     print("🌐 Opening in your default web browser...")
 
     # Automatically open the HTML file in the browser
-    webbrowser.open_new_tab(f"file://{out_html}")
+    if open_html: webbrowser.open_new_tab(f"file://{out_html}")
 
 
 # ---------- Main ----------
@@ -489,6 +489,7 @@ def parse_args():
         "--file_id", type=str, default="",
         help=f"Id be to included in the html filename"
     )
+    parser.add_argument("--open-html", action="store_true", default=False, help="Open HTML generated file at the end.")
     return parser.parse_args()
 
 
@@ -514,7 +515,8 @@ def entry(args):
     print(f"Put thresholds   : {len(put_thresholds)}")
     print(f"Call thresholds  : {len(call_thresholds)}\n")
 
-    plot_and_export(df=df, all_thresholds=all_thresholds, all_lookaheads=all_lookaheads, now=now, current_price=current_price, dataset_id=dataset_id, output_dir=args.output_dir, file_id=args.file_id)
+    plot_and_export(df=df, all_thresholds=all_thresholds, all_lookaheads=all_lookaheads, now=now, current_price=current_price, dataset_id=dataset_id,
+                    output_dir=args.output_dir, file_id=args.file_id, open_html=args.open_html)
 
 
 if __name__ == '__main__':
