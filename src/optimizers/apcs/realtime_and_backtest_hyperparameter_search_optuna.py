@@ -553,7 +553,7 @@ def entry(args):
         try:
             if use_realtime_dataset:
                 if verbose: print(f"Fetching latest real-time data for {model_info['ticker']}...")
-                assert args.ticker in ["^GSPC"]
+                assert model_info['ticker'] in ["^GSPC"]
                 daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
                 df_realtime = daily_data_cache[model_info['ticker']].sort_index().copy()
             else:
