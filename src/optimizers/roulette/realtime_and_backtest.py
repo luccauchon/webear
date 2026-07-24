@@ -332,6 +332,11 @@ def main(args):
         close_col = ("Close", args.ticker)
         volume_col = ("Volume", args.ticker)
         master_data_cache = master_data_cache[args.ticker].sort_index().copy()
+        try:
+            if int(args.clip_n) > 0:
+                master_data_cache = master_data_cache.iloc[:-int(args.clip_n)].copy()
+        except:
+            pass  # For backward comptability
         # Add POS/NEG sequence columns
         assert args.epsilon >= 0.
         master_data_cache = add_sequence_columns_vectorized(
@@ -1195,6 +1200,8 @@ if __name__ == "__main__":
     parser.add_argument("--specific_wanted_class", type=int, nargs='+',
                         default=[],
                         help="Specific classes to keep")
+    parser.add_argument('--clip-n', type=int, default=0,
+                        help="Do a .iloc[:-n] on the loaded dataset. A value of greater than 0 enable it.")
 
     # Model arguments
     parser.add_argument("--base-models", type=str, nargs="+", default=["xgb"],
