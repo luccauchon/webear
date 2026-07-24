@@ -577,6 +577,8 @@ def entry(args):
             open_col = ('Open', model_info['ticker'])
             high_col = ('High', model_info['ticker'])
             low_col = ('Low', model_info['ticker'])
+            if verbose: print(f"Last bar: {df_realtime.index[-1].strftime('%Y-%m-%d')}   "
+                              f"Open/High/Low/Close: {df_realtime.iloc[-1][open_col]:.1f}/{df_realtime.iloc[-1][high_col]:.1f}/{df_realtime.iloc[-1][low_col]:.1f}/{df_realtime.iloc[-1][close_col]:.1f}")
             values_returned.update({'current_price': df_realtime[close_col].iloc[-1]})
             live_result = check_live_signal(
                 df=df_realtime.copy(),
