@@ -1,4 +1,5 @@
 import os
+import platform
 try:
     IS_RUNNING_ON_CASIR = True if 2 == int(os.getenv("ENV_EXEC_CODE__WEBEAR", 0)) else False
 except:
@@ -13,7 +14,12 @@ try:
         IS_RUNNING_IREQ = True
 except:
     IS_RUNNING_IREQ = False
-
+try:
+    IS_RUNNING_MAC = False
+    if platform.system() == "Darwin":
+        IS_RUNNING_MAC = True
+except:
+    IS_RUNNING_MAC = False
 BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
 BASE_YFINANCE_DIR     = r"C:\Finance\data\yfinance"
@@ -29,7 +35,9 @@ if IS_RUNNING_ON_LINUX_VMWARE:
     BASE_FORECAST_DIR = "/home/luccauchon/REALTIME/data/forecast"
 if os.getenv("SPECIFIC_BASE_YFINANCE_DIR__WEBEAR") is not None:  # User can override the default directory where to find the data
     BASE_YFINANCE_DIR = os.getenv("SPECIFIC_BASE_YFINANCE_DIR__WEBEAR")
-
+if IS_RUNNING_MAC:
+    BASE_YFINANCE_DIR = r"/Users/luccauchon/WORK/data"
+    BASE_FORECAST_DIR = r"/Users/luccauchon/WORK/data"
 # Ensure the directory exists (optional, but helpful if you're writing later)
 os.makedirs(str(BASE_YFINANCE_DIR), exist_ok=True)
 
