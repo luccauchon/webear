@@ -36,7 +36,7 @@ if IS_RUNNING_ON_LINUX_VMWARE:
 if os.getenv("SPECIFIC_BASE_YFINANCE_DIR__WEBEAR") is not None:  # User can override the default directory where to find the data
     BASE_YFINANCE_DIR = os.getenv("SPECIFIC_BASE_YFINANCE_DIR__WEBEAR")
 if IS_RUNNING_MAC:
-    BASE_YFINANCE_DIR = r"/Users/luccauchon/WORK/data"
+    BASE_YFINANCE_DIR = r"/Users/luccauchon/WORK/data/yfdataset"
     BASE_FORECAST_DIR = r"/Users/luccauchon/WORK/data"
 # Ensure the directory exists (optional, but helpful if you're writing later)
 os.makedirs(str(BASE_YFINANCE_DIR), exist_ok=True)
