@@ -904,7 +904,7 @@ def generate_model_name(args, params, score):
         arg_parts.append(f"call-{args.call_strike_pct:.6f}")
     if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
         arg_parts.append(f"train_ratio-{args.train_ratio:.2f}")
-
+    score = 0. if score is None else score
     # Combine all parts
     name_parts = [
         args.ticker.replace('^', ''),
@@ -1183,7 +1183,7 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
 
         if args.verbose:
             print(f"📈 Recomputed Train Win Rate: {train_win_rate:.2%}")
-            print(f"📈 Recomputed Val Win Rate  : {val_win_rate:.2%}")
+            print(f"📈 Recomputed Test Win Rate : {val_win_rate:.2%}")
 
     # Output results
     if args.verbose:
@@ -1360,27 +1360,27 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, volu
 
 def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume_col, open_col):
     # 0. 0/1 Triggers for Strategy Inclusion (Controlled via argparse)
-    use_pullback_buy = 1 if getattr(_args, 'use_pullback_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_ema_cross_buy = 1 if getattr(_args, 'use_ema_cross_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_ma_conf_buy = 1 if getattr(_args, 'use_ma_conf_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_fib_rsi_buy = 1 if getattr(_args, 'use_fib_rsi_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_reg_bull_div = 1 if getattr(_args, 'use_reg_bull_div', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_hid_bull_div = 1 if getattr(_args, 'use_hid_bull_div', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_macd_buy = 1 if getattr(_args, 'use_macd_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_bb_buy = 1 if getattr(_args, 'use_bb_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_vol_buy = 1 if getattr(_args, 'use_vol_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_stoch_buy = 1 if getattr(_args, 'use_stoch_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
-    use_vwap_buy = 1 if getattr(_args, 'use_vwap_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_pullback_buy = 1 if getattr(_args, 'use_pullback_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_ema_cross_buy = 1 if getattr(_args, 'use_ema_cross_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_ma_conf_buy = 1 if getattr(_args, 'use_ma_conf_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_fib_rsi_buy = 1 if getattr(_args, 'use_fib_rsi_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_reg_bull_div = 1 if getattr(_args, 'use_reg_bull_div', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_hid_bull_div = 1 if getattr(_args, 'use_hid_bull_div', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_macd_buy = 1 if getattr(_args, 'use_macd_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_bb_buy = 1 if getattr(_args, 'use_bb_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_vol_buy = 1 if getattr(_args, 'use_vol_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_stoch_buy = 1 if getattr(_args, 'use_stoch_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_vwap_buy = 1 if getattr(_args, 'use_vwap_buy', False) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
 
-    use_pullback_sell = 1 if getattr(_args, 'use_pullback_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_ema_cross_sell = 1 if getattr(_args, 'use_ema_cross_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_reg_bear_div = 1 if getattr(_args, 'use_reg_bear_div', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_hid_bear_div = 1 if getattr(_args, 'use_hid_bear_div', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_macd_sell = 1 if getattr(_args, 'use_macd_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_bb_sell = 1 if getattr(_args, 'use_bb_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_vol_sell = 1 if getattr(_args, 'use_vol_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_stoch_sell = 1 if getattr(_args, 'use_stoch_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
-    use_vwap_sell = 1 if getattr(_args, 'use_vwap_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_pullback_sell = 1 if getattr(_args, 'use_pullback_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_ema_cross_sell = 1 if getattr(_args, 'use_ema_cross_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_reg_bear_div = 1 if getattr(_args, 'use_reg_bear_div', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_hid_bear_div = 1 if getattr(_args, 'use_hid_bear_div', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_macd_sell = 1 if getattr(_args, 'use_macd_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_bb_sell = 1 if getattr(_args, 'use_bb_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_vol_sell = 1 if getattr(_args, 'use_vol_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_stoch_sell = 1 if getattr(_args, 'use_stoch_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_vwap_sell = 1 if getattr(_args, 'use_vwap_sell', False) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
 
     use_rsi_any = (use_pullback_buy or use_pullback_sell or use_ema_cross_buy or
                    use_ema_cross_sell or use_ma_conf_buy or use_fib_rsi_buy or
@@ -1464,6 +1464,8 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume
     if (min_buy_confluence > total_buy_strategies_enabled or total_buy_strategies_enabled == 0) and _args.optimize_target in ['buy_wr', 'combined_wr']:
         raise optuna.exceptions.TrialPruned()
     if (min_sell_confluence > total_sell_strategies_enabled or total_sell_strategies_enabled == 0) and _args.optimize_target in ['sell_wr', 'combined_wr']:
+        raise optuna.exceptions.TrialPruned()
+    if total_buy_strategies_enabled + total_sell_strategies_enabled == 0:
         raise optuna.exceptions.TrialPruned()
 
     try:
@@ -1670,47 +1672,27 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     # Buy Strategies
     strat_toggles.add_argument('--use-pullback-buy', action='store_true', default=True, help='Enable Pullback Buy strategy')
-    strat_toggles.add_argument('--no-use-pullback-buy', action='store_false', dest='use_pullback_buy')
     strat_toggles.add_argument('--use-ema-cross-buy', action='store_true', default=True, help='Enable EMA Cross Buy strategy')
-    strat_toggles.add_argument('--no-use-ema-cross-buy', action='store_false', dest='use_ema_cross_buy')
     strat_toggles.add_argument('--use-ma-conf-buy', action='store_true', default=True, help='Enable MA Confluence Buy strategy')
-    strat_toggles.add_argument('--no-use-ma-conf-buy', action='store_false', dest='use_ma_conf_buy')
     strat_toggles.add_argument('--use-fib-rsi-buy', action='store_true', default=True, help='Enable Fibonacci RSI Buy strategy')
-    strat_toggles.add_argument('--no-use-fib-rsi-buy', action='store_false', dest='use_fib_rsi_buy')
     strat_toggles.add_argument('--use-reg-bull-div', action='store_true', default=True, help='Enable Regular Bullish Divergence strategy')
-    strat_toggles.add_argument('--no-use-reg-bull-div', action='store_false', dest='use_reg_bull_div')
     strat_toggles.add_argument('--use-hid-bull-div', action='store_true', default=True, help='Enable Hidden Bullish Divergence strategy')
-    strat_toggles.add_argument('--no-use-hid-bull-div', action='store_false', dest='use_hid_bull_div')
     strat_toggles.add_argument('--use-macd-buy', action='store_true', default=True, help='Enable MACD Buy strategy')
-    strat_toggles.add_argument('--no-use-macd-buy', action='store_false', dest='use_macd_buy')
     strat_toggles.add_argument('--use-bb-buy', action='store_true', default=True, help='Enable Bollinger Bands Buy strategy')
-    strat_toggles.add_argument('--no-use-bb-buy', action='store_false', dest='use_bb_buy')
     strat_toggles.add_argument('--use-vol-buy', action='store_true', default=True, help='Enable Volume Spike Buy strategy')
-    strat_toggles.add_argument('--no-use-vol-buy', action='store_false', dest='use_vol_buy')
     strat_toggles.add_argument('--use-stoch-buy', action='store_true', default=True, help='Enable Stochastic Buy strategy')
-    strat_toggles.add_argument('--no-use-stoch-buy', action='store_false', dest='use_stoch_buy')
     strat_toggles.add_argument('--use-vwap-buy', action='store_true', default=True, help='Enable VWAP Retest Buy strategy')
-    strat_toggles.add_argument('--no-use-vwap-buy', action='store_false', dest='use_vwap_buy')
 
     # Sell Strategies
     strat_toggles.add_argument('--use-pullback-sell', action='store_true', default=True, help='Enable Pullback Sell strategy')
-    strat_toggles.add_argument('--no-use-pullback-sell', action='store_false', dest='use_pullback_sell')
     strat_toggles.add_argument('--use-ema-cross-sell', action='store_true', default=True, help='Enable EMA Cross Sell strategy')
-    strat_toggles.add_argument('--no-use-ema-cross-sell', action='store_false', dest='use_ema_cross_sell')
     strat_toggles.add_argument('--use-reg-bear-div', action='store_true', default=True, help='Enable Regular Bearish Divergence strategy')
-    strat_toggles.add_argument('--no-use-reg-bear-div', action='store_false', dest='use_reg_bear_div')
     strat_toggles.add_argument('--use-hid-bear-div', action='store_true', default=True, help='Enable Hidden Bearish Divergence strategy')
-    strat_toggles.add_argument('--no-use-hid-bear-div', action='store_false', dest='use_hid_bear_div')
     strat_toggles.add_argument('--use-macd-sell', action='store_true', default=True, help='Enable MACD Sell strategy')
-    strat_toggles.add_argument('--no-use-macd-sell', action='store_false', dest='use_macd_sell')
     strat_toggles.add_argument('--use-bb-sell', action='store_true', default=True, help='Enable Bollinger Bands Sell strategy')
-    strat_toggles.add_argument('--no-use-bb-sell', action='store_false', dest='use_bb_sell')
     strat_toggles.add_argument('--use-vol-sell', action='store_true', default=True, help='Enable Volume Spike Sell strategy')
-    strat_toggles.add_argument('--no-use-vol-sell', action='store_false', dest='use_vol_sell')
     strat_toggles.add_argument('--use-stoch-sell', action='store_true', default=True, help='Enable Stochastic Sell strategy')
-    strat_toggles.add_argument('--no-use-stoch-sell', action='store_false', dest='use_stoch_sell')
     strat_toggles.add_argument('--use-vwap-sell', action='store_true', default=True, help='Enable VWAP Retest Sell strategy')
-    strat_toggles.add_argument('--no-use-vwap-sell', action='store_false', dest='use_vwap_sell')
 
     return parser
 
@@ -1796,26 +1778,26 @@ def entry(args):
         'stoch_k_period': 14, 'stoch_d_period': 3, 'stoch_smooth_k_period': 1, 'stoch_oversold': 20, 'stoch_overbought': 80,
         'vwap_window': 50,
         # 0/1 triggers for strategy inclusion (read from argparse, default to 1)
-        'use_pullback_buy': 1 if getattr(args, 'use_pullback_buy', True) else 0,
-        'use_ema_cross_buy': 1 if getattr(args, 'use_ema_cross_buy', True) else 0,
-        'use_ma_conf_buy': 1 if getattr(args, 'use_ma_conf_buy', True) else 0,
-        'use_fib_rsi_buy': 1 if getattr(args, 'use_fib_rsi_buy', True) else 0,
-        'use_reg_bull_div': 1 if getattr(args, 'use_reg_bull_div', True) else 0,
-        'use_hid_bull_div': 1 if getattr(args, 'use_hid_bull_div', True) else 0,
-        'use_macd_buy': 1 if getattr(args, 'use_macd_buy', True) else 0,
-        'use_bb_buy': 1 if getattr(args, 'use_bb_buy', True) else 0,
-        'use_vol_buy': 1 if getattr(args, 'use_vol_buy', True) else 0,
-        'use_stoch_buy': 1 if getattr(args, 'use_stoch_buy', True) else 0,
-        'use_vwap_buy': 1 if getattr(args, 'use_vwap_buy', True) else 0,
-        'use_pullback_sell': 1 if getattr(args, 'use_pullback_sell', True) else 0,
-        'use_ema_cross_sell': 1 if getattr(args, 'use_ema_cross_sell', True) else 0,
-        'use_reg_bear_div': 1 if getattr(args, 'use_reg_bear_div', True) else 0,
-        'use_hid_bear_div': 1 if getattr(args, 'use_hid_bear_div', True) else 0,
-        'use_macd_sell': 1 if getattr(args, 'use_macd_sell', True) else 0,
-        'use_bb_sell': 1 if getattr(args, 'use_bb_sell', True) else 0,
-        'use_vol_sell': 1 if getattr(args, 'use_vol_sell', True) else 0,
-        'use_stoch_sell': 1 if getattr(args, 'use_stoch_sell', True) else 0,
-        'use_vwap_sell': 1 if getattr(args, 'use_vwap_sell', True) else 0,
+        'use_pullback_buy': 1 if getattr(args, 'use_pullback_buy', False) else 0,
+        'use_ema_cross_buy': 1 if getattr(args, 'use_ema_cross_buy', False) else 0,
+        'use_ma_conf_buy': 1 if getattr(args, 'use_ma_conf_buy', False) else 0,
+        'use_fib_rsi_buy': 1 if getattr(args, 'use_fib_rsi_buy', False) else 0,
+        'use_reg_bull_div': 1 if getattr(args, 'use_reg_bull_div', False) else 0,
+        'use_hid_bull_div': 1 if getattr(args, 'use_hid_bull_div', False) else 0,
+        'use_macd_buy': 1 if getattr(args, 'use_macd_buy', False) else 0,
+        'use_bb_buy': 1 if getattr(args, 'use_bb_buy', False) else 0,
+        'use_vol_buy': 1 if getattr(args, 'use_vol_buy', False) else 0,
+        'use_stoch_buy': 1 if getattr(args, 'use_stoch_buy', False) else 0,
+        'use_vwap_buy': 1 if getattr(args, 'use_vwap_buy', False) else 0,
+        'use_pullback_sell': 1 if getattr(args, 'use_pullback_sell', False) else 0,
+        'use_ema_cross_sell': 1 if getattr(args, 'use_ema_cross_sell', False) else 0,
+        'use_reg_bear_div': 1 if getattr(args, 'use_reg_bear_div', False) else 0,
+        'use_hid_bear_div': 1 if getattr(args, 'use_hid_bear_div', False) else 0,
+        'use_macd_sell': 1 if getattr(args, 'use_macd_sell', False) else 0,
+        'use_bb_sell': 1 if getattr(args, 'use_bb_sell', False) else 0,
+        'use_vol_sell': 1 if getattr(args, 'use_vol_sell', False) else 0,
+        'use_stoch_sell': 1 if getattr(args, 'use_stoch_sell', False) else 0,
+        'use_vwap_sell': 1 if getattr(args, 'use_vwap_sell', False) else 0,
     }
 
     # 🔹 Load model from path if specified (for evaluation without optimization)
@@ -1826,8 +1808,8 @@ def entry(args):
         if args.verbose:
             print(f"📊 Loaded model with score: {model_data.get('score', 'N/A')}")
             if model_data.get('validation_score') is not None:
-                print(f"📊 Validation score: {model_data['validation_score']:.4f}")
-            print(f"🧠 Parameters: {params}")
+                print(f"📊 Test score: {model_data['validation_score']:.4f}")
+            print(f"🧠 Optimized Parameters from model: {params}")
 
     # ==============================================================================
     # 🔄 TRAIN/VALIDATION SPLIT (for optimization only)
@@ -1836,7 +1818,7 @@ def entry(args):
     df_val = None
     train_val_split_info = None
 
-    if args.optimize and hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
+    if args.optimize and args.train_ratio < 1.0:
         # Chronological split to avoid look-ahead bias (critical for time-series)
         split_idx = int(len(df_base) * args.train_ratio)
 
@@ -1905,7 +1887,7 @@ def entry(args):
         if df_val is not None:
             if args.verbose: print(f"   🔄 Optimizing on TRAINING set only (validation held out)")
 
-        n_startup_trials = max(10, min(10000, int(0.001 * args.n_trials)))
+        n_startup_trials = max(99, min(10000, int(0.001 * args.n_trials)))
         if args.verbose: print(f"Starting Optuna optimization with TimeSeriesSplit and {n_startup_trials} random trials...")
         sampler = optuna.samplers.TPESampler(
             seed=42,
@@ -1958,16 +1940,15 @@ def entry(args):
             show_progress_bar=True if args.verbose_optuna_progression else False,
             callbacks=[early_stop_on_perfect_success],
         )
-        try:
-            best_trial = study.best_trial
-            if args.verbose:
-                print(f"\n✅ Optimization Complete!")
-                print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
-                print("   🧠 Best Hyperparameters:")
-                for k, v in best_trial.params.items():
-                    if args.verbose: print(f"      {k}: {v}")
-                    params[k] = v
-        except: pass
+        if args.verbose:
+            print(f"\n✅ Optimization Complete!")
+        best_trial = study.best_trial
+        params = best_trial.params
+        if args.verbose:
+            print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
+            print("   🧠 Best Hyperparameters:")
+            for k, v in best_trial.params.items():
+                if args.verbose: print(f"      {k}: {v}")
         # ==============================================================================
         # 🎯 VALIDATION SET EVALUATION (if split was used)
         # ==============================================================================
@@ -2029,8 +2010,8 @@ def entry(args):
     else:
         validation_score = None
 
-        # Final Evaluation & Output on FULL dataset (unless in real-time mode)
-    if args.verbose: print(f"\n⚙️  Running final evaluation with params: {params}")
+    # Final Evaluation & Output on FULL dataset (unless in real-time mode)
+    if args.verbose: print(f"\n⚙️  Running final evaluation with optimized params: {params}")
     buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df_final = \
         run_strategy_and_evaluate(df_base, args, close_col, high_col, low_col, volume_col, open_col, **params)
 
