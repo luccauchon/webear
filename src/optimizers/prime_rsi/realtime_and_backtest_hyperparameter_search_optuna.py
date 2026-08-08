@@ -1609,7 +1609,7 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume
         std_score = np.std(fold_scores)
 
         # Alpha controls how much we punish inconsistency across different time periods
-        alpha = 0.5
+        alpha = 0.25
         final_score = mean_score - (alpha * std_score)
 
         return final_score
