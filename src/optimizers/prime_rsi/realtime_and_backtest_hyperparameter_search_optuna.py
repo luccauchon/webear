@@ -44,6 +44,13 @@ CORE STRATEGY COMPONENTS:
    - Scans for Regular and Hidden Bullish/Bearish divergences between
      Price (Highs/Lows) and RSI over a rolling window.
 
+4. New Advanced Strategies:
+   - MACD Crossovers: Signal line crossovers.
+   - Bollinger Band Bounces: Reversals off the upper/lower bands.
+   - Volume Spikes: High volume directional candles.
+   - Stochastic Oscillators: Oversold/overbought %K/%D crossovers.
+   - VWAP Retests: Price crossing rolling 50-period VWAP.
+
 EVALUATION LOGIC (OPTIONS SIMULATION):
 --------------------------------------
 Signals are evaluated based on forward-looking price action over a defined
@@ -74,8 +81,9 @@ ALGORITHM FLOW:
      strategy setups (e.g., RSI pullbacks, divergences).
 
 2. Signal Aggregation:
-   - Combines individual setup masks using logical OR operations to form
-     unified `Signal_Buy` and `Signal_Sell` columns.
+   - Combines individual setup masks. New `min_buy_confluence` and `min_sell_confluence`
+     parameters require a minimum number of strategies to agree simultaneously,
+     effectively narrowing down signal quantity and filtering out weaker, isolated setups.
 
 3. Forward-Looking Vectorized Evaluation:
    - Extracts signal indices and uses NumPy broadcasting to create a 2D matrix
@@ -86,11 +94,13 @@ ALGORITHM FLOW:
    - Computes Win Rate (Wins / Total Signals) and Signal Density.
 
 4. Hyperparameter Optimization (Optuna):
-   - Defines a search space for indicator lengths and windows.
-   - For each trial, splits the training data into 20 chronological folds
+   - Defines a search space for indicator lengths, windows, and confluence thresholds.
+   - For each trial, splits the training data into chronological folds
      (`TimeSeriesSplit`).
-   - Calculates the win rate for each fold, applies a penalty if signal
-     density falls below the minimum threshold, and averages the scores.
+   - Calculates the Bayesian Smoothed Win Rate for each fold to balance win rate
+     and sample size, applies a penalty if signal density falls below the minimum
+     threshold, applies an excess penalty for high densities to push selectivity,
+     applies a penalty for overlapping signals (clustering), and averages the scores.
    - Uses Tree-structured Parzen Estimator (TPE) sampling to converge on
      the optimal parameter set.
 
@@ -136,15 +146,17 @@ from numba import njit
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
-from utils import get_filename_for_dataset, get_next_step
+from utils import get_filename_for_dataset, get_next_step, factory_load_data
 import pickle
 import argparse
 import os
 import optuna
 import json
+import math
 from datetime import datetime
 from sklearn.model_selection import TimeSeriesSplit
-
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -187,10 +199,12 @@ def safe_ta_indicator(func, series, default_fill=np.nan, **kwargs):
 #   strike-price targets.
 #
 # 🔧 CORE COMPONENTS:
-#   • RSI Strategies      : Pullback-to-50, EMA crossovers, MA confluence
+#   • RSI strategies      : Pullback-to-50, EMA crossovers, MA confluence
 #   • Fibonacci Confluence: Golden Zone (0.5–0.618) retracement entries
 #   • Divergence Detection: Regular & Hidden Bullish/Bearish divergences
-#   • Signal Aggregation  : Logical OR across all bullish/bearish conditions
+#   • Signal Aggregation  : Logical OR across all bullish/bearish conditions,
+#                           now enhanced with `min_buy_confluence` and `min_sell_confluence`
+#                           thresholds to narrow down signal quantity and increase selectivity.
 #
 # 🎯 EVALUATION LOGIC:
 #   • BUY Signal  → Price must stay ABOVE put_strike_pct (e.g., 0.96×)
@@ -199,9 +213,11 @@ def safe_ta_indicator(func, series, default_fill=np.nan, **kwargs):
 #                   within lookahead_bars → simulates profitable call credit spread
 #
 # ⚙️ OPTIMIZATION (Optuna):
-#   • Hyperparameters: RSI length, SMA period, Fib lookback, divergence window
-#   • Objective: Maximize Win Rate (buy/sell/combined) with density penalty
-#   • Persistence: SQLite-backed studies for resumable, distributed optimization
+#   • Hyperparameters: RSI length, SMA period, Fib lookback, divergence window,
+#                      and Minimum Buy/Sell Confluence (number of strategies that must agree).
+#   • Objective: Maximize Smoothed Win Rate (balances Win Rate & Sample Size)
+#                with density penalty, overlap penalty, and consistency penalty.
+#   • Persistence: Supports SQLite, PostgreSQL, MySQL, etc., via standard database URLs
 #
 # 🔄 TRAIN/VALIDATION SPLIT:
 #   • --train-ratio argument (default: 0.7) for chronological data splitting
@@ -222,7 +238,7 @@ def safe_ta_indicator(func, series, default_fill=np.nan, **kwargs):
 # ==============================================================================
 # ORIGINAL STRATEGY FUNCTIONS (Unchanged)
 # ==============================================================================
-def calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, ticker, lookback=50):
+def calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, ticker, lookback, rsi_midline):
     swing_high = df[high_col].rolling(window=lookback).max()
     swing_low = df[low_col].rolling(window=lookback).min()
     diff = swing_high - swing_low
@@ -237,12 +253,12 @@ def calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, ti
 
     strategy_Fib_RSI_Buy_col = ('Strategy_Fib_RSI_Buy', ticker)
     df[strategy_Fib_RSI_Buy_col] = df[golden_zone_col] & \
-                                   (df[rsi_col].shift(1) < 50) & \
-                                   (df[rsi_col] > 50)
+                                   (df[rsi_col].shift(1) < rsi_midline) & \
+                                   (df[rsi_col] > rsi_midline)
     return df, strategy_Fib_RSI_Buy_col
 
 
-def implement_rsi_strategies(df, close_col, ticker, rsi_length=14, rsi_ema_10=10, sma_50=50):
+def implement_rsi_strategies(df, close_col, ticker, rsi_length, rsi_ema_10, sma_50, rsi_midline, rsi_oversold, rsi_overbought):
     rsi_col = ('RSI', ticker)
     df[rsi_col] = safe_ta_indicator(ta.rsi, df[close_col], length=rsi_length)
 
@@ -254,23 +270,23 @@ def implement_rsi_strategies(df, close_col, ticker, rsi_length=14, rsi_ema_10=10
 
     Setup_Pullback_50_Buy_col = ('Setup_Pullback_50_Buy', ticker)
     df[Setup_Pullback_50_Buy_col] = (df[close_col] > df[sma_50_col]) & \
-                                    (df[rsi_col].shift(1) < 50) & \
-                                    (df[rsi_col] > 50)
+                                    (df[rsi_col].shift(1) < rsi_midline) & \
+                                    (df[rsi_col] > rsi_midline)
 
     Setup_Pullback_50_Sell_col = ('Setup_Pullback_50_Sell', ticker)
     df[Setup_Pullback_50_Sell_col] = (df[close_col] < df[sma_50_col]) & \
-                                     (df[rsi_col].shift(1) > 50) & \
-                                     (df[rsi_col] < 50)
+                                     (df[rsi_col].shift(1) > rsi_midline) & \
+                                     (df[rsi_col] < rsi_midline)
 
     Setup_EMA_Cross_Buy_col = ('Setup_EMA_Cross_Buy', ticker)
     df[Setup_EMA_Cross_Buy_col] = (df[rsi_col].shift(1) < df[rsi_ema_10_col].shift(1)) & \
                                   (df[rsi_col] > df[rsi_ema_10_col]) & \
-                                  (df[rsi_col] < 30)
+                                  (df[rsi_col] < rsi_oversold)
 
     Setup_EMA_Cross_Sell_col = ('Setup_EMA_Cross_Sell', ticker)
     df[Setup_EMA_Cross_Sell_col] = (df[rsi_col].shift(1) > df[rsi_ema_10_col].shift(1)) & \
                                    (df[rsi_col] < df[rsi_ema_10_col]) & \
-                                   (df[rsi_col] > 70)
+                                   (df[rsi_col] > rsi_overbought)
 
     Strategy_MA_Confluence_Buy_col = ('Strategy_MA_Confluence_Buy', ticker)
     df[Strategy_MA_Confluence_Buy_col] = (df[close_col] > df[sma_50_col]) & \
@@ -281,7 +297,7 @@ def implement_rsi_strategies(df, close_col, ticker, rsi_length=14, rsi_ema_10=10
     return df, rsi_col, Setup_Pullback_50_Buy_col, Setup_Pullback_50_Sell_col, Setup_EMA_Cross_Buy_col, Setup_EMA_Cross_Sell_col, Strategy_MA_Confluence_Buy_col
 
 
-def find_divergences(df, high_col, low_col, rsi_col, ticker, window=5):
+def find_divergences(df, high_col, low_col, rsi_col, ticker, window):
     Price_Low_col = ('Price_Low', ticker)
     df[Price_Low_col] = df[low_col].rolling(window=window).min()
     Price_High_col = ('Price_High', ticker)
@@ -308,6 +324,135 @@ def find_divergences(df, high_col, low_col, rsi_col, ticker, window=5):
                                  (df[RSI_High_col] > df[RSI_High_col].shift(window))
 
     return df, Regular_Bullish_Div_col, Regular_Bearish_Div_col, Hidden_Bullish_Div_col, Hidden_Bearish_Div_col
+
+
+def implement_additional_strategies(df, close_col, high_col, low_col, volume_col, open_col, ticker,
+                                    macd_fast=12, macd_slow=26, macd_signal=9,
+                                    bb_length=20, bb_std=2.0,
+                                    vol_sma_length=20, vol_multiplier=2.0,
+                                    stoch_k_period=14, stoch_d_period=3, stoch_smooth_k_period=1, stoch_oversold=20, stoch_overbought=80,
+                                    vwap_window=50):
+    # 1. MACD Crossovers
+    try:
+        macd_df = ta.macd(df[close_col], fast=macd_fast, slow=macd_slow, signal=macd_signal)
+        if macd_df is not None and not macd_df.empty and macd_df.shape[1] >= 3:
+            macd_line = macd_df.iloc[:, 0]
+            signal_line = macd_df.iloc[:, 2]
+        else:
+            macd_line = pd.Series(np.nan, index=df.index)
+            signal_line = pd.Series(np.nan, index=df.index)
+    except Exception:
+        macd_line = pd.Series(np.nan, index=df.index)
+        signal_line = pd.Series(np.nan, index=df.index)
+
+    macd_buy_col = ('Setup_MACD_Buy', ticker)
+    macd_sell_col = ('Setup_MACD_Sell', ticker)
+    df[macd_buy_col] = ((macd_line.shift(1) < signal_line.shift(1)) & (macd_line > signal_line)).fillna(False).astype(bool)
+    df[macd_sell_col] = ((macd_line.shift(1) > signal_line.shift(1)) & (macd_line < signal_line)).fillna(False).astype(bool)
+
+    # 2. Bollinger Band Bounces
+    try:
+        bbands_df = ta.bbands(df[close_col], length=bb_length, std=bb_std)
+        if bbands_df is not None and not bbands_df.empty and bbands_df.shape[1] >= 3:
+            bb_upper = bbands_df.iloc[:, 0]
+            bb_lower = bbands_df.iloc[:, 2]
+        else:
+            bb_lower = pd.Series(np.nan, index=df.index)
+            bb_upper = pd.Series(np.nan, index=df.index)
+    except Exception:
+        bb_lower = pd.Series(np.nan, index=df.index)
+        bb_upper = pd.Series(np.nan, index=df.index)
+
+    bb_buy_col = ('Setup_BB_Buy', ticker)
+    bb_sell_col = ('Setup_BB_Sell', ticker)
+    df[bb_buy_col] = ((df[close_col].shift(1) < bb_lower.shift(1)) & (df[close_col] > bb_lower)).fillna(False).astype(bool)
+    df[bb_sell_col] = ((df[close_col].shift(1) > bb_upper.shift(1)) & (df[close_col] < bb_upper)).fillna(False).astype(bool)
+
+    # 3. Volume Spikes
+    vol_buy_col = ('Setup_Vol_Buy', ticker)
+    vol_sell_col = ('Setup_Vol_Sell', ticker)
+    if volume_col in df.columns and open_col in df.columns:
+        vol_sma = safe_ta_indicator(ta.sma, df[volume_col], length=vol_sma_length)
+        vol_spike = df[volume_col] > (vol_multiplier * vol_sma)
+        df[vol_buy_col] = (vol_spike & (df[close_col] > df[open_col])).fillna(False).astype(bool)
+        df[vol_sell_col] = (vol_spike & (df[close_col] < df[open_col])).fillna(False).astype(bool)
+    else:
+        df[vol_buy_col] = False
+        df[vol_sell_col] = False
+
+    # 4. Stochastic Oscillators
+    try:
+        stoch_df = ta.stoch(df[high_col], df[low_col], df[close_col], k=stoch_k_period, d=stoch_d_period, smooth_k=stoch_smooth_k_period)
+        if stoch_df is not None and not stoch_df.empty and stoch_df.shape[1] >= 2:
+            stoch_k = stoch_df.iloc[:, 0]
+            stoch_d = stoch_df.iloc[:, 1]
+        else:
+            stoch_k = pd.Series(np.nan, index=df.index)
+            stoch_d = pd.Series(np.nan, index=df.index)
+    except Exception:
+        stoch_k = pd.Series(np.nan, index=df.index)
+        stoch_d = pd.Series(np.nan, index=df.index)
+
+    stoch_buy_col = ('Setup_Stoch_Buy', ticker)
+    stoch_sell_col = ('Setup_Stoch_Sell', ticker)
+    df[stoch_buy_col] = ((stoch_k.shift(1) < stoch_d.shift(1)) & (stoch_k > stoch_d) & (stoch_k < stoch_oversold)).fillna(False).astype(bool)
+    df[stoch_sell_col] = ((stoch_k.shift(1) > stoch_d.shift(1)) & (stoch_k < stoch_d) & (stoch_k > stoch_overbought)).fillna(False).astype(bool)
+
+    # 5. VWAP Retests (Rolling)
+    vwap_buy_col = ('Setup_VWAP_Buy', ticker)
+    vwap_sell_col = ('Setup_VWAP_Sell', ticker)
+    if volume_col in df.columns:
+        typical_price = (df[high_col] + df[low_col] + df[close_col]) / 3
+        tp_vol = typical_price * df[volume_col]
+        rolling_tp_vol = tp_vol.rolling(window=vwap_window).sum()
+        rolling_vol = df[volume_col].rolling(window=vwap_window).sum()
+        vwap = rolling_tp_vol / rolling_vol
+
+        df[vwap_buy_col] = ((df[close_col].shift(1) < vwap.shift(1)) & (df[close_col] > vwap)).fillna(False).astype(bool)
+        df[vwap_sell_col] = ((df[close_col].shift(1) > vwap.shift(1)) & (df[close_col] < vwap)).fillna(False).astype(bool)
+    else:
+        df[vwap_buy_col] = False
+        df[vwap_sell_col] = False
+
+    return (macd_buy_col, macd_sell_col, bb_buy_col, bb_sell_col,
+            vol_buy_col, vol_sell_col, stoch_buy_col, stoch_sell_col,
+            vwap_buy_col, vwap_sell_col)
+
+
+# ==============================================================================
+# 🆕 ADVANCED METRICS & PENALTIES
+# ==============================================================================
+def wilson_lower_bound(wins, n, z=1.96):
+    """
+    Calculates the lower bound of the Wilson score interval (95% confidence).
+    This naturally balances Win Rate and Sample Size, penalizing low sample sizes
+    much more effectively than a flat density penalty.
+
+    NOTE: For the Optuna objective function, we now use Bayesian (Add-2) smoothing
+    instead of Wilson. Wilson's extreme penalty for small sample sizes forces the
+    optimizer to choose high-density/low-win-rate setups. Smoothed WR allows it
+    to find highly selective (lower density) but higher win-rate signals.
+    """
+    if n == 0: return 0.0
+    p_hat = wins / n
+    denominator = 1 + z ** 2 / n
+    centre_adjusted = p_hat + z ** 2 / (2 * n)
+    adjusted_std = np.sqrt((p_hat * (1 - p_hat) + z ** 2 / (4 * n)) / n)
+    return max(0.0, (centre_adjusted - z * adjusted_std) / denominator)
+
+
+def calculate_overlap_penalty(signal_indices, lookahead_bars):
+    """
+    Calculates the ratio of overlapping signals (clustering during anomalies).
+    An overlap occurs when the distance between consecutive signals is < lookahead_bars.
+    """
+    if len(signal_indices) <= 1:
+        return 0.0
+    diffs = np.diff(signal_indices)
+    overlaps = np.sum(diffs < lookahead_bars)
+    # Ratio of overlapping instances to total signals
+    overlap_ratio = overlaps / len(signal_indices)
+    return overlap_ratio
 
 
 def calculate_win_rates_vectorized(df, _args, close_col, high_col, low_col):
@@ -351,8 +496,10 @@ def calculate_win_rates_vectorized(df, _args, close_col, high_col, low_col):
                 future_closes = close_prices[future_idx]
                 buy_success = future_closes[:, -1] > strikes  # Shape: (n_signals,)
             else:  # "touched" method
-                future_highs = high_prices[future_idx]
-                buy_success = np.any(future_highs > strikes[:, None], axis=1)
+                future_lows = low_prices[future_idx]
+                # BUY (Put Spread) wins if price NEVER drops below strike.
+                # So the LOW of every future bar must be strictly greater than the strike.
+                buy_success = np.all(future_lows > strikes[:, None], axis=1)
 
             buy_wins = np.count_nonzero(buy_success)
             total_buy = len(valid_buy_pos)
@@ -376,8 +523,10 @@ def calculate_win_rates_vectorized(df, _args, close_col, high_col, low_col):
                 future_closes = close_prices[future_idx]
                 sell_success = future_closes[:, -1] < strikes
             else:  # "touched" method
-                future_lows = low_prices[future_idx]
-                sell_success = np.any(future_lows < strikes[:, None], axis=1)
+                future_highs = high_prices[future_idx]
+                # SELL (Call Spread) wins if price NEVER spikes above strike.
+                # So the HIGH of every future bar must be strictly less than the strike.
+                sell_success = np.all(future_highs < strikes[:, None], axis=1)
 
             sell_wins = np.count_nonzero(sell_success)
             total_sell = len(valid_sell_pos)
@@ -418,7 +567,8 @@ def calculate_win_rates(df, _args, close_col, high_col, low_col):
         price = df[close_col].iloc[pos]
         strike = price * _args.put_strike_pct
         future_df = df.iloc[pos + 1: pos + 1 + lookahead]
-        success = future_df[close_col].iloc[-1] > strike if method == "final_close" else (future_df[high_col] > strike).any()
+        # BUY (Put Spread) wins if price NEVER drops below strike.
+        success = future_df[close_col].iloc[-1] > strike if method == "final_close" else (future_df[low_col].min() > strike)
         if success: buy_wins += 1
 
     for idx in sell_indices:
@@ -428,7 +578,8 @@ def calculate_win_rates(df, _args, close_col, high_col, low_col):
         price = df[close_col].iloc[pos]
         strike = price * _args.call_strike_pct
         future_df = df.iloc[pos + 1: pos + 1 + lookahead]
-        success = future_df[close_col].iloc[-1] < strike if method == "final_close" else (future_df[low_col] < strike).any()
+        # SELL (Call Spread) wins if price NEVER spikes above strike.
+        success = future_df[close_col].iloc[-1] < strike if method == "final_close" else (future_df[high_col].max() < strike)
         if success: sell_wins += 1
 
     buy_wr = buy_wins / total_buy if total_buy > 0 else 0.0
@@ -485,8 +636,9 @@ def calculate_yearly_win_rates_vectorized(df, args, close_col, high_col, low_col
                     future_closes = close_prices[future_idx]
                     success = future_closes[:, -1] > strikes
                 else:
-                    future_highs = high_prices[future_idx]
-                    success = np.any(future_highs > strikes[:, None], axis=1)
+                    future_lows = low_prices[future_idx]
+                    # BUY (Put Spread)
+                    success = np.all(future_lows > strikes[:, None], axis=1)
 
                 buy_wins = np.count_nonzero(success)
                 total_buy = len(valid_pos)
@@ -509,8 +661,9 @@ def calculate_yearly_win_rates_vectorized(df, args, close_col, high_col, low_col
                     future_closes = close_prices[future_idx]
                     success = future_closes[:, -1] < strikes
                 else:
-                    future_lows = low_prices[future_idx]
-                    success = np.any(future_lows < strikes[:, None], axis=1)
+                    future_highs = high_prices[future_idx]
+                    # SELL (Call Spread)
+                    success = np.all(future_highs < strikes[:, None], axis=1)
 
                 sell_wins = np.count_nonzero(success)
                 total_sell = len(valid_pos)
@@ -566,7 +719,8 @@ def calculate_yearly_win_rates(df, args, close_col, high_col, low_col):
             price = df[close_col].iloc[pos]
             strike = price * args.put_strike_pct
             future_df = df.iloc[pos + 1: pos + 1 + lookahead]
-            success = future_df[close_col].iloc[-1] > strike if method == "final_close" else (future_df[high_col] > strike).any()
+            # BUY (Put Spread)
+            success = future_df[close_col].iloc[-1] > strike if method == "final_close" else (future_df[low_col].min() > strike)
             if success: buy_wins += 1
 
         for idx in sell_indices:
@@ -576,7 +730,8 @@ def calculate_yearly_win_rates(df, args, close_col, high_col, low_col):
             price = df[close_col].iloc[pos]
             strike = price * args.call_strike_pct
             future_df = df.iloc[pos + 1: pos + 1 + lookahead]
-            success = future_df[close_col].iloc[-1] < strike if method == "final_close" else (future_df[low_col] < strike).any()
+            # SELL (Call Spread)
+            success = future_df[close_col].iloc[-1] < strike if method == "final_close" else (future_df[high_col].max() < strike)
             if success: sell_wins += 1
 
         buy_wr = buy_wins / total_buy if total_buy > 0 else 0.0
@@ -634,13 +789,14 @@ def print_yearly_stats(yearly_df, ticker, overall_wr=None):
         print(f"{'─' * 80}")
         print(f"   🟢 Buy:  {total_buy_wins:,} wins / {total_buy:,} signals → {overall_buy_wr:6.2f}%")
         print(f"   🔴 Sell: {total_sell_wins:,} wins / {total_sell:,} signals → {overall_sell_wr:6.2f}%")
-        print(f"   🎯 Combined: {total_buy_wins + total_sell_wins:,} wins / {total_buy + total_sell:,} signals → {overall_combined:6.2f}%")
+        print(f"   🎯 Combined: {total_buy_wins + total_sell_wins:,} wins / {total_buy + total_sell:,} signals → {overall_combined:.2%}")
         print(f"{'=' * 80}\n")
 
 
 def plot_results(df, args, close_col, high_col, low_col, rsi_col, sma_50_col,
                  fib_50_col, fib_618_col, buy_sig_col, sell_sig_col,
-                 reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col):
+                 reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col,
+                 rsi_midline=50, rsi_oversold=30, rsi_overbought=70):
     try:
         import matplotlib.pyplot as plt
         from matplotlib.dates import DateFormatter
@@ -691,12 +847,12 @@ def plot_results(df, args, close_col, high_col, low_col, rsi_col, sma_50_col,
         rsi_ema_10_col = ('RSI_EMA_10', args.ticker)
         if rsi_ema_10_col in df_plot.columns:
             ax2.plot(df_plot.index, df_plot[rsi_ema_10_col], label='RSI EMA(10)', color='cyan', linewidth=0.8)
-        ax2.axhline(y=70, color='red', linestyle='--', alpha=0.5, label='Overbought (70)')
-        ax2.axhline(y=30, color='green', linestyle='--', alpha=0.5, label='Oversold (30)')
-        ax2.axhline(y=50, color='gray', linestyle=':', alpha=0.3, label='Midline (50)')
+        ax2.axhline(y=rsi_overbought, color='red', linestyle='--', alpha=0.5, label=f'Overbought ({rsi_overbought})')
+        ax2.axhline(y=rsi_oversold, color='green', linestyle='--', alpha=0.5, label=f'Oversold ({rsi_oversold})')
+        ax2.axhline(y=rsi_midline, color='gray', linestyle=':', alpha=0.3, label=f'Midline ({rsi_midline})')
         if rsi_ema_10_col in df_plot.columns:
-            crossover_buy = (df_plot[rsi_col].shift(1) < df_plot[rsi_ema_10_col].shift(1)) & (df_plot[rsi_col] > df_plot[rsi_ema_10_col]) & (df_plot[rsi_col] < 30)
-            crossover_sell = (df_plot[rsi_col].shift(1) > df_plot[rsi_ema_10_col].shift(1)) & (df_plot[rsi_col] < df_plot[rsi_ema_10_col]) & (df_plot[rsi_col] > 70)
+            crossover_buy = (df_plot[rsi_col].shift(1) < df_plot[rsi_ema_10_col].shift(1)) & (df_plot[rsi_col] > df_plot[rsi_ema_10_col]) & (df_plot[rsi_col] < rsi_oversold)
+            crossover_sell = (df_plot[rsi_col].shift(1) > df_plot[rsi_ema_10_col].shift(1)) & (df_plot[rsi_col] < df_plot[rsi_ema_10_col]) & (df_plot[rsi_col] > rsi_overbought)
             if crossover_buy.any(): ax2.scatter(df_plot.index[crossover_buy], df_plot[rsi_col][crossover_buy], marker='^', color='green', s=100, zorder=5, edgecolors='white')
             if crossover_sell.any(): ax2.scatter(df_plot.index[crossover_sell], df_plot[rsi_col][crossover_sell], marker='v', color='red', s=100, zorder=5, edgecolors='white')
 
@@ -739,7 +895,7 @@ def generate_model_name(args, params, score):
     # Add key args that affect model behavior
     arg_parts = []
     if hasattr(args, 'lookahead_bars'):
-        arg_parts.append(f"lookahead-{args.lookahead_bars}")
+        arg_parts.append(f"la-{args.lookahead_bars}")
     if hasattr(args, 'method'):
         arg_parts.append(f"m-{args.method}")
     if hasattr(args, 'put_strike_pct'):
@@ -754,15 +910,15 @@ def generate_model_name(args, params, score):
         args.ticker.replace('^', ''),
         args.dataset_id,
         args.optimize_target,
-        f"score-{score:.12f}",
-        '_'.join(param_parts),
-        '_'.join(arg_parts),
+        f"val_score-{score:.12f}",
+        '__'.join(param_parts),
+        '__'.join(arg_parts),
         timestamp
     ]
 
     # Filter out empty parts and join
     name_parts = [p for p in name_parts if p]
-    filename = '_'.join(name_parts) + '.pkl'
+    filename = '__'.join(name_parts) + '.pkl'
 
     # Sanitize filename (remove any problematic characters)
     filename = filename.replace('/', '_').replace('\\', '_').replace(':', '_')
@@ -776,7 +932,7 @@ def save_model(params, score, args, validation_score=None, train_val_split=None)
     """
     os.makedirs(args.output_dir, exist_ok=True)
 
-    model_name = generate_model_name(args, params, score)
+    model_name = generate_model_name(args, params, validation_score)
     model_path = os.path.join(args.output_dir, model_name)
 
     model_data = {
@@ -804,8 +960,8 @@ def save_model(params, score, args, validation_score=None, train_val_split=None)
     if args.verbose:
         print(f"💾 Model saved to: {model_path}")
         if validation_score is not None:
-            print(f"   📊 Validation Score: {validation_score:.8f}")
-            print(f"   📊 Training Score  : {score:.8f}")
+            print(f"   📊 Validation Win Rate: {validation_score:.8f}")
+            print(f"   📊 Training Win Rate  : {score:.8f}")
 
     return model_path
 
@@ -826,25 +982,78 @@ def load_model(model_path):
 # ==============================================================================
 # 🆕 REAL-TIME MODE FUNCTIONS
 # ==============================================================================
-def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col):
+def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col, volume_col, open_col):
     """
     Run the strategy on the latest datapoint to check for signals.
     Returns dict with signal info.
     """
     df = df_base.copy()
 
+    # Retrieve min_buy_confluence and min_sell_confluence parameters (default to 1 for backward compatibility)
+    min_buy_confluence = params.get('min_buy_confluence', 1)
+    min_sell_confluence = params.get('min_sell_confluence', 1)
+
     # Apply strategy functions with loaded params
     df, rsi_col, pullback_buy_col, pullback_sell_col, ema_cross_buy_col, ema_cross_sell_col, ma_conf_buy_col = \
         implement_rsi_strategies(df, close_col, _args.ticker,
-                                 params['rsi_length'], params['rsi_signal_len'], params['sma_len'])
+                                 params['rsi_length'], params['rsi_signal_len'], params['sma_len'],
+                                 params.get('rsi_midline', 50), params.get('rsi_oversold', 30), params.get('rsi_overbought', 70))
     df, reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col = \
         find_divergences(df, high_col, low_col, rsi_col, _args.ticker, params['div_window'])
-    df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, params['fib_lookback'])
+    df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, params['fib_lookback'], params.get('rsi_midline', 50))
 
-    buy_cols = [pullback_buy_col, ema_cross_buy_col, ma_conf_buy_col, fib_rsi_buy_col, reg_bull_div_col, hid_bull_div_col]
-    sell_cols = [pullback_sell_col, ema_cross_sell_col, reg_bear_div_col, hid_bear_div_col]
-    df[('Signal_Buy', _args.ticker)] = df[buy_cols].fillna(False).any(axis=1)
-    df[('Signal_Sell', _args.ticker)] = df[sell_cols].fillna(False).any(axis=1)
+    # NEW STRATEGIES
+    macd_buy_col, macd_sell_col, bb_buy_col, bb_sell_col, vol_buy_col, vol_sell_col, stoch_buy_col, stoch_sell_col, vwap_buy_col, vwap_sell_col = \
+        implement_additional_strategies(df, close_col, high_col, low_col, volume_col, open_col, _args.ticker,
+                                        macd_fast=params.get('macd_fast', 12),
+                                        macd_slow=params.get('macd_slow', 26),
+                                        macd_signal=params.get('macd_signal', 9),
+                                        bb_length=params.get('bb_length', 20),
+                                        bb_std=params.get('bb_std', 2.0),
+                                        vol_sma_length=params.get('vol_sma_length', 20),
+                                        vol_multiplier=params.get('vol_multiplier', 2.0),
+                                        stoch_k_period=params.get('stoch_k_period', 14),
+                                        stoch_d_period=params.get('stoch_d_period', 3),
+                                        stoch_smooth_k_period=params.get('stoch_smooth_k_period', 1),
+                                        stoch_oversold=params.get('stoch_oversold', 20),
+                                        stoch_overbought=params.get('stoch_overbought', 80),
+                                        vwap_window=params.get('vwap_window', 50))
+
+    # 0/1 triggers for strategy inclusion (default to 1 for backward compatibility)
+    buy_cols = []
+    if params.get('use_pullback_buy', 1): buy_cols.append(pullback_buy_col)
+    if params.get('use_ema_cross_buy', 1): buy_cols.append(ema_cross_buy_col)
+    if params.get('use_ma_conf_buy', 1): buy_cols.append(ma_conf_buy_col)
+    if params.get('use_fib_rsi_buy', 1): buy_cols.append(fib_rsi_buy_col)
+    if params.get('use_reg_bull_div', 1): buy_cols.append(reg_bull_div_col)
+    if params.get('use_hid_bull_div', 1): buy_cols.append(hid_bull_div_col)
+    if params.get('use_macd_buy', 1): buy_cols.append(macd_buy_col)
+    if params.get('use_bb_buy', 1): buy_cols.append(bb_buy_col)
+    if params.get('use_vol_buy', 1): buy_cols.append(vol_buy_col)
+    if params.get('use_stoch_buy', 1): buy_cols.append(stoch_buy_col)
+    if params.get('use_vwap_buy', 1): buy_cols.append(vwap_buy_col)
+
+    sell_cols = []
+    if params.get('use_pullback_sell', 1): sell_cols.append(pullback_sell_col)
+    if params.get('use_ema_cross_sell', 1): sell_cols.append(ema_cross_sell_col)
+    if params.get('use_reg_bear_div', 1): sell_cols.append(reg_bear_div_col)
+    if params.get('use_hid_bear_div', 1): sell_cols.append(hid_bear_div_col)
+    if params.get('use_macd_sell', 1): sell_cols.append(macd_sell_col)
+    if params.get('use_bb_sell', 1): sell_cols.append(bb_sell_col)
+    if params.get('use_vol_sell', 1): sell_cols.append(vol_sell_col)
+    if params.get('use_stoch_sell', 1): sell_cols.append(stoch_sell_col)
+    if params.get('use_vwap_sell', 1): sell_cols.append(vwap_sell_col)
+
+    # Aggregate signals based on minimum confluence required to narrow down quantity
+    if len(buy_cols) > 0:
+        df[('Signal_Buy', _args.ticker)] = df[buy_cols].fillna(False).sum(axis=1) >= min_buy_confluence
+    else:
+        df[('Signal_Buy', _args.ticker)] = False
+
+    if len(sell_cols) > 0:
+        df[('Signal_Sell', _args.ticker)] = df[sell_cols].fillna(False).sum(axis=1) >= min_sell_confluence
+    else:
+        df[('Signal_Sell', _args.ticker)] = False
 
     # Get latest signal
     latest_idx = df.index[-1]
@@ -866,15 +1075,25 @@ def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col)
             'fib_rsi_buy': bool(df.loc[latest_idx, fib_rsi_buy_col]) if fib_rsi_buy_col in df.columns else False,
             'bullish_div': bool(df.loc[latest_idx, reg_bull_div_col]) if reg_bull_div_col in df.columns else False,
             'hidden_bull_div': bool(df.loc[latest_idx, hid_bull_div_col]) if hid_bull_div_col in df.columns else False,
+            'macd_buy': bool(df.loc[latest_idx, macd_buy_col]) if macd_buy_col in df.columns else False,
+            'bb_buy': bool(df.loc[latest_idx, bb_buy_col]) if bb_buy_col in df.columns else False,
+            'vol_buy': bool(df.loc[latest_idx, vol_buy_col]) if vol_buy_col in df.columns else False,
+            'stoch_buy': bool(df.loc[latest_idx, stoch_buy_col]) if stoch_buy_col in df.columns else False,
+            'vwap_buy': bool(df.loc[latest_idx, vwap_buy_col]) if vwap_buy_col in df.columns else False,
             'pullback_sell': bool(df.loc[latest_idx, pullback_sell_col]) if pullback_sell_col in df.columns else False,
             'ema_cross_sell': bool(df.loc[latest_idx, ema_cross_sell_col]) if ema_cross_sell_col in df.columns else False,
             'bearish_div': bool(df.loc[latest_idx, reg_bear_div_col]) if reg_bear_div_col in df.columns else False,
             'hidden_bear_div': bool(df.loc[latest_idx, hid_bear_div_col]) if hid_bear_div_col in df.columns else False,
+            'macd_sell': bool(df.loc[latest_idx, macd_sell_col]) if macd_sell_col in df.columns else False,
+            'bb_sell': bool(df.loc[latest_idx, bb_sell_col]) if bb_sell_col in df.columns else False,
+            'vol_sell': bool(df.loc[latest_idx, vol_sell_col]) if vol_sell_col in df.columns else False,
+            'stoch_sell': bool(df.loc[latest_idx, stoch_sell_col]) if stoch_sell_col in df.columns else False,
+            'vwap_sell': bool(df.loc[latest_idx, vwap_sell_col]) if vwap_sell_col in df.columns else False,
         }
     }
 
 
-def real_time_mode(args, close_col, high_col, low_col):
+def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
     """
     Real-time mode: load model from path and test latest datapoint for signals.
     """
@@ -897,7 +1116,7 @@ def real_time_mode(args, close_col, high_col, low_col):
     val_score = model_data.get('validation_score')
 
     _dataset_id = model_data['args']['dataset_id']
-    _ticker     = model_data['args']['ticker']
+    _ticker = model_data['args']['ticker']
     _cache_filename = get_filename_for_dataset(model_data['args']['dataset_id'], older_dataset=None)
     with open(_cache_filename, 'rb') as f:
         _master_data_cache = pickle.load(f)
@@ -918,7 +1137,7 @@ def real_time_mode(args, close_col, high_col, low_col):
         print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%}")
     # Run strategy on latest datapoint
     if args.verbose: print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {_ticker} | Dataset {_dataset_id} | Lookahead: {lookahead} bars")
-    result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col)
+    result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col, volume_col=volume_col, open_col=open_col)
 
     # ==============================================================================
     # 📊 RECOMPUTE TRAIN & VALIDATION WIN RATES
@@ -945,11 +1164,11 @@ def real_time_mode(args, close_col, high_col, low_col):
 
         # Evaluate on the training set
         buy_wr_train, sell_wr_train, combined_wr_train, _, _, _, _, _, _, _ = \
-            run_strategy_and_evaluate(df_train, eval_args, close_col, high_col, low_col, **params)
+            run_strategy_and_evaluate(df_train, eval_args, close_col, high_col, low_col, volume_col, open_col, **params)
 
         # Evaluate on the validation set
         buy_wr_val, sell_wr_val, combined_wr_val, _, _, _, _, _, _, _ = \
-            run_strategy_and_evaluate(df_val, eval_args, close_col, high_col, low_col, **params)
+            run_strategy_and_evaluate(df_val, eval_args, close_col, high_col, low_col, volume_col, open_col, **params)
 
         # Extract the specific win rate that was targeted during optimization
         if optimize_target == 'buy_wr':
@@ -976,7 +1195,7 @@ def real_time_mode(args, close_col, high_col, low_col):
     current_price, target_price, target_date = result['close'], None, None
     assert df_base[close_col].iloc[-1] == current_price
     if args.verbose: print(f"💰 Last Close Price: ${current_price:.2f}")
-    buy_signal_detected  = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
+    buy_signal_detected = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
     sell_signal_detected = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
     result['buy_signal_detected'] = buy_signal_detected
     result['sell_signal_detected'] = sell_signal_detected
@@ -1060,18 +1279,68 @@ def real_time_mode(args, close_col, high_col, low_col):
 # ==============================================================================
 # OPTUNA INTEGRATION
 # ==============================================================================
-def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, rsi_length, rsi_signal_len, sma_len, fib_lookback, div_window):
+def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, volume_col, open_col, rsi_length, rsi_signal_len, sma_len, fib_lookback, div_window, rsi_midline=50, rsi_oversold=30, rsi_overbought=70, min_buy_confluence=1, min_sell_confluence=1,
+                              macd_fast=12, macd_slow=26, macd_signal=9,
+                              bb_length=20, bb_std=2.0,
+                              vol_sma_length=20, vol_multiplier=2.0,
+                              stoch_k_period=14, stoch_d_period=3, stoch_smooth_k_period=1, stoch_oversold=20, stoch_overbought=80,
+                              vwap_window=50,
+                              use_pullback_buy=1, use_ema_cross_buy=1, use_ma_conf_buy=1, use_fib_rsi_buy=1,
+                              use_reg_bull_div=1, use_hid_bull_div=1, use_macd_buy=1, use_bb_buy=1,
+                              use_vol_buy=1, use_stoch_buy=1, use_vwap_buy=1,
+                              use_pullback_sell=1, use_ema_cross_sell=1, use_reg_bear_div=1, use_hid_bear_div=1,
+                              use_macd_sell=1, use_bb_sell=1, use_vol_sell=1, use_stoch_sell=1, use_vwap_sell=1):
     df = df_base.copy()
     df, rsi_col, pullback_buy_col, pullback_sell_col, ema_cross_buy_col, ema_cross_sell_col, ma_conf_buy_col = \
-        implement_rsi_strategies(df, close_col, _args.ticker, rsi_length, rsi_signal_len, sma_len)
+        implement_rsi_strategies(df, close_col, _args.ticker, rsi_length, rsi_signal_len, sma_len, rsi_midline, rsi_oversold, rsi_overbought)
     df, reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col = \
         find_divergences(df, high_col, low_col, rsi_col, _args.ticker, div_window)
-    df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, fib_lookback)
+    df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, fib_lookback, rsi_midline)
 
-    buy_cols = [pullback_buy_col, ema_cross_buy_col, ma_conf_buy_col, fib_rsi_buy_col, reg_bull_div_col, hid_bull_div_col]
-    sell_cols = [pullback_sell_col, ema_cross_sell_col, reg_bear_div_col, hid_bear_div_col]
-    df[('Signal_Buy', _args.ticker)] = df[buy_cols].fillna(False).any(axis=1)
-    df[('Signal_Sell', _args.ticker)] = df[sell_cols].fillna(False).any(axis=1)
+    # NEW STRATEGIES
+    macd_buy_col, macd_sell_col, bb_buy_col, bb_sell_col, vol_buy_col, vol_sell_col, stoch_buy_col, stoch_sell_col, vwap_buy_col, vwap_sell_col = \
+        implement_additional_strategies(df, close_col, high_col, low_col, volume_col, open_col, _args.ticker,
+                                        macd_fast=macd_fast, macd_slow=macd_slow, macd_signal=macd_signal,
+                                        bb_length=bb_length, bb_std=bb_std,
+                                        vol_sma_length=vol_sma_length, vol_multiplier=vol_multiplier,
+                                        stoch_k_period=stoch_k_period, stoch_d_period=stoch_d_period, stoch_smooth_k_period=stoch_smooth_k_period, stoch_oversold=stoch_oversold, stoch_overbought=stoch_overbought,
+                                        vwap_window=vwap_window)
+
+    # 0/1 triggers for strategy inclusion
+    buy_cols = []
+    if use_pullback_buy: buy_cols.append(pullback_buy_col)
+    if use_ema_cross_buy: buy_cols.append(ema_cross_buy_col)
+    if use_ma_conf_buy: buy_cols.append(ma_conf_buy_col)
+    if use_fib_rsi_buy: buy_cols.append(fib_rsi_buy_col)
+    if use_reg_bull_div: buy_cols.append(reg_bull_div_col)
+    if use_hid_bull_div: buy_cols.append(hid_bull_div_col)
+    if use_macd_buy: buy_cols.append(macd_buy_col)
+    if use_bb_buy: buy_cols.append(bb_buy_col)
+    if use_vol_buy: buy_cols.append(vol_buy_col)
+    if use_stoch_buy: buy_cols.append(stoch_buy_col)
+    if use_vwap_buy: buy_cols.append(vwap_buy_col)
+
+    sell_cols = []
+    if use_pullback_sell: sell_cols.append(pullback_sell_col)
+    if use_ema_cross_sell: sell_cols.append(ema_cross_sell_col)
+    if use_reg_bear_div: sell_cols.append(reg_bear_div_col)
+    if use_hid_bear_div: sell_cols.append(hid_bear_div_col)
+    if use_macd_sell: sell_cols.append(macd_sell_col)
+    if use_bb_sell: sell_cols.append(bb_sell_col)
+    if use_vol_sell: sell_cols.append(vol_sell_col)
+    if use_stoch_sell: sell_cols.append(stoch_sell_col)
+    if use_vwap_sell: sell_cols.append(vwap_sell_col)
+
+    # Aggregate signals based on minimum confluence required to narrow down quantity
+    if len(buy_cols) > 0:
+        df[('Signal_Buy', _args.ticker)] = df[buy_cols].fillna(False).sum(axis=1) >= min_buy_confluence
+    else:
+        df[('Signal_Buy', _args.ticker)] = False
+
+    if len(sell_cols) > 0:
+        df[('Signal_Sell', _args.ticker)] = df[sell_cols].fillna(False).sum(axis=1) >= min_sell_confluence
+    else:
+        df[('Signal_Sell', _args.ticker)] = False
 
     buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell = calculate_win_rates_vectorized(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
     if _args.sanity_check:
@@ -1081,41 +1350,173 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, rsi_
         assert np.allclose(combined_wr, combined_wr2)
         assert np.allclose(buy_wins, buy_wins2)
         assert np.allclose(sell_wins, sell_wins2)
-    eval_buy, eval_sell = total_buy, total_sell
+
     total_bars = len(df.dropna(subset=[close_col]))
     buy_density = int(df[('Signal_Buy', _args.ticker)].sum()) / total_bars if total_bars > 0 else 0
     sell_density = int(df[('Signal_Sell', _args.ticker)].sum()) / total_bars if total_bars > 0 else 0
 
-    return buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df
+    return buy_wr, sell_wr, combined_wr, buy_density, sell_density, total_buy, total_sell, buy_wins, sell_wins, df
 
 
-def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
-    rsi_length = trial.suggest_int('rsi_length', 5, 30)
-    rsi_signal_len = trial.suggest_int('rsi_signal_len', 2, 60)
-    sma_len = trial.suggest_int('sma_len', 10, 200)
-    fib_lookback = trial.suggest_int('fib_lookback', 2, 200)
-    div_window = trial.suggest_int('div_window', 3, 20)
+def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume_col, open_col):
+    # 0. 0/1 Triggers for Strategy Inclusion (Controlled via argparse)
+    use_pullback_buy = 1 if getattr(_args, 'use_pullback_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_ema_cross_buy = 1 if getattr(_args, 'use_ema_cross_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_ma_conf_buy = 1 if getattr(_args, 'use_ma_conf_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_fib_rsi_buy = 1 if getattr(_args, 'use_fib_rsi_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_reg_bull_div = 1 if getattr(_args, 'use_reg_bull_div', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_hid_bull_div = 1 if getattr(_args, 'use_hid_bull_div', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_macd_buy = 1 if getattr(_args, 'use_macd_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_bb_buy = 1 if getattr(_args, 'use_bb_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_vol_buy = 1 if getattr(_args, 'use_vol_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_stoch_buy = 1 if getattr(_args, 'use_stoch_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+    use_vwap_buy = 1 if getattr(_args, 'use_vwap_buy', True) and _args.optimize_target in ['buy_wr', 'combined_wr'] else 0
+
+    use_pullback_sell = 1 if getattr(_args, 'use_pullback_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_ema_cross_sell = 1 if getattr(_args, 'use_ema_cross_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_reg_bear_div = 1 if getattr(_args, 'use_reg_bear_div', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_hid_bear_div = 1 if getattr(_args, 'use_hid_bear_div', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_macd_sell = 1 if getattr(_args, 'use_macd_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_bb_sell = 1 if getattr(_args, 'use_bb_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_vol_sell = 1 if getattr(_args, 'use_vol_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_stoch_sell = 1 if getattr(_args, 'use_stoch_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+    use_vwap_sell = 1 if getattr(_args, 'use_vwap_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
+
+    # 1. RSI Length: Standard is 14. 7-21 covers short to medium momentum without excessive noise/lag.
+    rsi_length = trial.suggest_int('rsi_length', 7, 21)
+
+    # 2. RSI Signal Line (EMA): Must be faster than RSI to generate crossovers. 3-12 is standard.
+    rsi_signal_len = trial.suggest_int('rsi_signal_len', 3, 12)
+
+    # 3. SMA Length: Used for trend direction. 20-100 covers standard swing trading MAs (20, 50, 100).
+    sma_len = trial.suggest_int('sma_len', 20, 100)
+
+    # 4. Fibonacci Lookback: Window to find swing high/low. 10-60 captures recent, actionable swings.
+    fib_lookback = trial.suggest_int('fib_lookback', 10, 60)
+
+    # 5. Divergence Window: Lookback for local pivots. 5-15 prevents noise (3 is too small for a real pivot).
+    div_window = trial.suggest_int('div_window', 5, 15)
+
+    # 6. RSI Midline: Center threshold. 40-60 is logically sound for trend bias.
+    rsi_midline = trial.suggest_int('rsi_midline', 40, 60)
+
+    # 7. RSI Oversold/Overbought: 10 and 90 are statistical anomalies. 20-35 and 65-80 cover realistic extremes.
+    rsi_oversold = trial.suggest_int('rsi_oversold', 20 - 5, 35 + 5)
+    rsi_overbought = trial.suggest_int('rsi_overbought', 65 - 5, 80 + 5)
+
+    # 8. Minimum Confluence: Number of strategies that must agree to trigger a signal.
+    # Higher values drastically reduce signal quantity, increasing selectivity
+    # and filtering out weaker, isolated setups. Dynamically capped by enabled strategies.
+    total_buy_strategies_enabled = (use_pullback_buy + use_ema_cross_buy + use_ma_conf_buy + use_fib_rsi_buy +
+                                    use_reg_bull_div + use_hid_bull_div + use_macd_buy + use_bb_buy +
+                                    use_vol_buy + use_stoch_buy + use_vwap_buy)
+    total_sell_strategies_enabled = (use_pullback_sell + use_ema_cross_sell + use_reg_bear_div + use_hid_bear_div +
+                                     use_macd_sell + use_bb_sell + use_vol_sell + use_stoch_sell + use_vwap_sell)
+
+    min_buy_confluence = trial.suggest_int('min_buy_confluence', 1, 11)
+    min_sell_confluence = trial.suggest_int('min_sell_confluence', 1, 9)
+
+    # 9. MACD Crossovers
+    macd_fast = trial.suggest_int('macd_fast', 5, 15) if use_macd_buy or use_macd_sell else trial.suggest_int('macd_fast', 5, 5)
+    macd_slow = trial.suggest_int('macd_slow', 15, 35) if use_macd_buy or use_macd_sell else trial.suggest_int('macd_slow', 15, 15)
+    macd_signal = trial.suggest_int('macd_signal', 5, 15) if use_macd_buy or use_macd_sell else trial.suggest_int('macd_signal', 5, 5)
+
+    # 10. Bollinger Bands
+    bb_length = trial.suggest_int('bb_length', 10, 50) if use_bb_buy or use_bb_sell else trial.suggest_int('bb_length', 10, 10)
+    bb_std = trial.suggest_float('bb_std', 1.0, 3.0) if use_bb_buy or use_bb_sell else trial.suggest_float('bb_std', 1.0, 1.0)
+
+    # 11. Volume Spikes
+    vol_sma_length = trial.suggest_int('vol_sma_length', 10, 50) if use_vol_buy or use_vol_sell else trial.suggest_int('vol_sma_length', 10, 10)
+    vol_multiplier = trial.suggest_float('vol_multiplier', 1.0, 3.0) if use_vol_buy or use_vol_sell else trial.suggest_float('vol_multiplier', 1.0, 1.0)
+
+    # 12. Stochastic Oscillators
+    stoch_k_period = trial.suggest_int('stoch_k_period', 5, 21) if use_stoch_buy or use_stoch_sell else trial.suggest_int('stoch_k_period', 5, 5)
+    stoch_d_period = trial.suggest_int('stoch_d_period', 2, 9) if use_stoch_buy or use_stoch_sell else trial.suggest_int('stoch_d_period', 2, 2)
+    stoch_smooth_k_period = trial.suggest_int('stoch_smooth_k_period', 1, 5) if use_stoch_buy or use_stoch_sell else trial.suggest_int('stoch_smooth_k_period', 1, 1)
+    stoch_oversold = trial.suggest_int('stoch_oversold', 10, 30) if use_stoch_buy or use_stoch_sell else trial.suggest_int('stoch_oversold', 10, 10)
+    stoch_overbought = trial.suggest_int('stoch_overbought', 70, 90) if use_stoch_buy or use_stoch_sell else trial.suggest_int('stoch_overbought', 70, 70)
+
+    # 13. VWAP Retests (Rolling window)
+    vwap_window = trial.suggest_int('vwap_window', 10, 100) if use_vwap_buy or use_vwap_sell else trial.suggest_int('vwap_window', 10, 10)
+
+    # 🚨 CONSTRAINT PRUNING: Instantly discard invalid trials to speed up convergence
+    # A signal line EMA must be shorter than the RSI length to create meaningful crossovers.
+    if rsi_signal_len >= rsi_length:
+        raise optuna.exceptions.TrialPruned()
+
+    # Overbought must be strictly greater than oversold (already guaranteed by ranges, but good practice)
+    if rsi_overbought <= rsi_oversold:
+        raise optuna.exceptions.TrialPruned()
+
+    # MACD fast period must be strictly less than slow period to form valid signals
+    if macd_fast >= macd_slow:
+        raise optuna.exceptions.TrialPruned()
+
+    # Prune if min_confluence is greater than the number of enabled strategies (redundant now due to dynamic max, but kept for safety)
+    if (min_buy_confluence > total_buy_strategies_enabled or total_buy_strategies_enabled == 0) and _args.optimize_target in ['buy_wr', 'combined_wr']:
+        raise optuna.exceptions.TrialPruned()
+    if (min_sell_confluence > total_sell_strategies_enabled or total_sell_strategies_enabled == 0) and _args.optimize_target in ['sell_wr', 'combined_wr']:
+        raise optuna.exceptions.TrialPruned()
 
     try:
         # Compute indicators on the full df_base once per trial for efficiency
         df = df_base.copy()
         df, rsi_col, pullback_buy_col, pullback_sell_col, ema_cross_buy_col, ema_cross_sell_col, ma_conf_buy_col = \
-            implement_rsi_strategies(df, close_col, _args.ticker, rsi_length, rsi_signal_len, sma_len)
+            implement_rsi_strategies(df, close_col, _args.ticker, rsi_length, rsi_signal_len, sma_len, rsi_midline, rsi_oversold, rsi_overbought)
         df, reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col = \
             find_divergences(df, high_col, low_col, rsi_col, _args.ticker, div_window)
-        df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, fib_lookback)
+        df, fib_rsi_buy_col = calculate_fibonacci_confluence(df, close_col, high_col, low_col, rsi_col, _args.ticker, fib_lookback, rsi_midline)
 
-        buy_cols = [pullback_buy_col, ema_cross_buy_col, ma_conf_buy_col, fib_rsi_buy_col, reg_bull_div_col, hid_bull_div_col]
-        sell_cols = [pullback_sell_col, ema_cross_sell_col, reg_bear_div_col, hid_bear_div_col]
+        # NEW STRATEGIES
+        macd_buy_col, macd_sell_col, bb_buy_col, bb_sell_col, vol_buy_col, vol_sell_col, stoch_buy_col, stoch_sell_col, vwap_buy_col, vwap_sell_col = \
+            implement_additional_strategies(df, close_col, high_col, low_col, volume_col, open_col, _args.ticker,
+                                            macd_fast=macd_fast, macd_slow=macd_slow, macd_signal=macd_signal,
+                                            bb_length=bb_length, bb_std=bb_std,
+                                            vol_sma_length=vol_sma_length, vol_multiplier=vol_multiplier,
+                                            stoch_k_period=stoch_k_period, stoch_d_period=stoch_d_period, stoch_smooth_k_period=stoch_smooth_k_period, stoch_oversold=stoch_oversold, stoch_overbought=stoch_overbought,
+                                            vwap_window=vwap_window)
+
+        # 0/1 triggers for strategy inclusion
+        buy_cols = []
+        if use_pullback_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(pullback_buy_col)
+        if use_ema_cross_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(ema_cross_buy_col)
+        if use_ma_conf_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(ma_conf_buy_col)
+        if use_fib_rsi_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(fib_rsi_buy_col)
+        if use_reg_bull_div and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(reg_bull_div_col)
+        if use_hid_bull_div and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(hid_bull_div_col)
+        if use_macd_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(macd_buy_col)
+        if use_bb_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(bb_buy_col)
+        if use_vol_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(vol_buy_col)
+        if use_stoch_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(stoch_buy_col)
+        if use_vwap_buy and _args.optimize_target in ['buy_wr', 'combined_wr']: buy_cols.append(vwap_buy_col)
+
+        sell_cols = []
+        if use_pullback_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(pullback_sell_col)
+        if use_ema_cross_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(ema_cross_sell_col)
+        if use_reg_bear_div and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(reg_bear_div_col)
+        if use_hid_bear_div and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(hid_bear_div_col)
+        if use_macd_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(macd_sell_col)
+        if use_bb_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(bb_sell_col)
+        if use_vol_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(vol_sell_col)
+        if use_stoch_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(stoch_sell_col)
+        if use_vwap_sell and _args.optimize_target in ['sell_wr', 'combined_wr']: sell_cols.append(vwap_sell_col)
 
         buy_sig_col = ('Signal_Buy', _args.ticker)
         sell_sig_col = ('Signal_Sell', _args.ticker)
 
-        df[buy_sig_col] = df[buy_cols].fillna(False).any(axis=1)
-        df[sell_sig_col] = df[sell_cols].fillna(False).any(axis=1)
+        # Aggregate signals based on minimum confluence required to narrow down quantity
+        if len(buy_cols) > 0:
+            df[buy_sig_col] = df[buy_cols].fillna(False).sum(axis=1) >= min_buy_confluence
+        else:
+            df[buy_sig_col] = False
 
-        # Initialize TimeSeriesSplit with 20 folds
-        tscv = TimeSeriesSplit(n_splits=20)
+        if len(sell_cols) > 0:
+            df[sell_sig_col] = df[sell_cols].fillna(False).sum(axis=1) >= min_sell_confluence
+        else:
+            df[sell_sig_col] = False
+
+        # Initialize TimeSeriesSplit with 10 folds
+        tscv = TimeSeriesSplit(n_splits=10)
         fold_scores = []
 
         # Evaluate score across all chronological passes
@@ -1143,24 +1544,67 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col):
             df[buy_sig_col] = orig_buy
             df[sell_sig_col] = orig_sell
 
+            # 🎯 MODIFIED OBJECTIVE: Use Smoothed Win Rate + High-Density Penalty
+            # Wilson Score heavily penalizes small sample sizes, which inadvertently forces
+            # the optimizer to select high-density (many signals) setups to narrow the confidence
+            # interval, often sacrificing Win Rate.
+            # By using Bayesian (Add-2) smoothing, we allow the optimizer to discover highly
+            # selective (lower density) setups that have high Win Rates.
+            def smoothed_wr(wins, n):
+                return (wins + 1.0) / (n + 2.0) if n > 0 else 0.0
+
             if _args.optimize_target == 'buy_wr':
-                target = buy_wr
+                raw_target = smoothed_wr(buy_wins, total_buy)
                 density = buy_density
             elif _args.optimize_target == 'sell_wr':
-                target = sell_wr
+                raw_target = smoothed_wr(sell_wins, total_sell)
                 density = sell_density
             else:
-                target = combined_wr
+                raw_target = smoothed_wr(buy_wins + sell_wins, total_buy + total_sell)
                 density = min(buy_density, sell_density)
 
-            # Apply density penalty if needed
-            if density < _args.min_signal_density:
-                target = target - _args.density_penalty
+            # Replace the hard minimum with a smooth approximation
+            # softplus(x) = ln(1 + exp(x))
+            # We scale it with a temperature hyperparameter 'k' (higher k = sharper turn)
+            k = 20.0
+            diff = _args.min_signal_density - density
+
+            if diff > 100 / k:  # Prevent overflow in math.exp
+                smooth_max_diff = diff
+            else:
+                smooth_max_diff = math.log(1.0 + math.exp(k * diff)) / k
+
+            # Apply the fourth root with correct operator precedence
+            density_penalty_val = smooth_max_diff ** 0.25
+            target = raw_target - density_penalty_val
+
+            # Penalize overlapping signals (clustering during anomalies)
+            overlap_penalty = 0.0
+            if _args.optimize_target in ['buy_wr', 'combined_wr']:
+                buy_indices = np.where(df[buy_sig_col].to_numpy())[0]
+                overlap_penalty += calculate_overlap_penalty(buy_indices, _args.lookahead_bars)
+            if _args.optimize_target in ['sell_wr', 'combined_wr']:
+                sell_indices = np.where(df[sell_sig_col].to_numpy())[0]
+                overlap_penalty += calculate_overlap_penalty(sell_indices, _args.lookahead_bars)
+
+            if _args.optimize_target == 'combined_wr':
+                overlap_penalty /= 2.0  # Average the penalty
+
+            # Reduce the target score based on the overlap ratio.
+            # If 50% of signals overlap, the score is halved.
+            target = target * (1.0 - overlap_penalty)
 
             fold_scores.append(target)
 
-        # Return the mean score of all the passes
-        return np.mean(fold_scores) if fold_scores else -1.0
+        # Return the mean score of all the passes minus a consistency penalty
+        mean_score = np.mean(fold_scores)
+        std_score = np.std(fold_scores)
+
+        # Alpha controls how much we punish inconsistency across different time periods
+        alpha = 0.5
+        final_score = mean_score - (alpha * std_score)
+
+        return final_score
 
     except Exception as ee:
         print(ee)
@@ -1175,29 +1619,28 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group = parser.add_argument_group('Data & Symbol')
     data_group.add_argument('--dataset-id', type=str, default='day', help='Dataset identifier')
     data_group.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
-    data_group.add_argument('--length-dataset', type=int, default=999999, help='Trailing data points')
     data_group.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    data_group.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
+    data_group.add_argument("--reduce-n", type=int, default=0, help="Number of most oldest bars to clip from the dataset.")
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
-    strat_group.add_argument('--lookahead-bars', type=int, default=20, dest='lookahead_bars', help='Forward-looking window')
+    strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
     strat_group.add_argument('--min-signal-density', type=float, default=0.04, help='Min signal frequency threshold')
-    strat_group.add_argument('--put-strike-pct', type=float, default=0.96, help='Base put strike multiplier')
-    strat_group.add_argument('--call-strike-pct', type=float, default=1.04, help='Base call strike multiplier')
+    strat_group.add_argument('--put-strike-pct', type=float, default=0.9999, help='Base put strike multiplier')
+    strat_group.add_argument('--call-strike-pct', type=float, default=1.0001, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--optimize', action='store_true', help='Run Optuna hyperparameter optimization')
-    opt_group.add_argument('--optimize-target', type=str, default='combined_wr', choices=['combined_wr', 'buy_wr', 'sell_wr'],
+    opt_group.add_argument('--optimize-target', type=str, default='buy_wr', choices=['combined_wr', 'buy_wr', 'sell_wr'],
                            help='Metric to maximize during optimization')
-    opt_group.add_argument('--density-penalty', type=float, default=0.5,
-                           help='Penalty subtracted from objective if density < min-signal-density')
-    opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials per run')
+    opt_group.add_argument('--n-trials', type=int, default=9999, help='Optuna trials per run')
     opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
-    opt_group.add_argument('--optuna-db', type=str, default=None, help='SQLite path for Optuna persistence.')
-    opt_group.add_argument('--train-ratio', type=float, default=0.7,
+    opt_group.add_argument('--optuna-db', type=str, default=None, help='Database URL for Optuna persistence (e.g., sqlite:///optuna.db or postgresql://user:pass@host/db)')
+    opt_group.add_argument('--train-ratio', type=float, default=0.8,
                            help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
 
     flag_group = parser.add_argument_group('Execution Flags')
@@ -1207,9 +1650,57 @@ def setup_argparse() -> argparse.ArgumentParser:
                             help='Path to saved model .pkl file (required for real-time mode, optional for evaluation)')
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False, help='Short real-time output')
+    flag_group.add_argument('--verbose-optuna-progression', action=argparse.BooleanOptionalAction, default=False, help='')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
     flag_group.add_argument('--plot', action='store_true', default=False, help='Plot results with matplotlib')
     flag_group.add_argument('--sanity-check', action='store_true', default=False, help='Check vectorized implementation consistency')
+
+    # Strategy Toggles: Allow enabling/disabling specific strategies via argparse
+    strat_toggles = parser.add_argument_group('Strategy Toggles')
+
+    # Buy Strategies
+    strat_toggles.add_argument('--use-pullback-buy', action='store_true', default=True, help='Enable Pullback Buy strategy')
+    strat_toggles.add_argument('--no-use-pullback-buy', action='store_false', dest='use_pullback_buy')
+    strat_toggles.add_argument('--use-ema-cross-buy', action='store_true', default=True, help='Enable EMA Cross Buy strategy')
+    strat_toggles.add_argument('--no-use-ema-cross-buy', action='store_false', dest='use_ema_cross_buy')
+    strat_toggles.add_argument('--use-ma-conf-buy', action='store_true', default=True, help='Enable MA Confluence Buy strategy')
+    strat_toggles.add_argument('--no-use-ma-conf-buy', action='store_false', dest='use_ma_conf_buy')
+    strat_toggles.add_argument('--use-fib-rsi-buy', action='store_true', default=True, help='Enable Fibonacci RSI Buy strategy')
+    strat_toggles.add_argument('--no-use-fib-rsi-buy', action='store_false', dest='use_fib_rsi_buy')
+    strat_toggles.add_argument('--use-reg-bull-div', action='store_true', default=True, help='Enable Regular Bullish Divergence strategy')
+    strat_toggles.add_argument('--no-use-reg-bull-div', action='store_false', dest='use_reg_bull_div')
+    strat_toggles.add_argument('--use-hid-bull-div', action='store_true', default=True, help='Enable Hidden Bullish Divergence strategy')
+    strat_toggles.add_argument('--no-use-hid-bull-div', action='store_false', dest='use_hid_bull_div')
+    strat_toggles.add_argument('--use-macd-buy', action='store_true', default=True, help='Enable MACD Buy strategy')
+    strat_toggles.add_argument('--no-use-macd-buy', action='store_false', dest='use_macd_buy')
+    strat_toggles.add_argument('--use-bb-buy', action='store_true', default=True, help='Enable Bollinger Bands Buy strategy')
+    strat_toggles.add_argument('--no-use-bb-buy', action='store_false', dest='use_bb_buy')
+    strat_toggles.add_argument('--use-vol-buy', action='store_true', default=True, help='Enable Volume Spike Buy strategy')
+    strat_toggles.add_argument('--no-use-vol-buy', action='store_false', dest='use_vol_buy')
+    strat_toggles.add_argument('--use-stoch-buy', action='store_true', default=True, help='Enable Stochastic Buy strategy')
+    strat_toggles.add_argument('--no-use-stoch-buy', action='store_false', dest='use_stoch_buy')
+    strat_toggles.add_argument('--use-vwap-buy', action='store_true', default=True, help='Enable VWAP Retest Buy strategy')
+    strat_toggles.add_argument('--no-use-vwap-buy', action='store_false', dest='use_vwap_buy')
+
+    # Sell Strategies
+    strat_toggles.add_argument('--use-pullback-sell', action='store_true', default=True, help='Enable Pullback Sell strategy')
+    strat_toggles.add_argument('--no-use-pullback-sell', action='store_false', dest='use_pullback_sell')
+    strat_toggles.add_argument('--use-ema-cross-sell', action='store_true', default=True, help='Enable EMA Cross Sell strategy')
+    strat_toggles.add_argument('--no-use-ema-cross-sell', action='store_false', dest='use_ema_cross_sell')
+    strat_toggles.add_argument('--use-reg-bear-div', action='store_true', default=True, help='Enable Regular Bearish Divergence strategy')
+    strat_toggles.add_argument('--no-use-reg-bear-div', action='store_false', dest='use_reg_bear_div')
+    strat_toggles.add_argument('--use-hid-bear-div', action='store_true', default=True, help='Enable Hidden Bearish Divergence strategy')
+    strat_toggles.add_argument('--no-use-hid-bear-div', action='store_false', dest='use_hid_bear_div')
+    strat_toggles.add_argument('--use-macd-sell', action='store_true', default=True, help='Enable MACD Sell strategy')
+    strat_toggles.add_argument('--no-use-macd-sell', action='store_false', dest='use_macd_sell')
+    strat_toggles.add_argument('--use-bb-sell', action='store_true', default=True, help='Enable Bollinger Bands Sell strategy')
+    strat_toggles.add_argument('--no-use-bb-sell', action='store_false', dest='use_bb_sell')
+    strat_toggles.add_argument('--use-vol-sell', action='store_true', default=True, help='Enable Volume Spike Sell strategy')
+    strat_toggles.add_argument('--no-use-vol-sell', action='store_false', dest='use_vol_sell')
+    strat_toggles.add_argument('--use-stoch-sell', action='store_true', default=True, help='Enable Stochastic Sell strategy')
+    strat_toggles.add_argument('--no-use-stoch-sell', action='store_false', dest='use_stoch_sell')
+    strat_toggles.add_argument('--use-vwap-sell', action='store_true', default=True, help='Enable VWAP Retest Sell strategy')
+    strat_toggles.add_argument('--no-use-vwap-sell', action='store_false', dest='use_vwap_sell')
 
     return parser
 
@@ -1245,9 +1736,12 @@ def early_stop_on_perfect_success(study, trial):
     Callback to stop optimization when 100% success rate is achieved.
     Objective returns -success_rate, so -100.0 = 100% success.
     """
-    if study.best_value is not None and study.best_value >= 0.999:
-        print(f"\n🎯 100% success rate achieved at trial #{trial.number}! Stopping optimization early...")
-        study.stop()
+    try:
+        if study.best_value is not None and study.best_value >= 0.999:
+            print(f"\n🎯 100% success rate achieved at trial #{trial.number}! Stopping optimization early...")
+            study.stop()
+    except:
+        pass
 
 
 def entry(args):
@@ -1255,20 +1749,12 @@ def entry(args):
     close_col = ('Close', args.ticker)
     high_col = ('High', args.ticker)
     low_col = ('Low', args.ticker)
-    if not args.real_time:
-        cache_filename = get_filename_for_dataset(args.dataset_id, older_dataset=None)
-        if args.verbose: print(f"📂 Loading dataset from: {cache_filename}")
-        with open(cache_filename, 'rb') as f:
-            master_data_cache = pickle.load(f)
-        if args.ticker not in master_data_cache:
-            raise KeyError(f"Ticker '{args.ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
-        df_base = master_data_cache[args.ticker].sort_index()
-        if args.length_dataset != 999999:
-            df_base = df_base.iloc[-args.length_dataset:].copy()
-        if args.clip and args.real_time:
-            df_base = df_base.iloc[:-1].copy()
-        if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
+    volume_col = ('Volume', args.ticker)
+    open_col = ('Open', args.ticker)
 
+    if not args.real_time:
+        df_base = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": args.clip_n, "reduce_n": args.reduce_n})
+        if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
         if args.verbose:
             print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | Bars: {len(df_base)}")
             if args.real_time:
@@ -1285,11 +1771,42 @@ def entry(args):
 
     # 🔹 Handle real-time mode first
     if args.real_time:
-        return real_time_mode(args, close_col, high_col, low_col)
+        return real_time_mode(args, close_col, high_col, low_col, volume_col, open_col)
     assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
     if args.verbose: print_startup_banner(args)
+
     # Default params (used if not optimizing)
-    params = {'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5}
+    params = {
+        'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5,
+        'rsi_midline': 50, 'rsi_oversold': 30, 'rsi_overbought': 70,
+        'min_buy_confluence': 1, 'min_sell_confluence': 1,
+        'macd_fast': 12, 'macd_slow': 26, 'macd_signal': 9,
+        'bb_length': 20, 'bb_std': 2.0,
+        'vol_sma_length': 20, 'vol_multiplier': 2.0,
+        'stoch_k_period': 14, 'stoch_d_period': 3, 'stoch_smooth_k_period': 1, 'stoch_oversold': 20, 'stoch_overbought': 80,
+        'vwap_window': 50,
+        # 0/1 triggers for strategy inclusion (read from argparse, default to 1)
+        'use_pullback_buy': 1 if getattr(args, 'use_pullback_buy', True) else 0,
+        'use_ema_cross_buy': 1 if getattr(args, 'use_ema_cross_buy', True) else 0,
+        'use_ma_conf_buy': 1 if getattr(args, 'use_ma_conf_buy', True) else 0,
+        'use_fib_rsi_buy': 1 if getattr(args, 'use_fib_rsi_buy', True) else 0,
+        'use_reg_bull_div': 1 if getattr(args, 'use_reg_bull_div', True) else 0,
+        'use_hid_bull_div': 1 if getattr(args, 'use_hid_bull_div', True) else 0,
+        'use_macd_buy': 1 if getattr(args, 'use_macd_buy', True) else 0,
+        'use_bb_buy': 1 if getattr(args, 'use_bb_buy', True) else 0,
+        'use_vol_buy': 1 if getattr(args, 'use_vol_buy', True) else 0,
+        'use_stoch_buy': 1 if getattr(args, 'use_stoch_buy', True) else 0,
+        'use_vwap_buy': 1 if getattr(args, 'use_vwap_buy', True) else 0,
+        'use_pullback_sell': 1 if getattr(args, 'use_pullback_sell', True) else 0,
+        'use_ema_cross_sell': 1 if getattr(args, 'use_ema_cross_sell', True) else 0,
+        'use_reg_bear_div': 1 if getattr(args, 'use_reg_bear_div', True) else 0,
+        'use_hid_bear_div': 1 if getattr(args, 'use_hid_bear_div', True) else 0,
+        'use_macd_sell': 1 if getattr(args, 'use_macd_sell', True) else 0,
+        'use_bb_sell': 1 if getattr(args, 'use_bb_sell', True) else 0,
+        'use_vol_sell': 1 if getattr(args, 'use_vol_sell', True) else 0,
+        'use_stoch_sell': 1 if getattr(args, 'use_stoch_sell', True) else 0,
+        'use_vwap_sell': 1 if getattr(args, 'use_vwap_sell', True) else 0,
+    }
 
     # 🔹 Load model from path if specified (for evaluation without optimization)
     if args.model_path and not args.optimize:
@@ -1331,26 +1848,40 @@ def entry(args):
             }
             if args.verbose:
                 print(f"📊 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%), "
-                      f"Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%)")
+                      f"Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%)     Note: consider Val as Test")
                 print(f"   📅 Train: {train_val_split_info['train_range'][0]} → {train_val_split_info['train_range'][1]}")
                 print(f"   📅 Val:   {train_val_split_info['val_range'][0]} → {train_val_split_info['val_range'][1]}")
 
     if args.optimize:
         # ==============================================================================
-        # 🔧 OPTUNA STORAGE SETUP: In-memory if --optuna-db is None, SQLite otherwise
+        # 🔧 OPTUNA STORAGE SETUP: In-memory if --optuna-db is None, URL/SQLite otherwise
         # ==============================================================================
         if args.optuna_db is None:
             # Use in-memory storage (no persistence across runs)
             storage = None
             db_path_display = "in-memory (no persistence)"
         else:
-            # Use SQLite persistence with the specified path
-            db_path = args.optuna_db
-            db_dir = os.path.dirname(db_path)
-            if db_dir:
-                os.makedirs(db_dir, exist_ok=True)
-            storage = f"sqlite:///{db_path}"
-            db_path_display = db_path
+            # Use the provided URL directly. Optuna supports postgresql://, mysql://, sqlite://, etc.
+            # For backward compatibility, if it doesn't contain '://', assume it's a local sqlite path.
+            if "://" not in args.optuna_db:
+                db_path = args.optuna_db
+                db_dir = os.path.dirname(db_path)
+                if db_dir:
+                    os.makedirs(db_dir, exist_ok=True)
+                storage = f"sqlite:///{db_path}"
+            else:
+                def parse_storage_url(url: str):
+                    """Convertit une chaîne d'URL en objet Storage Optuna adapté."""
+                    if url.startswith("journal://"):
+                        # Extrait le chemin après "journal://"
+                        file_path = url.replace("journal://", "", 1)
+                        return JournalStorage(JournalFileBackend(file_path))
+
+                    # Pour sqlite://, postgresql://, redis://, etc.
+                    return url
+                storage = parse_storage_url(args.optuna_db)
+            db_path_display = storage
+
         study_name = (
             f"{args.ticker}_"
             f"{args.dataset_id}_"
@@ -1364,13 +1895,20 @@ def entry(args):
         if df_val is not None:
             if args.verbose: print(f"   🔄 Optimizing on TRAINING set only (validation held out)")
 
+        n_startup_trials = max(10, min(10000, int(0.001 * args.n_trials)))
+        if args.verbose: print(f"Starting Optuna optimization with TimeSeriesSplit and {n_startup_trials} random trials...")
+        sampler = optuna.samplers.TPESampler(
+            seed=42,
+            n_startup_trials=n_startup_trials,
+        )
+
         # Create or load the study
         study = optuna.create_study(
             study_name=study_name,
             storage=storage,
-            load_if_exists=True,  # Safe: does nothing for in-memory, loads for SQLite
+            load_if_exists=True,  # Safe: does nothing for in-memory, loads for SQLite/PostgreSQL
             direction='maximize',
-            pruner=optuna.pruners.MedianPruner()
+            pruner=optuna.pruners.MedianPruner(), sampler=sampler
         )
 
         # ==============================================================================
@@ -1391,7 +1929,6 @@ def entry(args):
             print(f"   🔄 Will append {args.n_trials} additional trials to the existing study...\n")
         else:
             if args.verbose: print("📦 No stored trials found. Initializing fresh optimization run.\n")
-
         # ==============================================================================
         # 🚀 RUN OPTIMIZATION
         # ==============================================================================
@@ -1402,23 +1939,25 @@ def entry(args):
                 df_base=df_train,
                 close_col=close_col,
                 high_col=high_col,
-                low_col=low_col
+                low_col=low_col,
+                volume_col=volume_col,
+                open_col=open_col
             ),
             n_trials=args.n_trials,
             timeout=args.timeout,
-            show_progress_bar=False,
+            show_progress_bar=True if args.verbose_optuna_progression else False,
             callbacks=[early_stop_on_perfect_success],
         )
-
-        best_trial = study.best_trial
-        if args.verbose:
-            print(f"\n✅ Optimization Complete!")
-            print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
-            print("   🧠 Best Hyperparameters:")
-        for k, v in best_trial.params.items():
-            if args.verbose: print(f"      {k}: {v}")
-            params[k] = v
-
+        try:
+            best_trial = study.best_trial
+            if args.verbose:
+                print(f"\n✅ Optimization Complete!")
+                print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
+                print("   🧠 Best Hyperparameters:")
+                for k, v in best_trial.params.items():
+                    if args.verbose: print(f"      {k}: {v}")
+                    params[k] = v
+        except: pass
         # ==============================================================================
         # 🎯 VALIDATION SET EVALUATION (if split was used)
         # ==============================================================================
@@ -1428,6 +1967,18 @@ def entry(args):
                 print(f"🔍 EVALUATING BEST PARAMETERS ON VALIDATION SET")
                 print(f"{'=' * 80}")
 
+            buy_wr_train, sell_wr_train, combined_wr_train, _, _, _, _, _, _, _ = \
+                run_strategy_and_evaluate(
+                    df_base=df_train,
+                    _args=args,
+                    close_col=close_col,
+                    high_col=high_col,
+                    low_col=low_col,
+                    volume_col=volume_col,
+                    open_col=open_col,
+                    **params
+                )
+
             # Evaluate on validation set with best params
             buy_wr_val, sell_wr_val, combined_wr_val, _, _, eval_buy_val, eval_sell_val, buy_wins_val, sell_wins_val, df_val_final = \
                 run_strategy_and_evaluate(
@@ -1436,22 +1987,26 @@ def entry(args):
                     close_col=close_col,
                     high_col=high_col,
                     low_col=low_col,
+                    volume_col=volume_col,
+                    open_col=open_col,
                     **params
                 )
 
             if args.verbose:
                 print(f"📊 Validation Results ({len(df_val)} bars):")
-                print(f"   🟢 Buy:  {buy_wins_val}/{eval_buy_val} → {buy_wr_val:6.2f}%")
-                print(f"   🔴 Sell: {sell_wins_val}/{eval_sell_val} → {sell_wr_val:6.2f}%")
-                print(f"   🎯 Combined: {(buy_wins_val + sell_wins_val)}/{(eval_buy_val + eval_sell_val)} → {combined_wr_val:6.2f}%")
+                if args.optimize_target in ['buy_wr', 'combined_wr']:
+                    print(f"   🟢 Buy:  {buy_wins_val}/{eval_buy_val} → {buy_wr_val:6.2%}")
+                if args.optimize_target in ['sell_wr', 'combined_wr']:
+                    print(f"   🔴 Sell: {sell_wins_val}/{eval_sell_val} → {sell_wr_val:6.2%}")
+                if args.optimize_target in ['combined_wr']:
+                    print(f"   🎯 Combined: {(buy_wins_val + sell_wins_val)}/{(eval_buy_val + eval_sell_val)} → {combined_wr_val:6.2%}")
 
                 # Compare train vs val if both available
-                train_score = combined_wr_val if args.optimize_target == 'combined_wr' else (buy_wr_val if args.optimize_target == 'buy_wr' else sell_wr_val)
+                train_score = combined_wr_train if args.optimize_target == 'combined_wr' else (buy_wr_train if args.optimize_target == 'buy_wr' else sell_wr_train)
                 val_score = combined_wr_val if args.optimize_target == 'combined_wr' else (buy_wr_val if args.optimize_target == 'buy_wr' else sell_wr_val)
                 # Actually get training score from best trial
-                train_score = best_trial.value
                 gap = train_score - val_score
-                status = "✅ Good generalization" if abs(gap) < 0.1 else "⚠️  Potential overfitting"
+                status = "✅ Good generalization" if abs(gap) < 0.1 else "⚠️  Potential overfitting/underfitting"
                 print(f"\n📈 Train vs Validation Comparison:")
                 print(f"   Target Metric ({args.optimize_target}):")
                 print(f"      Train: {train_score:.2%} | Val: {val_score:.2%} | Gap: {gap:+.2%} {status}")
@@ -1464,10 +2019,10 @@ def entry(args):
     else:
         validation_score = None
 
-    # Final Evaluation & Output on FULL dataset (unless in real-time mode)
+        # Final Evaluation & Output on FULL dataset (unless in real-time mode)
     if args.verbose: print(f"\n⚙️  Running final evaluation with params: {params}")
     buy_wr, sell_wr, combined_wr, buy_density, sell_density, eval_buy, eval_sell, buy_wins, sell_wins, df_final = \
-        run_strategy_and_evaluate(df_base, args, close_col, high_col, low_col, **params)
+        run_strategy_and_evaluate(df_base, args, close_col, high_col, low_col, volume_col, open_col, **params)
 
     total_bars = len(df_final.dropna(subset=[close_col]))
 
@@ -1476,21 +2031,26 @@ def entry(args):
         if args.sanity_check:
             yearly_stats2 = calculate_yearly_win_rates(df_final, args, close_col, high_col, low_col)
             print(f"{yearly_stats}  vs  {yearly_stats2}")
-        print_yearly_stats(yearly_stats, args.ticker)
+        # print_yearly_stats(yearly_stats, args.ticker)
 
         print(f"\n📊 {args.ticker} | Valid Bars: {total_bars}")
-        print(f"🟢 Buy Signals: {int(df_final[('Signal_Buy', args.ticker)].sum())} (Density: {buy_density:.4f}) | Evaluated: {eval_buy} | Wins: {buy_wins} | Win Rate: {buy_wr:.2%}\n"
-              f"\t Consider: Put Credit Spread\n"
-              f"\t Short Put Strike ≈ $latest_close * {args.put_strike_pct:.2f}")
-        print(f"🔴 Sell Signals: {int(df_final[('Signal_Sell', args.ticker)].sum())} (Density: {sell_density:.4f}) | Evaluated: {eval_sell} | Wins: {sell_wins} | Win Rate: {sell_wr:.2%}\n"
-              f"\t Consider: Call Credit Spread\n"
-              f"\t Short Call Strike ≈ $latest_close * {args.call_strike_pct:.2f}")
-        print(f"🎯 Combined Win Rate: {combined_wr:.2%} ({buy_wins + sell_wins}/{eval_buy + eval_sell})")
-        print(f"🎯   Buy Win Rate : {buy_wr:.2%} ({buy_wins}/{eval_buy})")
-        print(f"🎯   Sell Win Rate: {sell_wr:.2%} ({sell_wins}/{eval_sell})")
+        if args.optimize_target in ['buy_wr', 'combined_wr']:
+            print(f"🟢 Buy Signals: {int(df_final[('Signal_Buy', args.ticker)].sum())} (Density: {buy_density:.4f}) | Evaluated: {eval_buy} | Wins: {buy_wins} | Win Rate: {buy_wr:.2%}\n"
+                  f"\t Consider: Put Credit Spread\n"
+                  f"\t Short Put Strike ≈ $latest_close * {args.put_strike_pct:.6f}")
+        if args.optimize_target in ['sell_wr', 'combined_wr']:
+            print(f"🔴 Sell Signals: {int(df_final[('Signal_Sell', args.ticker)].sum())} (Density: {sell_density:.4f}) | Evaluated: {eval_sell} | Wins: {sell_wins} | Win Rate: {sell_wr:.2%}\n"
+                  f"\t Consider: Call Credit Spread\n"
+                  f"\t Short Call Strike ≈ $latest_close * {args.call_strike_pct:.6f}")
+        if args.optimize_target in ['combined_wr']:
+            print(f"🎯 Combined Win Rate: {combined_wr:.2%} ({buy_wins + sell_wins}/{eval_buy + eval_sell})")
+        if args.optimize_target in ['buy_wr', 'combined_wr']:
+            print(f"🎯   Buy Win Rate : {buy_wr:.2%} ({buy_wins}/{eval_buy})")
+        if args.optimize_target in ['sell_wr', 'combined_wr']:
+            print(f"🎯   Sell Win Rate: {sell_wr:.2%} ({sell_wins}/{eval_sell})")
         print(f"📉 Min Density Threshold: {args.min_signal_density:.2%}")
-        if buy_density < args.min_signal_density: print("⚠️  Buy signal density below threshold.")
-        if sell_density < args.min_signal_density: print("⚠️  Sell signal density below threshold.")
+        if buy_density < args.min_signal_density and args.optimize_target in ['buy_wr', 'combined_wr']: print("⚠️  Buy signal density below threshold.")
+        if sell_density < args.min_signal_density and args.optimize_target in ['sell_wr', 'combined_wr']: print("⚠️  Sell signal density below threshold.")
     # 🔹 Save model with descriptive name including params and score
     if args.optimize or args.model_path is None:  # Only save new model if we optimized or didn't load one
         score = combined_wr if args.optimize_target == 'combined_wr' else (buy_wr if args.optimize_target == 'buy_wr' else sell_wr)
@@ -1515,7 +2075,8 @@ def entry(args):
             df_final, args, close_col, high_col, low_col, rsi_col, sma_50_col,
             fib_50_col, fib_618_col, buy_sig_col, sell_sig_col,
             ('Regular_Bullish_Div', args.ticker), ('Regular_Bearish_Div', args.ticker),
-            ('Hidden_Bullish_Div', args.ticker), ('Hidden_Bearish_Div', args.ticker)
+            ('Hidden_Bullish_Div', args.ticker), ('Hidden_Bearish_Div', args.ticker),
+            params.get('rsi_midline', 50), params.get('rsi_oversold', 30), params.get('rsi_overbought', 70)
         )
 
     return df_final
