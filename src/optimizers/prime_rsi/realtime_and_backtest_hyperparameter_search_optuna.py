@@ -1382,27 +1382,35 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume
     use_stoch_sell = 1 if getattr(_args, 'use_stoch_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
     use_vwap_sell = 1 if getattr(_args, 'use_vwap_sell', True) and _args.optimize_target in ['sell_wr', 'combined_wr'] else 0
 
+    use_rsi_any = (use_pullback_buy or use_pullback_sell or use_ema_cross_buy or
+                   use_ema_cross_sell or use_ma_conf_buy or use_fib_rsi_buy or
+                   use_reg_bull_div or use_reg_bear_div or use_hid_bull_div or use_hid_bear_div)
+    use_rsi_signal = use_ema_cross_buy or use_ema_cross_sell or use_ma_conf_buy
+    use_sma = use_pullback_buy or use_pullback_sell or use_ma_conf_buy
+    use_div = use_reg_bull_div or use_reg_bear_div or use_hid_bull_div or use_hid_bear_div
+    use_rsi_midline = use_pullback_buy or use_pullback_sell or use_fib_rsi_buy
+
     # 1. RSI Length: Standard is 14. 7-21 covers short to medium momentum without excessive noise/lag.
-    rsi_length = trial.suggest_int('rsi_length', 7, 21)
+    rsi_length = trial.suggest_int('rsi_length', 7, 21) if use_rsi_any else trial.suggest_int('rsi_length', 14, 14)
 
     # 2. RSI Signal Line (EMA): Must be faster than RSI to generate crossovers. 3-12 is standard.
-    rsi_signal_len = trial.suggest_int('rsi_signal_len', 3, 12)
+    rsi_signal_len = trial.suggest_int('rsi_signal_len', 3, 12) if use_rsi_signal else trial.suggest_int('rsi_signal_len', 9, 9)
 
     # 3. SMA Length: Used for trend direction. 20-100 covers standard swing trading MAs (20, 50, 100).
-    sma_len = trial.suggest_int('sma_len', 20, 100)
+    sma_len = trial.suggest_int('sma_len', 20, 100) if use_sma else trial.suggest_int('sma_len', 50, 50)
 
     # 4. Fibonacci Lookback: Window to find swing high/low. 10-60 captures recent, actionable swings.
-    fib_lookback = trial.suggest_int('fib_lookback', 10, 60)
+    fib_lookback = trial.suggest_int('fib_lookback', 10, 60) if use_fib_rsi_buy else trial.suggest_int('fib_lookback', 50, 50)
 
     # 5. Divergence Window: Lookback for local pivots. 5-15 prevents noise (3 is too small for a real pivot).
-    div_window = trial.suggest_int('div_window', 5, 15)
+    div_window = trial.suggest_int('div_window', 5, 15) if use_div else trial.suggest_int('div_window', 5, 5)
 
     # 6. RSI Midline: Center threshold. 40-60 is logically sound for trend bias.
-    rsi_midline = trial.suggest_int('rsi_midline', 40, 60)
+    rsi_midline = trial.suggest_int('rsi_midline', 40, 60) if use_rsi_midline else trial.suggest_int('rsi_midline', 50, 50)
 
     # 7. RSI Oversold/Overbought: 10 and 90 are statistical anomalies. 20-35 and 65-80 cover realistic extremes.
-    rsi_oversold = trial.suggest_int('rsi_oversold', 20 - 5, 35 + 5)
-    rsi_overbought = trial.suggest_int('rsi_overbought', 65 - 5, 80 + 5)
+    rsi_oversold = trial.suggest_int('rsi_oversold', 20 - 5, 35 + 5) if use_ema_cross_buy else trial.suggest_int('rsi_oversold', 30, 30)
+    rsi_overbought = trial.suggest_int('rsi_overbought', 65 - 5, 80 + 5) if use_ema_cross_sell else trial.suggest_int('rsi_overbought', 70, 70)
 
     # 8. Minimum Confluence: Number of strategies that must agree to trigger a signal.
     # Higher values drastically reduce signal quantity, increasing selectivity
