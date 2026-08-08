@@ -64,7 +64,6 @@ def get_realtime_dataset(dataset_id, tickers=("^GSPC", "^VIX")):
     return _master_data_cache
 
 
-
 def realtime(tickers=("^GSPC", "^VIX"), verbose=False):
     # Default dates if not provided
     today = datetime.today()

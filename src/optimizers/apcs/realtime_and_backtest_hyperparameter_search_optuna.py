@@ -41,7 +41,7 @@ import pandas as pd
 import yfinance as yf
 from scipy.signal import find_peaks
 from datetime import datetime, timedelta
-from utils import get_filename_for_dataset, get_next_step
+from utils import get_next_step, factory_load_data
 import pickle
 import optuna  # Added Optuna import
 import random
@@ -130,7 +130,7 @@ class EarlyStoppingThresholdCallback:
             study.stop()
 
 
-def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, ema_period, rsi_period, rsi_buy_max, rsi_sell_min, buy_offset, sell_offset):
+def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, ema_period, rsi_period, rsi_buy_max, rsi_sell_min, buy_offset, sell_offset, trade_direction="both"):
     """
     Evaluate the most recent bar in a real-time dataframe for a valid trading signal.
 
@@ -215,8 +215,8 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
     # The entry bar MUST be the last bar of the dataframe for a live signal
     if entry_idx != last_bar_idx:
         return {"reason":
-            f"No signal on the last bar ({dates[last_bar_idx].strftime('%Y-%m-%d')}). Last confirmed turn at index {t3[1]} "
-            f"(entry would be bar {entry_idx}), but last bar is {last_bar_idx}."}
+            f"No signal on the last bar ({dates[last_bar_idx].strftime('%Y-%m-%d_%H%M')}). Last confirmed turn at index {t3[1]} "
+            f"(entry would be bar {entry_idx} :: {dates[entry_idx].strftime('%Y-%m-%d_%H%M')}), but last bar is {last_bar_idx} :: {dates[last_bar_idx].strftime('%Y-%m-%d_%H%M')}."}
 
 
     # ------------------------------------------------------------------
@@ -226,23 +226,25 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
 
     # --- SELL LOGIC (Call Credit Spread) – Lower High pattern ---
     if t1[0] == "Peak" and t2[0] == "Valley" and t3[0] == "Peak":
-        if t1[2] > neckline_price and t3[2] > neckline_price:
-            if t3[2] < t1[2]:
-                # EMA Filter: Price must be below EMA for SELL setup
-                if prices[t3[1]] < ema[t3[1]]:
-                    # RSI Filter: Prevent selling when oversold
-                    if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] >= rsi_sell_min:
-                        trade_type = "SELL"
+        if trade_direction in ["sell", "both"]:
+            if t1[2] > neckline_price and t3[2] > neckline_price:
+                if t3[2] < t1[2]:
+                    # EMA Filter: Price must be below EMA for SELL setup
+                    if prices[t3[1]] < ema[t3[1]]:
+                        # RSI Filter: Prevent selling when oversold
+                        if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] >= rsi_sell_min:
+                            trade_type = "SELL"
 
     # --- BUY LOGIC (Put Credit Spread) – Higher Low pattern ---
     elif t1[0] == "Valley" and t2[0] == "Peak" and t3[0] == "Valley":
-        if t1[2] < neckline_price and t3[2] < neckline_price:
-            if t3[2] > t1[2]:
-                # EMA Filter: Price must be above EMA for BUY setup
-                if prices[t3[1]] > ema[t3[1]]:
-                    # RSI Filter: Prevent buying when overbought
-                    if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] <= rsi_buy_max:
-                        trade_type = "BUY"
+        if trade_direction in ["buy", "both"]:
+            if t1[2] < neckline_price and t3[2] < neckline_price:
+                if t3[2] > t1[2]:
+                    # EMA Filter: Price must be above EMA for BUY setup
+                    if prices[t3[1]] > ema[t3[1]]:
+                        # RSI Filter: Prevent buying when overbought
+                        if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] <= rsi_buy_max:
+                            trade_type = "BUY"
 
     if trade_type is None:
         return {"reason": "Last 3 turns do not form a valid SELL or BUY pattern (or failed EMA/RSI filter)."}
@@ -280,7 +282,7 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
     }
 
 
-def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_col, min_distance, lookahead, sell_offset, buy_offset, ema_period, rsi_period, rsi_buy_max, rsi_sell_min):
+def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_col, min_distance, lookahead, sell_offset, buy_offset, ema_period, rsi_period, rsi_buy_max, rsi_sell_min, trade_direction="both", delta=0.0):
     """
     Perform a historical backtest of the Asymmetric Pivot Credit Strategy.
 
@@ -305,6 +307,7 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
         rsi_period (int): Period for the RSI momentum filter.
         rsi_buy_max (int): Upper RSI threshold for buying.
         rsi_sell_min (int): Lower RSI threshold for selling.
+        delta (float): Minimum percentage gain required from entry_price to count as a Win.
 
     Returns:
         dict: A dictionary containing backtest results, including:
@@ -380,24 +383,26 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
         # --- SELL LOGIC (Call Credit Spread) ---
         # Lower High pattern
         if t1[0] == "Peak" and t2[0] == "Valley" and t3[0] == "Peak":
-            if t1[2] > neckline_price and t3[2] > neckline_price:
-                if t3[2] < t1[2]:
-                    # EMA Filter: Price must be below EMA for SELL setup
-                    if prices[t3[1]] < ema[t3[1]]:
-                        # RSI Filter: Prevent selling when oversold
-                        if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] >= rsi_sell_min:
-                            trade_type = "SELL"
+            if trade_direction in ["sell", "both"]:
+                if t1[2] > neckline_price and t3[2] > neckline_price:
+                    if t3[2] < t1[2]:
+                        # EMA Filter: Price must be below EMA for SELL setup
+                        if prices[t3[1]] < ema[t3[1]]:
+                            # RSI Filter: Prevent selling when oversold
+                            if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] >= rsi_sell_min:
+                                trade_type = "SELL"
 
         # --- BUY LOGIC (Put Credit Spread) ---
         # Higher Low pattern
         elif t1[0] == "Valley" and t2[0] == "Peak" and t3[0] == "Valley":
-            if t1[2] < neckline_price and t3[2] < neckline_price:
-                if t3[2] > t1[2]:
-                    # EMA Filter: Price must be above EMA for BUY setup
-                    if prices[t3[1]] > ema[t3[1]]:
-                        # RSI Filter: Prevent buying when overbought
-                        if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] <= rsi_buy_max:
-                            trade_type = "BUY"
+            if trade_direction in ["buy", "both"]:
+                if t1[2] < neckline_price and t3[2] < neckline_price:
+                    if t3[2] > t1[2]:
+                        # EMA Filter: Price must be above EMA for BUY setup
+                        if prices[t3[1]] > ema[t3[1]]:
+                            # RSI Filter: Prevent buying when overbought
+                            if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] <= rsi_buy_max:
+                                trade_type = "BUY"
 
         # Trade Outcome Tracking
         if trade_type is not None:
@@ -434,9 +439,9 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
                 exit_price = prices[exit_idx]
 
                 if trade_type == "SELL":
-                    outcome = "Win" if exit_price < entry_price else "Loss"
+                    outcome = "Win" if exit_price < entry_price - delta * entry_price else "Loss"
                 else:  # BUY
-                    outcome = "Win" if exit_price > entry_price else "Loss"
+                    outcome = "Win" if exit_price > entry_price + delta * entry_price else "Loss"
 
             # Append to lists
             entry_dates.append(entry_date)
@@ -539,36 +544,21 @@ def entry(args):
         with open(model_file, 'rb') as f:
             model_info = pickle.load(f)
 
+        model_trade_direction = model_info.get('trade_direction', 'both')
+
         target_date = get_next_step(the_date=datetime.now(), dataset_id=model_info['dataset_id'], nn=model_info['lookahead'])
         values_returned.update({'ticker': model_info['ticker']})
         values_returned.update({'dataset_id': model_info['dataset_id']})
         values_returned.update({'lookahead': model_info['lookahead']})
         values_returned.update({'target_date': target_date})
-        values_returned.update({'current_date': str(datetime.now().strftime('%Y-%m-%d'))})
+        values_returned.update({'current_date': str(datetime.now().strftime('%Y-%m-%d_%H%M'))})
         values_returned.update({'train_score': model_info['train_wr']})
         values_returned.update({'train_win_rate': model_info['train_wr']})
         values_returned.update({'val_score': model_info['test_wr']})
         values_returned.update({'val_win_rate': model_info['test_wr']})
         df_realtime, df_realtime_not_clipped = None, None
         try:
-            if use_realtime_dataset:
-                if verbose: print(f"Fetching latest real-time data for {model_info['ticker']}...")
-                assert model_info['ticker'] in ["^GSPC"]
-                daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
-                df_realtime = daily_data_cache[model_info['ticker']].sort_index().copy()
-            else:
-                if verbose: print(f"Loading data for {model_info['ticker']}...")
-                with open(get_filename_for_dataset(model_info['dataset_id'], older_dataset=None), 'rb') as f:
-                    _master_data_cache = pickle.load(f)
-                assert _master_data_cache is not None
-                df_realtime = _master_data_cache[model_info['ticker']].sort_index().copy()
-                df_realtime_not_clipped = df_realtime.copy()
-                if clip_n > 0:
-                    df_realtime = df_realtime.iloc[:-clip_n].copy()
-                    if verbose: print(f"Clipping to {df_realtime.index[-1]}")
-                    if 0 == len(df_realtime):
-                        values_returned['local_results'].update({'reason': f'no more data with clip of {clip_n}'})
-                        return values_returned
+            df_realtime = factory_load_data(_dataset_id=model_info['dataset_id'], _ticker=model_info['ticker'], _args={"clip_n": clip_n, "realtime": use_realtime_dataset})
             if verbose: print(f"Win Rate - Train: {model_info['train_wr']:.2%} | Test: {model_info['test_wr']:.2%} | Difference: {model_info['test_wr'] - model_info['train_wr']:+.2%}")
             if verbose: print(f"Density  - Train: {model_info['train_den']:.2%} | Test: {model_info['test_den']:.2%} | Difference: {model_info['test_den'] - model_info['train_den']:+.2%}")
             model_params = model_info['best_params']
@@ -577,7 +567,7 @@ def entry(args):
             open_col = ('Open', model_info['ticker'])
             high_col = ('High', model_info['ticker'])
             low_col = ('Low', model_info['ticker'])
-            if verbose: print(f"Last bar: {df_realtime.index[-1].strftime('%Y-%m-%d')}   "
+            if verbose: print(f"Last bar: {df_realtime.index[-1].strftime('%Y-%m-%d_%H%M')}   "
                               f"Open/High/Low/Close: {df_realtime.iloc[-1][open_col]:.1f}/{df_realtime.iloc[-1][high_col]:.1f}/{df_realtime.iloc[-1][low_col]:.1f}/{df_realtime.iloc[-1][close_col]:.1f}")
             values_returned.update({'current_price': df_realtime[close_col].iloc[-1]})
             live_result = check_live_signal(
@@ -589,6 +579,7 @@ def entry(args):
                 rsi_period=model_params['rsi_period'],
                 rsi_buy_max=model_params['rsi_buy_max'],
                 rsi_sell_min=model_params['rsi_sell_min'],
+                trade_direction=model_trade_direction
             )
 
             assert isinstance(live_result, dict)
@@ -600,7 +591,7 @@ def entry(args):
                 elif live_result['Signal'] == "BUY":
                     assert model_info['buy_offset'] <= 1.
                     type_option = "Put Credit Spread"
-                live_result.update({'type_option': type_option, 'df_realtime': df_realtime, 'df_realtime_not_clipped':df_realtime_not_clipped,
+                live_result.update({'type_option': type_option, 'df_realtime': df_realtime, 'df_realtime_not_clipped': df_realtime_not_clipped,
                                     'close_col': close_col, 'open_col': open_col, 'high_col': high_col, 'low_col': low_col, 'model_info': model_info})
                 if verbose:
                     print(f"\n🚨 LIVE SIGNAL DETECTED FOR {live_result['Date'].strftime('%Y-%m-%d')}!")
@@ -631,6 +622,8 @@ def entry(args):
     test_split_n = args.test_split_n
     sell_offset = args.sell_offset
     buy_offset = args.buy_offset
+    trade_direction = args.trade_direction
+    delta = args.delta
 
     assert sell_offset > 0.999 and buy_offset < 1.001, "Sell offset must be > 0.999 and buy offset < 1.001"
 
@@ -641,17 +634,12 @@ def entry(args):
     low_col = ('Low', ticker)
 
     if verbose: print(f"Using Sell Offset of {sell_offset:.2%} and Buy Offset of {buy_offset:.2%}")
-    with open(get_filename_for_dataset(dataset_id, older_dataset=None), 'rb') as f:
-        _master_data_cache = pickle.load(f)
-    assert _master_data_cache is not None
-    df_main = _master_data_cache[ticker].sort_index().copy()
-    if clip_n > 0:
-        df_main = df_main.iloc[:-clip_n].copy()
+    df_main = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
     n = int(len(df_main) * test_split_n)
     df_train_ticker = df_main.iloc[:n].copy()
     df_test_ticker = df_main.iloc[n:].copy()
-    if verbose: print(f"Train data: {df_train_ticker.index[0].strftime('%Y-%m-%d')}::{df_train_ticker.index[-1].strftime('%Y-%m-%d')}")
-    if verbose: print(f"Test data : {df_test_ticker.index[0].strftime('%Y-%m-%d')}::{df_test_ticker.index[-1].strftime('%Y-%m-%d')}")
+    if verbose: print(f"Train data: {df_train_ticker.index[0].strftime('%Y-%m-%d_%H:%M')}::{df_train_ticker.index[-1].strftime('%Y-%m-%d_%H:%M')} ({len(df_train_ticker)} bars)")
+    if verbose: print(f"Test data : {df_test_ticker.index[0].strftime('%Y-%m-%d_%H:%M')}::{df_test_ticker.index[-1].strftime('%Y-%m-%d_%H:%M')} ({len(df_test_ticker)} bars)")
 
     # --- OPTUNA OPTIMIZATION BLOCK WITH TIME SERIES CROSS VALIDATION ---
     def objective(trial):
@@ -672,14 +660,23 @@ def entry(args):
                    potentially penalized for low density) across all folds.
         """
         # 1. Suggest parameter values within a specific search space
-        min_distance = trial.suggest_int('min_distance', 3, 30)
+        min_distance = trial.suggest_int('min_distance', 2, 30)
         ema_period = trial.suggest_int('ema_period', 2, 200)
         rsi_period = trial.suggest_int('rsi_period', 5, 50)
-        rsi_buy_max = trial.suggest_int('rsi_buy_max', 50, 90)
-        rsi_sell_min = trial.suggest_int('rsi_sell_min', 10, 50)
+
+        # Conditionally optimize RSI parameters based on trade direction to save compute time
+        if trade_direction in ["buy", "both"]:
+            rsi_buy_max = trial.suggest_int('rsi_buy_max', 10, 90)
+        else:
+            rsi_buy_max = trial.suggest_int('rsi_buy_max', 50, 50)  # Dummy value
+
+        if trade_direction in ["sell", "both"]:
+            rsi_sell_min = trial.suggest_int('rsi_sell_min', 10, 90)
+        else:
+            rsi_sell_min = trial.suggest_int('rsi_sell_min', 50, 50)  # Dummy value
 
         # 2. Setup Time Series Cross-Validation
-        tscv = TimeSeriesSplit(n_splits=10)
+        tscv = TimeSeriesSplit(n_splits=5)
         fold_scores = []
         max_density_violation = -float('inf')  # Track the worst density violation across folds
 
@@ -692,6 +689,7 @@ def entry(args):
                 close_col=close_col, open_col=open_col, low_col=low_col, high_col=high_col,
                 sell_offset=sell_offset, buy_offset=buy_offset, ema_period=ema_period,
                 rsi_period=rsi_period, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
+                trade_direction=trade_direction, delta=delta,
             )
 
             if isinstance(results_dict, str):
@@ -732,38 +730,58 @@ def entry(args):
                 max_density_violation = violation
 
             # ==========================================
-            # IMPROVEMENT C: Strict Proportional Penalty
+            # IMPROVEMENT C: Strict Non-Linear Penalty
             # ==========================================
-            # Linear penalty: If you achieve 50% of the required density, you get 50% of the score.
+            # Using a cubic penalty drastically lowers the score of infeasible trials.
+            # This prevents low-density/high-win-rate trials from outscoring feasible ones
+            # before Optuna's internal constraint model has fully learned the search space.
             if density >= min_density_threshold:
                 score = smoothed_win_rate
             else:
-                score = smoothed_win_rate * (density / min_density_threshold)
+                score = smoothed_win_rate * ((density / min_density_threshold) ** 3)
 
             fold_scores.append(score)
 
-        # Tell Optuna the constraints for this trial (Optuna will treat violation > 0 as INFEASIBLE)
-        trial.set_user_attr("constraint", [max_density_violation])
-
         return np.mean(fold_scores) if fold_scores else 0.0
 
-    if verbose: print("Starting Optuna optimization with TimeSeriesSplit...")
+    # Ensure at least 10 startup trials to prevent crashes with low n_trials
+    n_startup_trials = max(10, min(1000, int(0.05 * n_trials)))
+    if verbose: print(f"Starting Optuna optimization with TimeSeriesSplit and {n_startup_trials} random trials...")
+
     # Initialize early stopping threshold callback
     early_stopping_cb = EarlyStoppingThresholdCallback(threshold=0.99)
-    study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=42))
+
+    # Initialize TPE Sampler with constraint handling enabled
+    sampler = optuna.samplers.TPESampler(
+        seed=42,
+        n_startup_trials=n_startup_trials,
+    )
+
+    study = optuna.create_study(direction='maximize', sampler=sampler)
     study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=True if verbose else False, n_jobs=1, callbacks=[early_stopping_cb])
+    # --- SAFELY EXTRACT BEST TRIAL (Handling Infeasible Scenarios) ---
+    try:
+        # Try to get the strictly feasible best trial
+        best_trial = study.best_trial
+        is_feasible = True
+    except ValueError:
+        assert False
+        is_feasible = False
+
     if verbose:
         print("\n" + "=" * 80)
         print(" OPTUNA OPTIMIZATION RESULTS")
         print("=" * 80)
-        print(f"Best Cross-Validation Score: {study.best_value:.8f}")
+        print(f"Best Cross-Validation Score: {best_trial.value:.8f}")
+        if not is_feasible:
+            print("⚠️ Note: This trial is INFEASIBLE (did not meet min-density threshold).")
         print("Best Parameters:")
-        for key, value in study.best_params.items():
+        for key, value in best_trial.params.items():
             print(f"  {key}: {value}")
         print("=" * 80 + "\n")
 
     # --- FINAL BACKTEST WITH BEST PARAMETERS ---
-    best_params = study.best_params
+    best_params = best_trial.params
     min_distance = best_params['min_distance']
     ema_period = best_params['ema_period']
     rsi_period = best_params['rsi_period']
@@ -774,6 +792,7 @@ def entry(args):
         print("\n" + "=" * 80)
         print(" FINAL EVALUATION WITH BEST PARAMETERS")
         print("=" * 80)
+        print(f"Trade Direction         : {trade_direction.upper()}")
         print(f"Min Distance            : {min_distance}")
         print(f"EMA Period              : {ema_period}")
         print(f"RSI Period              : {rsi_period}")
@@ -786,12 +805,14 @@ def entry(args):
         ticker=ticker, df=df_train_ticker, min_distance=min_distance, lookahead=lookahead, close_col=close_col, open_col=open_col, low_col=low_col, high_col=high_col,
         buy_offset=buy_offset, sell_offset=sell_offset, ema_period=ema_period,
         rsi_period=rsi_period, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
+        trade_direction=trade_direction, delta=delta,
     )
 
     test_results = backtest_asymmetric_strategy(
         ticker=ticker, df=df_test_ticker, min_distance=min_distance, lookahead=lookahead, close_col=close_col, open_col=open_col, low_col=low_col, high_col=high_col,
         buy_offset=buy_offset, sell_offset=sell_offset, ema_period=ema_period,
         rsi_period=rsi_period, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
+        trade_direction=trade_direction, delta=delta,
     )
 
     def print_metrics(results_dict, set_name, df_used, verbose):
@@ -824,7 +845,7 @@ def entry(args):
         win_rate = results_dict['win_rate']
         if verbose:
             print(f"\n--- {set_name} SET PERFORMANCE METRICS ({ticker}) ---")
-            print(f"# Bars                  : {len(df_used)}  ({df_used.index[0].strftime('%Y-%m-%d')}::{df_used.index[-1].strftime('%Y-%m-%d')})")
+            print(f"# Bars                  : {len(df_used)}  ({df_used.index[0].strftime('%Y-%m-%d_%H:%M')}::{df_used.index[-1].strftime('%Y-%m-%d_%H:%M')})")
             print(f"Total Signals Generated : {total_trades}")
             print(f"Density                 : {density:.2%}")
             print(f"Closed Trades           : {len(closed_trades)}")
@@ -868,23 +889,25 @@ def entry(args):
     # Create a pertinent filename based on ticker and timestamp
     safe_ticker = ticker.replace('^', '')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_filename = f"acps_{safe_ticker}__bo{buy_offset}__so{sell_offset}__la{lookahead}__md{min_density_threshold}__twr{test_wr:.8f}__{timestamp}.pkl"
+    model_filename = f"acps_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__d{delta}__la{lookahead}__md{min_density_threshold}__twr{test_wr:.8f}__td{test_den:.4f}___{timestamp}.pkl"
     model_path = os.path.join(output_dir, model_filename)
 
     # Prepare the model data to save
     best_model_data = {
-        "best_params": study.best_params,
-        "best_cv_score": study.best_value,
+        "best_params": best_params,
+        "best_cv_score": best_trial.value,
         "ticker": ticker,
         "lookahead": lookahead,
         "sell_offset": sell_offset,
         "buy_offset": buy_offset,
+        "trade_direction": trade_direction,
         "train_wr": train_wr,
         "test_wr": test_wr,
         "train_den": train_den,
         "test_den": test_den,
         "timestamp": datetime.now().isoformat(),
         "dataset_id": dataset_id,
+        "is_feasible": is_feasible,
     }
 
     with open(model_path, 'wb') as f:
@@ -928,10 +951,12 @@ if __name__ == '__main__':
     parser.add_argument("--n-trials", type=int, default=9, help="Number of trials for Optuna optimization.")
     parser.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds for Optuna optimization.")
     parser.add_argument("--min-density-threshold", type=float, default=0.1, help="Minimum trade density threshold for scoring without penalty.")
-    parser.add_argument("--test-split-n", type=float, default=0.8, help="Proportion of data to use for training (the rest is test).")
-    parser.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset (for out-of-sample).")
+    parser.add_argument("--test-split-n", type=float, default=0.9, help="Proportion of data to use for training (the rest is test).")
+    parser.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
 
-    # Output and Execution
+    parser.add_argument("--trade-direction", type=str, choices=["buy", "sell", "both"], default="both", help="Optimize and trade only 'buy', only 'sell', or 'both' (default).")
+    parser.add_argument("--delta", type=float, default=0.0, help="Minimum percentage gain required from entry price for a trade to be considered a Win (e.g. 0.01 for 1%%).")
+
     parser.add_argument("--output-dir", type=str, default="models", help="Directory to save and load the trained models.")
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output (e.g., Optuna progress bar).")
     parser.add_argument("--verbose-list-trades", action="store_true", default=False, help="Enable verbose for fisrt/last trades")

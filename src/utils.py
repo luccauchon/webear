@@ -19,6 +19,8 @@ from pathlib import Path
 import copy
 from collections import defaultdict
 from tqdm import tqdm
+import pickle
+from fetchers.serialize_fyahoo import realtime as fyahoo_realtime
 
 
 os_name = platform.system()
@@ -79,20 +81,27 @@ def get_index_from_date(_df, _specific_date, inc=True, max_missing_days=31):
 
 
 def get_df_SPY_and_VIX_virgin_at_minutes():
-    df_vix       = yf.download("^VIX", period="max", interval='1m', auto_adjust=False)
-    df_vix       = df_vix.drop("Volume", axis=1)
-    df_vix.index = df_vix.index.tz_convert('US/Eastern')
+    _tmp = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=True, spy=True, spx=True, ndx=True)
+    return _tmp['spy'], _tmp['spx'], _tmp['vix'], _tmp['ndx']
 
-    df_spy       = yf.download("SPY", period="max", interval='1m', auto_adjust=False)
-    df_spy.index = df_spy.index.tz_convert('US/Eastern')
 
-    df_spx       = yf.download("^GSPC", period="max", interval='1m', auto_adjust=False)
-    df_spx.index = df_spx.index.tz_convert('US/Eastern')
+def factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=False, spy=False, spx=True, ndx=False):
+    df_spy, df_spx, df_vix, df_ndx = None, None, None, None
+    if vix:
+        df_vix       = yf.download("^VIX", period=period, interval='1m', auto_adjust=False, progress=False)
+        df_vix       = df_vix.drop("Volume", axis=1)
+        df_vix.index = df_vix.index.tz_convert('US/Eastern')
+    if spy:
+        df_spy       = yf.download("SPY", period=period, interval='1m', auto_adjust=False, progress=False)
+        df_spy.index = df_spy.index.tz_convert('US/Eastern')
+    if spx:
+        df_spx       = yf.download("^GSPC", period=period, interval='1m', auto_adjust=False, progress=False)
+        df_spx.index = df_spx.index.tz_convert('US/Eastern')
+    if ndx:
+        df_ndx       = yf.download("^NDX", period=period, interval='1m', auto_adjust=False, progress=False)
+        df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
 
-    df_ndx       = yf.download("^NDX", period="max", interval='1m', auto_adjust=False)
-    df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
-
-    return  df_spy, df_spx, df_vix, df_ndx
+    return  {'spy': df_spy, 'spx': df_spx, 'vix': df_vix, 'ndx': df_ndx}
 
 
 def get_df_SPY_and_VIX_virgin_at_30minutes():
@@ -187,6 +196,203 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
     return copy.deepcopy(merged_df), f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
 
 
+def _build_cols_dict(ticker):
+    """Génère le dictionnaire de clés MultiIndex pour un ticker donné."""
+    return {
+        "open_col": ("Open", ticker),
+        "high_col": ("High", ticker),
+        "low_col": ("Low", ticker),
+        "close_col": ("Close", ticker),
+        "volume_col": ("Volume", ticker)
+    }
+
+
+def _is_dataset_heikin_ashi(_dataset_id):
+    try:
+        # Style : intraday_3min_heikinashi
+        type_candle = _dataset_id.split("_")[2]
+        if type_candle == "heikinashi":
+            return True
+    except:
+        try:
+            # Style :  month_heikinashi
+            try:
+                type_candle = _dataset_id.split("_")[1]
+            except:
+                type_candle = _dataset_id.split("-")[1]
+            if type_candle == "heikinashi":
+                return True
+        except:
+            pass
+        return False
+
+
+def _get_dataset_timeframe(_dataset_id):
+    try:
+        if _dataset_id.startswith("intraday"):
+            try:
+                _n_minutes = int(_dataset_id.split("_")[1][:-3])
+                return _n_minutes
+            except:
+                _n_minutes = int(_dataset_id.split("-")[1][:-3])
+                return _n_minutes
+        return None
+    except:
+        return None
+
+
+def factory_load_data(_dataset_id, _ticker, _args):
+    """
+       Charge, rééchantillonne et transforme les données financières d'un ticker.
+
+       Parameters:
+       -----------
+       _dataset_id : str
+           Identifiant du jeu de données (ex: "intraday" ou historique).
+       _ticker : str
+           Le symbole boursier de l'actif (ex: "^GSPC").
+       _args : dict
+           Dictionnaire de configuration contenant :
+           - 'clip_n' (int) : Nombre de lignes à tronquer à la fin du DataFrame (défaut: 0).
+           - 'n_minutes' (int) : Taille de la fenêtre de rééchantillonnage en minutes (défaut: 0).
+           - 'convert_to_heikin_ashi' (bool) : Activer le calcul Heikin Ashi (défaut: False).
+           - 'overwrite_col' (bool) : Écraser les colonnes OHLC d'origine si HA est activé (défaut: False).
+
+       Returns:
+       --------
+       pd.DataFrame
+           Le DataFrame Pandas transformé et trié chronologiquement.
+    """
+    _reduce_n = _args.get("reduce_n", 0)
+    _clip_n = _args.get("clip_n", 0)
+    _convert_to_heikin_ashi = _is_dataset_heikin_ashi(_dataset_id)
+    _overwrite_col = _args.get("overwrite_col", True)
+    _realtime_data = _args.get("realtime", False)
+    if _realtime_data:
+        if _dataset_id.startswith("intraday"):
+            assert _ticker in ["^GSPC"]
+            _n_minutes = _get_dataset_timeframe(_dataset_id)
+            df_main = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='1d', vix=False, spy=False, spx=True, ndx=False)['spx']
+            if _n_minutes > 1:
+                df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+        else:
+            assert _ticker in ["^GSPC"]
+            assert _dataset_id in ["day"]
+            daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
+            df_main = daily_data_cache[_ticker].sort_index().copy()
+    else:
+        if _dataset_id.startswith("intraday"):
+            assert _ticker in ["^GSPC"]
+            _n_minutes = _get_dataset_timeframe(_dataset_id)
+            df_main = get_1_minute_df(verbose=False, SPX=True)
+            if _n_minutes > 1:
+                df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+        else:
+            if _dataset_id not in DATASET_AVAILABLE:
+                # Style: day_heikinashi
+                # Extra information is already extracted
+                _dataset_id = _dataset_id.split("_")[0]
+                if _dataset_id not in DATASET_AVAILABLE:
+                    _dataset_id = _dataset_id.split("-")[0]
+                assert _dataset_id in DATASET_AVAILABLE
+            with open(get_filename_for_dataset(_dataset_id, older_dataset=None), 'rb') as f:
+                _master_data_cache = pickle.load(f)
+            assert _master_data_cache is not None
+            df_main = _master_data_cache[_ticker].sort_index().copy()
+    assert df_main is not None
+    if _convert_to_heikin_ashi:
+        _tmp_n1 = len(df_main.dropna())
+        df_main = convert_to_heikin_ashi(df=df_main, ticker=_ticker, overwrite=True)
+        assert _tmp_n1 == len(df_main.dropna())
+    if _clip_n > 0:
+        df_main = df_main.iloc[:-_clip_n]
+    if _reduce_n > 0:
+        df_main = df_main.iloc[_reduce_n:]
+    return df_main.copy()
+
+
+def convert_to_heikin_ashi(df, ticker, overwrite=False):
+    """
+    Compute Heikin Ashi candles.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe.
+    ticker : str
+        Ticker used by _build_cols_dict().
+    overwrite : bool, default=False
+        If True, replace the original OHLC columns.
+        Otherwise, create new *_HA columns.
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    df_ha = df.copy()
+    cols = _build_cols_dict(ticker)
+
+    # Original OHLC as numpy arrays (fast)
+    o = df_ha[cols["open_col"]].to_numpy(dtype=float)
+    h = df_ha[cols["high_col"]].to_numpy(dtype=float)
+    l = df_ha[cols["low_col"]].to_numpy(dtype=float)
+    c = df_ha[cols["close_col"]].to_numpy(dtype=float)
+
+    n = len(df_ha)
+
+    ha_open = np.empty(n, dtype=float)
+    ha_close = (o + h + l + c) / 4.0
+
+    # First candle
+    ha_open[0] = (o[0] + c[0]) / 2.0
+
+    # Recursive computation
+    for i in range(1, n):
+        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2.0
+
+    ha_high = np.maximum.reduce([h, ha_open, ha_close])
+    ha_low = np.minimum.reduce([l, ha_open, ha_close])
+
+    if overwrite:
+        df_ha[cols["open_col"]] = ha_open
+        df_ha[cols["high_col"]] = ha_high
+        df_ha[cols["low_col"]] = ha_low
+        df_ha[cols["close_col"]] = ha_close
+    else:
+        df_ha[("Open_HA", ticker)] = ha_open
+        df_ha[("High_HA", ticker)] = ha_high
+        df_ha[("Low_HA", ticker)] = ha_low
+        df_ha[("Close_HA", ticker)] = ha_close
+
+    return df_ha
+
+
+def resample_candles(df, n_minutes, ticker):
+    """
+    Convertit un DataFrame de bougies 1-minute en bougies de n-minutes.
+    """
+    cols = _build_cols_dict(ticker)
+    # Inversion du dictionnaire pour associer le tuple (métrique, ticker) à sa règle d'agrégation
+    agg_dict = {
+        cols["open_col"]: "first",
+        cols["high_col"]: "max",
+        cols["low_col"]: "min",
+        cols["close_col"]: "last",
+        cols["volume_col"]: "sum"
+    }
+
+    # Remplaçer 'T' par 'min' selon la version de Pandas (ex: '5min' ou '5T')
+    rule = f"{n_minutes}min"
+
+    # Resampling des données basées sur l'Index (qui doit être un DatetimeIndex)
+    df_resampled = df.resample(rule).agg(agg_dict)
+
+    # Remove empty bars
+    df_resampled = df_resampled.dropna(subset=[cols["open_col"]])
+
+    return df_resampled.copy()
+
+
 def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_trading_hours=True, verbose=False):
     # Group files by date
     files_by_date = defaultdict(list)
@@ -233,6 +439,7 @@ def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_tradi
         merged_df = merged_df.between_time("09:30", "16:00").dropna()
     if verbose:
         print(f"{merged_df.index[0]} → {merged_df.index[-1]} | rows: {len(merged_df)}")
+    return merged_df
 
 
 def _get_root_dir():
@@ -249,7 +456,6 @@ def get_stub_dir():
 def _get_data_dir():
     a_dir = os.path.join(_get_root_dir(), 'data')
     return a_dir
-
 
 
 def get_spy_and_vix_data_dir():
@@ -1438,6 +1644,12 @@ def get_next_step(the_date, dataset_id, nn):
         _next_ = the_date
         for u in range(12 * nn):
             _next_ = next_month(_next_)
+    elif dataset_id.startswith('intraday'):
+        # Extrait le nombre de minutes (ex: '5min' -> 5)
+        tick_minutes = _get_dataset_timeframe(dataset_id)
+
+        # Ajoute le nombre de minutes multiplié par l'étape nn
+        _next_ = the_date + timedelta(minutes=tick_minutes * nn)
     else:
         assert False, f"Implement for {dataset_id}"
     return _next_
