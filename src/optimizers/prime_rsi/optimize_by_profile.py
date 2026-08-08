@@ -1,4 +1,3 @@
-from optimizers.prime_rsi.realtime_and_backtest_hyperparameter_search_optuna import entry as realtime_and_backtest_hyperparameter_search_optuna
 from argparse import Namespace
 try:
     from version import sys__name, sys__version
@@ -12,7 +11,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
-
+from optimizers.prime_rsi.realtime_and_backtest_hyperparameter_search_optuna import entry as realtime_and_backtest_hyperparameter_search_optuna
 
 
 def setup_argparse() -> argparse.ArgumentParser:
