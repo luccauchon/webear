@@ -960,7 +960,7 @@ def save_model(params, score, args, validation_score=None, train_val_split=None)
     if args.verbose:
         print(f"💾 Model saved to: {model_path}")
         if validation_score is not None:
-            print(f"   📊 Validation Win Rate: {validation_score:.8f}")
+            print(f"   📊 Test Win Rate      : {validation_score:.8f}")  # Validation is the Test :)
             print(f"   📊 Training Win Rate  : {score:.8f}")
 
     return model_path
