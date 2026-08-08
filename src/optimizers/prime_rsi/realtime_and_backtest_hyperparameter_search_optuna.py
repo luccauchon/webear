@@ -1421,8 +1421,8 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume
     total_sell_strategies_enabled = (use_pullback_sell + use_ema_cross_sell + use_reg_bear_div + use_hid_bear_div +
                                      use_macd_sell + use_bb_sell + use_vol_sell + use_stoch_sell + use_vwap_sell)
 
-    min_buy_confluence = trial.suggest_int('min_buy_confluence', 1, 11)
-    min_sell_confluence = trial.suggest_int('min_sell_confluence', 1, 9)
+    min_buy_confluence = trial.suggest_int('min_buy_confluence', _args.buy_confluence_range[0], _args.buy_confluence_range[1])
+    min_sell_confluence = trial.suggest_int('min_sell_confluence', _args.sell_confluence_range[0], _args.sell_confluence_range[1])
 
     # 9. MACD Crossovers
     macd_fast = trial.suggest_int('macd_fast', 5, 15) if use_macd_buy or use_macd_sell else trial.suggest_int('macd_fast', 5, 5)
@@ -1639,6 +1639,8 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group.add_argument('--call-strike-pct', type=float, default=1.0001, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
+    strat_group.add_argument('--buy-confluence-range', type=int, nargs=2, default=[1, 11], metavar=('MIN', 'MAX'), help='Min and max range for buy confluence optimization (default: 1 11)')
+    strat_group.add_argument('--sell-confluence-range', type=int, nargs=2, default=[1, 9], metavar=('MIN', 'MAX'), help='Min and max range for sell confluence optimization (default: 1 9)')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--optimize', action='store_true', help='Run Optuna hyperparameter optimization')
@@ -1787,7 +1789,7 @@ def entry(args):
     params = {
         'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5,
         'rsi_midline': 50, 'rsi_oversold': 30, 'rsi_overbought': 70,
-        'min_buy_confluence': 1, 'min_sell_confluence': 1,
+        'min_buy_confluence': args.buy_confluence_range[0], 'min_sell_confluence': args.sell_confluence_range[0],
         'macd_fast': 12, 'macd_slow': 26, 'macd_signal': 9,
         'bb_length': 20, 'bb_std': 2.0,
         'vol_sma_length': 20, 'vol_multiplier': 2.0,
