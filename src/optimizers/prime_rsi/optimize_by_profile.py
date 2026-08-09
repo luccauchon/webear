@@ -29,20 +29,20 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
-    strat_group.add_argument('--min-signal-density', type=float, default=0.04, help='Min signal frequency threshold')
-    strat_group.add_argument('--put-strike-pct', type=float, default=0.9999, help='Base put strike multiplier')
-    strat_group.add_argument('--call-strike-pct', type=float, default=1.0001, help='Base call strike multiplier')
+    strat_group.add_argument('--min-signal-density', type=float, default=0.0001, help='Min signal frequency threshold')
+    strat_group.add_argument('--put-strike-pct', type=float, default=0.99999, help='Base put strike multiplier')
+    strat_group.add_argument('--call-strike-pct', type=float, default=1.00001, help='Base call strike multiplier')
     strat_group.add_argument('--profile', type=str, default="institutional_pullback", help='', choices=["institutional_pullback",
                                                                                                         "structural_confluence", "exhaustion_reversal"])
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--optimize-target', type=str, default='buy_wr', choices=['combined_wr', 'buy_wr', 'sell_wr'],
                            help='Metric to maximize during optimization')
-    opt_group.add_argument('--n-trials', type=int, default=9999, help='Optuna trials per run')
-    opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
+    opt_group.add_argument('--n-trials', type=int, default=99999, help='Optuna trials per run')
+    opt_group.add_argument('--timeout', type=int, default=86400, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
     opt_group.add_argument('--optuna-db', type=str, default=None, help='Database URL for Optuna persistence (e.g., sqlite:///optuna.db or postgresql://user:pass@host/db)')
-    opt_group.add_argument('--train-ratio', type=float, default=0.8,
+    opt_group.add_argument('--train-ratio', type=float, default=0.9,
                            help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
 
     return parser
@@ -101,6 +101,7 @@ def entry(args):
         configuration.use_ma_conf_buy = True
         configuration.use_vwap_buy = True
         configuration.use_vol_buy = True
+        configuration.optuna_db = f"journal://{args.output_dir}\\institutional_pullback.db"
 
     if args.profile == "structural_confluence":
         # Combination B: "The Structural Confluence" (Best Risk/Reward)
@@ -113,6 +114,7 @@ def entry(args):
         configuration.use_fib_rsi_buy = True
         configuration.use_macd_buy = True
         configuration.use_vol_buy = True
+        configuration.optuna_db = f"journal://{args.output_dir}\\structural_confluence.db"
 
     if args.profile == "exhaustion_reversal":
         # Combination C: "The Exhaustion Reversal" (Moderate Win Rate, High Frequency)
@@ -124,6 +126,7 @@ def entry(args):
         configuration.use_reg_bull_div = True
         configuration.use_ema_cross_buy = True
         configuration.use_bb_buy = True
+        configuration.optuna_db = f"journal://{args.output_dir}\\exhaustion_reversal.db"
 
     # Bonus SOTA Tip: Hidden vs. Regular Divergence
     # If you include divergence, note that Hidden Bullish Divergence (use_hid_bull_div) is statistically more reliable for trend continuation
