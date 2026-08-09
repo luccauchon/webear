@@ -136,7 +136,6 @@ def entry(args):
 
     # Call the optimization function
     realtime_and_backtest_hyperparameter_search_optuna(args=configuration)
-    realtime_and_backtest_hyperparameter_search_optuna(args=configuration)
 
 
 if __name__ == "__main__":
