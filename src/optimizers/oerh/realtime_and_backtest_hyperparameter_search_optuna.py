@@ -335,7 +335,7 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
     else:
         metric = "accuracy"
     score = metrics_val.get(metric, 0.0)
-    model_name = f"oerh_m{metric}_la{args.lookahead_bars}_th{args.threshold_pct:.5f}_tt{args.target_type}_twr{score:.4f}_sd{signal_density:.4f}_ds{args.dataset_id}_{args.ticker}_{timestamp}.pkl"
+    model_name = f"oerh_m{metric}_la{args.lookahead_bars}_th{args.threshold_pct:.5f}_tt{args.target_type}_twr{score:.4f}_sd{signal_density:.4f}_ds{args.dataset_id}_cdb{args.cooldown_bars}_{args.ticker}_{timestamp}.pkl"
     model_filename = os.path.join(output_dir, model_name)
     model_data = {
         'best_params': best_params,
