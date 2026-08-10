@@ -272,7 +272,7 @@ def factory_load_data(_dataset_id, _ticker, _args):
         if _dataset_id.startswith("intraday"):
             assert _ticker in ["^GSPC"]
             _n_minutes = _get_dataset_timeframe(_dataset_id)
-            df_main = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='1d', vix=False, spy=False, spx=True, ndx=False)['spx']
+            df_main = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=False, spy=False, spx=True, ndx=False)['spx']
             if _n_minutes > 1:
                 df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
         else:
@@ -369,10 +369,11 @@ def convert_to_heikin_ashi(df, ticker, overwrite=False):
 
 def resample_candles(df, n_minutes, ticker):
     """
-    Convertit un DataFrame de bougies 1-minute en bougies de n-minutes.
+    Convertit un DataFrame de bougies 1-minute en bougies de n-minutes
+    en commençant l'alignement à 09h30.
     """
     cols = _build_cols_dict(ticker)
-    # Inversion du dictionnaire pour associer le tuple (métrique, ticker) à sa règle d'agrégation
+
     agg_dict = {
         cols["open_col"]: "first",
         cols["high_col"]: "max",
@@ -381,13 +382,17 @@ def resample_candles(df, n_minutes, ticker):
         cols["volume_col"]: "sum"
     }
 
-    # Remplaçer 'T' par 'min' selon la version de Pandas (ex: '5min' ou '5T')
     rule = f"{n_minutes}min"
 
-    # Resampling des données basées sur l'Index (qui doit être un DatetimeIndex)
-    df_resampled = df.resample(rule).agg(agg_dict)
+    # origin='start_day' aligne sur 00h00 du jour même
+    # offset='30min' décale le point de départ à 00h30, alignant parfaitement les blocs de 60min sur 09h30, 10h30, etc.
+    df_resampled = df.resample(
+        rule,
+        origin='start_day',
+        offset='30min'
+    ).agg(agg_dict)
 
-    # Remove empty bars
+    # Supprime les barres vides (ex: avant 9h30 ou après la fermeture)
     df_resampled = df_resampled.dropna(subset=[cols["open_col"]])
 
     return df_resampled.copy()
