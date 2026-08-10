@@ -1,3 +1,20 @@
 @echo off
+setlocal enabledelayedexpansion
 
-start "OERH Optuna Day-Day" cmd /K "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\hyperparameter_search_optuna.py --sampler tpe --target-type floor --metric long_accuracy --dataset-id day --lookahead-bars 1 --min-signal-ratio 0.15 --n-trials 99999 --timeout 86400 --train-ratio 0.7 --output-dir day_perspective --storage sqlite:///day_perspective\\day_day.db --threshold-pct -0.005"
+start "OERH" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\realtime_and_backtest_hyperparameter_search_optuna.py  --n-trials 99999 --optimize-target buy --timeout 80000 --threshold-pct 0. --dataset-id day --lookahead-bars 10 --plot-sample 1800 --density-target 0.05 --target-type any_half_B --cooldown-bars 5 --output-dir models\day_persective\ --disable-plot-sample"
+timeout /t 2 /nobreak >nul
+
+start "OERH" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\realtime_and_backtest_hyperparameter_search_optuna.py  --n-trials 99999 --optimize-target buy --timeout 80000 --threshold-pct 0.01 --dataset-id day --lookahead-bars 10 --plot-sample 1800 --density-target 0.05 --target-type any_half_B --cooldown-bars 5 --output-dir models\day_persective\ --disable-plot-sample"
+timeout /t 2 /nobreak >nul
+
+start "OERH" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\realtime_and_backtest_hyperparameter_search_optuna.py  --n-trials 99999 --optimize-target buy --timeout 80000 --threshold-pct 0.02 --dataset-id day --lookahead-bars 10 --plot-sample 1800 --density-target 0.05 --target-type any_half_B --cooldown-bars 5 --output-dir models\day_persective\ --disable-plot-sample"
+timeout /t 2 /nobreak >nul
+
+start "OERH" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\realtime_and_backtest_hyperparameter_search_optuna.py  --n-trials 99999 --optimize-target buy --timeout 80000 --threshold-pct 0.03 --dataset-id day --lookahead-bars 10 --plot-sample 1800 --density-target 0.05 --target-type any_half_B --cooldown-bars 5 --output-dir models\day_persective\ --disable-plot-sample"
+timeout /t 2 /nobreak >nul
+
+start "OERH" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\realtime_and_backtest_hyperparameter_search_optuna.py  --n-trials 99999 --optimize-target buy --timeout 80000 --threshold-pct 0.04 --dataset-id day --lookahead-bars 10 --plot-sample 1800 --density-target 0.05 --target-type any_half_B --cooldown-bars 5 --output-dir models\day_persective\ --disable-plot-sample"
+timeout /t 2 /nobreak >nul
+
+start "OERH" cmd /C "call conda activate PY312_HT && cd ..\..\..\src\optimizers\oerh && python .\realtime_and_backtest_hyperparameter_search_optuna.py  --n-trials 99999 --optimize-target buy --timeout 80000 --threshold-pct 0.05 --dataset-id day --lookahead-bars 10 --plot-sample 1800 --density-target 0.05 --target-type any_half_B --cooldown-bars 5 --output-dir models\day_persective\ --disable-plot-sample"
+timeout /t 2 /nobreak >nul
