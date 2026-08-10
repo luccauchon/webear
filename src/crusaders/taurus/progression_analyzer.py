@@ -29,6 +29,7 @@ class TaurusAnalyzer:
         self.load_files()
 
     def load_files(self):
+        self.daily_data.clear()  # Clear existing data before rescanning
         pattern = os.path.join(self.dir_path, "taurus_visualization_day_*.json")
         files = glob.glob(pattern)
         for file in files:
@@ -169,6 +170,11 @@ class MainWindow(QMainWindow):
         self.dir_edit = QLineEdit()
         self.dir_edit.setPlaceholderText("Select directory containing JSON files...")
         self.dir_edit.setReadOnly(True)
+
+        # Set default directory
+        default_dir = r"D:\Finance\data\taurus\V1\_jsons"
+        self.dir_edit.setText(default_dir)
+
         browse_btn = QPushButton("Browse Directory")
         browse_btn.clicked.connect(self.browse_directory)
         row1.addWidget(QLabel("Directory:"))
@@ -306,7 +312,12 @@ class MainWindow(QMainWindow):
             if not self.analyzer or self.analyzer.dir_path != dir_path:
                 self.analyzer = TaurusAnalyzer(dir_path)
                 self.status_bar.showMessage("Files loaded. Analyzing progression...")
-                QApplication.processEvents()
+            else:
+                # Rescan for new files if directory is the same
+                self.analyzer.load_files()
+                self.status_bar.showMessage("Files rescanned. Analyzing progression...")
+
+            QApplication.processEvents()
 
             dates, rates, prices, target_date_str = self.analyzer.analyze(t_str, target_price, future_bar, optimize_type, indicator_name)
             self.plot_data(dates, rates, prices, target_date_str, optimize_type, indicator_name)
