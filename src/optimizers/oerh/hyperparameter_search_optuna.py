@@ -223,8 +223,8 @@ def save_best_model(study, output_dir: str = "models", metrics_train=None, metri
         target_type = metadata.get('target_type', 'any')
         score = f"{study.best_value:.8f}"
         signal_density = f"{metadata.get('min_signal_ratio'):.4f}"
-        dd_id = f"{metadata.get('dataset_id')}"
-        model_name = f"model_{metric}_lb{lookahead}_th{threshold:.5f}_tt{target_type}_sc{score}_sd{signal_density}_{dd_id}_{ticker}_{timestamp}"
+        dataset_id = f"{metadata.get('dataset_id')}"
+        model_name = f"oerh_m{metric}_la{lookahead}_th{threshold:.5f}_tt{target_type}_sc{score}_sd{signal_density}_ds{dataset_id}_{ticker}_{timestamp}"
 
     # Extract scores and win rates
     if metrics_train is not None and metrics_val is not None:
@@ -410,7 +410,7 @@ Examples:
     parser.add_argument(
         "--n-trials",
         type=int,
-        default=50,
+        default=250,
         help="Number of optimization trials to run (default: 50)"
     )
     parser.add_argument(
@@ -429,7 +429,7 @@ Examples:
     parser.add_argument(
         "--storage",
         type=str,
-        default="sqlite:///optuna_forecast_optimization.db",
+        default=None,
         help="Optuna storage URL for study persistence. "
              "Examples: 'sqlite:///results.db', 'postgresql://user:pass@host/db'. "
              "Use 'none' to disable storage (in-memory only, not persisted). "
@@ -472,7 +472,7 @@ if __name__ == "__main__":
     optimizer_parser = setup_optimizer_argparse()
     opt_args, remaining_args = optimizer_parser.parse_known_args()
     # 🔧 Normalize storage: convert "none" to None for in-memory studies
-    storage_url = None if opt_args.storage.lower() == "none" else opt_args.storage
+    storage_url = None if opt_args.storage is None or opt_args.storage.lower() == "none" else opt_args.storage
     print("🚀 Starting Optuna Hyperparameter Optimization...")
     print(f"💡 Sampler: {opt_args.sampler.upper()} | Trials: {opt_args.n_trials}")
     print(f"💡 Metric: {opt_args.metric} - {AVAILABLE_METRICS[opt_args.metric]}")
@@ -504,7 +504,7 @@ if __name__ == "__main__":
         sampler = optuna.samplers.RandomSampler(seed=opt_args.seed)
         default_study_name = "forecast_random_study"
     else:  # default to TPE
-        sampler = optuna.samplers.TPESampler(seed=opt_args.seed)
+        sampler = optuna.samplers.TPESampler(seed=opt_args.seed, n_startup_trials=99,)
         default_study_name = "forecast_tpe_study"
     os.makedirs(opt_args.output_dir, exist_ok=True)
     study_name = opt_args.study_name or f"{default_study_name}_{opt_args.metric}"

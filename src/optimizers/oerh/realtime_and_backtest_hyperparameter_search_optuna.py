@@ -84,96 +84,7 @@ After signal generation, the system computes:
    • Short Accuracy       : % of short signals that correctly predicted downward move
    • Signal Frequency     : Total signals generated vs. total bars analyzed
 
-🚀 EXECUTION MODES
-------------------
-🔹 BATCH MODE (default):
-   - Processes entire historical dataset
-   - Supports train/validation split via --train-ratio
-   - Outputs comprehensive metrics + optional visualization
-
-🔹 REAL-TIME MODE (--real-time):
-   - Loads pre-optimized model parameters from .pkl file
-   - Evaluates ONLY the most recent data point
-   - Outputs minimal, automation-friendly signal format:
-       BUY|DATE|PRICE|+BARS|TARGET_PRICE
-       SELL|DATE|PRICE|+BARS|TARGET_PRICE
-       HOLD|DATE|PRICE
-
-📦 MODEL PERSISTENCE
---------------------
-Models saved via pickle contain:
-   • best_params    : Optimized algorithm hyperparameters
-   • metadata       : Dataset ID, ticker, target_type, metric used for optimization
-   • (optional) performance history for audit trails
-
-🎨 VISUALIZATION DASHBOARD
---------------------------
-Three-panel synchronized plot:
-   1. Price + One-Euro Filter + Signal markers (▲ long / ▼ short)
-   2. RSI oscillator with overbought/oversold zones
-   3. MACD histogram + signal line with momentum coloring
-Features: Zoom/pan synchronization, inset zoom region, interactive Matplotlib backend
-
-⚙️ KEY COMMAND-LINE PARAMETERS
-------------------------------
-Data & Environment:
-   --dataset-id      : Dataset identifier (choices from DATASET_AVAILABLE)
-   --ticker          : Symbol to analyze (default: "^GSPC")
-   --seed            : Random seed for reproducibility
-   --validate-jit    : Run JIT consistency sanity check at startup (default: disabled)
-
-Algorithm Tuning:
-   --rsi-period / --rsi-oversold / --rsi-overbought / --rsi-mode
-   --macd-fast / --macd-slow / --macd-signal
-   --one-euro-min / --one-euro-factor
-   --lookahead-bars / --threshold-pct / --target-type
-
-Evaluation & Output:
-   --train-ratio     : Fraction of data for training (rest for validation)
-   --plot-sample     : Number of recent bars to visualize
-   --verbose / --disable-print : Control console output
-
-Real-Time Execution:
-   --real-time       : Enable latest-point evaluation mode
-   --model-path      : Path to saved .pkl model file (required with --real-time)
-   --output-signal-only : Minimal output format for scripting/automation
-
-🧪 EXAMPLE USAGE
----------------
-# Put credit spread strategy: floor mode with -1.5% threshold
-python forecast.py --ticker SPY --target-type floor --threshold-pct -0.015 --lookahead-bars 5 --rsi-mode reversion
-
-# Batch backtest with custom parameters
-python forecast.py --ticker AAPL --rsi-mode reversion --lookahead-bars 10 --threshold-pct 0.02
-
-# Train/validation split evaluation
-python forecast.py --train-ratio 0.7 --plot-sample 150
-
-# Real-time signal with saved model
-python forecast.py --real-time --model-path models/aapl_optimized.pkl --output-signal-only
-
-# Silent automation mode (parse output programmatically)
-python forecast.py --real-time --model-path models/spx.pkl --output-signal-only --disable-print
-
-# Run with JIT validation sanity check
-python forecast.py --validate-jit --ticker SPY --disable-plot-sample
-
-🔐 DESIGN PRINCIPLES
---------------------
-• Modular: Each indicator is independently testable and replaceable
-• Vectorized: Leverages pandas/numpy for efficient batch processing
-• JIT-Accelerated: Numba @njit for RSI, MACD, and optional signal generation
-• Cache-aware: LRU caching for dataset loading + numba function caching
-• Type-safe: Comprehensive type hints for maintainability
-• Reproducible: Seed control + deterministic indicator calculations
-• Production-ready: Fallback imports, error handling, and clear CLI interface
-
-📚 DEPENDENCIES
---------------
-numpy, pandas, numba>=0.56 (JIT acceleration), matplotlib, pickle, argparse
-
 ====================================================================================================
-🏁 SYSTEM READY — Configure parameters via CLI or load optimized model for real-time deployment
 """
 
 try:
@@ -187,7 +98,8 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 import numpy as np
 import pandas as pd
 from functools import lru_cache
@@ -198,10 +110,16 @@ import matplotlib.pyplot as plt
 from typing import Optional, Tuple
 import pickle
 import argparse
-from utils import get_filename_for_dataset
+from utils import get_filename_for_dataset, factory_load_data
 import os
 import warnings
+import optuna
+from sklearn.model_selection import TimeSeriesSplit
+import datetime
 
+# Suppress Optuna & pandas_ta debug logs
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+pd.options.mode.chained_assignment = None
 # ============================================
 # 1. ONE-EURO FILTER (Adaptive Smoothing)
 # ============================================
@@ -308,7 +226,7 @@ def _macd_numba(close: np.ndarray, fast: int, slow: int, signal: int) -> tuple:
 
 
 @njit(cache=True, parallel=True, fastmath=True)
-def _generate_signals_numba(
+def _generate_candidates_numba(
         close: np.ndarray,
         one_euro: np.ndarray,
         rsi: np.ndarray,
@@ -317,9 +235,9 @@ def _generate_signals_numba(
         rsi_overbought: float,
         rsi_mode_momentum: bool,
 ) -> np.ndarray:
-    """Numba-accelerated signal generation with parallel processing."""
+    """Pass 1: Numba-accelerated candidate signal generation with parallel processing."""
     n = len(close)
-    signals = np.zeros(n, dtype=np.int8)
+    candidates = np.zeros(n, dtype=np.int8)
 
     for i in prange(1, n):
         # Skip if any required value is NaN
@@ -342,12 +260,31 @@ def _generate_signals_numba(
         # Long signal condition
         if ((close[i] > one_euro[i]) and long_rsi and
                 (histogram[i] > 0) and (histogram[i] > hist_prev)):
-            signals[i] = 1
+            candidates[i] = 1
         # Short signal condition
         elif ((close[i] < one_euro[i]) and short_rsi and
               (histogram[i] < 0) and (histogram[i] < hist_prev)):
-            signals[i] = -1
+            candidates[i] = -1
 
+    return candidates
+
+
+@njit(cache=True, fastmath=True)
+def _apply_cooldown(candidates: np.ndarray, cooldown: int) -> np.ndarray:
+    """Pass 2: Sequential sweep to enforce minimum bars between signals."""
+    n = len(candidates)
+    signals = np.zeros(n, dtype=np.int8)
+    if cooldown <= 0:
+        for i in range(n):
+            signals[i] = candidates[i]
+        return signals
+
+    last_signal_idx = -cooldown - 1
+    for i in range(n):
+        if candidates[i] != 0:
+            if i - last_signal_idx >= cooldown:
+                signals[i] = candidates[i]
+                last_signal_idx = i
     return signals
 
 
@@ -375,7 +312,7 @@ def calculate_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int
 
 
 # ============================================
-# MODEL LOADING & REAL-TIME EXECUTION
+# MODEL SAVING & LOADING & REAL-TIME EXECUTION
 # ============================================
 def load_model(model_path: str) -> dict:
     """Load a saved model file and return its parameters."""
@@ -388,7 +325,47 @@ def load_model(model_path: str) -> dict:
     return model_data
 
 
-def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip: bool):
+def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, signal_density):
+    """Save the best model parameters and metadata to a pickle file."""
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.optimize_target == "buy":
+        metric = "long_accuracy"
+    elif args.optimize_target == "sell":
+        metric = "short_accuracy"
+    else:
+        metric = "accuracy"
+    score = metrics_val.get(metric, 0.0)
+    model_name = f"oerh_m{metric}_la{args.lookahead_bars}_th{args.threshold_pct:.5f}_tt{args.target_type}_twr{score:.4f}_sd{signal_density:.4f}_ds{args.dataset_id}_{args.ticker}_{timestamp}.pkl"
+    model_filename = os.path.join(output_dir, model_name)
+    model_data = {
+        'best_params': best_params,
+        'metadata': {
+            'lookahead_bars': args.lookahead_bars,
+            'dataset_id': args.dataset_id,
+            'ticker': args.ticker,
+            'threshold_pct': args.threshold_pct,
+            'target_type': args.target_type,
+            'metric': metric
+        },
+        'user_attrs': {
+            'signal_ratio': signal_density,
+            'metric_used': metric,
+            'train_long_win_rate': metrics_train.get('long_accuracy', 0.0),
+            'val_long_win_rate': metrics_val.get('long_accuracy', 0.0),
+            'train_short_win_rate': metrics_train.get('short_accuracy', 0.0),
+            'val_short_win_rate': metrics_val.get('short_accuracy', 0.0),
+            'train_accuracy': metrics_train.get('accuracy', 0.0),
+            'val_accuracy': metrics_val.get('accuracy', 0.0),
+        }
+    }
+    os.makedirs(output_dir, exist_ok=True)
+    with open(model_filename, 'wb') as f:
+        pickle.dump(model_data, f)
+
+    print(f"\n💾 Best model saved as: {model_filename}")
+
+
+def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
@@ -397,8 +374,13 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     assert 'lookahead_bars' in metadata
     lookahead_bars = params.get('lookahead_bars', metadata.get('lookahead_bars', 5))
     dataset_id = metadata.get('dataset_id')
-    master_data_cache = copy.deepcopy(_load_df(_database_id=dataset_id))
     ticker = metadata.get('ticker')
+
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
+    assert isinstance(df.columns, pd.MultiIndex)
+    df.columns = ['_'.join(str(c) for c in col).strip('_') for col in df.columns]
+    price_col = f'Close_{ticker}'
+
     signal_ratio = model_data['user_attrs']['signal_ratio']
     metric_used = model_data['user_attrs']['metric_used']
     assert 'threshold_pct' in metadata
@@ -409,16 +391,16 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     elif metric_used == 'short_accuracy':
         train_win_rate = model_data['user_attrs']['train_short_win_rate']
         val_win_rate = model_data['user_attrs']['val_short_win_rate']
+    elif metric_used == 'accuracy':
+        train_win_rate = model_data['user_attrs'].get('train_accuracy', 0.0)
+        val_win_rate = model_data['user_attrs'].get('val_accuracy', 0.0)
     else:
         print(model_data)
         assert False, f"TODO: {metric_used}"
-    df = master_data_cache[ticker].sort_index()
-    if clip:
-        df = df.iloc[:-1].copy()
+
     print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
     print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
           f":: Val Win Rate: {val_win_rate:.2%}  @{signal_ratio:.2%} signal density")
-    price_col = ('Close', ticker)
 
     # Determine minimum history needed for indicators
     assert 'rsi_period' in params and 'macd_slow' in params
@@ -437,7 +419,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
         'rsi_period', 'rsi_oversold', 'rsi_overbought', 'rsi_mode',
         'macd_fast', 'macd_slow', 'macd_signal',
         'one_euro_min', 'one_euro_factor',
-        'lookahead_bars', 'threshold_pct', 'target_type'
+        'lookahead_bars', 'threshold_pct', 'target_type', 'cooldown_bars'
     ]}
     assert 'target_type' in metadata
     target_type = metadata['target_type']
@@ -462,8 +444,13 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     the_metric = params.get('metric', metadata.get('metric', 'long_accuracy'))
     assert the_metric == metric_used
 
-    assert 1 == len(signal)
-    signal = signal.values[0]
+    # Handle signal safely whether it's scalar or array
+    if hasattr(signal, 'item'):
+        signal = signal.item()
+    elif hasattr(signal, 'values'):
+        signal = signal.values[0]
+    signal = int(signal)
+
     if signal == 1 and the_metric in ['long_accuracy', 'accuracy']:  # Buy signal
         signal = 1
     elif signal == -1 and the_metric in ['short_accuracy', 'accuracy']:  # Sell signal
@@ -618,9 +605,7 @@ def create_target_floor(close: pd.Series, lookahead_bars: int, threshold_pct: fl
     """
     # Get MINIMUM price in forward window [t+1, t+lookahead_bars]
     # Reverse series → rolling min → reverse back → shift to exclude current bar
-    future_min = close.iloc[::-1].rolling(
-        window=lookahead_bars, min_periods=lookahead_bars
-    ).min().iloc[::-1].shift(-1)
+    future_min = close.iloc[::-1].rolling(window=lookahead_bars, min_periods=lookahead_bars).min().iloc[::-1].shift(-1)
 
     # Label = 1 if minimum stays ABOVE floor level throughout window
     # floor_level = entry_price × (1 + threshold_pct)
@@ -642,7 +627,8 @@ class ForecastSystem:
                  one_euro_min: float = 10, one_euro_factor: float = 0.2,
                  lookahead_bars: int = 5, threshold_pct: float = 0.01,
                  rsi_mode: str = "momentum", target_type: str = "any",
-                 use_jit_signals: bool = False):
+                 use_jit_signals: bool = False, cooldown_bars: int = 0,
+                 precomputed_labels: Optional[pd.Series] = None):
         self.rsi_period = rsi_period
         self.rsi_oversold = rsi_oversold
         self.rsi_overbought = rsi_overbought
@@ -656,6 +642,8 @@ class ForecastSystem:
         self.rsi_mode = rsi_mode
         self.target_type = target_type  # 'exact', 'any', 'any_half_B', or 'floor'
         self.use_jit_signals = use_jit_signals  # Enable JIT for signal generation
+        self.cooldown_bars = cooldown_bars
+        self.precomputed_labels = precomputed_labels
 
     def generate_signals(self, df: pd.DataFrame, price_col, ticker) -> pd.DataFrame:
         df = df.copy()
@@ -670,7 +658,10 @@ class ForecastSystem:
         df['Histogram'] = macd_df['Histogram']
 
         # ✅ DYNAMIC TARGET SELECTION (now includes "floor" mode)
-        if self.target_type == "floor":
+        if self.precomputed_labels is not None:
+            # Inject precomputed labels to save compute time during optimization
+            df['FutureLabel'] = self.precomputed_labels.reindex(df.index)
+        elif self.target_type == "floor":
             df['FutureLabel'] = create_target_floor(close, self.lookahead_bars, self.threshold_pct)
         elif self.target_type == "any":
             df['FutureLabel'] = create_target_any(close, self.lookahead_bars, self.threshold_pct)
@@ -687,14 +678,17 @@ class ForecastSystem:
             hist_vals = df['Histogram'].to_numpy(dtype=np.float64)
             rsi_mode_momentum = (self.rsi_mode == "momentum")
 
-            signal_array = _generate_signals_numba(
+            # Pass 1: Parallel Candidates
+            candidates = _generate_candidates_numba(
                 close_vals, one_euro_vals, rsi_vals, hist_vals,
                 self.rsi_oversold, self.rsi_overbought, rsi_mode_momentum
             )
+            # Pass 2: Sequential Cooldown
+            signal_array = _apply_cooldown(candidates, self.cooldown_bars)
             df['Signal'] = signal_array
         else:
             # Original vectorized pandas approach
-            df['Signal'] = 0
+            df['Candidate'] = 0
             rsi_shift = df['RSI'].shift(1).fillna(df['RSI'])
             hist_shift = df['Histogram'].shift(1).fillna(df['Histogram'])
 
@@ -710,8 +704,26 @@ class ForecastSystem:
             short_cond = ((close < df['OneEuro']) & short_rsi_cond & (df['RSI'] < rsi_shift) &
                           (df['Histogram'] < 0) & (df['Histogram'] < hist_shift))
 
-            df.loc[long_cond, 'Signal'] = 1
-            df.loc[short_cond, 'Signal'] = -1
+            df.loc[long_cond, 'Candidate'] = 1
+            df.loc[short_cond, 'Candidate'] = -1
+
+            # Apply Cooldown in Pandas
+            df['Signal'] = 0
+            if self.cooldown_bars > 0:
+                signals = np.zeros(len(df), dtype=np.int8)
+                last_idx = -self.cooldown_bars - 1
+                cand_arr = df['Candidate'].to_numpy()
+                for i in range(len(df)):
+                    if cand_arr[i] != 0:
+                        if i - last_idx >= self.cooldown_bars:
+                            signals[i] = cand_arr[i]
+                            last_idx = i
+                df['Signal'] = signals
+            else:
+                df['Signal'] = df['Candidate']
+
+            # Clean up temp column
+            df.drop(columns=['Candidate'], inplace=True, errors='ignore')
             df['Signal'] = df['Signal'].fillna(0)
 
         return df
@@ -753,7 +765,8 @@ def warmup_jit():
     _ = _rsi_numba(dummy, 14)
     _ = _ema_numba(dummy, 12)
     _ = _macd_numba(dummy, 12, 26, 9)
-    _ = _generate_signals_numba(dummy, dummy, dummy, dummy, 30.0, 70.0, True)
+    cands = _generate_candidates_numba(dummy, dummy, dummy, dummy, 30.0, 70.0, True)
+    _ = _apply_cooldown(cands, 2)
 
 
 def _validate_jit_consistency(verbose: bool = True) -> bool:
@@ -789,16 +802,26 @@ def _validate_jit_consistency(verbose: bool = True) -> bool:
             df_test['Histogram'] = macd_test['Histogram']
 
             # Test pandas vectorized path
-            system_pandas = ForecastSystem(rsi_mode=mode, use_jit_signals=False)
+            system_pandas = ForecastSystem(rsi_mode=mode, use_jit_signals=False, cooldown_bars=0)
             result_pandas = system_pandas.generate_signals(df_test.copy(), 'Close', 'TEST')
 
             # Test JIT path
-            system_jit = ForecastSystem(rsi_mode=mode, use_jit_signals=True)
+            system_jit = ForecastSystem(rsi_mode=mode, use_jit_signals=True, cooldown_bars=0)
             result_jit = system_jit.generate_signals(df_test.copy(), 'Close', 'TEST')
 
             # Signals should be identical (both paths use same logic)
             assert (result_pandas['Signal'] == result_jit['Signal']).all(), \
                 f"Signal mismatch in {mode} mode between pandas and JIT paths"
+
+            # Test with cooldown
+            system_pandas_cool = ForecastSystem(rsi_mode=mode, use_jit_signals=False, cooldown_bars=2)
+            result_pandas_cool = system_pandas_cool.generate_signals(df_test.copy(), 'Close', 'TEST')
+
+            system_jit_cool = ForecastSystem(rsi_mode=mode, use_jit_signals=True, cooldown_bars=2)
+            result_jit_cool = system_jit_cool.generate_signals(df_test.copy(), 'Close', 'TEST')
+
+            assert (result_pandas_cool['Signal'] == result_jit_cool['Signal']).all(), \
+                f"Signal mismatch in {mode} mode between pandas and JIT paths WITH COOLDOWN"
 
         if verbose:
             print("✅ JIT validation passed: All functions produce consistent results")
@@ -820,7 +843,9 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
                  macd_fast: int = 12, macd_slow: int = 26, macd_signal: int = 9,
                  one_euro_min: float = 10.0, one_euro_factor: float = 0.2,
                  lookahead_bars: int = 5, threshold_pct: float = 0.01,
-                 target_type: str = "any", use_jit_signals: bool = False) -> Tuple[pd.DataFrame, dict]:
+                 target_type: str = "any", use_jit_signals: bool = False,
+                 cooldown_bars: int = 0,
+                 precomputed_labels: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, dict]:
     if not pd.api.types.is_numeric_dtype(df[price_col].to_numpy().dtype if isinstance(df[price_col], pd.DataFrame) else df[price_col].dtype):
         df[price_col] = df[price_col].apply(pd.to_numeric, errors='coerce')
     df = df.dropna(subset=[price_col])
@@ -830,7 +855,9 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
         macd_fast=macd_fast, macd_slow=macd_slow, macd_signal=macd_signal,
         one_euro_min=one_euro_min, one_euro_factor=one_euro_factor,
         lookahead_bars=lookahead_bars, threshold_pct=threshold_pct,
-        target_type=target_type, use_jit_signals=use_jit_signals
+        target_type=target_type, use_jit_signals=use_jit_signals,
+        cooldown_bars=cooldown_bars,
+        precomputed_labels=precomputed_labels
     )
     df_signals = system.generate_signals(df=df, price_col=price_col, ticker=ticker)
     metrics = system.evaluate_signals(df=df_signals, price_col=price_col)
@@ -840,7 +867,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
 # ============================================
 # 7. PLOTTING HELPER (Unchanged)
 # ============================================
-def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_idx: int = -1,
+def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: int = 200, start_idx: int = -1,
                           highlight_signals: bool = True, zoom_region: Optional[Tuple[int, int]] = None):
     if start_idx == -1:
         start_idx = max(0, len(df) - sample)
@@ -851,10 +878,37 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
 
     ax1.plot(plot_df.index, plot_df[price_col], label='Close', alpha=0.7, linewidth=1, color='black')
     ax1.plot(plot_df.index, plot_df['OneEuro'], label='One-Euro Filter', color='blue', linewidth=2)
-    longs = plot_df[plot_df['Signal'] == 1]
-    shorts = plot_df[plot_df['Signal'] == -1]
-    ax1.scatter(longs.index, longs[price_col], marker='^', color='green', s=100, label='Long Signal', zorder=6, edgecolors='darkgreen', linewidth=1.5)
-    ax1.scatter(shorts.index, shorts[price_col], marker='v', color='red', s=100, label='Short Signal', zorder=6, edgecolors='darkred', linewidth=1.5)
+
+    longs = plot_df[(plot_df['Signal'] == 1) & plot_df['FutureLabel'].notna()]
+    shorts = plot_df[(plot_df['Signal'] == -1) & plot_df['FutureLabel'].notna()]
+
+    if optimize_target in ["buy", "both"]:
+        ax1.scatter(longs.index, longs[price_col], marker='^', color='green', s=100, label='Long Signal', zorder=6, edgecolors='darkgreen', linewidth=1.5)
+
+        # Add bold W for winning trades and L for losing trades (Longs)
+        long_wins = longs[longs['FutureLabel'] == 1]
+        long_losses = longs[longs['FutureLabel'] == 0]
+        for idx, row in long_wins.iterrows():
+            ax1.annotate('W', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
+                         color='darkgreen', fontweight='bold', fontsize=12, ha='center', va='bottom')
+        for idx, row in long_losses.iterrows():
+            ax1.annotate('L', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
+                         color='darkred', fontweight='bold', fontsize=12, ha='center', va='bottom')
+
+    if optimize_target in ["sell", "both"]:
+        ax1.scatter(shorts.index, shorts[price_col], marker='v', color='red', s=100, label='Short Signal', zorder=6, edgecolors='darkred', linewidth=1.5)
+
+        # Add bold W for winning trades and L for losing trades (Shorts)
+        # Note: For short signals, winning means price did NOT exceed threshold (FutureLabel == 0)
+        short_wins = shorts[shorts['FutureLabel'] == 0]
+        short_losses = shorts[shorts['FutureLabel'] == 1]
+        for idx, row in short_wins.iterrows():
+            ax1.annotate('W', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
+                         color='darkgreen', fontweight='bold', fontsize=12, ha='center', va='bottom')
+        for idx, row in short_losses.iterrows():
+            ax1.annotate('L', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
+                         color='darkred', fontweight='bold', fontsize=12, ha='center', va='bottom')
+
     if highlight_signals:
         for idx in longs.index: ax1.axvline(x=idx, color='green', linestyle=':', alpha=0.4, linewidth=0.8)
         for idx in shorts.index: ax1.axvline(x=idx, color='red', linestyle=':', alpha=0.4, linewidth=0.8)
@@ -901,8 +955,24 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
             ax1_inset = ax1.inset_axes([0.62, 0.55, 0.35, 0.35])
             ax1_inset.plot(zoom_df.index, zoom_df[price_col], color='black', linewidth=1.5)
             ax1_inset.plot(zoom_df.index, zoom_df['OneEuro'], color='blue', linewidth=2)
-            ax1_inset.scatter(zoom_df[zoom_df['Signal'] == 1].index, zoom_df[zoom_df['Signal'] == 1][price_col], marker='^', color='green', s=50, zorder=5)
-            ax1_inset.scatter(zoom_df[zoom_df['Signal'] == -1].index, zoom_df[zoom_df['Signal'] == -1][price_col], marker='v', color='red', s=50, zorder=5)
+
+            zoom_longs = zoom_df[(zoom_df['Signal'] == 1) & zoom_df['FutureLabel'].notna()]
+            zoom_shorts = zoom_df[(zoom_df['Signal'] == -1) & zoom_df['FutureLabel'].notna()]
+
+            ax1_inset.scatter(zoom_longs.index, zoom_longs[price_col], marker='^', color='green', s=50, zorder=5)
+            ax1_inset.scatter(zoom_shorts.index, zoom_shorts[price_col], marker='v', color='red', s=50, zorder=5)
+
+            if optimize_target in ["buy", "both"]:
+                for idx, row in zoom_longs[zoom_longs['FutureLabel'] == 1].iterrows():
+                    ax1_inset.annotate('W', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkgreen', fontweight='bold', fontsize=10, ha='center', va='bottom')
+                for idx, row in zoom_longs[zoom_longs['FutureLabel'] == 0].iterrows():
+                    ax1_inset.annotate('L', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkred', fontweight='bold', fontsize=10, ha='center', va='bottom')
+            if optimize_target in ["sell", "both"]:
+                for idx, row in zoom_shorts[zoom_shorts['FutureLabel'] == 0].iterrows():
+                    ax1_inset.annotate('W', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkgreen', fontweight='bold', fontsize=10, ha='center', va='bottom')
+                for idx, row in zoom_shorts[zoom_shorts['FutureLabel'] == 1].iterrows():
+                    ax1_inset.annotate('L', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkred', fontweight='bold', fontsize=10, ha='center', va='bottom')
+
             ax1_inset.set_xticks([]);
             ax1_inset.set_yticks([]);
             ax1_inset.set_title('Zoom', fontsize=8, fontweight='bold');
@@ -936,7 +1006,9 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_grp.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Print detailed progress, metrics, and explanations')
     data_grp.add_argument('--validate-jit', action='store_true', default=False,
                           help='Run JIT consistency sanity check at startup (default: disabled)')
-    data_grp.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    data_grp.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
+    data_grp.add_argument('--output-dir', type=str, default='models', help='Output directory')
+
     algo_grp = parser.add_argument_group("Algorithm Parameters")
     algo_grp.add_argument("--rsi-period", type=int, default=14, help="RSI calculation window")
     algo_grp.add_argument("--rsi-oversold", type=float, default=30.0, help="RSI oversold threshold")
@@ -947,12 +1019,28 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--macd-signal", type=int, default=9, help="MACD signal line period")
     algo_grp.add_argument("--one-euro-min", type=float, default=10.0, help="One-Euro filter min cutoff")
     algo_grp.add_argument("--one-euro-factor", type=float, default=0.2, help="One-Euro filter beta factor")
-    algo_grp.add_argument("--lookahead-bars", type=int, default=5, help="Future bars to forecast")
+    algo_grp.add_argument("--cooldown-bars", type=int, default=0, help="Minimum number of bars to wait between signals (cooldown period)")
+    algo_grp.add_argument("--lookahead-bars", type=int, default=10, help="Future bars to forecast")
     algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target (use NEGATIVE for floor mode)")
-    algo_grp.add_argument('--train-ratio', type=float, default=1.0, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
-    algo_grp.add_argument('--use-jit-signals', action='store_true', default=False,
+    algo_grp.add_argument("--density-target", type=float, default=0.04, help="Target trade density (signals per bar) for optimization penalty. A 0 value disable it.")
+    algo_grp.add_argument('--train-ratio', type=float, default=0.8, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
+    algo_grp.add_argument('--use-jit-signals', action='store_true', default=True,
                           help='Enable JIT acceleration for signal generation (recommended for large datasets)')
-
+    algo_grp.add_argument("--n-trials", type=int, default=50, help="Number of trials for Optuna optimization")
+    algo_grp.add_argument('--timeout', type=int, default=120, help='Max runtime (seconds)')
+    algo_grp.add_argument(
+        "--optuna-db",
+        type=str,
+        default=None,
+        help="Storage location for Optuna (e.g., sqlite:///example.db). If specified and contains completed trials, prints the best candidate before optimization."
+    )
+    algo_grp.add_argument(
+        "--optimize-target",
+        type=str,
+        choices=["buy", "sell", "both"],
+        default="both",
+        help="Target to optimize during Optuna search: 'buy' (long only), 'sell' (short only), or 'both' (combined)"
+    )
     # Target labeling mode - UPDATED to include "floor"
     algo_grp.add_argument(
         "--target-type",
@@ -964,7 +1052,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     viz_grp = parser.add_argument_group("Visualization")
     viz_grp.add_argument("--plot-sample", type=int, default=100, help="Number of recent bars to plot")
-    viz_grp.add_argument("--disable-plot-sample", action="store_true", help="Skip plotting section")
+    viz_grp.add_argument("--disable-plot-sample", action="store_true", default=False, help="Skip plotting section")
 
     realtime_grp = parser.add_argument_group("Real-Time Mode")
     realtime_grp.add_argument(
@@ -986,28 +1074,20 @@ def setup_argparse() -> argparse.ArgumentParser:
     return parser
 
 
-@lru_cache(maxsize=32)
-def _load_df(_database_id):
-    cache_filename = get_filename_for_dataset(_database_id, older_dataset=None)
-    with open(cache_filename, 'rb') as f:
-        master_data_cache = pickle.load(f)
-    return master_data_cache
-
-
 def entry(args):
     # ✅ JIT VALIDATION (optional, disabled by default)
     if args.validate_jit:
         if not _validate_jit_consistency(verbose=args.verbose):
             print("⚠️  JIT validation failed. Proceeding anyway (results may be inconsistent).")
             return None
-        # Warmup JIT after validation to cache compiled functions
+        # Warmup jit after validation to cache compiled functions
         warmup_jit()
 
     # ✅ REAL-TIME MODE: Load model and evaluate latest point only
     if args.real_time:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
-        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip=args.clip)
+        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip_n=args.clip_n)
 
     if args.verbose:
         print("✅ __doc__ length:", len(__doc__ or ""))
@@ -1016,42 +1096,20 @@ def entry(args):
 
     # ✅ BATCH MODE: Original behavior with optional train/val split
     np.random.seed(args.seed)
-    master_data_cache = copy.deepcopy(_load_df(_database_id=args.dataset_id))
-    df_spx500 = master_data_cache[args.ticker].sort_index()
-    price_col = ('Close', args.ticker) if isinstance(df_spx500.columns, pd.MultiIndex) else 'Close'
+    df = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": args.clip_n})
+    # 🔥 Flatten MultiIndex columns to prevent KeyError during signal generation/evaluation
+    assert isinstance(df.columns, pd.MultiIndex)
+    df.columns = ['_'.join(str(c) for c in col).strip('_') for col in df.columns]
+    price_col = f'Close_{args.ticker}'
+
     if 1 == args.lookahead_bars:
         assert args.target_type in ["exact", "any", "floor"]
     if args.target_type in ["floor"]:
         assert args.threshold_pct <= 0.
-    # Helper to run forecast and print results
-    def run_and_report(df_subset, label, plot_results=False):
-        df_results, metrics = run_forecast(
-            df=df_subset, price_col=price_col, ticker=args.ticker,
-            rsi_period=args.rsi_period, rsi_oversold=args.rsi_oversold, rsi_overbought=args.rsi_overbought, rsi_mode=args.rsi_mode,
-            macd_fast=args.macd_fast, macd_slow=args.macd_slow, macd_signal=args.macd_signal,
-            one_euro_min=args.one_euro_min, one_euro_factor=args.one_euro_factor,
-            lookahead_bars=args.lookahead_bars, threshold_pct=args.threshold_pct,
-            target_type=args.target_type,
-            use_jit_signals=args.use_jit_signals  # Pass JIT flag
-        )
-        if not args.disable_print:
-            print(f"\n📊 {label} Evaluation")
-            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].date()} to {df_subset.index[-1].date()}")
-            print(f"   Total Signals: {metrics.get('total_signals', 0)}")
-            print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
-            print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
-            print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
-            print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
-            print(f"   Target Mode: '{args.target_type}'")
-            print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
-        if plot_results and not args.disable_plot_sample:
-            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample)
-        return df_results, metrics
 
-    # ✅ TRAIN/VALIDATION SPLIT LOGIC
-    # Calculate split index (ensure minimum data for indicators)
+    # ✅ OPTIMIZATION & TRAIN/VALIDATION SPLIT LOGIC
     min_history = max(args.rsi_period, args.macd_slow, 100) + args.lookahead_bars + 10
-    total_len = len(df_spx500)
+    total_len = len(df)
 
     if total_len < min_history:
         raise ValueError(f"Dataset too small ({total_len} bars) for indicators + lookahead. Need at least {min_history}.")
@@ -1060,16 +1118,224 @@ def entry(args):
     # Ensure training set has enough data for warmup
     train_end_idx = max(train_end_idx, min_history)
 
-    df_train = df_spx500.iloc[:train_end_idx].copy()
-    df_val = df_spx500.iloc[train_end_idx:].copy()
+    df_train = df.iloc[:train_end_idx].copy()
+    df_val = df.iloc[train_end_idx:].copy()
     if args.verbose:
-        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%), Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%)")
+        str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
+        str_te = f"({df_val.index[0].strftime('%Y-%m-%d_%H%M')}::{df_val.index[-1].strftime('%Y-%m-%d_%H%M')})"
+        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
+        print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: {args.cooldown_bars}")
+
+    # ✅ PRE-COMPUTE LABELS ONCE (Before Optuna)
+    # Since target generation does NOT depend on RSI/MACD/OneEuro parameters,
+    # calculate it globally before the study starts to save massive compute time!
+    precomputed_labels = None
+    close_train = df_train[price_col]
+    if args.target_type == "floor":
+        precomputed_labels = create_target_floor(close_train, args.lookahead_bars, args.threshold_pct)
+    elif args.target_type == "any":
+        precomputed_labels = create_target_any(close_train, args.lookahead_bars, args.threshold_pct)
+    elif args.target_type == "any_half_B":
+        precomputed_labels = create_target_any_at_half_B(close_train, args.lookahead_bars, args.threshold_pct)
+    else:
+        precomputed_labels = create_target_exact(close_train, args.lookahead_bars, args.threshold_pct)
+
+    if args.verbose:
+        print(f"\n🚀 Starting Optuna Optimization with TimeSeriesSplit(n_splits=20) for {args.n_trials} trials...")
+        print(f"🎯 Optimization Target: {args.optimize_target.upper()} signals only")
+
+    def objective(trial):
+        rsi_period = trial.suggest_int("rsi_period", 5, 30)
+        rsi_oversold = trial.suggest_float("rsi_oversold", 10.0, 45.0)
+        rsi_overbought = trial.suggest_float("rsi_overbought", 55.0, 90.0)
+        rsi_mode = trial.suggest_categorical("rsi_mode", ["momentum", "reversion"])
+        macd_fast = trial.suggest_int("macd_fast", 6, 16)
+        macd_slow = trial.suggest_int("macd_slow", 20, 40)
+        macd_signal = trial.suggest_int("macd_signal", 5, 15)
+        one_euro_min = trial.suggest_float("one_euro_min", 1.0, 50.0)
+        one_euro_factor = trial.suggest_float("one_euro_factor", 0.01, 1.0)
+        cooldown_bars = trial.suggest_int("cooldown_bars", args.cooldown_bars, args.cooldown_bars)
+
+        tscv = TimeSeriesSplit(n_splits=20)
+        fold_scores = []
+        fold_densities = []
+        n_samples = len(df_train)
+        X = np.arange(n_samples)
+
+        # Run forecast on the FULL df_train.
+        # This ensures RSI, MACD, and One-Euro filters have proper historical warmup data.
+        df_signals, _ = run_forecast(
+            df=df_train,  # <-- Pass full training data for accurate indicator calculation
+            price_col=price_col,
+            ticker=args.ticker,
+            rsi_period=rsi_period,
+            rsi_oversold=rsi_oversold,
+            rsi_overbought=rsi_overbought,
+            rsi_mode=rsi_mode,
+            macd_fast=macd_fast,
+            macd_slow=macd_slow,
+            macd_signal=macd_signal,
+            one_euro_min=one_euro_min,
+            one_euro_factor=one_euro_factor,
+            lookahead_bars=args.lookahead_bars,
+            threshold_pct=args.threshold_pct,
+            target_type=args.target_type,
+            use_jit_signals=args.use_jit_signals,
+            cooldown_bars=cooldown_bars,
+            precomputed_labels=precomputed_labels
+        )
+
+        for train_idx, val_idx in tscv.split(X):
+            # Manually evaluate metrics ONLY on the validation fold indices.
+            # This prevents look-ahead bias while maintaining indicator accuracy.
+            val_df = df_signals.iloc[val_idx].dropna(subset=['Signal', 'FutureLabel']).copy()
+            fold_total_valid_bars = len(val_df)
+
+            # Filter validation dataframe based on optimization target
+            if args.optimize_target == "buy":
+                val_df_filtered = val_df[val_df['Signal'] == 1].copy()  # Only long signals
+            elif args.optimize_target == "sell":
+                val_df_filtered = val_df[val_df['Signal'] == -1].copy()  # Only short signals
+            else:
+                val_df_filtered = val_df[val_df['Signal'] != 0].copy()  # Both long and short signals
+
+            fold_density = len(val_df_filtered) / fold_total_valid_bars if fold_total_valid_bars > 0 else 0.0
+            fold_densities.append(fold_density)
+
+            if len(val_df_filtered) == 0:
+                fold_scores.append(0.0)
+                continue
+
+            val_df_filtered['ActualUp'] = val_df_filtered['FutureLabel'].astype(int)
+
+            # Calculate accuracy strictly based on the chosen optimization target
+            if args.optimize_target == "buy":
+                # For buy: accuracy is the % of long signals where price actually went up (ActualUp == 1)
+                acc = val_df_filtered['ActualUp'].mean()
+            elif args.optimize_target == "sell":
+                # For sell: accuracy is the % of short signals where price did NOT go up (ActualUp == 0)
+                acc = (val_df_filtered['ActualUp'] == 0).mean()
+            else:
+                # For both: use the original unified logic
+                val_df_filtered['PredUp'] = (val_df_filtered['Signal'] == 1).astype(int)
+                acc = (val_df_filtered['PredUp'] == val_df_filtered['ActualUp']).mean()
+
+            fold_scores.append(acc)
+
+        mean_score = np.mean(fold_scores)
+        std_score = np.std(fold_scores)
+        mean_density = np.mean(fold_densities)
+
+        # Alpha controls how much we punish inconsistency across different time periods
+        alpha = 0.80
+        density_penalty = abs(mean_density - args.density_target) if mean_density < args.density_target else 0.
+        final_score = mean_score - (alpha * std_score) - density_penalty
+        return final_score
+
+    sampler = optuna.samplers.TPESampler(seed=args.seed, n_startup_trials=99, )
+
+    create_study_kwargs = {
+        'direction': 'maximize',
+        'sampler': sampler,
+    }
+
+    if args.optuna_db:
+        study_name = f"{args.ticker}_{args.dataset_id}_{args.target_type}"
+
+        def parse_storage_url(url: str):
+            """Convertit une chaîne d'URL en objet Storage Optuna adapté."""
+            if url.startswith("journal://"):
+                # Extrait le chemin après "journal://"
+                file_path = url.replace("journal://", "", 1)
+                return JournalStorage(JournalFileBackend(file_path))
+
+            # Pour sqlite://, postgresql://, redis://, etc.
+            return url
+
+        storage = parse_storage_url(args.optuna_db)
+
+        create_study_kwargs['storage'] = storage
+        create_study_kwargs['study_name'] = study_name
+        create_study_kwargs['load_if_exists'] = True
+
+        # Check for existing completed trials
+        try:
+            existing_study = optuna.load_study(
+                study_name=study_name,
+                storage=args.optuna_db
+            )
+            completed_trials = [t for t in existing_study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            if completed_trials:
+                best_trial = existing_study.best_trial
+                print("\n📂 Found existing Optuna study with completed trials!")
+                print("🏆 Best Candidate so far:")
+                for k, v in best_trial.params.items():
+                    print(f"   {k}: {v}")
+                print(f"   Best CV Accuracy: {best_trial.value:.8f}\n")
+        except KeyError:
+            pass  # Study does not exist yet, will be created
+
+    study = optuna.create_study(**create_study_kwargs)
+    study.optimize(objective, n_trials=args.n_trials, show_progress_bar=args.verbose, timeout=args.timeout, )
+
+    best_params = study.best_params
+    if args.verbose:
+        print("\n✅ Optimization Complete!")
+        print("🏆 Best Parameters:")
+        for k, v in best_params.items():
+            print(f"   {k}: {v}")
+        print(f"   Best CV Accuracy: {study.best_value:.8f}\n")
+
+    # Helper to run forecast and print results
+    def run_and_report(df_subset, label, optimize_target, plot_results=False, params=None):
+        assert params is not None
+
+        # Use precomputed labels if the subset is the training set and we are optimizing
+        labels_to_use = None
+        if df_subset is df_train and precomputed_labels is not None:
+            labels_to_use = precomputed_labels
+
+        df_results, metrics = run_forecast(
+            df=df_subset, price_col=price_col, ticker=args.ticker,
+            rsi_period=params.get('rsi_period', args.rsi_period),
+            rsi_oversold=params.get('rsi_oversold', args.rsi_oversold),
+            rsi_overbought=params.get('rsi_overbought', args.rsi_overbought),
+            rsi_mode=params.get('rsi_mode', args.rsi_mode),
+            macd_fast=params.get('macd_fast', args.macd_fast),
+            macd_slow=params.get('macd_slow', args.macd_slow),
+            macd_signal=params.get('macd_signal', args.macd_signal),
+            one_euro_min=params.get('one_euro_min', args.one_euro_min),
+            one_euro_factor=params.get('one_euro_factor', args.one_euro_factor),
+            lookahead_bars=args.lookahead_bars,
+            threshold_pct=args.threshold_pct,
+            target_type=args.target_type,
+            use_jit_signals=args.use_jit_signals,
+            cooldown_bars=params.get('cooldown_bars', args.cooldown_bars),
+            precomputed_labels=labels_to_use
+        )
+        if not args.disable_print:
+            print(f"\n📊 {label} Evaluation")
+            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].date()} to {df_subset.index[-1].date()}")
+            print(f"   Total Signals: {metrics.get('total_signals', 0)}")
+            print(f"   Density: {metrics.get('total_signals', 0) / len(df_subset):.2%}")
+            if args.optimize_target in ["both"]:
+                print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
+            if args.optimize_target in ["buy", "both"]:
+                print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
+            if args.optimize_target in ["sell", "both"]:
+                print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
+            print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
+            print(f"   Target Mode: '{args.target_type}'")
+            print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
+        if plot_results and not args.disable_plot_sample:
+            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample, optimize_target=optimize_target)
+        return df_results, metrics
 
     # Run on training set (backtest)
-    _, metrics_train = run_and_report(df_train, "🔧 TRAINING SET (Backtest)", plot_results=False)
+    _, metrics_train = run_and_report(df_subset=df_train, label="🔧 TRAINING SET (Backtest)", optimize_target=args.optimize_target, plot_results=False, params=best_params)
 
-    # Run on validation set (final evaluation)
-    df_results_val, metrics_val = run_and_report(df_val, "✅ VALIDATION SET (Final Evaluation)", plot_results=True)
+    # Run on test set (final evaluation) a.k.a. validation set :)
+    df_results_val, metrics_val = run_and_report(df_subset=df_val, label="✅ TEST SET (Final Evaluation)", optimize_target=args.optimize_target, plot_results=True, params=best_params)
 
     # Print comparison summary
     if not args.disable_print and metrics_train and metrics_val:
@@ -1079,11 +1345,30 @@ def entry(args):
         print(f"{'Metric':<25} {'Train':>12} {'Val':>12} {'Δ':>10}")
         print("-" * 60)
         for key in ['accuracy', 'long_accuracy', 'short_accuracy']:
+            if key == 'accuracy' and args.optimize_target in ["buy", "sell"]:
+                continue
+            if key == 'long_accuracy' and args.optimize_target in ["both", "sell"]:
+                continue
+            if key == 'short_accuracy' and args.optimize_target in ["both", "buy"]:
+                continue
             train_val = metrics_train.get(key, 0) * 100
             val_val = metrics_val.get(key, 0) * 100
             delta = val_val - train_val
             print(f"{key:<25} {train_val:>11.2f}% {val_val:>11.2f}% {delta:>+9.2f}%")
         print("=" * 60 + "\n")
+
+    # 💾 Save best model at the end of optimization
+    total_bars_val = metrics_val.get('total_bars', len(df_val))
+    signal_density = metrics_val.get('total_signals', 0) / total_bars_val if total_bars_val > 0 else 0.0
+
+    save_best_model(
+        output_dir=args.output_dir,
+        best_params=best_params,
+        metrics_train=metrics_train,
+        metrics_val=metrics_val,
+        args=args,
+        signal_density=signal_density
+    )
 
     return metrics_val, metrics_train
 
