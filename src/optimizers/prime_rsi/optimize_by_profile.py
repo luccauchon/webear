@@ -96,8 +96,8 @@ def entry(args):
         # Components: use_ma_conf_buy + use_vwap_buy + use_vol_buy
         # Literature Backing: VWAP is the primary benchmark for institutional execution. A bounce off rolling VWAP with a volume spike indicates smart money defending a position.
         ###########################################################################
-        configuration.buy_confluence_range = (3,3)
-        configuration.sell_confluence_range = (3,3)
+        configuration.buy_confluence_range = (2,3)
+        configuration.sell_confluence_range = (2,3)
         configuration.use_ma_conf_buy = True
         configuration.use_vwap_buy = True
         configuration.use_vol_buy = True
@@ -109,8 +109,8 @@ def entry(args):
         # Components: use_fib_rsi_buy + use_macd_buy + use_vol_buy
         # Literature Backing: The 0.5–0.618 Fibonacci zone is a well-documented self-fulfilling prophecy in quant literature.
         # Pairing it with MACD (which measures the rate of change of the trend) filters out "falling knife" scenarios.
-        configuration.buy_confluence_range = (3, 3)
-        configuration.sell_confluence_range = (3, 3)
+        configuration.buy_confluence_range = (2, 3)
+        configuration.sell_confluence_range = (2, 3)
         configuration.use_fib_rsi_buy = True
         configuration.use_macd_buy = True
         configuration.use_vol_buy = True
