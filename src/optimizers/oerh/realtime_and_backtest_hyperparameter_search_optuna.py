@@ -1275,8 +1275,12 @@ def entry(args):
         except KeyError:
             pass  # Study does not exist yet, will be created
 
+    def perfect_score_callback(study, trial):
+        if study.best_value is not None and study.best_value >= 0.9999:
+            print("\n🎯 Perfect score reached (≥ 0.9999). Stopping optimization early.")
+            study.stop()
     study = optuna.create_study(**create_study_kwargs)
-    study.optimize(objective, n_trials=args.n_trials, show_progress_bar=args.verbose, timeout=args.timeout, )
+    study.optimize(objective, n_trials=args.n_trials, show_progress_bar=args.verbose, timeout=args.timeout, callbacks=[perfect_score_callback, ])
 
     best_params = study.best_params
     if args.verbose:
