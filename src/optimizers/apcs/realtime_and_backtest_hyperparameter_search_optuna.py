@@ -282,6 +282,101 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
     }
 
 
+def format_trade_samples(trades_df, first_n=5, last_n=5):
+    """
+    Format and print first/last sample trades with explicit entry/exit timing and profit.
+
+    This helper was added to make the final optimization output easier to read.
+    It displays entry price, entry bar date/hour, whether entry was confirmed at
+    the open or by the close of the confirmation candle, outcome, exit bar
+    date/hour, exit candle basis, exit price, and a price-unit profit proxy.
+
+    Args:
+        trades_df (pd.DataFrame): Trade log produced by `backtest_asymmetric_strategy`.
+        first_n (int): Number of first trades to display.
+        last_n (int): Number of last trades to display.
+
+    Returns:
+        None
+    """
+    if trades_df is None or len(trades_df) == 0:
+        print("No trades available to display.")
+        return
+
+    df = trades_df.copy()
+
+    # Ensure newly added display columns exist even if an older trade frame is passed.
+    optional_columns = {
+        "Entry_Execution": "Unknown",
+        "Exit_Execution": "Close",
+        "Profit": np.nan,
+    }
+    for col, default in optional_columns.items():
+        if col not in df.columns:
+            df[col] = default
+
+    # Preserve the original trade order and give the user a stable trade number.
+    df.insert(0, "Trade #", df.index + 1)
+
+    entry_dt = pd.to_datetime(df["Entry_Date"], errors="coerce")
+    exit_dt = pd.to_datetime(df["Exit_Date"], errors="coerce")
+
+    entry_price_num = pd.to_numeric(df["Entry_Price"], errors="coerce")
+    exit_price_num = pd.to_numeric(df["Exit_Price"], errors="coerce")
+
+    df["Entry Price"] = entry_price_num.map(lambda x: "" if pd.isna(x) else f"{x:.2f}")
+    df["Entry Date"] = entry_dt.dt.strftime("%Y-%m-%d").fillna("")
+    df["Entry Hour"] = entry_dt.dt.strftime("%H:%M").fillna("")
+    df["Entry Candle"] = df["Entry_Execution"].fillna("Unknown")
+
+    df["Exit Date"] = exit_dt.dt.strftime("%Y-%m-%d").fillna("")
+    df["Exit Hour"] = exit_dt.dt.strftime("%H:%M").fillna("")
+    df["Exit Candle"] = df["Exit_Execution"].fillna("Close")
+    df["Exit Price"] = exit_price_num.map(lambda x: "" if pd.isna(x) else f"{x:.2f}")
+
+    def _format_profit(value):
+        if pd.isna(value):
+            return "N/A"
+        try:
+            return f"{float(value):+.2f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    df["Profit"] = df["Profit"].apply(_format_profit)
+
+    display_columns = [
+        "Trade #",
+        "Entry Price",
+        "Entry Date",
+        "Entry Hour",
+        "Entry Candle",
+        "Type",
+        "Outcome",
+        "Exit Date",
+        "Exit Hour",
+        "Exit Candle",
+        "Exit Price",
+        "Profit",
+    ]
+
+    display_df = df[display_columns]
+
+    print("Notes:")
+    print("- Entry Candle: 'Open' means the open already satisfied the neckline condition.")
+    print("- Entry Candle: 'Close' means the signal was confirmed by the candle's high/low and is treated as a close-time entry.")
+    print("- Exit Candle: exit is taken at the close of the exit bar.")
+    print("- Bar Date/Hour are the candle timestamps supplied by the data.")
+    print("- Profit is a price-unit proxy: favorable underlying move minus the delta threshold, not option premium.")
+
+    if len(display_df) <= first_n + last_n:
+        print(display_df.to_string(index=False))
+    else:
+        print(f"First {first_n}:")
+        print(display_df.head(first_n).to_string(index=False))
+        print(f"\nLast {last_n}:")
+        print(display_df.tail(last_n).to_string(index=False))
+
+
 def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_col, min_distance, lookahead, sell_offset, buy_offset, ema_period, rsi_period, rsi_buy_max, rsi_sell_min, trade_direction="both", delta=0.0):
     """
     Perform a historical backtest of the Asymmetric Pivot Credit Strategy.
@@ -365,6 +460,11 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
     exit_dates = []
     exit_prices = []
 
+    # Added columns to make the final trade sample easier to interpret.
+    entry_executions = []
+    exit_executions = []
+    profits = []
+
     # Sliding Window Signal Generation
     for i in range(len(turns) - 2):
         t1, t2, t3 = turns[i], turns[i + 1], turns[i + 2]
@@ -408,6 +508,7 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
         if trade_type is not None:
             entry_price = None
             entry_date = None
+            entry_execution = None
 
             # Determine Entry Execution
             if trade_type == "BUY":
@@ -415,11 +516,25 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
                     # We sell Credit Put Spread, we gonna use the neckline for our strike price
                     entry_price = int(math.floor(neckline_price * buy_offset / 5) * 5)
                     entry_date = dates[entry_idx]
+
+                    # Clarify whether the entry condition was already true at the open
+                    # or only confirmed by the end of the confirmation candle.
+                    if open_prices[entry_idx] >= neckline_price:
+                        entry_execution = "Open"
+                    else:
+                        entry_execution = "Close"
             elif trade_type == "SELL":
                 if open_prices[entry_idx] <= neckline_price or low_prices[entry_idx] <= neckline_price:
                     # We sell Credit Call Spread, we gonna use the neckline for our strike price
                     entry_price = int(math.ceil(neckline_price * sell_offset / 5) * 5)
                     entry_date = dates[entry_idx]
+
+                    # Clarify whether the entry condition was already true at the open
+                    # or only confirmed by the end of the confirmation candle.
+                    if open_prices[entry_idx] <= neckline_price:
+                        entry_execution = "Open"
+                    else:
+                        entry_execution = "Close"
 
             if entry_price is None:
                 # No entry detected. We could for next bar? For now, we skip this trade.
@@ -434,14 +549,27 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
                 outcome = "Open"
                 exit_date = dates[-1]
                 exit_price = prices[-1]
+                exit_execution = "Close (end of data)"
             else:
                 exit_date = dates[exit_idx]
                 exit_price = prices[exit_idx]
+                exit_execution = "Close"
 
                 if trade_type == "SELL":
                     outcome = "Win" if exit_price < entry_price - delta * entry_price else "Loss"
                 else:  # BUY
                     outcome = "Win" if exit_price > entry_price + delta * entry_price else "Loss"
+
+            # Calculate a transparent price-based profit proxy.
+            # For SELL: favorable when exit is below entry strike.
+            # For BUY: favorable when exit is above entry strike.
+            # The delta threshold is subtracted so the profit aligns with the Win/Loss rule.
+            if outcome == "Open":
+                profit = np.nan
+            elif trade_type == "SELL":
+                profit = entry_price - exit_price - delta * entry_price
+            else:
+                profit = exit_price - entry_price - delta * entry_price
 
             # Append to lists
             entry_dates.append(entry_date)
@@ -450,6 +578,9 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
             outcomes.append(outcome)
             exit_dates.append(exit_date)
             exit_prices.append(exit_price)
+            entry_executions.append(entry_execution)
+            exit_executions.append(exit_execution)
+            profits.append(profit)
 
     total_trades = len(outcomes)
     if total_trades == 0:
@@ -460,9 +591,12 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
         "Entry_Date": entry_dates,
         "Type": trade_types,
         "Entry_Price": entry_prices,
+        "Entry_Execution": entry_executions,
         "Outcome": outcomes,
         "Exit_Date": exit_dates,
-        "Exit_Price": exit_prices
+        "Exit_Execution": exit_executions,
+        "Exit_Price": exit_prices,
+        "Profit": profits
     })
 
     # Compute Metrics (Using fast list counting instead of DF filtering)
@@ -872,8 +1006,8 @@ def entry(args):
             print(f"Train data: {df_train_ticker.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train_ticker.index[-1].strftime('%Y-%m-%d_%H%M')}  ({len(df_train_ticker)} bars)")
             print(f"Test data : {df_test_ticker.index[0].strftime('%Y-%m-%d_%H%M')}::{df_test_ticker.index[-1].strftime('%Y-%m-%d_%H%M')}  ({len(df_test_ticker)} bars)")
             print("Sample TEST Trades (First & Last 5):")
-            print(test_results['df_trades'].head(5))
-            print(test_results['df_trades'].tail(5))
+            # Added: use a formatted display that makes entry/exit timing and profit clearer.
+            format_trade_samples(test_results['df_trades'], first_n=5, last_n=5)
 
     if verbose:
         # ==========================================
@@ -889,7 +1023,12 @@ def entry(args):
     # Create a pertinent filename based on ticker and timestamp
     safe_ticker = ticker.replace('^', '')
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_filename = f"acps_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__d{delta}__la{lookahead}__md{min_density_threshold}__twr{test_wr:.8f}__td{test_den:.4f}___{timestamp}.pkl"
+
+    # Guard against rare failed backtests so filename generation does not crash.
+    safe_test_wr = test_wr if test_wr is not None else 0.0
+    safe_test_den = test_den if test_den is not None else 0.0
+
+    model_filename = f"acps_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__d{delta}__la{lookahead}__md{min_density_threshold}__twr{safe_test_wr:.8f}__td{safe_test_den:.4f}___{timestamp}.pkl"
     model_path = os.path.join(output_dir, model_filename)
 
     # Prepare the model data to save
