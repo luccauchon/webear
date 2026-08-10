@@ -20,4 +20,5 @@ start "YFinance Subset HTML" cmd /k "call R_YFINANCE_SUBSET+HTML_DAY___16h05m.ba
 start "HTML Week" cmd /k "call R_HTML___Saturday.bat"
 
 :: Script 6 : 
-start "HTML End Month" cmd /k "call R_HTML___End_of_month.bat"
+:: Fonctionne pas
+:: start "HTML End Month" cmd /k "call R_HTML___End_of_month.bat"
