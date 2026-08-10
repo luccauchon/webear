@@ -121,8 +121,8 @@ def entry(args):
         # Logic: Sellers are exhausted, and a sharp mean-reversion bounce is imminent.
         # Components: use_reg_bull_div + use_ema_cross_buy (or use_bb_buy)
         # Literature Backing: Bulkowski’s statistical analysis shows Regular Bullish Divergence is one of the most reliable predictors of short-term trend exhaustion.
-        configuration.buy_confluence_range = (3, 3)
-        configuration.sell_confluence_range = (3, 3)
+        configuration.buy_confluence_range = (2, 3)
+        configuration.sell_confluence_range = (2, 3)
         configuration.use_reg_bull_div = True
         configuration.use_ema_cross_buy = True
         configuration.use_bb_buy = True
