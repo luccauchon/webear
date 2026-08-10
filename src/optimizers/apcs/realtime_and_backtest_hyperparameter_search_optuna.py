@@ -869,8 +869,8 @@ def entry(args):
 
     if not isinstance(test_results, str) and len(test_results['df_trades']) > 0:
         if verbose_list_trades:
-            print(f"Train data: {df_train_ticker.index[0].strftime('%Y-%m-%d')}::{df_train_ticker.index[-1].strftime('%Y-%m-%d')}")
-            print(f"Test data : {df_test_ticker.index[0].strftime('%Y-%m-%d')}::{df_test_ticker.index[-1].strftime('%Y-%m-%d')}")
+            print(f"Train data: {df_train_ticker.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train_ticker.index[-1].strftime('%Y-%m-%d_%H%M')}  ({len(df_train_ticker)} bars)")
+            print(f"Test data : {df_test_ticker.index[0].strftime('%Y-%m-%d_%H%M')}::{df_test_ticker.index[-1].strftime('%Y-%m-%d_%H%M')}  ({len(df_test_ticker)} bars)")
             print("Sample TEST Trades (First & Last 5):")
             print(test_results['df_trades'].head(5))
             print(test_results['df_trades'].tail(5))
