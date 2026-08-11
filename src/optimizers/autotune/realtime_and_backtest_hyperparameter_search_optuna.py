@@ -19,7 +19,7 @@ Core Algorithm:
     3. Signal Generation (`_run_backtest`):
        Triggers LONG/SHORT signals on 2-bar Rate-of-Change (ROC) crossovers of the
        bandpass output. Signals are gated by:
-         - Cycle Strength: Minimum correlation threshold to ensure the detected cycle
+         - Cycle Strength: Minimum correlation threshol to ensure the detected cycle
            is statistically robust.
          - Baseline Alignment: Optional high-pass trend filter (above/below zero) to
            align signals with the underlying macro trend.
@@ -374,7 +374,6 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group = parser.add_argument_group('Data & Symbol')
     data_group.add_argument('--dataset-id', type=str, default='day')
     data_group.add_argument('--ticker', type=str, default='^GSPC')
-    data_group.add_argument('--length-dataset', type=int, default=999999)
     data_group.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
 
     strat_group = parser.add_argument_group('Strategy Parameters')
@@ -420,7 +419,6 @@ def entry(args):
     verbose_short = args.verbose_short
     real_time = args.real_time
     output_dir = args.output_dir
-    length_dataset = args.length_dataset
     optimize = args.optimize
     np.random.seed(42)
 
