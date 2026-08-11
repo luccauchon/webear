@@ -36,8 +36,6 @@ def setup_argparse() -> argparse.ArgumentParser:
                                                                                                         "structural_confluence", "exhaustion_reversal"])
 
     opt_group = parser.add_argument_group('Optimization & Execution')
-    opt_group.add_argument('--optimize-target', type=str, default='buy_wr', choices=['combined_wr', 'buy_wr', 'sell_wr'],
-                           help='Metric to maximize during optimization')
     opt_group.add_argument('--n-trials', type=int, default=99999, help='Optuna trials per run')
     opt_group.add_argument('--timeout', type=int, default=86400, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
@@ -86,7 +84,7 @@ def entry(args):
                               lookahead_bars=args.lookahead_bars, method=args.method, min_signal_density=args.min_signal_density,
                               model_path=None, optuna_db=args.optuna_db, verbose_optuna_progression=True,
                               sanity_check=False, output_dir=args.output_dir, plot=False, train_ratio=args.train_ratio,
-                              optimize_target=args.optimize_target,
+                              optimize_target="buy_wr",
                                       )
     if args.profile == "institutional_pullback":
         ###########################################################################
@@ -127,6 +125,15 @@ def entry(args):
         configuration.use_ema_cross_buy = True
         configuration.use_bb_buy = True
         configuration.optuna_db = f"journal://exhaustion_reversal.db"
+
+    if args.profile == "ss_1":
+        #
+        configuration.buy_confluence_range = (2, 3)
+        configuration.sell_confluence_range = (2, 3)
+        configuration.use_fib_rsi_buy = True
+        configuration.use_ema_cross_buy = True
+        configuration.use_macd_buy = True
+        configuration.optuna_db = f"journal://ss_1.db"
 
     # Bonus SOTA Tip: Hidden vs. Regular Divergence
     # If you include divergence, note that Hidden Bullish Divergence (use_hid_bull_div) is statistically more reliable for trend continuation
