@@ -559,9 +559,9 @@ def entry(args):
     valid_closes = closes.iloc[split_idx:].copy()
 
     if verbose:
-        print(f"📊 Train/Validation Split: {train_ratio:.0%} / {1 - train_ratio:.0%}")
+        print(f"📊 Train/Test Split: {train_ratio:.0%} / {1 - train_ratio:.0%}")
         print(f"   Train: {len(train_closes)} bars ({train_closes.index[0].strftime('%Y%m%d_%H%M')}::{train_closes.index[-1].strftime('%Y%m%d_%H%M')}) | "
-              f"Validation: {len(valid_closes)} bars ({valid_closes.index[0].strftime('%Y%m%d_%H%M')}::{valid_closes.index[-1].strftime('%Y%m%d_%H%M')})\n")
+              f"Test: {len(valid_closes)} bars ({valid_closes.index[0].strftime('%Y%m%d_%H%M')}::{valid_closes.index[-1].strftime('%Y%m%d_%H%M')})\n")
 
     lookahead_bars = args.lookahead_bars
     win_threshold = args.win_threshold
