@@ -1104,8 +1104,6 @@ def entry(args):
 
     if 1 == args.lookahead_bars:
         assert args.target_type in ["exact", "any", "floor"]
-    if args.target_type in ["floor"]:
-        assert args.threshold_pct <= 0.
 
     # ✅ OPTIMIZATION & TRAIN/VALIDATION SPLIT LOGIC
     min_history = max(args.rsi_period, args.macd_slow, 100) + args.lookahead_bars + 10
