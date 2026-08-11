@@ -8,11 +8,9 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
 import argparse
 import sys
 import os
-from colorama import init, Fore, Style
 import pandas as pd
 import copy
 import shutil
@@ -180,6 +178,7 @@ def entry(
     skip_yearly=False,
     skip_economic=False
 ):
+    from colorama import init, Fore, Style
     init(autoreset=True)
 
     # Default dates if not provided
