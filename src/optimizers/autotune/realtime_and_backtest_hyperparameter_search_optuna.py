@@ -115,7 +115,7 @@ from typing import Tuple, Dict
 import warnings
 import optuna
 from optuna.samplers import TPESampler
-from utils import get_filename_for_dataset, get_next_step
+from utils import factory_load_data, get_next_step
 import pickle
 import os
 import glob
@@ -375,19 +375,19 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group.add_argument('--dataset-id', type=str, default='day')
     data_group.add_argument('--ticker', type=str, default='^GSPC')
     data_group.add_argument('--length-dataset', type=int, default=999999)
-    data_group.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    data_group.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
 
     strat_group = parser.add_argument_group('Strategy Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=10)
-    strat_group.add_argument('--win-threshold', type=float, default=0.04,
+    strat_group.add_argument('--win-threshold', type=float, default=0.02,
                              help="Win threshold for optimization metrics. Can be negative for aggressive targets.")
-    strat_group.add_argument('--min-signal-density', type=float, default=0.04)
+    strat_group.add_argument('--min-signal-density', type=float, default=0.02)
 
     opt_group = parser.add_argument_group('Optimization & Execution')
-    opt_group.add_argument('--train-ratio', type=float, default=0.7)
+    opt_group.add_argument('--train-ratio', type=float, default=0.8)
     opt_group.add_argument('--optimize', type=str, choices=list(METRIC_MAP.keys()), default='hold_floor')
-    opt_group.add_argument('--n-trials', type=int, default=999999)
-    opt_group.add_argument('--timeout', type=int, default=86400)
+    opt_group.add_argument('--n-trials', type=int, default=999)
+    opt_group.add_argument('--timeout', type=int, default=300)
     opt_group.add_argument('--output-dir', type=str, default='models')
     opt_group.add_argument('--storage', type=str, default=None,
                            help='Optuna storage URL (e.g., sqlite:///optuna.db). Default: in-memory.')
@@ -450,19 +450,15 @@ def entry(args):
         strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
         dataset_id = saved_model['dataset_id']
         ticker     = saved_model['ticker']
-        filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
-        if verbose: print(f"📂 Loading dataset from: {filename}")
-        with open(filename, "rb") as f:
-            cache = pickle.load(f)
-        spx = cache[ticker].copy()
-        spx = spx.iloc[-length_dataset:].copy()
+        spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n})
         if verbose:
             first_date = spx.index[0]
             last_date = spx.index[-1]
             num_bars = len(spx)
             print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
             print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
-        closes = spx['Close'].squeeze().dropna().copy()
+        close_col = ('Close', ticker)
+        closes = spx[close_col].squeeze().dropna().copy()
         if args.clip:
             fd1 = closes.index[-1].strftime('%Y-%m-%d')
             closes = closes.iloc[:-1].copy()
@@ -485,8 +481,8 @@ def entry(args):
         signal_str = "🟢 LONG" if signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
         if verbose:
             print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
-            print(f"Training score: {saved_model['train_score']:.6%} | Validation score: {saved_model['val_score']:.6%}")
-            print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Validation win rate: {saved_model['validation_win_rate']:.6%}")
+            print(f"Training score: {saved_model['train_score']:.6%} | Test score: {saved_model['val_score']:.6%}")
+            print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Test win rate: {saved_model['validation_win_rate']:.6%}")
             print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type}")
             print(f"Datapoint used: {last_date} | Signal computed: {last_signal} {signal_str}")
 
@@ -544,19 +540,15 @@ def entry(args):
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
 
     dataset_id, ticker = args.dataset_id, args.ticker
-    filename = get_filename_for_dataset(dataset_choice=dataset_id, older_dataset=None)
-    if verbose: print(f"📂 Loading dataset from: {filename}")
-    with open(filename, "rb") as f:
-        cache = pickle.load(f)
-    spx = cache[ticker].copy()
-    spx = spx.iloc[-length_dataset:].copy()
+    spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n})
     if verbose:
         first_date = spx.index[0]
         last_date = spx.index[-1]
         num_bars = len(spx)
         print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-        print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
-    closes = spx['Close'].squeeze().dropna().copy()
+        print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d_%H%M')}  ->  {last_date.strftime('%Y%m%d_%H%M')}\n")
+    close_col = ('Close', ticker)
+    closes = spx[close_col].squeeze().dropna().copy()
     if verbose:
         print(__doc__)
     # =============================================================================
@@ -570,12 +562,12 @@ def entry(args):
 
     if verbose:
         print(f"📊 Train/Validation Split: {train_ratio:.0%} / {1 - train_ratio:.0%}")
-        print(f"   Train: {len(train_closes)} bars ({train_closes.index[0].strftime('%Y%m%d')}::{train_closes.index[-1].strftime('%Y%m%d')}) | "
-              f"Validation: {len(valid_closes)} bars ({valid_closes.index[0].strftime('%Y%m%d')}::{valid_closes.index[-1].strftime('%Y%m%d')})\n")
+        print(f"   Train: {len(train_closes)} bars ({train_closes.index[0].strftime('%Y%m%d_%H%M')}::{train_closes.index[-1].strftime('%Y%m%d_%H%M')}) | "
+              f"Validation: {len(valid_closes)} bars ({valid_closes.index[0].strftime('%Y%m%d_%H%M')}::{valid_closes.index[-1].strftime('%Y%m%d_%H%M')})\n")
 
     lookahead_bars = args.lookahead_bars
     win_threshold = args.win_threshold
-    # FIXED: Allow negative win_threshold values
+    # Allow negative win_threshold values
     assert -1 < win_threshold < 1, "--win-threshold must be between -1.0 and 1.0 (exclusive)"
     n_trials = args.n_trials
     timeout = args.timeout
@@ -644,7 +636,9 @@ def entry(args):
                     fold_scores.append(obj)
 
             # Return the mean score across all 20 folds
-            return float(np.mean(fold_scores))
+            alpha = 0.5
+            final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
+            return float(final_score)
 
         except Exception as e:
             print(f"[WARNING] Trial failed: {e}")
@@ -661,7 +655,7 @@ def entry(args):
             study_name = f"autotune_{ticker}_{dataset_id}_{optimize}"
 
     sampler = TPESampler(seed=42)
-    pruner = MedianPruner(n_startup_trials=20, n_warmup_steps=0)
+    pruner = MedianPruner(n_startup_trials=99, n_warmup_steps=0)
 
     study = optuna.create_study(
         study_name=study_name,
@@ -743,7 +737,7 @@ def entry(args):
     # 💾 SAVE MODEL
     os.makedirs(output_dir, exist_ok=True)
     w, bw, th, la, op = best_params['window'], best_params['bandwidth'], best_params['threshold'], best_params['lookahead_bars'], optimize
-    model_name = f"autotune_model_w{w}_bw{bw:.3f}_th{th:.3f}___la{la}_{op}_{win_threshold}___{score_of_best_trial:.4f}__{train_win_rate:.4f}_{validation_win_rate:.4f}.pkl"
+    model_name = f"autotune__la{la}__op{op}__wth{win_threshold}__trainsc{score_of_best_trial:.4f}__trainwr{train_win_rate:.4f}__twr{validation_win_rate:.4f}.pkl"
     model_path = os.path.join(output_dir, model_name)
 
     model_data = {
