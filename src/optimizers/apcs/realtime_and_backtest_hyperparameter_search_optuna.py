@@ -767,7 +767,8 @@ def entry(args):
     high_col = ('High', ticker)
     low_col = ('Low', ticker)
 
-    if verbose: print(f"Using Sell Offset of {sell_offset:.2%} and Buy Offset of {buy_offset:.2%}")
+    if verbose: print(f"Dataset: {dataset_id} | Lookahead: {lookahead} bars | Minimum Density: {min_density_threshold} | Trade Direction: {trade_direction} | Delta: {delta} | "
+                      f"Sell Offset: {sell_offset:.6} | Buy Offset: {buy_offset:.6}")
     df_main = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
     n = int(len(df_main) * test_split_n)
     df_train_ticker = df_main.iloc[:n].copy()
@@ -1084,8 +1085,8 @@ if __name__ == '__main__':
     parser.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to backtest (e.g., ^GSPC for S&P 500).")
     parser.add_argument("--dataset-id", type=str, default="day", help="Dataset ID used for fetching cached master data.")
     parser.add_argument("--use-realtime-data", action="store_true", default=False, help="Use FYahoo! to get realtime data.")
-    parser.add_argument("--sell-offset", type=float, default=1.005, help="Multiplier for sell trade win condition (Call Credit Spread).")
-    parser.add_argument("--buy-offset", type=float, default=0.995, help="Multiplier for buy trade win condition (Put Credit Spread).")
+    parser.add_argument("--sell-offset", type=float, default=1.001, help="Multiplier for sell trade win condition (Call Credit Spread).")
+    parser.add_argument("--buy-offset", type=float, default=0.999, help="Multiplier for buy trade win condition (Put Credit Spread).")
 
     # Backtest and Optimization parameters
     parser.add_argument("--lookahead", type=int, default=1, help="Number of bars to look ahead for determining trade outcome.")
