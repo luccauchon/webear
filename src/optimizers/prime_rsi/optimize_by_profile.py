@@ -33,7 +33,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group.add_argument('--min-signal-density', type=float, default=0.0001, help='Min signal frequency threshold')
     strat_group.add_argument('--put-strike-pct', type=float, default=0.99999, help='Base put strike multiplier')
     strat_group.add_argument('--call-strike-pct', type=float, default=1.00001, help='Base call strike multiplier')
-    strat_group.add_argument('--profile', type=str, default="institutional_pullback", help='', choices=["institutional_pullback", "all_1",
+    strat_group.add_argument('--profile', type=str, default="institutional_pullback", help='', choices=["institutional_pullback", "all_1", "homemade_1",
                                                                                                         "structural_confluence", "exhaustion_reversal"])
 
     opt_group = parser.add_argument_group('Optimization & Execution')
@@ -126,6 +126,16 @@ def entry(args):
         configuration.use_ema_cross_buy = True
         configuration.use_bb_buy = True
         configuration.optuna_db = f"journal://exhaustion_reversal.db"
+
+    if args.profile == "homemade_1":
+        #
+        configuration.buy_confluence_range = (2, 3)
+        configuration.sell_confluence_range = (2, 3)
+        configuration.use_hid_bull_div = True
+        configuration.use_ma_conf_buy = True
+        configuration.use_vwap_buy = True
+        configuration.use_vol_buy = True
+        configuration.optuna_db = f"journal://homemade_1.db"
 
     if args.profile == "all_1":
         #
