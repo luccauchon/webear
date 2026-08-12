@@ -16,21 +16,20 @@ import os
 import pickle
 from datetime import datetime
 from typing import Optional, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
 import pandas_ta as ta
 from sklearn.model_selection import TimeSeriesSplit
-from utils import get_filename_for_dataset, get_next_step
+from utils import get_next_step, factory_load_data
 
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
 
 
-def prepare_plot_dataframe(df: pd.DataFrame, ticker: str, signals: list, price_col_name: str = 'Close') -> pd.DataFrame:
+def prepare_plot_dataframe(df: pd.DataFrame, ticker: str, signals: list, pnl_df: pd.DataFrame = None, price_col_name: str = 'Close') -> pd.DataFrame:
     """Prepares a DataFrame with the exact columns expected by plot_forecast_results."""
     df_plot = df.copy()
     orig_close = (price_col_name, ticker)
@@ -50,8 +49,16 @@ def prepare_plot_dataframe(df: pd.DataFrame, ticker: str, signals: list, price_c
 
     # Map signals: 1 = Long, -1 = Short, 0 = Neutral
     df_plot['Signal'] = 0
+    df_plot['Trade_Result'] = ''
     for sig in signals:
         df_plot.loc[sig['Index'], 'Signal'] = 1 if sig['Type'] == 'BUY' else -1
+
+    if pnl_df is not None and not pnl_df.empty:
+        for _, row in pnl_df.iterrows():
+            idx = row['Signal_Index']
+            success = row['Success']
+            if idx in df_plot.index:
+                df_plot.loc[idx, 'Trade_Result'] = 'W' if success else 'L'
 
     return df_plot
 
@@ -71,6 +78,18 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
     shorts = plot_df[plot_df['Signal'] == -1]
     ax1.scatter(longs.index, longs[price_col], marker='^', color='green', s=100, label='Long Signal', zorder=6, edgecolors='darkgreen', linewidth=1.5)
     ax1.scatter(shorts.index, shorts[price_col], marker='v', color='red', s=100, label='Short Signal', zorder=6, edgecolors='darkred', linewidth=1.5)
+
+    # Add W and L annotations
+    trades_to_annotate = plot_df[plot_df['Trade_Result'] != '']
+    for idx, row in trades_to_annotate.iterrows():
+        text = row['Trade_Result'].iloc[0]
+        color = 'green' if text == 'W' else 'red'
+
+        if row['Signal'].iloc[0] == 1:  # Long
+            ax1.text(idx, row[price_col], text, color=color, fontweight='bold', ha='center', va='bottom', fontsize=12, zorder=7)
+        elif row['Signal'].iloc[0] == -1:  # Short
+            ax1.text(idx, row[price_col], text, color=color, fontweight='bold', ha='center', va='top', fontsize=12, zorder=7)
+
     if highlight_signals:
         for idx in longs.index: ax1.axvline(x=idx, color='green', linestyle=':', alpha=0.4, linewidth=0.8)
         for idx in shorts.index: ax1.axvline(x=idx, color='red', linestyle=':', alpha=0.4, linewidth=0.8)
@@ -118,6 +137,17 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
             ax1_inset.plot(zoom_df.index, zoom_df['OneEuro'], color='blue', linewidth=2)
             ax1_inset.scatter(zoom_df[zoom_df['Signal'] == 1].index, zoom_df[zoom_df['Signal'] == 1][price_col], marker='^', color='green', s=50, zorder=5)
             ax1_inset.scatter(zoom_df[zoom_df['Signal'] == -1].index, zoom_df[zoom_df['Signal'] == -1][price_col], marker='v', color='red', s=50, zorder=5)
+
+            # Add W and L in zoom
+            zoom_trades = zoom_df[zoom_df['Trade_Result'] != '']
+            for idx, row in zoom_trades.iterrows():
+                text = row['Trade_Result']
+                color = 'green' if text == 'W' else 'red'
+                if row['Signal'] == 1:
+                    ax1_inset.text(idx, row[price_col], text, color=color, fontweight='bold', ha='center', va='bottom', fontsize=8, zorder=6)
+                elif row['Signal'] == -1:
+                    ax1_inset.text(idx, row[price_col], text, color=color, fontweight='bold', ha='center', va='top', fontsize=8, zorder=6)
+
             ax1_inset.set_xticks([])
             ax1_inset.set_yticks([])
             ax1_inset.set_title('Zoom', fontsize=8, fontweight='bold')
@@ -141,25 +171,25 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group = parser.add_argument_group('Data & Symbol')
     data_group.add_argument('--dataset-id', type=str, default='day', help='Dataset identifier')
     data_group.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
-    data_group.add_argument('--length-dataset', type=int, default=999999, help='Trailing data points')
-    data_group.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    data_group.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
-    strat_group.add_argument('--lookahead-bars', type=int, default=20, dest='lookahead_bars', help='Forward-looking window')
+    strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
+    strat_group.add_argument('--cooldown-bars', type=int, default=0, dest='cooldown_bars', help='Minimum number of bars to wait between signals (cooldown period)')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
-    strat_group.add_argument('--min-signal-density', type=float, default=0.04, help='Min signal frequency threshold')
-    strat_group.add_argument('--put-strike-pct', type=float, default=0.96, help='Base put strike multiplier')
-    strat_group.add_argument('--call-strike-pct', type=float, default=1.04, help='Base call strike multiplier')
+    strat_group.add_argument('--min-signal-density', type=float, default=0.01, help='Min signal frequency threshold')
+    strat_group.add_argument('--put-strike-pct', type=float, default=0.9999, help='Base put strike multiplier')
+    strat_group.add_argument('--call-strike-pct', type=float, default=1.0001, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
     strat_group.add_argument('--signal-type', type=str, default='buy', choices=['both', 'buy', 'sell'], help='Filter signals for optimization. Post-hoc breakdown always evaluates both.')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
-    opt_group.add_argument('--n-trials', type=int, default=100, help='Optuna trials')
-    opt_group.add_argument('--timeout', type=int, default=3600, help='Max runtime (seconds)')
+    opt_group.add_argument('--n-trials', type=int, default=240, help='Optuna trials')
+    opt_group.add_argument('--timeout', type=int, default=120, help='Max runtime (seconds)')
     opt_group.add_argument('--output-dir', type=str, default='models', help='Output directory')
-    opt_group.add_argument('--train-ratio', type=float, default=0.7, help='Fraction of data used for training/optimization (rest for validation)')
-    opt_group.add_argument('--n-splits', type=int, default=10, help='Number of splits for TimeSeriesSplit cross-validation')
+    opt_group.add_argument('--train-ratio', type=float, default=0.8, help='Fraction of data used for training/optimization (rest for validation)')
+    opt_group.add_argument('--n-splits', type=int, default=20, help='Number of splits for TimeSeriesSplit cross-validation')
 
     # 🆕 OPTUNA PERSISTENCE ARGUMENTS
     opt_group.add_argument('--optuna-storage', type=str, default=None,
@@ -180,7 +210,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 def dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_col, ticker,
                              st_multipler=2, st_length=7, sup_wick_null_coef=0.1, inf_wick_null_coef=0.1, rsi_length=2,
-                             buy_rsi_threshold=80, sell_rsi_threshold=20):
+                             buy_rsi_threshold=80, sell_rsi_threshold=20, cooldown_bars=0):
     """Vectorized implementation of the Sniper strategy."""
     rsi_col = ('RSI', ticker)
     df[rsi_col] = ta.rsi(df[close_col], length=rsi_length)
@@ -244,6 +274,17 @@ def dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_
         signals.extend([{'Type': 'SELL', 'Index': idx, 'Price': p, 'SL': s, 'TP': t} for idx, p, s, t in zip(sell_idx, prices, sls, tps)])
 
     signals.sort(key=lambda x: x['Index'])
+
+    if cooldown_bars > 0:
+        filtered_signals = []
+        last_pos = -float('inf')
+        for sig in signals:
+            current_pos = df.index.get_indexer([sig['Index']])[0]
+            if current_pos - last_pos > cooldown_bars:
+                filtered_signals.append(sig)
+                last_pos = current_pos
+        signals = filtered_signals
+
     return signals
 
 
@@ -322,7 +363,7 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density, wr_we
 
 
 def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
-              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits):
+              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits, cooldown_bars):
     put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
     call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
     st_multipler = trial.suggest_int("st_multipler", 1, 5, step=1)
@@ -335,7 +376,7 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
 
     # Time Series Cross-Validation
     tscv = TimeSeriesSplit(n_splits=n_splits)
-    scores = []
+    fold_scores = []
 
     for train_idx, test_idx in tscv.split(df):
         if len(test_idx) == 0:
@@ -351,7 +392,7 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
             st_multipler=st_multipler, st_length=st_length,
             sup_wick_null_coef=sup_wick_null_coef, inf_wick_null_coef=inf_wick_null_coef,
             buy_rsi_threshold=buy_rsi_threshold, sell_rsi_threshold=sell_rsi_threshold,
-            rsi_length=rsi_length
+            rsi_length=rsi_length, cooldown_bars=cooldown_bars
         )
 
         # Filter signals to only those generated strictly within the current test fold
@@ -370,7 +411,7 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
         )
 
         if pnl_df.empty:
-            scores.append(0.0)
+            fold_scores.append(0.0)
         else:
             # Recalculate trade density specifically for this fold's length to maintain accurate scaling
             fold_trade_density = len(pnl_df) / len(test_idx)
@@ -381,9 +422,14 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
                 wr_weight=wr_weight,
                 td_weight=td_weight
             )
-            scores.append(score)
+            fold_scores.append(score)
 
-    return np.mean(scores) if scores else 0.0
+    mean_score = np.mean(fold_scores)
+    std_score = np.std(fold_scores)
+    # Alpha controls how much we punish inconsistency across different time periods
+    alpha = 0.5
+    final_score = mean_score - (alpha * std_score)
+    return final_score
 
 
 def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_metrics, test_metrics, command_line):
@@ -400,11 +446,11 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     test_win_rate = test_metrics.get("win_rate")
     best_score = getattr(study.best_trial, 'value', None)
     score_tag = f"score{best_score:.8f}".replace('.', 'p') if best_score is not None else "scoreNA"
-    params_str = f"B{p_tag}_{m_tag}_md{md_tag}_wr{wr_tag}_td{td_tag}_{st_tag}_{score_tag}_{train_win_rate:.4f}_{test_win_rate:.4f}"
+    params_str = f"B{p_tag}__{m_tag}__md{md_tag}__wr{wr_tag}__td{td_tag}__{st_tag}__{score_tag}__{train_win_rate:.4f}__{test_win_rate:.4f}"
 
     safe_ticker = ticker.replace('^', '')
     safe_dataset = dataset_id.replace('/', '_').replace('\\', '_')
-    base_name = f"{safe_ticker}_{safe_dataset}_{params_str}__{timestamp}"
+    base_name = f"{safe_ticker}__{safe_dataset}__{params_str}__{timestamp}"
 
     pkl_path = os.path.join(output_dir, f"{base_name}.pkl")
 
@@ -427,6 +473,8 @@ def run_real_time_mode(model_path, clip, verbose):
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
+    assert 'cooldown_bars' in config
+    cooldown_bars = config.get('cooldown_bars', 0)
     if verbose: print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
     dataset_id = model_data['config']['dataset_id']
@@ -439,15 +487,7 @@ def run_real_time_mode(model_path, clip, verbose):
     test_win_rate = model_data['test_metrics']['win_rate']
     test_score = model_data['test_metrics']['score']
     test_trade_density = model_data['test_metrics']['trade_density']
-
-    cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
-    if verbose: print(f"📂 Loading dataset from: {cache_filename}")
-    with open(cache_filename, 'rb') as f:
-        master_data_cache = pickle.load(f)
-
-    df = master_data_cache[ticker].sort_index()
-    if clip:
-        df = df.iloc[:-1].copy()
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
     first_date = df.index[0]
     last_date = df.index[-1]
     num_bars = len(df)
@@ -464,6 +504,7 @@ def run_real_time_mode(model_path, clip, verbose):
     low_col = ('Low', ticker)
 
     signals = dgdr_strategy_vectorized(df_tail, close_col, volume_col, open_col, high_col, low_col, ticker,
+                                       cooldown_bars=cooldown_bars,
                                        **{k: best_params[k] for k in ['st_multipler', 'st_length', 'sup_wick_null_coef', 'inf_wick_null_coef', 'buy_rsi_threshold', 'sell_rsi_threshold']})
 
     latest_idx = df_tail.index[-1]
@@ -488,7 +529,7 @@ def run_real_time_mode(model_path, clip, verbose):
         print("\n" + "─" * 40)
         print(" 🕒 REAL-TIME SIGNAL CHECK")
         print("─" * 40)
-        print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type}")
+        print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type} | Cooldown: {cooldown_bars} bars")
         print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
         print(f" Test score  : {test_score:.2%} | Test Win Rate : {test_win_rate:.2f}% | Test Density : {test_trade_density:.2%} | {config['val_range']}")
         if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
@@ -511,7 +552,7 @@ def run_real_time_mode(model_path, clip, verbose):
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
               'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead, 'method': method,
               'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
-              'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call__strike_pct']}
+              'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call_strike_pct']}
     return result
 
 
@@ -559,33 +600,22 @@ def entry(args):
     open_col = ('Open', ticker)
     high_col = ('High', ticker)
     low_col = ('Low', ticker)
-    config_cols = (close_col, volume_col, open_col, high_col, low_col, ticker)
-    cache_filename = get_filename_for_dataset(dataset_id, older_dataset=None)
-    if args.verbose:
-        print(f"📂 Loading dataset from: {cache_filename}")
-    with open(cache_filename, 'rb') as f:
-        master_data_cache = pickle.load(f)
 
-    if ticker not in master_data_cache:
-        raise KeyError(f"Ticker '{ticker}' not found in cache. Available: {list(master_data_cache.keys())}")
-
-    df = master_data_cache[ticker].sort_index()
-    if args.length_dataset and args.length_dataset < len(df):
-        df = df.tail(args.length_dataset)
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
 
     first_date = df.index[0]
     last_date = df.index[-1]
     num_bars = len(df)
     print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-    print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
+    print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d_%H%M')}  ->  {last_date.strftime('%Y-%m-%d_%H%M')}\n")
 
     # ✅ TRAIN / VALIDATION CHRONOLOGICAL SPLIT
     split_idx = int(len(df) * args.train_ratio)
     df_train = df.iloc[:split_idx].copy()
-    df_test  = df.iloc[split_idx:].copy()
+    df_test = df.iloc[split_idx:].copy()
 
     print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Test: {len(df_test):,} ({1 - args.train_ratio:.0%})")
-    print(f"📐 Train from {df_train.index[0].strftime('%Y-%m-%d')} to {df_train.index[-1].strftime('%Y-%m-%d')} | Test from {df_test.index[0].strftime('%Y-%m-%d')} to {df_test.index[-1].strftime('%Y-%m-%d')}")
+    print(f"📐 Train from {df_train.index[0].strftime('%Y-%m-%d_%H%M')} to {df_train.index[-1].strftime('%Y-%m-%d_%H%M')} | Test from {df_test.index[0].strftime('%Y-%m-%d_%H%M')} to {df_test.index[-1].strftime('%Y-%m-%d_%H%M')}")
     if len(df_test) < 50:
         print(f"⚠️  Test set is small ({len(df_test)} bars). Out-of-sample metrics may be noisy.\n")
 
@@ -598,14 +628,17 @@ def entry(args):
     # ✅ OPTIMIZE ON TRAINING SET ONLY
     print(f"🔍 Starting Optuna optimization on TRAINING SET ({len(df_train):,} bars)...")
     print(f"📉 Min Trade Density: {min_density:.2%} | Look Ahead: {B} | Method: {method.upper()}")
-    print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()}")
+    print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()} | Cooldown: {args.cooldown_bars} bars")
     print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.4f}, {call_base:.4f}]")
     print(f"🔄 Time Series Cross-Validation: {args.n_splits} splits\n")
 
     # 🆕 OPTUNA PERSISTENCE SETUP
     storage = args.optuna_storage
     study_name = args.optuna_study_name
-
+    sampler = optuna.samplers.TPESampler(
+        seed=42,
+        n_startup_trials=99,
+    )
     if storage:
         if not study_name:
             raise ValueError("❌ --optuna-study-name is required when --optuna-storage is specified.")
@@ -615,10 +648,10 @@ def entry(args):
             direction="maximize",
             storage=storage,
             study_name=study_name,
-            load_if_exists=True
+            load_if_exists=True, sampler=sampler,
         )
     else:
-        study = optuna.create_study(direction="maximize")
+        study = optuna.create_study(direction="maximize", sampler=sampler, )
 
     # 🆕 LIST PREVIOUS BEST PARAMETERS IF STUDY ALREADY EXISTS
     if len(study.trials) > 0:
@@ -629,15 +662,14 @@ def entry(args):
         print(f"   {'Previous Best Score':<25}: {study.best_trial.value:.4f}\n")
     else:
         print(f"🆕 Created new {'ín-memory' if not storage else ''} study.\n")
-
     study.optimize(
         lambda trial: objective(trial, df_train.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
                                 B, method, min_density, wr_w, td_w, put_base, call_base,
-                                signal_type=args.signal_type, n_splits=args.n_splits),
+                                signal_type=args.signal_type, n_splits=args.n_splits, cooldown_bars=args.cooldown_bars),
         n_trials=args.n_trials,
         timeout=args.timeout,
         show_progress_bar=args.verbose_study_progress_bar,
-        callbacks=[perfect_score_callback]
+        callbacks=[perfect_score_callback],
     )
 
     print("\n🏆 OPTIMIZATION COMPLETE")
@@ -652,7 +684,8 @@ def entry(args):
     signals_val = dgdr_strategy_vectorized(df_test.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
                                            st_multipler=best['st_multipler'], st_length=best['st_length'],
                                            sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
-                                           buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'])
+                                           buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'],
+                                           cooldown_bars=args.cooldown_bars)
 
     main_signals = signals_val.copy()
     if args.signal_type == 'buy':
@@ -663,7 +696,7 @@ def entry(args):
     pnl_df = calculate_pnl_report(main_signals, df_test.copy(), close_col, high_col, low_col,
                                   B, method, best['put__strike_pct'], best['call__strike_pct'], silent=False)
 
-    print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (Post-Hoc Test)")
+    print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (TEST)")
     print("─" * 65)
     for dir_type in ['BUY', 'SELL']:
         if dir_type == "BUY":
@@ -691,7 +724,7 @@ def entry(args):
     if args.plot and not pnl_df.empty:
         plot_signals = main_signals
         if plot_signals:
-            df_plot = prepare_plot_dataframe(df_test, ticker, plot_signals, price_col_name="Close")
+            df_plot = prepare_plot_dataframe(df_test, ticker, plot_signals, pnl_df=pnl_df, price_col_name="Close")
             plot_forecast_results(df_plot, price_col='Close', sample=2000, highlight_signals=True)
         else:
             print("⚠️ No signals of the selected type found to plot.")
@@ -700,7 +733,7 @@ def entry(args):
     # 📊 TRAIN vs VALIDATION COMPARISON - GENERALIZATION CHECK
     # ========================================================================
     print("\n" + "═" * 70)
-    print(" 🔄 TRAIN vs VALIDATION PERFORMANCE COMPARISON")
+    print(" 🔄 TRAIN vs TEST PERFORMANCE COMPARISON")
     print("═" * 70)
 
     # Re-evaluate training set with BEST parameters for fair comparison
@@ -710,7 +743,8 @@ def entry(args):
         sup_wick_null_coef=best['sup_wick_null_coef'],
         inf_wick_null_coef=best['inf_wick_null_coef'],
         buy_rsi_threshold=best['buy_rsi_threshold'],
-        sell_rsi_threshold=best['sell_rsi_threshold']
+        sell_rsi_threshold=best['sell_rsi_threshold'],
+        cooldown_bars=args.cooldown_bars
     )
 
     # Filter signals if needed for fair comparison
@@ -781,7 +815,8 @@ def entry(args):
     config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method, 'train_ratio': args.train_ratio,
               'train_range': f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
               'val_range': f"({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})",
-              'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type}
+              'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type,
+              'cooldown_bars': args.cooldown_bars}
     save_optimized_model(study=study, config=config, output_dir=args.output_dir, ticker=ticker, dataset_id=dataset_id, train_metrics=train_metrics, test_metrics=test_metrics, command_line=command_line)
 
 
