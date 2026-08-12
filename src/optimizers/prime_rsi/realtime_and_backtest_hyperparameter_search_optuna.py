@@ -157,6 +157,7 @@ from datetime import datetime
 from sklearn.model_selection import TimeSeriesSplit
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
+
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -422,6 +423,29 @@ def implement_additional_strategies(df, close_col, high_col, low_col, volume_col
 # ==============================================================================
 # 🆕 ADVANCED METRICS & PENALTIES
 # ==============================================================================
+def apply_cooldown(signals, cooldown):
+    """
+    Applies a cooldown period to a boolean array of signals.
+    If a signal is True, the next `cooldown` signals are forced to False.
+    This diminishes density and helps augment accuracy by filtering clustered signals.
+    """
+    if cooldown <= 0:
+        return signals
+    res = signals.copy()
+    indices = np.where(res)[0]
+    if len(indices) == 0:
+        return res
+
+    keep = [indices[0]]
+    for idx in indices[1:]:
+        if idx - keep[-1] > cooldown:
+            keep.append(idx)
+
+    res[:] = False
+    res[keep] = True
+    return res
+
+
 def wilson_lower_bound(wins, n, z=1.96):
     """
     Calculates the lower bound of the Wilson score interval (95% confidence).
@@ -793,7 +817,66 @@ def print_yearly_stats(yearly_df, ticker, overall_wr=None):
         print(f"{'=' * 80}\n")
 
 
-def plot_results(df, args, close_col, high_col, low_col, rsi_col, sma_50_col,
+# ==============================================================================
+# 🆕 SIGNAL OUTCOMES FOR PLOTTING
+# ==============================================================================
+def get_signal_outcomes(df, args, close_col, high_col, low_col, buy_sig_col, sell_sig_col):
+    """
+    Vectorized evaluation of signal outcomes specifically for plotting W/L markers.
+    Returns boolean arrays for wins and losses aligned with the dataframe index.
+    """
+    buy_positions = np.where(df[buy_sig_col].to_numpy())[0]
+    sell_positions = np.where(df[sell_sig_col].to_numpy())[0]
+
+    close_prices = df[close_col].to_numpy()
+    high_prices = df[high_col].to_numpy()
+    low_prices = df[low_col].to_numpy()
+    n_rows = len(df)
+    lookahead = args.lookahead_bars
+    method = args.method
+
+    buy_wins_arr = np.zeros(n_rows, dtype=bool)
+    buy_losses_arr = np.zeros(n_rows, dtype=bool)
+
+    if lookahead > 0 and len(buy_positions) > 0:
+        valid_buy_mask = buy_positions + 1 + lookahead <= n_rows
+        valid_buy_pos = buy_positions[valid_buy_mask]
+        if len(valid_buy_pos) > 0:
+            entry_prices = close_prices[valid_buy_pos]
+            strikes = entry_prices * args.put_strike_pct
+            future_idx = valid_buy_pos[:, None] + np.arange(1, lookahead + 1)
+            if method == "final_close":
+                future_closes = close_prices[future_idx]
+                success = future_closes[:, -1] > strikes
+            else:
+                future_lows = low_prices[future_idx]
+                success = np.all(future_lows > strikes[:, None], axis=1)
+            buy_wins_arr[valid_buy_pos[success]] = True
+            buy_losses_arr[valid_buy_pos[~success]] = True
+
+    sell_wins_arr = np.zeros(n_rows, dtype=bool)
+    sell_losses_arr = np.zeros(n_rows, dtype=bool)
+
+    if lookahead > 0 and len(sell_positions) > 0:
+        valid_sell_mask = sell_positions + 1 + lookahead <= n_rows
+        valid_sell_pos = sell_positions[valid_sell_mask]
+        if len(valid_sell_pos) > 0:
+            entry_prices = close_prices[valid_sell_pos]
+            strikes = entry_prices * args.call_strike_pct
+            future_idx = valid_sell_pos[:, None] + np.arange(1, lookahead + 1)
+            if method == "final_close":
+                future_closes = close_prices[future_idx]
+                success = future_closes[:, -1] < strikes
+            else:
+                future_highs = high_prices[future_idx]
+                success = np.all(future_highs < strikes[:, None], axis=1)
+            sell_wins_arr[valid_sell_pos[success]] = True
+            sell_losses_arr[valid_sell_pos[~success]] = True
+
+    return buy_wins_arr, buy_losses_arr, sell_wins_arr, sell_losses_arr
+
+
+def plot_results(df, args, params, close_col, high_col, low_col, rsi_col, sma_50_col,
                  fib_50_col, fib_618_col, buy_sig_col, sell_sig_col,
                  reg_bull_div_col, reg_bear_div_col, hid_bull_div_col, hid_bear_div_col,
                  rsi_midline=50, rsi_oversold=30, rsi_overbought=70):
@@ -804,36 +887,101 @@ def plot_results(df, args, close_col, high_col, low_col, rsi_col, sma_50_col,
         print("⚠️  matplotlib not installed. Install with: pip install matplotlib")
         return
 
-    plot_bars = min(200, len(df))
+    plot_bars = min(800, len(df))
     df_plot = df.iloc[-plot_bars:].copy()
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), gridspec_kw={'height_ratios': [2, 1]}, sharex=True)
 
     ax1.plot(df_plot.index, df_plot[close_col], label='Close', color='blue', linewidth=1)
-    if sma_50_col in df_plot.columns:
+
+    opt_target = args.optimize_target
+
+    # Conditionally plot SMA 50 based on what the model used
+    use_sma = False
+    if opt_target in ['buy_wr', 'combined_wr']:
+        if params.get('use_pullback_buy', 0) or params.get('use_ma_conf_buy', 0): use_sma = True
+    if opt_target in ['sell_wr', 'combined_wr']:
+        if params.get('use_pullback_sell', 0): use_sma = True
+
+    if use_sma and sma_50_col in df_plot.columns:
         ax1.plot(df_plot.index, df_plot[sma_50_col], label='SMA 50', color='orange', linewidth=1)
-    if fib_50_col in df_plot.columns and fib_618_col in df_plot.columns:
+
+    # Conditionally plot Fibonacci based on what the model used
+    use_fib = False
+    if opt_target in ['buy_wr', 'combined_wr']:
+        if params.get('use_fib_rsi_buy', 0): use_fib = True
+
+    if use_fib and fib_50_col in df_plot.columns and fib_618_col in df_plot.columns:
         ax1.fill_between(df_plot.index, df_plot[fib_618_col], df_plot[fib_50_col],
                          color='gold', alpha=0.25, label='Fib Golden Zone (0.5-0.618)')
 
-    buy_signals = df_plot[buy_sig_col] & df_plot[close_col].notna()
-    if buy_signals.any():
-        ax1.scatter(df_plot.index[buy_signals], df_plot[close_col][buy_signals],
-                    marker='^', color='green', s=120, label='Buy Signal', zorder=5, edgecolors='white')
-    sell_signals = df_plot[sell_sig_col] & df_plot[close_col].notna()
-    if sell_signals.any():
-        ax1.scatter(df_plot.index[sell_signals], df_plot[close_col][sell_signals],
-                    marker='v', color='red', s=120, label='Sell Signal', zorder=5, edgecolors='white')
+    # Only show buy signals if target is buy or combined, and only sell if target is sell or combined
+    plot_buy = opt_target in ['buy_wr', 'combined_wr']
+    plot_sell = opt_target in ['sell_wr', 'combined_wr']
 
-    if reg_bull_div_col in df_plot.columns:
+    # Get outcomes for W/L markers
+    buy_wins_full, buy_losses_full, sell_wins_full, sell_losses_full = get_signal_outcomes(
+        df, args, close_col, high_col, low_col, buy_sig_col, sell_sig_col
+    )
+
+    buy_wins_plot = buy_wins_full[-plot_bars:]
+    buy_losses_plot = buy_losses_full[-plot_bars:]
+    sell_wins_plot = sell_wins_full[-plot_bars:]
+    sell_losses_plot = sell_losses_full[-plot_bars:]
+
+    y_range = df_plot[close_col].max() - df_plot[close_col].min()
+    if y_range == 0: y_range = 1.0
+    y_offset = y_range * 0.02
+
+    if plot_buy:
+        buy_mask = df_plot[buy_sig_col].to_numpy() & df_plot[close_col].notna().to_numpy()
+        if buy_mask.any():
+            ax1.scatter(df_plot.index[buy_mask], df_plot[close_col][buy_mask],
+                        marker='^', color='green', s=120, label='Buy Signal', zorder=5, edgecolors='white')
+            buy_prices = df_plot[close_col].to_numpy()[buy_mask]
+            buy_dates = df_plot.index[buy_mask]
+            buy_w = buy_wins_plot[buy_mask]
+            buy_l = buy_losses_plot[buy_mask]
+
+            # Write in bold a W just up the triangle if it is a win or a bold L if it is a loss
+            for dt, p, w, l in zip(buy_dates, buy_prices, buy_w, buy_l):
+                if w:
+                    ax1.text(dt, p + y_offset, 'W', color='green', fontweight='bold', fontsize=12, ha='center', va='bottom', zorder=6)
+                elif l:
+                    ax1.text(dt, p + y_offset, 'L', color='red', fontweight='bold', fontsize=12, ha='center', va='bottom', zorder=6)
+
+    if plot_sell:
+        sell_mask = df_plot[sell_sig_col].to_numpy() & df_plot[close_col].notna().to_numpy()
+        if sell_mask.any():
+            ax1.scatter(df_plot.index[sell_mask], df_plot[close_col][sell_mask],
+                        marker='v', color='red', s=120, label='Sell Signal', zorder=5, edgecolors='white')
+            sell_prices = df_plot[close_col].to_numpy()[sell_mask]
+            sell_dates = df_plot.index[sell_mask]
+            sell_w = sell_wins_plot[sell_mask]
+            sell_l = sell_losses_plot[sell_mask]
+
+            # Write in bold a W just down the triangle if it is a win or a bold L if it is a loss
+            for dt, p, w, l in zip(sell_dates, sell_prices, sell_w, sell_l):
+                if w:
+                    ax1.text(dt, p - y_offset, 'W', color='green', fontweight='bold', fontsize=12, ha='center', va='top', zorder=6)
+                elif l:
+                    ax1.text(dt, p - y_offset, 'L', color='red', fontweight='bold', fontsize=12, ha='center', va='top', zorder=6)
+
+    # Conditionally plot divergences based on what the model used
+    use_reg_bull = opt_target in ['buy_wr', 'combined_wr'] and params.get('use_reg_bull_div', 0)
+    use_reg_bear = opt_target in ['sell_wr', 'combined_wr'] and params.get('use_reg_bear_div', 0)
+    use_hid_bull = opt_target in ['buy_wr', 'combined_wr'] and params.get('use_hid_bull_div', 0)
+    use_hid_bear = opt_target in ['sell_wr', 'combined_wr'] and params.get('use_hid_bear_div', 0)
+
+    if use_reg_bull and reg_bull_div_col in df_plot.columns:
         bull_div = df_plot[reg_bull_div_col] & df_plot[low_col].notna()
         if bull_div.any(): ax1.scatter(df_plot.index[bull_div], df_plot[low_col][bull_div], marker='*', color='lime', s=200, label='Reg. Bullish Div', zorder=6, edgecolors='black')
-    if reg_bear_div_col in df_plot.columns:
+    if use_reg_bear and reg_bear_div_col in df_plot.columns:
         bear_div = df_plot[reg_bear_div_col] & df_plot[high_col].notna()
         if bear_div.any(): ax1.scatter(df_plot.index[bear_div], df_plot[high_col][bear_div], marker='*', color='magenta', s=200, label='Reg. Bearish Div', zorder=6, edgecolors='black')
-    if hid_bull_div_col in df_plot.columns:
+    if use_hid_bull and hid_bull_div_col in df_plot.columns:
         hbull_div = df_plot[hid_bull_div_col] & df_plot[low_col].notna()
         if hbull_div.any(): ax1.scatter(df_plot.index[hbull_div], df_plot[low_col][hbull_div], marker='P', color='cyan', s=100, label='Hidden Bullish Div', zorder=6, edgecolors='black')
-    if hid_bear_div_col in df_plot.columns:
+    if use_hid_bear and hid_bear_div_col in df_plot.columns:
         hbear_div = df_plot[hid_bear_div_col] & df_plot[high_col].notna()
         if hbear_div.any(): ax1.scatter(df_plot.index[hbear_div], df_plot[high_col][hbear_div], marker='P', color='yellow', s=100, label='Hidden Bearish Div', zorder=6, edgecolors='black')
 
@@ -843,18 +991,29 @@ def plot_results(df, args, close_col, high_col, low_col, rsi_col, sma_50_col,
     ax1.legend(loc='upper left', fontsize=8, framealpha=0.9)
 
     if rsi_col in df_plot.columns:
-        ax2.plot(df_plot.index, df_plot[rsi_col], label='RSI(14)', color='purple', linewidth=1)
+        ax2.plot(df_plot.index, df_plot[rsi_col], label='RSI', color='purple', linewidth=1)
+
+        use_rsi_ema = False
+        if opt_target in ['buy_wr', 'combined_wr'] and (params.get('use_ema_cross_buy', 0) or params.get('use_ma_conf_buy', 0)):
+            use_rsi_ema = True
+        if opt_target in ['sell_wr', 'combined_wr'] and params.get('use_ema_cross_sell', 0):
+            use_rsi_ema = True
+
         rsi_ema_10_col = ('RSI_EMA_10', args.ticker)
-        if rsi_ema_10_col in df_plot.columns:
+        if use_rsi_ema and rsi_ema_10_col in df_plot.columns:
             ax2.plot(df_plot.index, df_plot[rsi_ema_10_col], label='RSI EMA(10)', color='cyan', linewidth=0.8)
+
         ax2.axhline(y=rsi_overbought, color='red', linestyle='--', alpha=0.5, label=f'Overbought ({rsi_overbought})')
         ax2.axhline(y=rsi_oversold, color='green', linestyle='--', alpha=0.5, label=f'Oversold ({rsi_oversold})')
         ax2.axhline(y=rsi_midline, color='gray', linestyle=':', alpha=0.3, label=f'Midline ({rsi_midline})')
-        if rsi_ema_10_col in df_plot.columns:
+
+        if use_rsi_ema and rsi_ema_10_col in df_plot.columns:
             crossover_buy = (df_plot[rsi_col].shift(1) < df_plot[rsi_ema_10_col].shift(1)) & (df_plot[rsi_col] > df_plot[rsi_ema_10_col]) & (df_plot[rsi_col] < rsi_oversold)
             crossover_sell = (df_plot[rsi_col].shift(1) > df_plot[rsi_ema_10_col].shift(1)) & (df_plot[rsi_col] < df_plot[rsi_ema_10_col]) & (df_plot[rsi_col] > rsi_overbought)
-            if crossover_buy.any(): ax2.scatter(df_plot.index[crossover_buy], df_plot[rsi_col][crossover_buy], marker='^', color='green', s=100, zorder=5, edgecolors='white')
-            if crossover_sell.any(): ax2.scatter(df_plot.index[crossover_sell], df_plot[rsi_col][crossover_sell], marker='v', color='red', s=100, zorder=5, edgecolors='white')
+            if plot_buy and crossover_buy.any():
+                ax2.scatter(df_plot.index[crossover_buy], df_plot[rsi_col][crossover_buy], marker='^', color='green', s=100, zorder=5, edgecolors='white')
+            if plot_sell and crossover_sell.any():
+                ax2.scatter(df_plot.index[crossover_sell], df_plot[rsi_col][crossover_sell], marker='v', color='red', s=100, zorder=5, edgecolors='white')
 
     ax2.set_ylabel('RSI')
     ax2.set_xlabel('Date')
@@ -894,14 +1053,16 @@ def generate_model_name(args, params, score):
 
     # Add key args that affect model behavior
     arg_parts = []
+    if hasattr(args, 'cooldown_bars'):
+        arg_parts.append(f"cd{args.cooldown_bars}")
     if hasattr(args, 'lookahead_bars'):
-        arg_parts.append(f"la-{args.lookahead_bars}")
+        arg_parts.append(f"la{args.lookahead_bars}")
     if hasattr(args, 'method'):
-        arg_parts.append(f"m-{args.method}")
+        arg_parts.append(f"mt{args.method}")
     if hasattr(args, 'put_strike_pct'):
-        arg_parts.append(f"put-{args.put_strike_pct:.6f}")
+        arg_parts.append(f"put{args.put_strike_pct:.6f}")
     if hasattr(args, 'call_strike_pct'):
-        arg_parts.append(f"call-{args.call_strike_pct:.6f}")
+        arg_parts.append(f"call{args.call_strike_pct:.6f}")
     if hasattr(args, 'train_ratio') and args.train_ratio < 1.0:
         arg_parts.append(f"train_ratio-{args.train_ratio:.2f}")
     score = 0. if score is None else score
@@ -910,7 +1071,7 @@ def generate_model_name(args, params, score):
         args.ticker.replace('^', ''),
         args.dataset_id,
         args.optimize_target,
-        f"val_score-{score:.12f}",
+        f"twr{score:.12f}",
         '__'.join(param_parts),
         '__'.join(arg_parts),
         timestamp
@@ -1054,6 +1215,11 @@ def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col,
         df[('Signal_Sell', _args.ticker)] = df[sell_cols].fillna(False).sum(axis=1) >= min_sell_confluence
     else:
         df[('Signal_Sell', _args.ticker)] = False
+
+    cooldown_bars = getattr(_args, 'cooldown_bars', 0)
+    if cooldown_bars > 0:
+        df[('Signal_Buy', _args.ticker)] = apply_cooldown(df[('Signal_Buy', _args.ticker)].to_numpy(), cooldown_bars)
+        df[('Signal_Sell', _args.ticker)] = apply_cooldown(df[('Signal_Sell', _args.ticker)].to_numpy(), cooldown_bars)
 
     # Get latest signal
     latest_idx = df.index[-1]
@@ -1342,6 +1508,11 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, volu
     else:
         df[('Signal_Sell', _args.ticker)] = False
 
+    cooldown_bars = getattr(_args, 'cooldown_bars', 0)
+    if cooldown_bars > 0:
+        df[('Signal_Buy', _args.ticker)] = apply_cooldown(df[('Signal_Buy', _args.ticker)].to_numpy(), cooldown_bars)
+        df[('Signal_Sell', _args.ticker)] = apply_cooldown(df[('Signal_Sell', _args.ticker)].to_numpy(), cooldown_bars)
+
     buy_wr, sell_wr, combined_wr, buy_wins, sell_wins, total_buy, total_sell = calculate_win_rates_vectorized(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
     if _args.sanity_check:
         buy_wr2, sell_wr2, combined_wr2, buy_wins2, sell_wins2, total_buy2, total_sell2 = calculate_win_rates(df=df, _args=_args, close_col=close_col, high_col=high_col, low_col=low_col)
@@ -1525,6 +1696,11 @@ def optuna_objective(trial, _args, df_base, close_col, high_col, low_col, volume
         else:
             df[sell_sig_col] = False
 
+        cooldown_bars = getattr(_args, 'cooldown_bars', 0)
+        if cooldown_bars > 0:
+            df[buy_sig_col] = apply_cooldown(df[buy_sig_col].to_numpy(), cooldown_bars)
+            df[sell_sig_col] = apply_cooldown(df[sell_sig_col].to_numpy(), cooldown_bars)
+
         # Initialize TimeSeriesSplit with 10 folds
         tscv = TimeSeriesSplit(n_splits=10)
         fold_scores = []
@@ -1635,14 +1811,15 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
+    strat_group.add_argument('--cooldown-bars', type=int, default=0, dest='cooldown_bars', help='Minimum number of bars to wait between signals (cooldown period)')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
-    strat_group.add_argument('--min-signal-density', type=float, default=0.04, help='Min signal frequency threshold')
+    strat_group.add_argument('--min-signal-density', type=float, default=0.01, help='Min signal frequency threshold')
     strat_group.add_argument('--put-strike-pct', type=float, default=0.9999, help='Base put strike multiplier')
     strat_group.add_argument('--call-strike-pct', type=float, default=1.0001, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
-    strat_group.add_argument('--buy-confluence-range', type=int, nargs=2, default=[1, 11], metavar=('MIN', 'MAX'), help='Min and max range for buy confluence optimization (default: 1 11)')
-    strat_group.add_argument('--sell-confluence-range', type=int, nargs=2, default=[1, 9], metavar=('MIN', 'MAX'), help='Min and max range for sell confluence optimization (default: 1 9)')
+    strat_group.add_argument('--buy-confluence-range', type=int, nargs=2, default=[2, 3], metavar=('MIN', 'MAX'), help='Min and max range for buy confluence optimization (default: 2 3)')
+    strat_group.add_argument('--sell-confluence-range', type=int, nargs=2, default=[2, 3], metavar=('MIN', 'MAX'), help='Min and max range for sell confluence optimization (default: 2 3)')
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--optimize', action='store_true', help='Run Optuna hyperparameter optimization')
@@ -1713,7 +1890,7 @@ def print_startup_banner(args):
 ║  🔹 Ticker       : {args.ticker:<58}║
 ║  🔹 Dataset      : {args.dataset_id:<58}║
 ║  🔹 Mode         : {'REAL-TIME' if args.real_time else 'OPTIMIZATION' if args.optimize else 'EVALUATION' if args.model_path else 'DEFAULT BACKTEST':<58}║
-║  🔹 Lookahead    : {args.lookahead_bars:02d} bars{' ' * 51}║
+║  🔹 Lookahead    : {args.lookahead_bars:02d} bars | Cooldown: {args.cooldown_bars:02d} bars{' ' * 31}║
 ║  🔹 Method       : {args.method:<58}║
 ║  🔹 Target       : {args.optimize_target:<58}║
 ║  🔹 Min Density  : {args.min_signal_density:<58}║
@@ -1871,6 +2048,7 @@ def entry(args):
 
                     # Pour sqlite://, postgresql://, redis://, etc.
                     return url
+
                 storage = parse_storage_url(args.optuna_db)
             db_path_display = storage
 
@@ -2000,7 +2178,7 @@ def entry(args):
                 status = "✅ Good generalization" if abs(gap) < 0.1 else "⚠️  Potential overfitting/underfitting"
                 print(f"\n📈 Train vs Validation Comparison:")
                 print(f"   Target Metric ({args.optimize_target}):")
-                print(f"      Train: {train_score:.2%} | Val: {val_score:.2%} | Gap: {gap:+.2%} {status}")
+                print(f"      Train: {train_score:.2%} | Test: {val_score:.2%} | Gap: {gap:+.2%} {status}")
 
             # Store validation score for model saving
             validation_score = combined_wr_val if args.optimize_target == 'combined_wr' else (buy_wr_val if args.optimize_target == 'buy_wr' else sell_wr_val)
@@ -2063,7 +2241,7 @@ def entry(args):
         sell_sig_col = ('Signal_Sell', args.ticker)
         rsi_col = ('RSI', args.ticker)
         plot_results(
-            df_final, args, close_col, high_col, low_col, rsi_col, sma_50_col,
+            df_final, args, params, close_col, high_col, low_col, rsi_col, sma_50_col,
             fib_50_col, fib_618_col, buy_sig_col, sell_sig_col,
             ('Regular_Bullish_Div', args.ticker), ('Regular_Bearish_Div', args.ticker),
             ('Hidden_Bullish_Div', args.ticker), ('Hidden_Bearish_Div', args.ticker),
