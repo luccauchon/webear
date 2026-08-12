@@ -126,14 +126,22 @@ def entry(args):
         configuration.use_bb_buy = True
         configuration.optuna_db = f"journal://exhaustion_reversal.db"
 
-    if args.profile == "ss_1":
+    if args.profile == "all_1":
         #
         configuration.buy_confluence_range = (2, 3)
         configuration.sell_confluence_range = (2, 3)
         configuration.use_fib_rsi_buy = True
         configuration.use_ema_cross_buy = True
         configuration.use_macd_buy = True
-        configuration.optuna_db = f"journal://ss_1.db"
+        configuration.use_bb_buy = True
+        configuration.use_pullback_buy = True
+        configuration.use_ma_conf_buy = True
+        configuration.use_reg_bull_div = True
+        configuration.use_hid_bull_div = True
+        configuration.use_vol_buy = True
+        configuration.use_stoch_buy = True
+        configuration.use_vwap_buy = True
+        configuration.optuna_db = f"journal://all_1.db"
 
     # Bonus SOTA Tip: Hidden vs. Regular Divergence
     # If you include divergence, note that Hidden Bullish Divergence (use_hid_bull_div) is statistically more reliable for trend continuation
