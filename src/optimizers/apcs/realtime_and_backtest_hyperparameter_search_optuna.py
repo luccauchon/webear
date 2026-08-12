@@ -1090,10 +1090,10 @@ if __name__ == '__main__':
 
     # Backtest and Optimization parameters
     parser.add_argument("--lookahead", type=int, default=1, help="Number of bars to look ahead for determining trade outcome.")
-    parser.add_argument("--n-trials", type=int, default=9, help="Number of trials for Optuna optimization.")
-    parser.add_argument("--timeout", type=int, default=3600, help="Timeout in seconds for Optuna optimization.")
-    parser.add_argument("--min-density-threshold", type=float, default=0.1, help="Minimum trade density threshold for scoring without penalty.")
-    parser.add_argument("--test-split-n", type=float, default=0.9, help="Proportion of data to use for training (the rest is test).")
+    parser.add_argument("--n-trials", type=int, default=99, help="Number of trials for Optuna optimization.")
+    parser.add_argument("--timeout", type=int, default=120, help="Timeout in seconds for Optuna optimization.")
+    parser.add_argument("--min-density-threshold", type=float, default=0.2, help="Minimum trade density threshold for scoring without penalty.")
+    parser.add_argument("--test-split-n", type=float, default=0.8, help="Proportion of data to use for training (the rest is test).")
     parser.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
 
     parser.add_argument("--trade-direction", type=str, choices=["buy", "sell", "both"], default="both", help="Optimize and trade only 'buy', only 'sell', or 'both' (default).")
