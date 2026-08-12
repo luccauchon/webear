@@ -362,7 +362,7 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density, wr_we
     return max(0.0, min(1.0, final_score))
 
 
-def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
+def objective_old(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
               B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits, cooldown_bars):
     put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
     call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
@@ -432,6 +432,152 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
     return final_score
 
 
+def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
+              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits, cooldown_bars):
+    # 1. Suggest Parameters
+    put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
+    call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
+    st_multipler = trial.suggest_int("st_multipler", 1, 5, step=1)
+    st_length = trial.suggest_int("st_length", 3, 20, step=1)
+    rsi_length = trial.suggest_int("rsi_length", 2, 21, step=1)
+    sup_wick_null_coef = trial.suggest_float("sup_wick_null_coef", 0.0, 0.95, step=0.01)
+    inf_wick_null_coef = trial.suggest_float("inf_wick_null_coef", 0.0, 0.95, step=0.01)
+    buy_rsi_threshold = trial.suggest_int("buy_rsi_threshold", 50, 95, step=1)
+    sell_rsi_threshold = trial.suggest_int("sell_rsi_threshold", 5, 50, step=1)
+
+    # ==========================================
+    # 🚀 STEP 1: PRE-COMPUTE INDICATORS (ONCE PER TRIAL)
+    # ==========================================
+    # Calculated on the full dataset to avoid redundant recalculations in every CV fold
+    rsi_series = ta.rsi(df[close_col], length=rsi_length)
+    vwap_series = ta.vwap(df[high_col], df[low_col], df[close_col], df[volume_col])
+    st = ta.supertrend(df[high_col], df[low_col], df[close_col], multiplier=st_multipler, length=st_length)
+    st_direction_series = st.iloc[:, 1]
+
+    # ==========================================
+    # 🚀 STEP 2: PRE-COMPUTE PARAMETER-INDEPENDENT MASKS
+    # ==========================================
+    # These conditions only depend on OHLC data, not Optuna parameters
+    C = df[close_col]
+    O = df[open_col]
+    H = df[high_col]
+    L = df[low_col]
+
+    C_prev = C.shift(1)
+    O_prev = O.shift(1)
+    H_prev = H.shift(1)
+    L_prev = L.shift(1)
+
+    body2 = (C - O).abs()
+    body1 = (C_prev - O_prev).abs()
+
+    base_green_cond = (
+            (C > O) & (C_prev > O_prev) & (body2 > body1) &
+            (H > H_prev) & (L > L_prev) & (C > H_prev)
+    ).fillna(False)
+
+    base_red_cond = (
+            (C < O) & (C_prev < O_prev) & (body2 > body1) &
+            (H < H_prev) & (L < L_prev) & (C < L_prev)
+    ).fillna(False)
+
+    upper_wick = H - C
+    lower_wick = C - L
+
+    # ==========================================
+    # 🚀 STEP 3: GENERATE SIGNALS ON FULL DATASET
+    # ==========================================
+    is_double_green = base_green_cond & (upper_wick <= body2 * sup_wick_null_coef)
+    is_double_red = base_red_cond & (lower_wick <= body2 * inf_wick_null_coef)
+
+    buy_mask = (
+            (C > vwap_series) & (st_direction_series == 1) &
+            is_double_green & (rsi_series > buy_rsi_threshold)
+    ).fillna(False)
+
+    sell_mask = (
+            (C < vwap_series) & (st_direction_series == -1) &
+            is_double_red & (rsi_series < sell_rsi_threshold)
+    ).fillna(False)
+
+    signals = []
+
+    # 🚀 Bonus: Pre-compute integer positions for faster cooldown sorting
+    buy_idx = df.index[buy_mask]
+    if len(buy_idx) > 0:
+        prices = df.loc[buy_idx, close_col]
+        sls = df.loc[buy_idx, low_col]
+        tps = prices + (prices - sls) * 2
+        buy_idx_pos = df.index.get_indexer(buy_idx)
+        signals.extend([{'Type': 'BUY', 'Index': idx, 'Pos': pos, 'Price': p, 'SL': s, 'TP': t}
+                        for idx, pos, p, s, t in zip(buy_idx, buy_idx_pos, prices, sls, tps)])
+
+    sell_idx = df.index[sell_mask]
+    if len(sell_idx) > 0:
+        prices = df.loc[sell_idx, close_col]
+        sls = df.loc[sell_idx, high_col]
+        tps = prices - (sls - prices) * 2
+        sell_idx_pos = df.index.get_indexer(sell_idx)
+        signals.extend([{'Type': 'SELL', 'Index': idx, 'Pos': pos, 'Price': p, 'SL': s, 'TP': t}
+                        for idx, pos, p, s, t in zip(sell_idx, sell_idx_pos, prices, sls, tps)])
+
+    signals.sort(key=lambda x: x['Pos'])  # Sorting by integer position is significantly faster
+
+    if cooldown_bars > 0:
+        filtered_signals = []
+        last_pos = -float('inf')
+        for sig in signals:
+            if sig['Pos'] - last_pos > cooldown_bars:
+                filtered_signals.append(sig)
+                last_pos = sig['Pos']
+        signals = filtered_signals
+
+    # ==========================================
+    # 🚀 STEP 4: TIME SERIES CROSS-VALIDATION LOOP
+    # ==========================================
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    fold_scores = []
+
+    for train_idx, test_idx in tscv.split(df):
+        if len(test_idx) == 0:
+            continue
+
+        # Since signals were generated globally, we just filter them
+        # to keep only those strictly within the current test fold!
+        test_indices_set = set(df.index[test_idx])
+        fold_signals = [s for s in signals if s['Index'] in test_indices_set]
+
+        if signal_type == 'buy':
+            fold_signals = [s for s in fold_signals if s['Type'] == 'BUY']
+        elif signal_type == 'sell':
+            fold_signals = [s for s in fold_signals if s['Type'] == 'SELL']
+
+        # Pass full df to calculate_pnl_report so it can look ahead B bars for PnL calculation
+        pnl_df = calculate_pnl_report(
+            signals=fold_signals, df=df.copy(), close_col=close_col, high_col=high_col, low_col=low_col,
+            B=B, method=method, put__strike_pct=put__strike_pct, call__strike_pct=call__strike_pct, silent=True
+        )
+
+        if pnl_df.empty:
+            fold_scores.append(0.0)
+        else:
+            fold_trade_density = len(pnl_df) / len(test_idx)
+            score = compute_optimization_score(
+                win_rate=pnl_df['win_rate'].iloc[0],
+                trade_density=fold_trade_density,
+                min_trade_density=min_trade_density,
+                wr_weight=wr_weight,
+                td_weight=td_weight
+            )
+            fold_scores.append(score)
+
+    mean_score = np.mean(fold_scores)
+    std_score = np.std(fold_scores)
+    alpha = 0.5
+    final_score = mean_score - (alpha * std_score)
+    return final_score
+
+
 def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_metrics, test_metrics, command_line):
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -446,11 +592,11 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     test_win_rate = test_metrics.get("win_rate")
     best_score = getattr(study.best_trial, 'value', None)
     score_tag = f"score{best_score:.8f}".replace('.', 'p') if best_score is not None else "scoreNA"
-    params_str = f"B{p_tag}__{m_tag}__md{md_tag}__wr{wr_tag}__td{td_tag}__{st_tag}__{score_tag}__{train_win_rate:.4f}__{test_win_rate:.4f}"
+    params_str = f"B{p_tag}__mh{m_tag}__md{md_tag}__wr{wr_tag}__td{td_tag}__st{st_tag}__train{score_tag}__trainwr{train_win_rate:.4f}__twr{test_win_rate:.4f}"
 
     safe_ticker = ticker.replace('^', '')
     safe_dataset = dataset_id.replace('/', '_').replace('\\', '_')
-    base_name = f"{safe_ticker}__{safe_dataset}__{params_str}__{timestamp}"
+    base_name = f"{safe_ticker}__ds{safe_dataset}__{params_str}__{timestamp}"
 
     pkl_path = os.path.join(output_dir, f"{base_name}.pkl")
 
