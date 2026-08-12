@@ -23,15 +23,17 @@ import pandas_ta as ta
 from argparse import Namespace
 import argparse
 import optuna
-from optuna.pruners import MedianPruner,NopPruner
+from optuna.pruners import MedianPruner, NopPruner
 from optuna.samplers import TPESampler
 from optuna.trial import TrialState
 from optuna.samplers import RandomSampler, GridSampler
+
 warnings.filterwarnings("ignore")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 from utils import str2bool, DATASET_AVAILABLE, format_execution_time
-from sklearn.model_selection import ParameterGrid, ParameterSampler
+from sklearn.model_selection import ParameterGrid, ParameterSampler, TimeSeriesSplit
 import time
+
 
 # =========================================================
 # PARAMETER SAVE/LOAD UTILITIES
@@ -159,7 +161,7 @@ def run_professional_optimization(args):
     if args.verbose:
         print(f"Data loaded: {len(df)} rows | {df.index[0].strftime('%Y-%m-%d')} → {df.index[-1].strftime('%Y-%m-%d')}")
     close = df["Close"]
-    df_open, df_low, df_high, df_volume  = df['Open'], df['Low'], df['High'], df['Volume']
+    df_open, df_low, df_high, df_volume = df['Open'], df['Low'], df['High'], df['Volume']
     use_closing_price_strategy = False
     if args.verbose:
         print(f"Using the {'close-to-close stability' if use_closing_price_strategy else 'intra-day sensitivity'} to compute the target")
@@ -174,7 +176,7 @@ def run_professional_optimization(args):
         # Comparaison : Si le rendement entre le prix actuel et le pire prix futur est inférieur ou égal à votre seuil (ex: -0.03), le 1 est déclenché.
         # Drop mode: look for minimum price in forward window
         if use_closing_price_strategy:
-            future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
+            future_extreme = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).min()[::-1].shift(-1)
             df["Target_Pct_Change"] = (future_extreme - close) / close
             # Negative threshold: e.g., -0.03 means 3% drop
             df["Is_Event"] = (df["Target_Pct_Change"] <= THRESHOLD).astype(int)
@@ -195,7 +197,7 @@ def run_professional_optimization(args):
     else:  # spike mode
         # # spike mode: look for maximum price in forward window
         if use_closing_price_strategy:
-            future_extreme  = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
+            future_extreme = close[::-1].rolling(window=FORWARD_DAYS, min_periods=1).max()[::-1].shift(-1)
             df["Target_Pct_Change"] = (future_extreme - close) / close
             # Positive threshold: e.g., 0.03 means 3% spike
             df["Is_Event"] = (df["Target_Pct_Change"] >= THRESHOLD).astype(int)
@@ -217,14 +219,17 @@ def run_professional_optimization(args):
 
     total_days = valid_mask.sum()
     total_events = target.sum()
-    baseline = total_events / total_days * 100
+    baseline = total_events / total_days * 100 if total_days > 0 else 0
     assert 0 < args.threshold_penalty_for_low_events <= 1
     args.threshold_penalty_for_low_events = int(args.threshold_penalty_for_low_events * total_events)
+
     def penalty_for_having_low_number_of_events(n):
-        return min(n / args.threshold_penalty_for_low_events, 1.0)**2
+        return min(n / args.threshold_penalty_for_low_events, 1.0) ** 2
+
     if args.softer_penalty_for_low_events:
         if args.verbose:
             print(f"Switching to sigmoid-like curve for penalty of low number of events")
+
         def penalty_for_having_low_number_of_events(n):
             # Softer penalty: sigmoid-like curve instead of linear cap
             if n >= args.threshold_penalty_for_low_events:
@@ -236,7 +241,7 @@ def run_professional_optimization(args):
     else:
         base_signal_options = ["simple_ma", "hull_ma_cross", "supertrend", "atr_expansion", "bb_extreme"]
     # Min signals logic based on cluster mode
-    min_signals_required = int(0.05 * total_events)
+    min_signals_required = max(1, int(0.05 * total_events))
     if args.verbose:
         print(f"Using base signals: {base_signal_options}")
         print(f"\nMode: {event_direction.upper()} | Forward {FORWARD_DAYS} {args.dataset_id} | "
@@ -246,6 +251,7 @@ def run_professional_optimization(args):
               f"{' | Use Z-Score boost' if improve_score_function else ''} | "
               f"Optimizing Edge")
     assert event_direction in ['drop', 'spike']
+
     def objective(trial):
         base_signal = trial.suggest_categorical("base_signal", base_signal_options)
         assert base_signal is not None
@@ -258,7 +264,7 @@ def run_professional_optimization(args):
         use_macd_indicator = trial.suggest_categorical("use_macd_indicator", [True, False]) if not args.disable_macd else False
         use_stochastic_indicator = trial.suggest_categorical("use_stochastic_indicator", [True, False]) if not args.disable_stochastic else False
 
-        p1, p2 , p3, p4 = int(str(args.cluster_window_params).split(",")[0]), int(str(args.cluster_window_params).split(",")[1]), bool(str(args.cluster_window_params).split(",")[2]), int(str(args.cluster_window_params).split(",")[3])
+        p1, p2, p3, p4 = int(str(args.cluster_window_params).split(",")[0]), int(str(args.cluster_window_params).split(",")[1]), bool(str(args.cluster_window_params).split(",")[2]), int(str(args.cluster_window_params).split(",")[3])
         cluster_window = trial.suggest_int(name="cluster_window", low=p1, high=p2, log=p3, step=p4)
         p1, p2, p3, p4 = int(str(args.cluster_threshold_params).split(",")[0]), int(str(args.cluster_threshold_params).split(",")[1]), bool(str(args.cluster_threshold_params).split(",")[2]), int(str(args.cluster_threshold_params).split(",")[3])
         cluster_threshold = trial.suggest_int("cluster_threshold", low=p1, high=p2, log=p3, step=p4)
@@ -509,26 +515,73 @@ def run_professional_optimization(args):
         else:
             prev = omen_count.shift(1)
             cluster = (omen_count >= cluster_threshold) & (prev < cluster_threshold)
+
+        valid_indices = valid_mask[valid_mask].index
+
+        # --- TimeSeriesSplit for Generalizability ---
+        tscv = TimeSeriesSplit(n_splits=5)
+        fold_edges = []
+        fold_ns = []
+
+        for train_idx, test_idx in tscv.split(valid_indices):
+            test_valid_indices = valid_indices[test_idx]
+
+            fold_signals = cluster.loc[test_valid_indices]
+            fold_active_dates = fold_signals[fold_signals].index
+            fold_valid_signals = fold_active_dates.intersection(test_valid_indices)
+
+            fold_targets = target.loc[fold_valid_signals]
+            fold_n = len(fold_targets)
+            fold_ns.append(fold_n)
+
+            if fold_n > 0:
+                fold_wr = fold_targets.mean() * 100
+                fold_edges.append(fold_wr - baseline)
+            else:
+                fold_edges.append(-baseline)
+
         signal_dates = cluster[cluster].index
-        # Only evaluate signals where the outcome is actually known
-        # valid_mask is defined in the parent scope run_professional_optimization
-        valid_signal_indices = signal_dates.intersection(valid_mask[valid_mask].index)
+        valid_signal_indices = signal_dates.intersection(valid_indices)
         cluster_targets = target.loc[valid_signal_indices]
-        # Safety check again after filtering
-        if len(cluster_targets) < min_signals_required: return -10
+
+        if len(cluster_targets) < min_signals_required:
+            return -10
+
         win_rate = cluster_targets.mean() * 100
         n = len(cluster_targets)
         penalty = penalty_for_having_low_number_of_events(n)
-        assert 0 <= penalty <= 1
-        trial.set_user_attr("penalty", penalty)
-        z = (win_rate / 100 - baseline / 100) / math.sqrt((baseline / 100) * (1 - baseline / 100) / n)
+
+        # --- New Penalties for Less Signal & Generalizability ---
+        # 1. Selectivity penalty: Force fewer signals (less noise)
+        signal_frequency = n / total_days if total_days > 0 else 0
+        selectivity_penalty = 1.0 / (1.0 + signal_frequency * 10.0)
+
+        # 2. Generalizability penalty: Penalize high variance across time folds
+        std_edge = np.std(fold_edges) if len(fold_edges) > 1 else 0.0
+        variance_penalty = 1.0 / (1.0 + std_edge / 5.0)
+
+        # 3. Empty fold penalty: If any fold has 0 signals, it's not generalizable
+        if 0 in fold_ns:
+            variance_penalty *= 0.1
+
+        edge = win_rate - baseline
+
+        denom = math.sqrt((baseline / 100) * (1 - baseline / 100) / n) if n > 0 else 0.0
+        z = (win_rate / 100 - baseline / 100) / denom if denom > 1e-9 else 0.0
+
         trial.set_user_attr("z_score", float(z))
+        trial.set_user_attr("penalty", float(penalty * selectivity_penalty * variance_penalty))
+        trial.set_user_attr("fold_std", float(std_edge))
+        trial.set_user_attr("selectivity_penalty", float(selectivity_penalty))
+        trial.set_user_attr("variance_penalty", float(variance_penalty))
+
         if improve_score_function:
-            edge = (win_rate - baseline) / 100  # Edge as decimal
-            statistical_confidence = min(abs(z) / 1.96, 1.0)  # Normalize to p<0.05 threshold
-            score = (edge * penalty) * (1 + 0.5 * statistical_confidence)  # Cap boost at 50%
+            edge_dec = edge / 100
+            statistical_confidence = min(abs(z) / 1.96, 1.0)
+            score = (edge_dec * penalty * selectivity_penalty * variance_penalty) * (1 + 0.5 * statistical_confidence)
         else:
-            score = (win_rate - baseline) * penalty  # Only reward edge over baseline
+            score = edge * penalty * selectivity_penalty * variance_penalty
+
         trial.report(score, step=n)
         trial.set_user_attr("total_events", int(total_events))
         trial.set_user_attr("total_days", int(total_days))
@@ -1005,6 +1058,34 @@ def verify_best(df_close, df_open, df_low, df_high, df_volume, cluster_mode, par
     total = len(verified_signals)
     win_rate = (hits / total * 100) if total > 0 else 0
 
+    # 6. TimeSeriesSplit Generalizability Report
+    if verbose:
+        tscv = TimeSeriesSplit(n_splits=5)
+        valid_indices = valid_mask[valid_mask].index
+
+        print("\n" + "=" * 40)
+        print("      TIME SERIES CROSS-VALIDATION (5 Folds)")
+        print("=" * 40)
+        fold_edges = []
+        for i, (train_idx, test_idx) in enumerate(tscv.split(valid_indices)):
+            test_valid_indices = valid_indices[test_idx]
+            fold_signals = cluster.loc[test_valid_indices]
+            fold_active_dates = fold_signals[fold_signals].index
+            fold_valid_signals = fold_active_dates.intersection(test_valid_indices)
+            fold_targets = target.loc[fold_valid_signals]
+            fold_n = len(fold_targets)
+            if fold_n > 0:
+                fold_wr = fold_targets.mean() * 100
+                fold_edges.append(fold_wr - baseline)
+                print(f"Fold {i + 1}: Signals={fold_n:4d} | Win Rate={fold_wr:5.1f}% | Edge={fold_wr - baseline:+5.1f}%")
+            else:
+                fold_edges.append(-baseline)
+                print(f"Fold {i + 1}: Signals={fold_n:4d} | Win Rate= N/A  | Edge= N/A")
+
+        if len(fold_edges) > 1:
+            std_edge = np.std(fold_edges)
+            print(f"Edge Standard Deviation: {std_edge:.2f}% (Lower is more generalizable)")
+
     # 5. Real-Time Status (The Last Row)
     last_date = cluster.index[-1]
     is_active_now = cluster.iloc[-1]  # Is the cluster active today?
@@ -1022,7 +1103,7 @@ def verify_best(df_close, df_open, df_low, df_high, df_volume, cluster_mode, par
             print(f"  - {key}: {value}")
         print("-" * 40)
         print(f"Total Signals Found: {total}")
-        assert np.allclose(win_rate, precision*100, atol=0.5), f"\t\t{win_rate=}  vs  {precision*100=}"
+        assert np.allclose(win_rate, precision * 100, atol=0.5), f"\t\t{win_rate=}  vs  {precision*100=}"
         print(f"Historical Win Rate: {win_rate:.2f}%")
         print(f"Baseline was:        {baseline:.2f}%")
         print(f"Edge vs Baseline:    {win_rate - baseline:.2f}%")
@@ -1036,8 +1117,8 @@ def verify_best(df_close, df_open, df_low, df_high, df_volume, cluster_mode, par
             print(_tmp_is_active_str)
         print("=" * 40)
 
-    return {'win_rate': win_rate, 'baseline': baseline, 'last_date': last_date, 'current_count': current_count, 'cluster_threshold':params['cluster_threshold'],
-            'is_active_now': is_active_now, 'event_direction': event_direction, 'threshold': threshold , 'is_active_str': _tmp_is_active_str, 'forward_days': forward_days}
+    return {'win_rate': win_rate, 'baseline': baseline, 'last_date': last_date, 'current_count': current_count, 'cluster_threshold': params['cluster_threshold'],
+            'is_active_now': is_active_now, 'event_direction': event_direction, 'threshold': threshold, 'is_active_str': _tmp_is_active_str, 'forward_days': forward_days}
 
 
 # =========================================================
@@ -1112,7 +1193,7 @@ def run_realtime_only(params_file, verbose):
 
     total_days = valid_mask.sum()
     total_events = target.sum()
-    baseline = total_events / total_days * 100
+    baseline = total_events / total_days * 100 if total_days > 0 else 0
     if verbose:
         print(f"\nMode: {event_direction.upper()} | "
               f"Threshold: {THRESHOLD * 100:+.1f}% | "
@@ -1121,7 +1202,7 @@ def run_realtime_only(params_file, verbose):
     # Run verification with loaded params
     info = verify_best(df_close=close, df_open=df_open, df_low=df_low, df_high=df_high, cluster_mode=best_params['cluster_mode'], params=best_params,
                        target=target, valid_mask=valid_mask, baseline=baseline, forward_days=FORWARD_DAYS, threshold=THRESHOLD,
-                       mode=best_params['mode'], verbose=verbose, df_volume=df_volume,)
+                       mode=best_params['mode'], verbose=verbose, df_volume=df_volume, )
     info.update({"total_days": total_days, "total_events": total_events})
     return info
 
