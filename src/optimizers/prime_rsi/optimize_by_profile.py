@@ -32,7 +32,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group.add_argument('--min-signal-density', type=float, default=0.0001, help='Min signal frequency threshold')
     strat_group.add_argument('--put-strike-pct', type=float, default=0.99999, help='Base put strike multiplier')
     strat_group.add_argument('--call-strike-pct', type=float, default=1.00001, help='Base call strike multiplier')
-    strat_group.add_argument('--profile', type=str, default="institutional_pullback", help='', choices=["institutional_pullback",
+    strat_group.add_argument('--profile', type=str, default="institutional_pullback", help='', choices=["institutional_pullback", "all_1",
                                                                                                         "structural_confluence", "exhaustion_reversal"])
 
     opt_group = parser.add_argument_group('Optimization & Execution')
