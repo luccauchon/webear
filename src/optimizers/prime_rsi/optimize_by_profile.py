@@ -28,6 +28,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
+    strat_group.add_argument('--cooldown-bars', type=int, default=0, dest='cooldown_bars', help='Minimum number of bars to wait between signals (cooldown period)')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
     strat_group.add_argument('--min-signal-density', type=float, default=0.0001, help='Min signal frequency threshold')
     strat_group.add_argument('--put-strike-pct', type=float, default=0.99999, help='Base put strike multiplier')
@@ -82,7 +83,7 @@ def entry(args):
     configuration = Namespace(seed=52, verbose=True, ticker=args.ticker, real_time=False, dataset_id=args.dataset_id, clip_n=args.clip_n, reduce_n=args.reduce_n, optimize=True,
                               timeout=args.timeout, n_trials=args.n_trials, put_strike_pct=args.put_strike_pct, call_strike_pct=args.call_strike_pct,
                               lookahead_bars=args.lookahead_bars, method=args.method, min_signal_density=args.min_signal_density,
-                              model_path=None, optuna_db=args.optuna_db, verbose_optuna_progression=True,
+                              model_path=None, optuna_db=args.optuna_db, verbose_optuna_progression=True, cooldown_bars=args.cooldown_bars,
                               sanity_check=False, output_dir=args.output_dir, plot=False, train_ratio=args.train_ratio,
                               optimize_target="buy_wr",
                                       )
