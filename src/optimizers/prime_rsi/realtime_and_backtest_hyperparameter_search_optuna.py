@@ -152,12 +152,13 @@ import argparse
 import os
 import optuna
 import json
+from argparse import Namespace
 import math
 from datetime import datetime
 from sklearn.model_selection import TimeSeriesSplit
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
-
+import sys
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -1087,7 +1088,7 @@ def generate_model_name(args, params, score):
     return filename
 
 
-def save_model(params, score, args, validation_score=None, train_val_split=None):
+def save_model(params, score, command_line, args, validation_score, train_val_split):
     """
     Save model parameters and metadata to a file with descriptive name.
     """
@@ -1113,6 +1114,7 @@ def save_model(params, score, args, validation_score=None, train_val_split=None)
             'train_ratio': getattr(args, 'train_ratio', 1.0),
         },
         'timestamp': datetime.now().isoformat(),
+        'command_line': command_line,
     }
 
     with open(model_path, 'wb') as f:
@@ -1216,7 +1218,7 @@ def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col,
     else:
         df[('Signal_Sell', _args.ticker)] = False
 
-    cooldown_bars = getattr(_args, 'cooldown_bars', 0)
+    cooldown_bars = getattr(_args, 'cooldown_bars', 0)  # Backward comptability
     if cooldown_bars > 0:
         df[('Signal_Buy', _args.ticker)] = apply_cooldown(df[('Signal_Buy', _args.ticker)].to_numpy(), cooldown_bars)
         df[('Signal_Sell', _args.ticker)] = apply_cooldown(df[('Signal_Sell', _args.ticker)].to_numpy(), cooldown_bars)
@@ -1259,17 +1261,17 @@ def run_strategy_on_latest(df_base, params, _args, close_col, high_col, low_col,
     }
 
 
-def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
+def real_time_mode(model_path, verbose, clip_n, reduce_n, close_col, high_col, low_col, volume_col, open_col):
     """
     Real-time mode: load model from path and test latest datapoint for signals.
     """
-    if not args.model_path:
+    if not model_path:
         print("❌ Error: --model-path is required for real-time mode")
         return None
 
     # Load the model
-    if args.verbose: print(f"🔍 Loading model from: {args.model_path}")
-    model_data = load_model(args.model_path)
+    if verbose: print(f"🔍 Loading model from: {model_path}")
+    model_data = load_model(model_path)
     put_strike_pct = model_data['args']['put_strike_pct']
     call_strike_pct = model_data['args']['call_strike_pct']
     lookahead = model_data['args']['lookahead_bars']
@@ -1280,30 +1282,25 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
     assert 'score' in model_data
     train_score = model_data.get('score', 'N/A')
     val_score = model_data.get('validation_score')
-
+    _cooldown_bars = params["cooldown_bars"] if "cooldown_bars" in params else 0
     _dataset_id = model_data['args']['dataset_id']
     _ticker = model_data['args']['ticker']
-    _cache_filename = get_filename_for_dataset(model_data['args']['dataset_id'], older_dataset=None)
-    with open(_cache_filename, 'rb') as f:
-        _master_data_cache = pickle.load(f)
-    df_base = _master_data_cache[model_data['args']['ticker']].sort_index()
-    if args.clip:
-        df_base = df_base.iloc[:-1].copy()
-    if args.verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
-
+    df_base = factory_load_data(_dataset_id=_dataset_id, _ticker=_ticker, _args={"clip_n": clip_n, "reduce_n": reduce_n})
+    if verbose: print(f"📂 Dataset ranging from {df_base.index[0].strftime('%Y-%m-%d')} to {df_base.index[-1].strftime('%Y-%m-%d')}")
+    command_line = model_data["command_line"] if "command_line" in model_data else ""
     train_ratio = model_data['train_val_split']['train_ratio']
     train_bars = model_data['train_val_split']['train_bars']
     val_bars = model_data['train_val_split']['val_bars']
     train_range = model_data['train_val_split']['train_range']
     val_range = model_data['train_val_split']['val_range']
-    if args.verbose:
+    if verbose:
         print(f"📊 Loaded model with training score: {train_score:.4%}")
-        print(f"📊 Validation score: {val_score:.4%}")
+        print(f"📊 Test score: {val_score:.4%}")
         print(f"🧠 Parameters: {params}")
-        print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%}")
+        print(f"🧠 Ratio: {train_ratio} | {train_bars} Train Bars ({train_range}) | {val_bars} Val Bars ({val_range}) | Method: {method} | Optimize Target: {optimize_target} | Minimum Signal Density: {min_signal_density:.2%} | Cooldown: {_cooldown_bars} bars")
     # Run strategy on latest datapoint
-    if args.verbose: print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {_ticker} | Dataset {_dataset_id} | Lookahead: {lookahead} bars")
-    result = run_strategy_on_latest(df_base=df_base, params=params, _args=args, close_col=close_col, high_col=high_col, low_col=low_col, volume_col=volume_col, open_col=open_col)
+    if verbose: print(f"\n⚡ Testing latest datapoint ({df_base.index[-1].strftime('%Y-%m-%d')}) for {_ticker} | Dataset {_dataset_id} | Lookahead: {lookahead} bars")
+    result = run_strategy_on_latest(df_base=df_base, params=params, _args=Namespace(ticker=_ticker), close_col=close_col, high_col=high_col, low_col=low_col, volume_col=volume_col, open_col=open_col)
 
     # ==============================================================================
     # 📊 RECOMPUTE TRAIN & VALIDATION WIN RATES
@@ -1352,15 +1349,15 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
             print(f"📈 Recomputed Test Win Rate : {val_win_rate:.2%}")
 
     # Output results
-    if args.verbose:
+    if verbose:
         print(f"\n{'=' * 60}")
         print(f"🔔 REAL-TIME SIGNAL CHECK — {_ticker}")
         print(f"{'=' * 60}")
     assert df_base.index[-1].strftime('%Y-%m-%d') == result['timestamp'].strftime('%Y-%m-%d')
-    if args.verbose: print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
+    if verbose: print(f"📅 Last Timestamp: {result['timestamp'].strftime('%Y-%m-%d')}")
     current_price, target_price, target_date = result['close'], None, None
     assert df_base[close_col].iloc[-1] == current_price
-    if args.verbose: print(f"💰 Last Close Price: ${current_price:.2f}")
+    if verbose: print(f"💰 Last Close Price: ${current_price:.2f}")
     buy_signal_detected = result['buy_signal'] and optimize_target in ['combined_wr', 'buy_wr']
     sell_signal_detected = result['sell_signal'] and optimize_target in ['combined_wr', 'sell_wr']
     result['buy_signal_detected'] = buy_signal_detected
@@ -1377,13 +1374,13 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
         if args.verbose:
             print(f"   ⚪ No signal at this time")
 
-    if args.verbose and not args.verbose_short:
+    if verbose:
         print(f"\n🔍 Individual Signal Components:")
         for name, active in result['individual_signals'].items():
             status = "✅" if active else "❌"
             print(f"   {status} {name}: {active}")
 
-    if args.verbose: print(f"{'=' * 60}\n")
+    if verbose: print(f"{'=' * 60}\n")
 
     # Calculate approximate target/expiration date based on lookahead bars
     entry_date = result['timestamp'].strftime('%Y-%m-%d')
@@ -1395,12 +1392,12 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
     if buy_signal_detected or sell_signal_detected:
         entry_price = result['close']
         assert entry_price == current_price
-        if args.verbose:
+        if verbose:
             print(f"\n💡 RECOMMENDED OPTIONS TRADE:")
             print(f"{'─' * 60}")
         if buy_signal_detected:
             strike_price = entry_price * put_strike_pct
-            if args.verbose:
+            if verbose:
                 print(f"   📊 Strategy  : Put Credit Spread")
                 print(f"   📅 Entry Date: {entry_date}")
                 print(f"   💰 Entry Price: ${entry_price:.2f}")
@@ -1411,7 +1408,7 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
             target_price = strike_price
         if sell_signal_detected:
             strike_price = entry_price * call_strike_pct
-            if args.verbose:
+            if verbose:
                 print(f"   📊 Strategy  : Call Credit Spread")
                 print(f"   📅 Entry Date: {entry_date}")
                 print(f"   💰 Entry Price: ${entry_price:.2f}")
@@ -1421,9 +1418,11 @@ def real_time_mode(args, close_col, high_col, low_col, volume_col, open_col):
                 print(f"   💡 Premium: Sell OTM call spread above current price")
             target_price = strike_price
         if buy_signal_detected and sell_signal_detected:
-            print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
-        if args.verbose: print(f"{'─' * 60}\n")
-
+            if verbose: print(f"\n   ⚠️  BOTH SIGNALS DETECTED - Review confluence carefully")
+        if verbose: print(f"{'─' * 60}\n")
+    if verbose: print(f"{'─' * 60}\n")
+    if verbose: print(f"Command line use: {command_line}")
+    if verbose: print(f"{'─' * 60}\n")
     result['train_score'] = train_score
     result['val_score'] = val_score
     result['train_win_rate'] = train_win_rate
@@ -1455,7 +1454,7 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, volu
                               use_reg_bull_div=1, use_hid_bull_div=1, use_macd_buy=1, use_bb_buy=1,
                               use_vol_buy=1, use_stoch_buy=1, use_vwap_buy=1,
                               use_pullback_sell=1, use_ema_cross_sell=1, use_reg_bear_div=1, use_hid_bear_div=1,
-                              use_macd_sell=1, use_bb_sell=1, use_vol_sell=1, use_stoch_sell=1, use_vwap_sell=1):
+                              use_macd_sell=1, use_bb_sell=1, use_vol_sell=1, use_stoch_sell=1, use_vwap_sell=1, cooldown_bars=0):
     df = df_base.copy()
     df, rsi_col, pullback_buy_col, pullback_sell_col, ema_cross_buy_col, ema_cross_sell_col, ma_conf_buy_col = \
         implement_rsi_strategies(df, close_col, _args.ticker, rsi_length, rsi_signal_len, sma_len, rsi_midline, rsi_oversold, rsi_overbought)
@@ -1508,7 +1507,6 @@ def run_strategy_and_evaluate(df_base, _args, close_col, high_col, low_col, volu
     else:
         df[('Signal_Sell', _args.ticker)] = False
 
-    cooldown_bars = getattr(_args, 'cooldown_bars', 0)
     if cooldown_bars > 0:
         df[('Signal_Buy', _args.ticker)] = apply_cooldown(df[('Signal_Buy', _args.ticker)].to_numpy(), cooldown_bars)
         df[('Signal_Sell', _args.ticker)] = apply_cooldown(df[('Signal_Sell', _args.ticker)].to_numpy(), cooldown_bars)
@@ -1920,6 +1918,7 @@ def entry(args):
     low_col = ('Low', args.ticker)
     volume_col = ('Volume', args.ticker)
     open_col = ('Open', args.ticker)
+    command_line = "python " + " ".join(sys.argv)
 
     if not args.real_time:
         df_base = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": args.clip_n, "reduce_n": args.reduce_n})
@@ -1940,7 +1939,8 @@ def entry(args):
 
     # 🔹 Handle real-time mode first
     if args.real_time:
-        return real_time_mode(args, close_col, high_col, low_col, volume_col, open_col)
+        return real_time_mode(model_path=args.model_path, verbose=args.verbose, clip_n=args.clip_n, reduce_n=args.reduce_n,
+                              close_col=close_col, high_col=high_col, low_col=low_col, volume_col=volume_col, open_col=open_col)
     assert args.put_strike_pct > 0.89 and args.call_strike_pct < 1.11, f"Just to make sure one does not use 0.05 instead 0.95 , for example."
     if args.verbose: print_startup_banner(args)
 
@@ -1949,11 +1949,12 @@ def entry(args):
         'rsi_length': 14, 'rsi_signal_len': 10, 'sma_len': 50, 'fib_lookback': 50, 'div_window': 5,
         'rsi_midline': 50, 'rsi_oversold': 30, 'rsi_overbought': 70,
         'min_buy_confluence': args.buy_confluence_range[0], 'min_sell_confluence': args.sell_confluence_range[0],
+        'max_buy_confluence': args.buy_confluence_range[1], 'max_sell_confluence': args.sell_confluence_range[1],
         'macd_fast': 12, 'macd_slow': 26, 'macd_signal': 9,
         'bb_length': 20, 'bb_std': 2.0,
         'vol_sma_length': 20, 'vol_multiplier': 2.0,
         'stoch_k_period': 14, 'stoch_d_period': 3, 'stoch_smooth_k_period': 1, 'stoch_oversold': 20, 'stoch_overbought': 80,
-        'vwap_window': 50,
+        'vwap_window': 50, 'cooldown_bar': args.cooldown_bars,
         # 0/1 triggers for strategy inclusion (read from argparse, default to 1)
         'use_pullback_buy': 1 if getattr(args, 'use_pullback_buy', False) else 0,
         'use_ema_cross_buy': 1 if getattr(args, 'use_ema_cross_buy', False) else 0,
@@ -2122,6 +2123,7 @@ def entry(args):
             print(f"\n✅ Optimization Complete!")
         best_trial = study.best_trial
         params = best_trial.params
+        params.update({'cooldown_bars': args.cooldown_bars})
         if args.verbose:
             print(f"   🏆 Best {args.optimize_target}: {best_trial.value:.4f}")
             print("   🧠 Best Hyperparameters:")
@@ -2228,7 +2230,7 @@ def entry(args):
             score=score,
             args=args,
             validation_score=validation_score,
-            train_val_split=train_val_split_info
+            train_val_split=train_val_split_info, command_line=command_line
         )
 
     os.makedirs(args.output_dir, exist_ok=True)
