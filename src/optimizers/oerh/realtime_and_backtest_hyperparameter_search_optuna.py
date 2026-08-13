@@ -397,10 +397,10 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     else:
         print(model_data)
         assert False, f"TODO: {metric_used}"
-
-    print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
-    print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
-          f":: Test Win Rate: {val_win_rate:.2%}  @{signal_ratio:.2%} signal density")
+    if verbose:
+        print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
+        print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
+              f":: Test Win Rate: {val_win_rate:.2%}  @{signal_ratio:.2%} signal density")
 
     # Determine minimum history needed for indicators
     assert 'rsi_period' in params and 'macd_slow' in params
