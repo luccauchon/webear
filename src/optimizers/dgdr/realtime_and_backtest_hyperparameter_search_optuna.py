@@ -610,7 +610,7 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     return pkl_path
 
 
-def run_real_time_mode(model_path, clip, verbose):
+def run_real_time_mode(model_path, clip_n, verbose):
     assert model_path
     if verbose: print(f"📦 Loading real-time model: {model_path}")
     with open(model_path, 'rb') as f:
@@ -633,7 +633,7 @@ def run_real_time_mode(model_path, clip, verbose):
     test_win_rate = model_data['test_metrics']['win_rate']
     test_score = model_data['test_metrics']['score']
     test_trade_density = model_data['test_metrics']['trade_density']
-    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
     first_date = df.index[0]
     last_date = df.index[-1]
     num_bars = len(df)
@@ -736,7 +736,7 @@ def entry(args):
     np.random.seed(args.seed)
 
     if args.real_time:
-        return run_real_time_mode(model_path=args.model_path, clip=args.clip, verbose=args.verbose)
+        return run_real_time_mode(model_path=args.model_path, clip_n=args.clip_n, verbose=args.verbose)
 
     ticker = args.ticker
     dataset_id = args.dataset_id
