@@ -13,6 +13,7 @@ Key Features:
 - **Filtering**: Incorporates Exponential Moving Average (EMA) and Relative
   Strength Index (RSI) to filter out low-probability setups and avoid
   overbought/oversold exhaustion points.
+- **Cooldown**: Adds a configurable cooldown period (minimum bars between signals).
 - **Optimization**: Utilizes `optuna` with `TimeSeriesSplit` cross-validation
   to find optimal parameters while preventing look-ahead bias.
 - **Scoring Mechanism**: Employs Laplace smoothing for win rate calculation and
@@ -130,7 +131,22 @@ class EarlyStoppingThresholdCallback:
             study.stop()
 
 
-def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, ema_period, rsi_period, rsi_buy_max, rsi_sell_min, buy_offset, sell_offset, trade_direction="both"):
+def check_live_signal(
+    df,
+    close_col,
+    open_col,
+    low_col,
+    high_col,
+    min_distance,
+    ema_period,
+    rsi_period,
+    rsi_buy_max,
+    rsi_sell_min,
+    buy_offset,
+    sell_offset,
+    trade_direction="both",
+    cooldown_bar=0
+):
     """
     Evaluate the most recent bar in a real-time dataframe for a valid trading signal.
 
@@ -152,6 +168,8 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
         rsi_sell_min (int): Minimum RSI value allowed to enter a SELL (Call Credit Spread).
         buy_offset (float): Multiplier applied to the neckline for BUY strike selection.
         sell_offset (float): Multiplier applied to the neckline for SELL strike selection.
+        trade_direction (str): Whether to evaluate "buy", "sell", or "both".
+        cooldown_bar (int): Minimum number of bars to wait between signals (cooldown period).
 
     Returns:
         dict: A dictionary containing signal details ('Signal', 'Price', 'Date',
@@ -160,6 +178,9 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
         str: An explanatory message detailing why no signal was generated (e.g.,
              insufficient data, pattern mismatch, or failed filters).
     """
+    # Normalize cooldown input for robustness, especially when loading old models.
+    cooldown_bar = 0 if cooldown_bar is None else max(0, int(cooldown_bar))
+
     # ------------------------------------------------------------------
     # 1. Extract price arrays (identical to backtest_asymmetric_strategy)
     # ------------------------------------------------------------------
@@ -214,10 +235,18 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
 
     # The entry bar MUST be the last bar of the dataframe for a live signal
     if entry_idx != last_bar_idx:
-        return {"reason":
-            f"No signal on the last bar ({dates[last_bar_idx].strftime('%Y-%m-%d_%H%M')}). Last confirmed turn at index {t3[1]} "
-            f"(entry would be bar {entry_idx} :: {dates[entry_idx].strftime('%Y-%m-%d_%H%M')}), but last bar is {last_bar_idx} :: {dates[last_bar_idx].strftime('%Y-%m-%d_%H%M')}."}
-
+        entry_timestamp = (
+            dates[entry_idx].strftime('%Y-%m-%d_%H%M')
+            if 0 <= entry_idx < len(dates)
+            else "out-of-sample"
+        )
+        return {
+            "reason":
+                f"No signal on the last bar ({dates[last_bar_idx].strftime('%Y-%m-%d_%H%M')}). "
+                f"Last confirmed turn at index {t3[1]} "
+                f"(entry would be bar {entry_idx} :: {entry_timestamp}), "
+                f"but last bar is {last_bar_idx} :: {dates[last_bar_idx].strftime('%Y-%m-%d_%H%M')}."
+        }
 
     # ------------------------------------------------------------------
     # 4. Pattern classification (identical conditions to backtest)
@@ -264,9 +293,94 @@ def check_live_signal(df, close_col, open_col, low_col, high_col, min_distance, 
             entry_price = int(math.ceil(neckline_price * sell_offset / 5) * 5)
 
     if entry_price is None:
-        return {"reason":
-            f"{trade_type} pattern detected but entry price conditions "
-            f"not met on the last bar (bar {last_bar_idx})."}
+        return {
+            "reason":
+                f"{trade_type} pattern detected but entry price conditions "
+                f"not met on the last bar (bar {last_bar_idx})."
+        }
+
+    # ------------------------------------------------------------------
+    # 5.5 Cooldown check:
+    #     Ensure the live entry is not too close to the previously executed
+    #     signal, using the same entry rules as the backtest.
+    #
+    #     Convention used here:
+    #     If an entry occurs on bar X and cooldown_bar=N, the next entry is
+    #     only allowed on bar X + N + 1 or later. In other words, N full bars
+    #     must pass without a new executed signal.
+    # ------------------------------------------------------------------
+    if cooldown_bar > 0:
+        last_executed_entry_idx = None
+
+        for i in range(len(turns) - 2):
+            c_t1, c_t2, c_t3 = turns[i], turns[i + 1], turns[i + 2]
+            c_neckline_price = c_t2[2]
+
+            # A peak/valley at c_t3[1] is only confirmed on the NEXT bar.
+            c_entry_idx = c_t3[1] + 1
+
+            # Only historical entries before the current live candidate matter.
+            if c_entry_idx >= entry_idx:
+                break
+
+            if c_entry_idx >= len(prices):
+                break
+
+            c_trade_type = None
+
+            # --- SELL LOGIC (Call Credit Spread) – Lower High pattern ---
+            if c_t1[0] == "Peak" and c_t2[0] == "Valley" and c_t3[0] == "Peak":
+                if trade_direction in ["sell", "both"]:
+                    if c_t1[2] > c_neckline_price and c_t3[2] > c_neckline_price:
+                        if c_t3[2] < c_t1[2]:
+                            # EMA Filter: Price must be below EMA for SELL setup
+                            if prices[c_t3[1]] < ema[c_t3[1]]:
+                                # RSI Filter: Prevent selling when oversold
+                                if not np.isnan(rsi[c_t3[1]]) and rsi[c_t3[1]] >= rsi_sell_min:
+                                    c_trade_type = "SELL"
+
+            # --- BUY LOGIC (Put Credit Spread) – Higher Low pattern ---
+            elif c_t1[0] == "Valley" and c_t2[0] == "Peak" and c_t3[0] == "Valley":
+                if trade_direction in ["buy", "both"]:
+                    if c_t1[2] < c_neckline_price and c_t3[2] < c_neckline_price:
+                        if c_t3[2] > c_t1[2]:
+                            # EMA Filter: Price must be above EMA for BUY setup
+                            if prices[c_t3[1]] > ema[c_t3[1]]:
+                                # RSI Filter: Prevent buying when overbought
+                                if not np.isnan(rsi[c_t3[1]]) and rsi[c_t3[1]] <= rsi_buy_max:
+                                    c_trade_type = "BUY"
+
+            if c_trade_type is None:
+                continue
+
+            # Apply cooldown to the historical simulation as well, so the
+            # "last executed signal" respects the same cooldown rules.
+            if last_executed_entry_idx is not None and c_entry_idx <= last_executed_entry_idx + cooldown_bar:
+                continue
+
+            c_entry_price = None
+
+            if c_trade_type == "BUY":
+                if open_prices[c_entry_idx] >= c_neckline_price or high_prices[c_entry_idx] >= c_neckline_price:
+                    # Sell Credit Put Spread – use neckline rounded DOWN to nearest 5
+                    c_entry_price = int(math.floor(c_neckline_price * buy_offset / 5) * 5)
+            elif c_trade_type == "SELL":
+                if open_prices[c_entry_idx] <= c_neckline_price or low_prices[c_entry_idx] <= c_neckline_price:
+                    # Sell Credit Call Spread – use neckline rounded UP to nearest 5
+                    c_entry_price = int(math.ceil(c_neckline_price * sell_offset / 5) * 5)
+
+            if c_entry_price is not None:
+                last_executed_entry_idx = c_entry_idx
+
+        if last_executed_entry_idx is not None and entry_idx <= last_executed_entry_idx + cooldown_bar:
+            return {
+                "reason":
+                    f"Signal suppressed by cooldown_bar={cooldown_bar}. "
+                    f"Last executed signal at bar {last_executed_entry_idx} "
+                    f"({dates[last_executed_entry_idx].strftime('%Y-%m-%d_%H%M')}), "
+                    f"current entry bar {entry_idx} "
+                    f"({dates[entry_idx].strftime('%Y-%m-%d_%H%M')})."
+            }
 
     # ------------------------------------------------------------------
     # 6. Return the live signal dictionary
@@ -377,7 +491,224 @@ def format_trade_samples(trades_df, first_n=5, last_n=5):
         print(display_df.tail(last_n).to_string(index=False))
 
 
-def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_col, min_distance, lookahead, sell_offset, buy_offset, ema_period, rsi_period, rsi_buy_max, rsi_sell_min, trade_direction="both", delta=0.0):
+def plot_test_trades(
+    df_test,
+    test_results,
+    close_col,
+    ticker,
+    dataset_id,
+    lookahead,
+    trade_direction
+):
+    """
+    Plot the TEST set after optimization and annotate closed trade outcomes.
+
+    If --plot is provided, this function renders a Matplotlib chart of the test
+    close prices. Winning trades are identified with a bold "W" above the entry
+    level, while losing trades are identified with a bold "L" above the entry level.
+
+    Args:
+        df_test (pd.DataFrame): Test dataframe containing OHLC data.
+        test_results (dict or str): Test backtest results produced by
+            `backtest_asymmetric_strategy`, or an error string if the backtest failed.
+        close_col (tuple): Column identifier for the Close price.
+        ticker (str): Ticker symbol being plotted.
+        dataset_id (str): Dataset identifier used for optimization.
+        lookahead (int): Number of bars used for trade outcome evaluation.
+        trade_direction (str): Trade direction used during optimization.
+
+    Returns:
+        None
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        from pandas.plotting import register_matplotlib_converters
+
+        register_matplotlib_converters()
+    except ImportError as exc:
+        print(f"❌ Unable to plot because matplotlib could not be imported: {exc}")
+        return
+
+    # Use a nicer style when available, but remain compatible with older Matplotlib versions.
+    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid", "ggplot"):
+        if style in plt.style.available:
+            plt.style.use(style)
+            break
+
+    if df_test is None or len(df_test) == 0:
+        print("❌ No test data available to plot.")
+        return
+
+    close_series = df_test[close_col].dropna().copy()
+    if close_series.empty:
+        print("❌ No close data available to plot.")
+        return
+
+    fig, ax = plt.subplots(figsize=(16, 9))
+
+    # Plot the test close series as the main market context.
+    ax.plot(
+        close_series.index,
+        close_series.values,
+        color="#1f77b4",
+        linewidth=1.8,
+        label="Close"
+    )
+
+    ax.set_title(
+        f"APCS - Asymmetric Pivot Credit Strategy - TEST Set\n"
+        f"{ticker} | dataset={dataset_id} | lookahead={lookahead} | direction={trade_direction}",
+        fontsize=16,
+        fontweight="bold"
+    )
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price")
+    ax.grid(True, alpha=0.35, linestyle="--")
+
+    # Improve date rendering when the index is datetime-like.
+    if isinstance(close_series.index, pd.DatetimeIndex):
+        locator = mdates.AutoDateLocator()
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(mdates.AutoDateFormatter(locator))
+        fig.autofmt_xdate(rotation=30, ha="right")
+
+    # These will be used to adjust the vertical range so that W/L labels stay visible.
+    entry_x = None
+    entry_prices = None
+    outcomes = None
+
+    # Extract closed trades from the test results, if available.
+    if isinstance(test_results, dict) and "df_trades" in test_results:
+        trades_df = test_results["df_trades"]
+
+        if trades_df is not None and len(trades_df) > 0:
+            closed_trades = trades_df[trades_df["Outcome"].isin(["Win", "Loss"])].copy()
+
+            if not closed_trades.empty:
+                entry_x = closed_trades["Entry_Date"]
+
+                # Convert entry dates to datetime only when the main price index is datetime-like.
+                # This avoids accidentally converting numeric index values into timestamps.
+                if isinstance(close_series.index, pd.DatetimeIndex):
+                    entry_x = pd.to_datetime(entry_x, errors="coerce")
+
+                entry_prices = pd.to_numeric(closed_trades["Entry_Price"], errors="coerce")
+                outcomes = closed_trades["Outcome"].astype(str)
+
+                valid_mask = entry_x.notna() & entry_prices.notna()
+                entry_x = entry_x[valid_mask]
+                entry_prices = entry_prices[valid_mask]
+                outcomes = outcomes[valid_mask]
+
+    # Determine a comfortable y-range that leaves space above entries for the bold W/L labels.
+    y_min = float(close_series.min())
+    y_max = float(close_series.max())
+
+    if entry_prices is not None and not entry_prices.empty:
+        y_min = min(y_min, float(entry_prices.min()))
+        y_max = max(y_max, float(entry_prices.max()))
+
+    y_range = max(y_max - y_min, 1e-9)
+    ax.set_ylim(y_min - 0.05 * y_range, y_max + 0.10 * y_range)
+
+    # Annotate each closed trade at its entry level.
+    if entry_x is not None and entry_prices is not None and outcomes is not None and not entry_x.empty:
+        text_offset = 0.02 * y_range
+
+        for x, entry_price, outcome in zip(entry_x, entry_prices, outcomes):
+            if outcome == "Win":
+                label = "W"
+                color = "#1b7f3b"
+                marker = "^"
+            else:
+                label = "L"
+                color = "#b62836"
+                marker = "v"
+
+            # Mark the entry itself.
+            ax.scatter(
+                x,
+                entry_price,
+                color=color,
+                marker=marker,
+                s=85,
+                zorder=5,
+                edgecolors="black",
+                linewidths=0.7
+            )
+
+            # Place the bold W/L just above the entry.
+            ax.text(
+                x,
+                entry_price + text_offset,
+                label,
+                fontsize=13,
+                fontweight="bold",
+                color=color,
+                ha="center",
+                va="bottom",
+                bbox=dict(boxstyle="round,pad=0.25", fc="white", ec=color, alpha=0.85),
+                zorder=6
+            )
+
+        # Build a clear legend for the annotated entries.
+        from matplotlib.lines import Line2D
+
+        legend_elements = [
+            Line2D([0], [0], color="#1f77b4", linewidth=1.8, label="Close"),
+            Line2D(
+                [0], [0],
+                marker="^",
+                color="#1b7f3b",
+                linestyle="None",
+                markerfacecolor="#1b7f3b",
+                markeredgecolor="black",
+                markersize=9,
+                label="Winning entry (W)"
+            ),
+            Line2D(
+                [0], [0],
+                marker="v",
+                color="#b62836",
+                linestyle="None",
+                markerfacecolor="#b62836",
+                markeredgecolor="black",
+                markersize=9,
+                label="Losing entry (L)"
+            ),
+        ]
+        ax.legend(handles=legend_elements, loc="best")
+    else:
+        ax.legend()
+
+    plt.tight_layout()
+
+    try:
+        plt.show()
+    except Exception as exc:
+        print(f"❌ Unable to display the plot: {exc}")
+
+
+def backtest_asymmetric_strategy(
+    ticker,
+    df,
+    close_col,
+    open_col,
+    low_col,
+    high_col,
+    min_distance,
+    lookahead,
+    sell_offset,
+    buy_offset,
+    ema_period,
+    rsi_period,
+    rsi_buy_max,
+    rsi_sell_min,
+    trade_direction="both",
+    delta=0.0,
+    cooldown_bar=0
+):
     """
     Perform a historical backtest of the Asymmetric Pivot Credit Strategy.
 
@@ -402,7 +733,9 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
         rsi_period (int): Period for the RSI momentum filter.
         rsi_buy_max (int): Upper RSI threshold for buying.
         rsi_sell_min (int): Lower RSI threshold for selling.
+        trade_direction (str): Whether to trade "buy", "sell", or "both".
         delta (float): Minimum percentage gain required from entry_price to count as a Win.
+        cooldown_bar (int): Minimum number of bars to wait between signals (cooldown period).
 
     Returns:
         dict: A dictionary containing backtest results, including:
@@ -418,6 +751,9 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
         str: An error/info message if the backtest could not be executed
              (e.g., insufficient data or turns).
     """
+    # Normalize cooldown input.
+    cooldown_bar = 0 if cooldown_bar is None else max(0, int(cooldown_bar))
+
     prices_series = df[close_col].dropna().copy()
 
     # Calculate Indicators
@@ -465,6 +801,9 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
     exit_executions = []
     profits = []
 
+    # Track the last executed entry bar to enforce the cooldown period.
+    last_entry_idx = None
+
     # Sliding Window Signal Generation
     for i in range(len(turns) - 2):
         t1, t2, t3 = turns[i], turns[i + 1], turns[i + 2]
@@ -506,6 +845,15 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
 
         # Trade Outcome Tracking
         if trade_type is not None:
+            # ------------------------------------------------------------------
+            # Cooldown period:
+            # After an executed signal on bar X, ignore new executed signals
+            # until bar X + cooldown_bar + 1. This means cooldown_bar full bars
+            # must pass without a new executed signal.
+            # ------------------------------------------------------------------
+            if last_entry_idx is not None and entry_idx <= last_entry_idx + cooldown_bar:
+                continue
+
             entry_price = None
             entry_date = None
             entry_execution = None
@@ -581,6 +929,9 @@ def backtest_asymmetric_strategy(ticker, df, close_col, open_col, low_col, high_
             entry_executions.append(entry_execution)
             exit_executions.append(exit_execution)
             profits.append(profit)
+
+            # Update cooldown tracker only after an actual executed entry.
+            last_entry_idx = entry_idx
 
     total_trades = len(outcomes)
     if total_trades == 0:
@@ -696,6 +1047,10 @@ def entry(args):
             if verbose: print(f"Win Rate - Train: {model_info['train_wr']:.2%} | Test: {model_info['test_wr']:.2%} | Difference: {model_info['test_wr'] - model_info['train_wr']:+.2%}")
             if verbose: print(f"Density  - Train: {model_info['train_den']:.2%} | Test: {model_info['test_den']:.2%} | Difference: {model_info['test_den'] - model_info['train_den']:+.2%}")
             model_params = model_info['best_params']
+
+            # Support older saved models that did not include cooldown_bar.
+            cooldown_bar = model_params.get('cooldown_bar', model_info.get('cooldown_bar', 0))
+
             # Check live signal directly on the latest bar
             close_col = ('Close', model_info['ticker'])
             open_col = ('Open', model_info['ticker'])
@@ -706,14 +1061,19 @@ def entry(args):
             values_returned.update({'current_price': df_realtime[close_col].iloc[-1]})
             live_result = check_live_signal(
                 df=df_realtime.copy(),
-                buy_offset=model_info['buy_offset'], sell_offset=model_info['sell_offset'],
-                close_col=close_col, open_col=open_col, high_col=high_col, low_col=low_col,
+                buy_offset=model_info['buy_offset'],
+                sell_offset=model_info['sell_offset'],
+                close_col=close_col,
+                open_col=open_col,
+                high_col=high_col,
+                low_col=low_col,
                 min_distance=model_params['min_distance'],
                 ema_period=model_params['ema_period'],
                 rsi_period=model_params['rsi_period'],
                 rsi_buy_max=model_params['rsi_buy_max'],
                 rsi_sell_min=model_params['rsi_sell_min'],
-                trade_direction=model_trade_direction
+                trade_direction=model_trade_direction,
+                cooldown_bar=cooldown_bar
             )
 
             assert isinstance(live_result, dict)
@@ -758,6 +1118,13 @@ def entry(args):
     buy_offset = args.buy_offset
     trade_direction = args.trade_direction
     delta = args.delta
+    do_plot = args.plot
+
+    # Optional fixed cooldown override.
+    # If None, cooldown_bar is optimized by Optuna.
+    fixed_cooldown_bar = args.cooldown_bar
+    if fixed_cooldown_bar is not None:
+        fixed_cooldown_bar = max(0, int(fixed_cooldown_bar))
 
     assert sell_offset > 0.999 and buy_offset < 1.001, "Sell offset must be > 0.999 and buy offset < 1.001"
 
@@ -768,7 +1135,7 @@ def entry(args):
     low_col = ('Low', ticker)
 
     if verbose: print(f"Dataset: {dataset_id} | Lookahead: {lookahead} bars | Minimum Density: {min_density_threshold} | Trade Direction: {trade_direction} | Delta: {delta} | "
-                      f"Sell Offset: {sell_offset:.6} | Buy Offset: {buy_offset:.6}")
+                      f"Sell Offset: {sell_offset:.6} | Buy Offset: {buy_offset:.6} | Cooldown: {fixed_cooldown_bar} bars")
     df_main = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
     n = int(len(df_main) * test_split_n)
     df_train_ticker = df_main.iloc[:n].copy()
@@ -799,6 +1166,13 @@ def entry(args):
         ema_period = trial.suggest_int('ema_period', 2, 200)
         rsi_period = trial.suggest_int('rsi_period', 5, 50)
 
+        # Cooldown parameter: minimum number of bars to wait between signals.
+        # If the user supplied a fixed value, use it; otherwise optimize it.
+        if fixed_cooldown_bar is None:
+            cooldown_bar = trial.suggest_int('cooldown_bar', 0, 60)
+        else:
+            cooldown_bar = fixed_cooldown_bar
+
         # Conditionally optimize RSI parameters based on trade direction to save compute time
         if trade_direction in ["buy", "both"]:
             rsi_buy_max = trial.suggest_int('rsi_buy_max', 10, 90)
@@ -820,11 +1194,23 @@ def entry(args):
             available_data = df_train_ticker.iloc[:val_idx[-1] + 1]
 
             results_dict = backtest_asymmetric_strategy(
-                ticker=ticker, df=available_data, min_distance=min_distance, lookahead=lookahead,
-                close_col=close_col, open_col=open_col, low_col=low_col, high_col=high_col,
-                sell_offset=sell_offset, buy_offset=buy_offset, ema_period=ema_period,
-                rsi_period=rsi_period, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
-                trade_direction=trade_direction, delta=delta,
+                ticker=ticker,
+                df=available_data,
+                min_distance=min_distance,
+                lookahead=lookahead,
+                close_col=close_col,
+                open_col=open_col,
+                low_col=low_col,
+                high_col=high_col,
+                sell_offset=sell_offset,
+                buy_offset=buy_offset,
+                ema_period=ema_period,
+                rsi_period=rsi_period,
+                rsi_buy_max=rsi_buy_max,
+                rsi_sell_min=rsi_sell_min,
+                trade_direction=trade_direction,
+                delta=delta,
+                cooldown_bar=cooldown_bar,
             )
 
             if isinstance(results_dict, str):
@@ -917,11 +1303,18 @@ def entry(args):
 
     # --- FINAL BACKTEST WITH BEST PARAMETERS ---
     best_params = best_trial.params
+
+    # If cooldown was fixed on the command line, it was not suggested by Optuna.
+    # Inject it into best_params so downstream code and saved models stay consistent.
+    if fixed_cooldown_bar is not None and 'cooldown_bar' not in best_params:
+        best_params['cooldown_bar'] = fixed_cooldown_bar
+
     min_distance = best_params['min_distance']
     ema_period = best_params['ema_period']
     rsi_period = best_params['rsi_period']
     rsi_buy_max = best_params['rsi_buy_max']
     rsi_sell_min = best_params['rsi_sell_min']
+    cooldown_bar = best_params.get('cooldown_bar', 0)
 
     if verbose:
         print("\n" + "=" * 80)
@@ -929,6 +1322,7 @@ def entry(args):
         print("=" * 80)
         print(f"Trade Direction         : {trade_direction.upper()}")
         print(f"Min Distance            : {min_distance}")
+        print(f"Cooldown Bar            : {cooldown_bar}")
         print(f"EMA Period              : {ema_period}")
         print(f"RSI Period              : {rsi_period}")
         print(f"RSI Buy Max (Put Spread): {rsi_buy_max}")
@@ -937,17 +1331,43 @@ def entry(args):
 
     # Evaluate on Train Data
     train_results = backtest_asymmetric_strategy(
-        ticker=ticker, df=df_train_ticker, min_distance=min_distance, lookahead=lookahead, close_col=close_col, open_col=open_col, low_col=low_col, high_col=high_col,
-        buy_offset=buy_offset, sell_offset=sell_offset, ema_period=ema_period,
-        rsi_period=rsi_period, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
-        trade_direction=trade_direction, delta=delta,
+        ticker=ticker,
+        df=df_train_ticker,
+        min_distance=min_distance,
+        lookahead=lookahead,
+        close_col=close_col,
+        open_col=open_col,
+        low_col=low_col,
+        high_col=high_col,
+        buy_offset=buy_offset,
+        sell_offset=sell_offset,
+        ema_period=ema_period,
+        rsi_period=rsi_period,
+        rsi_buy_max=rsi_buy_max,
+        rsi_sell_min=rsi_sell_min,
+        trade_direction=trade_direction,
+        delta=delta,
+        cooldown_bar=cooldown_bar,
     )
 
     test_results = backtest_asymmetric_strategy(
-        ticker=ticker, df=df_test_ticker, min_distance=min_distance, lookahead=lookahead, close_col=close_col, open_col=open_col, low_col=low_col, high_col=high_col,
-        buy_offset=buy_offset, sell_offset=sell_offset, ema_period=ema_period,
-        rsi_period=rsi_period, rsi_buy_max=rsi_buy_max, rsi_sell_min=rsi_sell_min,
-        trade_direction=trade_direction, delta=delta,
+        ticker=ticker,
+        df=df_test_ticker,
+        min_distance=min_distance,
+        lookahead=lookahead,
+        close_col=close_col,
+        open_col=open_col,
+        low_col=low_col,
+        high_col=high_col,
+        buy_offset=buy_offset,
+        sell_offset=sell_offset,
+        ema_period=ema_period,
+        rsi_period=rsi_period,
+        rsi_buy_max=rsi_buy_max,
+        rsi_sell_min=rsi_sell_min,
+        trade_direction=trade_direction,
+        delta=delta,
+        cooldown_bar=cooldown_bar,
     )
 
     def print_metrics(results_dict, set_name, df_used, verbose):
@@ -1029,7 +1449,11 @@ def entry(args):
     safe_test_wr = test_wr if test_wr is not None else 0.0
     safe_test_den = test_den if test_den is not None else 0.0
 
-    model_filename = f"acps_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__d{delta}__la{lookahead}__md{min_density_threshold}__twr{safe_test_wr:.8f}__td{safe_test_den:.4f}___{timestamp}.pkl"
+    model_filename = (
+        f"acps_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__"
+        f"d{delta}__la{lookahead}__cb{cooldown_bar}__md{min_density_threshold}__"
+        f"twr{safe_test_wr:.8f}__td{safe_test_den:.4f}___{timestamp}.pkl"
+    )
     model_path = os.path.join(output_dir, model_filename)
 
     # Prepare the model data to save
@@ -1038,6 +1462,7 @@ def entry(args):
         "best_cv_score": best_trial.value,
         "ticker": ticker,
         "lookahead": lookahead,
+        "cooldown_bar": cooldown_bar,
         "sell_offset": sell_offset,
         "buy_offset": buy_offset,
         "trade_direction": trade_direction,
@@ -1059,6 +1484,27 @@ def entry(args):
         print(f"✅ Successfully saved the best model parameters and metadata to:")
         print(f"   {os.path.abspath(model_path)}")
         print("=" * 80 + "\n")
+
+    # ==========================================
+    # --- OPTIONAL PLOTTING SECTION ---
+    # ==========================================
+    # Plot only after optimization/backtest, and only if the user requested it.
+    # By default, plotting is disabled.
+    if do_plot:
+        if verbose:
+            print("\n" + "=" * 80)
+            print(" PLOTTING TEST SET")
+            print("=" * 80)
+
+        plot_test_trades(
+            df_test=df_test_ticker,
+            test_results=test_results,
+            close_col=close_col,
+            ticker=ticker,
+            dataset_id=dataset_id,
+            lookahead=lookahead,
+            trade_direction=trade_direction
+        )
 
 
 if __name__ == '__main__':
@@ -1085,8 +1531,8 @@ if __name__ == '__main__':
     parser.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to backtest (e.g., ^GSPC for S&P 500).")
     parser.add_argument("--dataset-id", type=str, default="day", help="Dataset ID used for fetching cached master data.")
     parser.add_argument("--use-realtime-data", action="store_true", default=False, help="Use FYahoo! to get realtime data.")
-    parser.add_argument("--sell-offset", type=float, default=1.001, help="Multiplier for sell trade win condition (Call Credit Spread).")
-    parser.add_argument("--buy-offset", type=float, default=0.999, help="Multiplier for buy trade win condition (Put Credit Spread).")
+    parser.add_argument("--sell-offset", type=float, default=1.0001, help="Multiplier for sell trade win condition (Call Credit Spread).")
+    parser.add_argument("--buy-offset", type=float, default=0.9999, help="Multiplier for buy trade win condition (Put Credit Spread).")
 
     # Backtest and Optimization parameters
     parser.add_argument("--lookahead", type=int, default=1, help="Number of bars to look ahead for determining trade outcome.")
@@ -1098,10 +1544,14 @@ if __name__ == '__main__':
 
     parser.add_argument("--trade-direction", type=str, choices=["buy", "sell", "both"], default="both", help="Optimize and trade only 'buy', only 'sell', or 'both' (default).")
     parser.add_argument("--delta", type=float, default=0.0, help="Minimum percentage gain required from entry price for a trade to be considered a Win (e.g. 0.01 for 1%%).")
+    parser.add_argument("--cooldown-bar", type=int, default=0, help="Optional fixed minimum number of bars to wait between signals (cooldown period). If omitted, this value is optimized.")
 
     parser.add_argument("--output-dir", type=str, default="models", help="Directory to save and load the trained models.")
     parser.add_argument("--verbose", action="store_true", default=False, help="Enable verbose output (e.g., Optuna progress bar).")
     parser.add_argument("--verbose-list-trades", action="store_true", default=False, help="Enable verbose for fisrt/last trades")
+
+    # Plotting parameter
+    parser.add_argument("--plot", action="store_true", default=False, help="After optimization, plot the TEST set with winning trades marked by a bold 'W' and losing trades marked by a bold 'L'.")
 
     # Real-time mode parameters
     parser.add_argument("--realtime", action="store_true", default=False, help="Run in real-time mode to check for live signals using a saved model.")
