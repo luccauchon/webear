@@ -698,7 +698,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
               'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
               'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead, 'method': method,
               'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
-              'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call_strike_pct']}
+              'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call__strike_pct']}
     return result
 
 
