@@ -23,7 +23,7 @@ import pandas as pd
 import pandas_ta as ta
 from sklearn.model_selection import TimeSeriesSplit
 from utils import get_next_step, factory_load_data
-
+import math
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -362,76 +362,6 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density, wr_we
     return max(0.0, min(1.0, final_score))
 
 
-def objective_old(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
-              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits, cooldown_bars):
-    put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
-    call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
-    st_multipler = trial.suggest_int("st_multipler", 1, 5, step=1)
-    st_length = trial.suggest_int("st_length", 3, 20, step=1)
-    rsi_length = trial.suggest_int("rsi_length", 2, 21, step=1)
-    sup_wick_null_coef = trial.suggest_float("sup_wick_null_coef", 0.0, 0.95, step=0.01)
-    inf_wick_null_coef = trial.suggest_float("inf_wick_null_coef", 0.0, 0.95, step=0.01)
-    buy_rsi_threshold = trial.suggest_int("buy_rsi_threshold", 50, 95, step=1)
-    sell_rsi_threshold = trial.suggest_int("sell_rsi_threshold", 5, 50, step=1)
-
-    # Time Series Cross-Validation
-    tscv = TimeSeriesSplit(n_splits=n_splits)
-    fold_scores = []
-
-    for train_idx, test_idx in tscv.split(df):
-        if len(test_idx) == 0:
-            continue
-
-        end_pos = test_idx[-1]
-        # Use data up to the end of the test fold to preserve indicator warmup (lookback)
-        df_warmup = df.iloc[:end_pos + 1]
-
-        signals = dgdr_strategy_vectorized(
-            df=df_warmup.copy(), close_col=close_col, volume_col=volume_col,
-            open_col=open_col, high_col=high_col, low_col=low_col, ticker=ticker,
-            st_multipler=st_multipler, st_length=st_length,
-            sup_wick_null_coef=sup_wick_null_coef, inf_wick_null_coef=inf_wick_null_coef,
-            buy_rsi_threshold=buy_rsi_threshold, sell_rsi_threshold=sell_rsi_threshold,
-            rsi_length=rsi_length, cooldown_bars=cooldown_bars
-        )
-
-        # Filter signals to only those generated strictly within the current test fold
-        test_indices_set = set(df.index[test_idx])
-        signals = [s for s in signals if s['Index'] in test_indices_set]
-
-        if signal_type == 'buy':
-            signals = [s for s in signals if s['Type'] == 'BUY']
-        elif signal_type == 'sell':
-            signals = [s for s in signals if s['Type'] == 'SELL']
-
-        # Pass full df to calculate_pnl_report so it can look ahead B bars for PnL calculation
-        pnl_df = calculate_pnl_report(
-            signals=signals, df=df.copy(), close_col=close_col, high_col=high_col, low_col=low_col,
-            B=B, method=method, put__strike_pct=put__strike_pct, call__strike_pct=call__strike_pct, silent=True
-        )
-
-        if pnl_df.empty:
-            fold_scores.append(0.0)
-        else:
-            # Recalculate trade density specifically for this fold's length to maintain accurate scaling
-            fold_trade_density = len(pnl_df) / len(test_idx)
-            score = compute_optimization_score(
-                win_rate=pnl_df['win_rate'].iloc[0],
-                trade_density=fold_trade_density,
-                min_trade_density=min_trade_density,
-                wr_weight=wr_weight,
-                td_weight=td_weight
-            )
-            fold_scores.append(score)
-
-    mean_score = np.mean(fold_scores)
-    std_score = np.std(fold_scores)
-    # Alpha controls how much we punish inconsistency across different time periods
-    alpha = 0.5
-    final_score = mean_score - (alpha * std_score)
-    return final_score
-
-
 def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
               B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits, cooldown_bars):
     # 1. Suggest Parameters
@@ -678,10 +608,14 @@ def run_real_time_mode(model_path, clip_n, verbose):
         print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type} | Cooldown: {cooldown_bars} bars")
         print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
         print(f" Test score  : {test_score:.2%} | Test Win Rate : {test_win_rate:.2f}% | Test Density : {test_trade_density:.2%} | {config['val_range']}")
-        if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%}")
-        if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%}")
-        print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-1]:.2f}")
-        print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d')} @ ${df_tail[close_col].iloc[-2]:.2f}")
+        raw_strike = df_tail[close_col].iloc[-1] * model_data['meta']['best_params']['put__strike_pct']
+        put_strike = np.floor(raw_strike / 5) * 5
+        raw_strike = df_tail[close_col].iloc[-1] * model_data['meta']['best_params']['call__strike_pct']
+        call_strike = np.ceil(raw_strike / 5) * 5
+        if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%} :: @ ${put_strike:.2f}")
+        if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%} :: @ ${call_strike:.2f}")
+        print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d_%H%M')} @ ${df_tail[close_col].iloc[-1]:.2f}")
+        print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d_%H%M')} @ ${df_tail[close_col].iloc[-2]:.2f}")
     buy_signal_detected, sell_signal_detected = False, False
     if latest_signals:
         sig = latest_signals[-1]
@@ -768,6 +702,7 @@ def entry(args):
     method = args.method
     min_density = args.min_signal_density
     put_base, call_base = args.put_strike_pct, args.call_strike_pct
+    assert  0.75 <= math.fabs(put_base) <= 1.25 and 0.75 <= math.fabs(call_base) <= 1.25
     wr_w, td_w = args.wr_weight, args.td_weight
 
     # ✅ OPTIMIZE ON TRAINING SET ONLY
