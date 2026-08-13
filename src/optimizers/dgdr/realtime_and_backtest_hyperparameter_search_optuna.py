@@ -733,7 +733,6 @@ def entry(args):
         print("    • Backtests credit-spread outcomes over lookahead window (B)")
         print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
         print("═" * 62 + "\n")
-    command_line = " ".join(sys.argv)
     np.random.seed(args.seed)
 
     if args.real_time:
@@ -746,7 +745,7 @@ def entry(args):
     open_col = ('Open', ticker)
     high_col = ('High', ticker)
     low_col = ('Low', ticker)
-
+    command_line = "python " + " ".join(sys.argv)
     df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
 
     first_date = df.index[0]
