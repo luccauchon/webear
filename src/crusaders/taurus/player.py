@@ -193,7 +193,7 @@ def parse_args():
         default=None,
         help="Load data_from_workers from the specified file and bypass computation."
     )
-    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    parser.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
     return parser.parse_args()
 
 
@@ -228,7 +228,7 @@ def entry(args):
                 for file in files:
                     target_file = os.path.join(str(root), str(file))
                     assert os.path.exists(target_file)
-                    prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                    prime_rsi_args = Namespace(verbose=False, target_files=[target_file], clip_n=args.clip_n, hide_zero_signal=False)
                     use_cases.append({'indicator': 'prime_rsi', 'args': prime_rsi_args})
         except:
             pass
@@ -237,7 +237,7 @@ def entry(args):
                 for file in files:
                     target_file = os.path.join(str(root), str(file))
                     assert os.path.exists(target_file)
-                    autotune_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                    autotune_args = Namespace(verbose=False, target_files=[target_file], clip_n=args.clip_n, hide_zero_signal=False)
                     use_cases.append({'indicator': 'autotune', 'args': autotune_args})
         except:
             pass
@@ -246,7 +246,7 @@ def entry(args):
                 for file in files:
                     target_file = os.path.join(str(root), str(file))
                     assert os.path.exists(target_file)
-                    dgdr_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False, verbose_table=False)
+                    dgdr_args = Namespace(verbose=False, target_files=[target_file], clip_n=args.clip_n, hide_zero_signal=False, verbose_table=False)
                     use_cases.append({'indicator': 'dgdr', 'args': dgdr_args})
         except:
             pass
@@ -255,7 +255,7 @@ def entry(args):
                 for file in files:
                     target_file = os.path.join(str(root), str(file))
                     assert os.path.exists(target_file)
-                    oerh_args = Namespace(verbose=False, target_files=[target_file], clip=args.clip, hide_zero_signal=False)
+                    oerh_args = Namespace(verbose=False, target_files=[target_file], clip_n=args.clip_n, hide_zero_signal=False)
                     use_cases.append({'indicator': 'oerh', 'args': oerh_args})
         except:
             pass

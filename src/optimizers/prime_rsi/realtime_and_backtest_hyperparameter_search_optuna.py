@@ -1803,7 +1803,6 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group = parser.add_argument_group('Data & Symbol')
     data_group.add_argument('--dataset-id', type=str, default='day', help='Dataset identifier')
     data_group.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
-    data_group.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
     data_group.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
     data_group.add_argument("--reduce-n", type=int, default=0, help="Number of most oldest bars to clip from the dataset.")
 

@@ -457,12 +457,6 @@ def entry(args):
             print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
         close_col = ('Close', ticker)
         closes = spx[close_col].squeeze().dropna().copy()
-        if args.clip:
-            fd1 = closes.index[-1].strftime('%Y-%m-%d')
-            closes = closes.iloc[:-1].copy()
-            fd2 = closes.index[-1].strftime('%Y-%m-%d')
-            if verbose:
-                print(f"Clipping :: {fd1} to {fd2}")
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']

@@ -11,9 +11,9 @@ except ImportError:
 import argparse
 import pathlib
 from argparse import Namespace
-
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune
 from datetime import datetime
+import traceback
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -50,7 +50,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=False,
         help="Enable verbose output during processing"
     )
-    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    parser.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
     return parser
 
 
@@ -109,14 +109,15 @@ def entry(args: argparse.Namespace | dict | None = None) -> None:
             output_dir=str(dir_path),
             length_dataset=999999,
             optimize=False,
-            clip=args.clip,
+            clip_n=args.clip_n,
         )
         try:
             result = autotune(configuration)
             result["file"]: file_path.name
             results.append(result)
         except Exception as e:
-            print(f"❌ ERROR processing {file_path.name}: {e}")
+            print(f"❌ [AUTOTUNE] ERROR processing {file_path.name}: {e}")
+            traceback.print_exc()
 
         # 1. Filter results if hide_zero_signal is enabled
         if args.hide_zero_signal:

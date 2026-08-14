@@ -50,7 +50,7 @@ def parse_args():
         default=False,
         help="Hide rows where signal is 0 (default: False)"
     )
-    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    parser.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
     return parser.parse_args()
 
 
@@ -96,7 +96,8 @@ def entry(args):
             model_path=str(file_path),
             verbose=verbose,
             verbose_short=verbose,
-            clip=args.clip,
+            clip_n=args.clip_n,
+            reduce_n=0,
             dataset_id=None,
             ticker="^GSPC",
             length_dataset=999999,
