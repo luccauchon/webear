@@ -268,18 +268,38 @@ def factory_load_data(_dataset_id, _ticker, _args):
     _convert_to_heikin_ashi = _is_dataset_heikin_ashi(_dataset_id)
     _overwrite_col = _args.get("overwrite_col", True)
     _realtime_data = _args.get("realtime", False)
+    _get_vix = _args.get("get_vix", False)
     if _realtime_data:
         if _dataset_id.startswith("intraday"):
             assert _ticker in ["^GSPC"]
             _n_minutes = _get_dataset_timeframe(_dataset_id)
-            df_main = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=False, spy=False, spx=True, ndx=False)['spx']
+            rrr = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=False, spy=False, spx=True, ndx=False)
+            df_main = rrr['spx']
             if _n_minutes > 1:
                 df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
         else:
             assert _ticker in ["^GSPC"]
-            assert _dataset_id in ["day"]
+            assert _dataset_id in ["day", "week", "month", "quarter", "year"]
             daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
-            df_main = daily_data_cache[_ticker].sort_index().copy()
+            the_vix = None
+            if _dataset_id == "day":
+                df_main = daily_data_cache[_ticker].sort_index().copy()
+                the_vix = daily_data_cache["^VIX"]
+            if _dataset_id == "week":
+                df_main = weekly_data_cache[_ticker].sort_index().copy()
+                the_vix = weekly_data_cache["^VIX_MEAN"]
+            if _dataset_id == "month":
+                df_main = monthly_data_cache[_ticker].sort_index().copy()
+                the_vix = monthly_data_cache["^VIX_MEAN"]
+            if _dataset_id == "quarter":
+                df_main = quaterly_data_cache[_ticker].sort_index().copy()
+                the_vix = quaterly_data_cache["^VIX_MEAN"]
+            if _dataset_id == "year":
+                df_main = yearly_data_cache[_ticker].sort_index().copy()
+                the_vix = yearly_data_cache["^VIX_MEAN"]
+
+            if _get_vix:
+                df_vix = the_vix.sort_index().copy()
     else:
         if _dataset_id.startswith("intraday"):
             assert _ticker in ["^GSPC"]
@@ -299,6 +319,8 @@ def factory_load_data(_dataset_id, _ticker, _args):
                 _master_data_cache = pickle.load(f)
             assert _master_data_cache is not None
             df_main = _master_data_cache[_ticker].sort_index().copy()
+            if _get_vix:
+                df_vix = _master_data_cache["^VIX"].sort_index().copy()
     assert df_main is not None
     if _convert_to_heikin_ashi:
         _tmp_n1 = len(df_main.dropna())
@@ -308,6 +330,8 @@ def factory_load_data(_dataset_id, _ticker, _args):
         df_main = df_main.iloc[:-_clip_n]
     if _reduce_n > 0:
         df_main = df_main.iloc[_reduce_n:]
+    if _get_vix:
+        return df_main.copy(), df_vix.copy()
     return df_main.copy()
 
 

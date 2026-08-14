@@ -79,7 +79,7 @@ except:
     # Add the current directory to sys.path
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from utils import get_filename_for_dataset, get_next_step
+from utils import get_filename_for_dataset, get_next_step, factory_load_data
 import pickle
 import os
 import argparse
@@ -100,7 +100,7 @@ def get_parser():
     """Creates and configures the argument parser for the script."""
     parser = argparse.ArgumentParser(description="Market Prediction Model with VIX Optimization")
 
-    parser.add_argument("--dataset-id", type=str, default="day", choices=["day", "week", "month"])
+    parser.add_argument("--dataset-id", type=str, default="day")
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     parser.add_argument('--dataframe', type=pd.DataFrame, default=None, help='Dataset supplied')
     parser.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
@@ -440,38 +440,7 @@ def entry(args=None):
     # --- DATA LOADING ---
     t0 = time.time()
     if args.dataframe is None:
-        if args.use_realtime_data:
-            assert args.ticker in ["^GSPC"]
-            daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = realtime()
-            if args.dataset_id == "day":
-                _master_data_cache[args.ticker] = daily_data_cache[args.ticker]
-                _master_data_cache["^VIX"] = daily_data_cache["^VIX"]
-            elif args.dataset_id == "week":
-                _master_data_cache[args.ticker] = weekly_data_cache[args.ticker]
-                _master_data_cache["^VIX_MEAN"] = weekly_data_cache["^VIX_MEAN"]
-            elif args.dataset_id == "month":
-                _master_data_cache[args.ticker] = monthly_data_cache[args.ticker]
-                _master_data_cache["^VIX_MEAN"] = monthly_data_cache["^VIX_MEAN"]
-            elif args.dataset_id == "quarter":
-                _master_data_cache[args.ticker] = quaterly_data_cache[args.ticker]
-                _master_data_cache["^VIX_MEAN"] = quaterly_data_cache["^VIX_MEAN"]
-            elif args.dataset_id == "year":
-                _master_data_cache[args.ticker] = yearly_data_cache[args.ticker]
-                _master_data_cache["^VIX_MEAN"] = yearly_data_cache["^VIX_MEAN"]
-            else:
-                assert False, f"{args.dataset_id} is not a valid dataset id"
-            df_ticker = _master_data_cache[args.ticker].sort_index()
-        else:
-            with open(get_filename_for_dataset(args.dataset_id, older_dataset=None), 'rb') as f:
-                _master_data_cache = pickle.load(f)
-            assert _master_data_cache is not None
-            df_ticker = _master_data_cache[args.ticker].sort_index()
-
-        try:
-            df_vix = _master_data_cache["^VIX_MEAN"].sort_index()
-        except:
-            # DAY data has not the VIX_MEAN dataset.
-            df_vix = _master_data_cache["^VIX"].sort_index()
+        df_ticker, df_vix = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": 0, "realtime": args.use_realtime_data, "get_vix": True})
 
         timings['data_loading'] = time.time() - t0
 
