@@ -8,7 +8,7 @@ for /f "tokens=1,2 delims= " %%A in ('powershell -Command "$now=Get-Date; $isLas
     set "DERNIER_SAMEDI=%%A"
     set "HEURE=%%B"
 )
-
+echo "%DERNIER_SAMEDI%"
 :: 2. Vérification des conditions (1 = Vrai) et de l'heure
 if "%DERNIER_SAMEDI%"=="1" (
     if "%HEURE%"=="16:05" (
