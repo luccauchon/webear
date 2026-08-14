@@ -13,8 +13,8 @@ from datetime import datetime
 import argparse
 import pathlib
 from argparse import Namespace
-
 from optimizers.oerh.realtime_and_backtest import entry as oerh
+import traceback
 
 
 def parse_args():
@@ -94,7 +94,8 @@ def entry(args):
                 'lookahead_bars': lookahead_bars,
             })
         except Exception as e:
-            print(f"❌ ERROR processing {file_path.name}: {e}")
+            print(f"❌ [OERH] ERROR processing {file_path.name}: {e}")
+            traceback.print_exc()
             results.append({
                 "file": file_path.name,
                 "ticker": "---", "dataset_id": "---", "lookahead_bars": "---", "train_win_rate": 0., "val_win_rate": 0.,
