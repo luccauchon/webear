@@ -65,9 +65,7 @@ def entry():
 
                     config = Namespace(realtime=True, use_realtime_data=False, clip_n=clip_n, model_file=target_file, verbose=False)
                     live_result = apcs_entry_point(config)['local_results']
-
                     if live_result['reason'] is None:
-                        # print(live_result)
                         test_wr = live_result['model_info']['test_wr']
                         close_col = live_result['close_col']
                         lookahead = live_result['model_info']['lookahead']
