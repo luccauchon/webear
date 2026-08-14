@@ -57,7 +57,7 @@ from scipy.signal import find_peaks
 from fetchers.serialize_fyahoo import realtime as fyahoo_realtime
 import math
 import traceback
-
+import sys
 # Suppress Optuna & pandas debug logs for cleaner console output
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -1002,7 +1002,7 @@ def entry(args):
     clip_n = args.clip_n
     model_file = args.model_file
     verbose = args.verbose
-
+    command_line = "python " + " ".join(sys.argv)
     # ==========================================
     # --- REAL-TIME PROCESSING SECTION ---
     # ==========================================
@@ -1030,7 +1030,7 @@ def entry(args):
             model_info = pickle.load(f)
 
         model_trade_direction = model_info.get('trade_direction', 'both')
-
+        command_line = model_info["command_line"] if "command_line" in model_info else ""
         target_date = get_next_step(the_date=datetime.now(), dataset_id=model_info['dataset_id'], nn=model_info['lookahead'])
         values_returned.update({'ticker': model_info['ticker']})
         values_returned.update({'dataset_id': model_info['dataset_id']})
@@ -1043,6 +1043,7 @@ def entry(args):
         values_returned.update({'val_win_rate': model_info['test_wr']})
         df_realtime, df_realtime_not_clipped = None, None
         try:
+            if verbose: print(f"Command line used: {command_line}")
             df_realtime = factory_load_data(_dataset_id=model_info['dataset_id'], _ticker=model_info['ticker'], _args={"clip_n": clip_n, "realtime": use_realtime_dataset})
             if verbose: print(f"Win Rate - Train: {model_info['train_wr']:.2%} | Test: {model_info['test_wr']:.2%} | Difference: {model_info['test_wr'] - model_info['train_wr']:+.2%}")
             if verbose: print(f"Density  - Train: {model_info['train_den']:.2%} | Test: {model_info['test_den']:.2%} | Difference: {model_info['test_den'] - model_info['train_den']:+.2%}")
@@ -1097,7 +1098,6 @@ def entry(args):
         except Exception as e:
             print(f"❌ Error during real-time processing: {e}")
             traceback.print_exc()
-
         return values_returned
 
     # ==========================================
@@ -1450,7 +1450,7 @@ def entry(args):
     safe_test_den = test_den if test_den is not None else 0.0
 
     model_filename = (
-        f"acps_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__"
+        f"apcs_{safe_ticker}__dir{trade_direction}__ds{dataset_id}__bo{buy_offset}__so{sell_offset}__"
         f"d{delta}__la{lookahead}__cb{cooldown_bar}__md{min_density_threshold}__"
         f"twr{safe_test_wr:.8f}__td{safe_test_den:.4f}___{timestamp}.pkl"
     )
@@ -1475,6 +1475,7 @@ def entry(args):
         "is_feasible": is_feasible,
         "train_length": len(df_train_ticker),
         "test_length": len(df_test_ticker),
+        "command_line": command_line,
     }
 
     with open(model_path, 'wb') as f:

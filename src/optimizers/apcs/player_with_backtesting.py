@@ -24,7 +24,7 @@ def entry():
     # --- Configuration d'argparse pour la saisie utilisateur ---
     parser = argparse.ArgumentParser(description="Compilation de modèles avec backtesting.")
     parser.add_argument(
-        "--models_dir",
+        "--models-dir",
         type=str,
         default=r".\models",
         help="Chemin vers le dossier contenant les modèles .pkl (par défaut: .\\models)"
