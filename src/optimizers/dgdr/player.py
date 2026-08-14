@@ -1,3 +1,5 @@
+import traceback
+
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -10,6 +12,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import numpy as np
+import traceback
 import argparse
 import pathlib
 from argparse import Namespace
@@ -126,7 +129,8 @@ def entry(args):
                 "call_threshold": call_strike,
             })
         except Exception as e:
-            print(f"❌ ERROR processing {file_path.name}: {e}")
+            print(f"❌ [DGDR] ERROR processing {file_path.name}: {e}")
+            traceback.print_exc()
 
     # 1. Filter results if hide_zero_signal is enabled
     if args.hide_zero_signal:

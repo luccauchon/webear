@@ -549,7 +549,6 @@ def run_real_time_mode(model_path, clip_n, verbose):
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
-    assert 'cooldown_bars' in config
     cooldown_bars = config.get('cooldown_bars', 0)
     if verbose: print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
