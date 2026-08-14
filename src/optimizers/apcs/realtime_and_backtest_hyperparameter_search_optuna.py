@@ -1045,6 +1045,7 @@ def entry(args):
         try:
             if verbose: print(f"Command line used: {command_line}")
             df_realtime = factory_load_data(_dataset_id=model_info['dataset_id'], _ticker=model_info['ticker'], _args={"clip_n": clip_n, "realtime": use_realtime_dataset})
+            df_realtime_not_clipped = factory_load_data(_dataset_id=model_info['dataset_id'], _ticker=model_info['ticker'], _args={"clip_n": 0, "realtime": use_realtime_dataset})
             if verbose: print(f"Win Rate - Train: {model_info['train_wr']:.2%} | Test: {model_info['test_wr']:.2%} | Difference: {model_info['test_wr'] - model_info['train_wr']:+.2%}")
             if verbose: print(f"Density  - Train: {model_info['train_den']:.2%} | Test: {model_info['test_den']:.2%} | Difference: {model_info['test_den'] - model_info['train_den']:+.2%}")
             model_params = model_info['best_params']
