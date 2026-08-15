@@ -109,17 +109,17 @@ def get_df_SPY_and_VIX_virgin_at_30minutes():
     end_date = datetime.today().strftime('%Y-%m-%d')
     start_date = (datetime.today() - timedelta(days=30)).strftime('%Y-%m-%d')
 
-    df_vix       = yf.download("^VIX", start=start_date, end=end_date, interval='30m', auto_adjust=False)
+    df_vix       = yf.download("^VIX", start=start_date, end=end_date, interval='30m', auto_adjust=False, progress=False)
     df_vix       = df_vix.drop("Volume", axis=1)
     df_vix.index = df_vix.index.tz_convert('US/Eastern')
 
-    df_spy       = yf.download("SPY", start=start_date, end=end_date, interval='30m', auto_adjust=False)
+    df_spy       = yf.download("SPY", start=start_date, end=end_date, interval='30m', auto_adjust=False, progress=False)
     df_spy.index = df_spy.index.tz_convert('US/Eastern')
 
-    df_spx       = yf.download("^GSPC", start=start_date, end=end_date, interval='30m', auto_adjust=False)
+    df_spx       = yf.download("^GSPC", start=start_date, end=end_date, interval='30m', auto_adjust=False, progress=False)
     df_spx.index = df_spx.index.tz_convert('US/Eastern')
 
-    df_ndx       = yf.download("^NDX", start=start_date, end=end_date, interval='30m', auto_adjust=False)
+    df_ndx       = yf.download("^NDX", start=start_date, end=end_date, interval='30m', auto_adjust=False, progress=False)
     df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
 
     return  df_spy, df_spx, df_vix, df_ndx
