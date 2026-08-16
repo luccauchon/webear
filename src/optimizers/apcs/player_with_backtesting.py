@@ -85,6 +85,7 @@ def entry():
 
                         entry_price = live_result['Price']
                         price_at_expiration = values_of_bar_on_which_credit_spread_expired[close_col]
+                        assert live_result['Signal'] in ["BUY", "SELL"]
                         is_success = entry_price < price_at_expiration if live_result['Signal'] == "BUY" else entry_price > price_at_expiration
 
                         # Initialisation des stats pour ce modèle spécifique si premier passage
