@@ -64,7 +64,7 @@ def calculate_sp500_probabilities(args):
     df_ticker.dropna(inplace=True)
 
     total_bars = len(df_ticker)
-    print(f"Successfully loaded {total_bars} trading bars.\n")
+    print(f"Successfully loaded {total_bars} trading bars from realtime source ({df_ticker.index[0].strftime('%Y-%m-%d_%H%M')} :: {df_ticker.index[-1].strftime('%Y-%m-%d_%H%M')}).\n")
 
     # ==========================================
     # PROBABILITY 1
@@ -226,13 +226,13 @@ def calculate_sp500_probabilities(args):
     print(f"    -> Probability: {prob2:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob2, 500):.2f}${e2}")
 
     b3, e3 = (BOLD, RESET) if 3 in active_probs else ("", "")
-    print(f"{b3}\n[3] Probability that Close_t({close_t__str}) < Low_t-1({low_t_1__str}) - {eps_pct_str}  (Breaks Previous Low :: Put Credit Spread)")
+    print(f"{b3}\n[3] Probability that Close_t({close_t__str}) < Low_t-1({low_t_1__str}) - {eps_pct_str}  (Breaks Previous Low :: Call Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)")
     print(f"    -> Sample Size (Occurrences): {count3}  ({(count3 / total_bars):.2%} :: total of {total_bars} bars)")
     print(f"    -> Probability: {prob3:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob3, 500):.2f}${e3}")
 
     b4, e4 = (BOLD, RESET) if 4 in active_probs else ("", "")
-    print(f"{b4}\n[4] Probability that Close_t({close_t__str}) > High_t-1({high_t_1__str}) + {eps_pct_str}  (Breaks Previous High :: Call Credit Spread)")
+    print(f"{b4}\n[4] Probability that Close_t({close_t__str}) > High_t-1({high_t_1__str}) + {eps_pct_str}  (Breaks Previous High :: Put Credit Spread)")
     print(f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)")
     print(f"    -> Sample Size (Occurrences): {count4}  ({(count4 / total_bars):.2%} :: total of {total_bars} bars)")
     print(f"    -> Probability: {prob4:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob4, 500):.2f}${e4}")

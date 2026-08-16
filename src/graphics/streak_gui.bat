@@ -1,3 +1,4 @@
+@echo off
 call conda activate PY312_HT
 python streak_multi_timeframe_gui.py
 pause

@@ -12,6 +12,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import numpy as np
+from tqdm import tqdm
 import traceback
 import argparse
 import pathlib
@@ -50,6 +51,12 @@ def parse_args():
         help="Print table at the end of processing"
     )
     parser.add_argument(
+        "-vp", "--verbose-progression",
+        action="store_true",
+        default=False,
+        help="Show progress bar during processing"
+    )
+    parser.add_argument(
         "--hide-zero-signal",
         action="store_true",
         default=False,
@@ -84,7 +91,7 @@ def entry(args):
         return results
 
     # Parse all files
-    for file_path in files:
+    for file_path in tqdm(files) if args.verbose_progression else files:
         if verbose:
             print(f"\n{'=' * 60}")
             print(f"STARTING DGDR FOR: {file_path.name}")

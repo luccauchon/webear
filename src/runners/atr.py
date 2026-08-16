@@ -250,7 +250,7 @@ def display_dataset_info(train_info, test_info, ticker, dataset_id, atr_window):
     print("=" * 60 + "\n")
 
 
-def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, n_trials=200, timeout=90, tightness_weight=0.3, use_close_for_range=False, verbose=True):
+def optimize_vix_multipliers(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, n_trials, timeout, tightness_weight, use_close_for_range, verbose):
     """
     Utilise Optuna pour trouver les meilleurs k_up/k_down pour chaque régime de VIX.
     Objectif : Maximiser le Hit Rate tout en MINIMISANT la largeur du range (k values).
@@ -444,7 +444,7 @@ def entry(args=None):
 
         timings['data_loading'] = time.time() - t0
 
-        if args.verbose: print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | SPX Bars: {len(df_ticker)} | VIX Bars: {len(df_vix)} | ATR: {args.atr_window}")
+        if args.verbose: print(f"\n✨ Loaded {args.ticker} | Dataset: {args.dataset_id} | SPX Bars: {len(df_ticker)} | VIX Bars: {len(df_vix)} | ATR: {args.atr_window} | Tightness Weight: {args.tightness_weight}")
 
         # --- ATR CALCULATION ---
         t0 = time.time()
@@ -472,21 +472,21 @@ def entry(args=None):
         atr_col = (f'ATR_{args.atr_window}', args.ticker)
     if args.clip_n > 0:
         df_bt = df_bt.iloc[:-args.clip_n].copy()
-    if args.verbose: print(f"WORKING DATASET : {df_bt.index[0].strftime('%Y-%m-%d')}::{df_bt.index[-1].strftime('%Y-%m-%d')}")
+    if args.verbose: print(f"WORKING DATASET : {df_bt.index[0].strftime('%Y-%m-%d_%H%M')}::{df_bt.index[-1].strftime('%Y-%m-%d_%H%M')}")
     _n = int(args.n_split * len(df_bt))
     df_bt_train = df_bt.iloc[:_n].copy()
     df_bt_test = df_bt.iloc[_n:].copy()
     timings['merge_split'] = time.time() - t0
 
     train_info = {
-        'start_date': df_bt_train.index[0].strftime('%Y-%m-%d'),
-        'end_date': df_bt_train.index[-1].strftime('%Y-%m-%d'),
+        'start_date': df_bt_train.index[0].strftime('%Y-%m-%d_%H%M'),
+        'end_date': df_bt_train.index[-1].strftime('%Y-%m-%d_%H%M'),
         'bars': len(df_bt_train),
         'split_ratio': args.n_split
     }
     test_info = {
-        'start_date': df_bt_test.index[0].strftime('%Y-%m-%d'),
-        'end_date': df_bt_test.index[-1].strftime('%Y-%m-%d'),
+        'start_date': df_bt_test.index[0].strftime('%Y-%m-%d_%H%M'),
+        'end_date': df_bt_test.index[-1].strftime('%Y-%m-%d_%H%M'),
         'bars': len(df_bt_test),
         'split_ratio': 1.0 - args.n_split
     }
