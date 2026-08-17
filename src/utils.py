@@ -198,6 +198,13 @@ def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2
 
 def _build_cols_dict(ticker):
     """Génère le dictionnaire de clés MultiIndex pour un ticker donné."""
+    if ticker == "^VIX":
+        return {
+            "open_col": ("Open", ticker),
+            "high_col": ("High", ticker),
+            "low_col": ("Low", ticker),
+            "close_col": ("Close", ticker)
+        }
     return {
         "open_col": ("Open", ticker),
         "high_col": ("High", ticker),
@@ -272,11 +279,36 @@ def factory_load_data(_dataset_id, _ticker, _args):
     if _realtime_data:
         if _dataset_id.startswith("intraday"):
             assert _ticker in ["^GSPC"]
+            df_spx_main_local = get_1_minute_df(verbose=False, SPX=True)
+            df_vix_main_local = get_1_minute_df(verbose=False, VIX=True)
+            df_realtime = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=True, spy=False, spx=True, ndx=False)
+            df_spx_main_realtime = df_realtime['spx']
+            df_vix_main_realtime = df_realtime['vix']
+            # print(f"LOCAL     {df_spx_main_local.index[0]}::{df_spx_main_local.index[-1]}  {len(df_spx_main_local)}")
+            # print(f"REALTIME  {df_spx_main_realtime.index[0]}::{df_spx_main_realtime.index[-1]}  {len(df_spx_main_realtime)}")
+            def _combine_2df(df_a, df_b):
+                # 1. Fusionner les deux DataFrames (l'un en dessous de l'autre)
+                df_combined = pd.concat([df_a, df_b])
+
+                # 2. Supprimer les doublons basés sur l'index (la date/heure)
+                # 'keep="last"' conserve la donnée en temps réel la plus récente en cas de chevauchement
+                df_new = df_combined[~df_combined.index.duplicated(keep="last")]
+
+                # 3. Optionnel : Trier par ordre chronologique pour s'assurer que le flux reste linéaire
+                df_new = df_new.sort_index()
+                return df_new
+            df_main = _combine_2df(df_a=df_spx_main_local, df_b=df_spx_main_realtime)
+            # print("========================================================")
+            # print(f"FUSIONNED {df_main.index[0]}::{df_main.index[-1]}  {len(df_main)}")
+
+            df_vix = _combine_2df(df_a=df_vix_main_local, df_b=df_vix_main_realtime)
+
             _n_minutes = _get_dataset_timeframe(_dataset_id)
-            rrr = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=False, spy=False, spx=True, ndx=False)
-            df_main = rrr['spx']
             if _n_minutes > 1:
                 df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+            if _get_vix:
+                if _n_minutes > 1:
+                    df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
         else:
             assert _ticker in ["^GSPC"]
             assert _dataset_id in ["day", "week", "month", "quarter", "year"]
@@ -293,10 +325,10 @@ def factory_load_data(_dataset_id, _ticker, _args):
                 the_vix = monthly_data_cache["^VIX_MEAN"]
             if _dataset_id == "quarter":
                 df_main = quaterly_data_cache[_ticker].sort_index().copy()
-                the_vix = quaterly_data_cache["^VIX_MEAN"]
+                the_vix = quaterly_data_cache["^VIX"]
             if _dataset_id == "year":
                 df_main = yearly_data_cache[_ticker].sort_index().copy()
-                the_vix = yearly_data_cache["^VIX_MEAN"]
+                the_vix = yearly_data_cache["^VIX"]
 
             if _get_vix:
                 df_vix = the_vix.sort_index().copy()
@@ -307,6 +339,10 @@ def factory_load_data(_dataset_id, _ticker, _args):
             df_main = get_1_minute_df(verbose=False, SPX=True)
             if _n_minutes > 1:
                 df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+            if _get_vix:
+                df_vix = get_1_minute_df(verbose=False, SPX=False, VIX=True)
+                if _n_minutes > 1:
+                    df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
         else:
             if _dataset_id not in DATASET_AVAILABLE:
                 # Style: day_heikinashi
@@ -397,14 +433,20 @@ def resample_candles(df, n_minutes, ticker):
     en commençant l'alignement à 09h30.
     """
     cols = _build_cols_dict(ticker)
-
-    agg_dict = {
-        cols["open_col"]: "first",
-        cols["high_col"]: "max",
-        cols["low_col"]: "min",
-        cols["close_col"]: "last",
-        cols["volume_col"]: "sum"
-    }
+    if ticker == "^VIX":
+        agg_dict = {
+            cols["open_col"]: "first",
+            cols["high_col"]: "max",
+            cols["low_col"]: "min",
+            cols["close_col"]: "last"
+        }
+    else:
+        agg_dict = {
+            cols["open_col"]: "first",
+            cols["high_col"]: "max",
+            cols["low_col"]: "min",
+            cols["close_col"]: "last",
+            cols["volume_col"]: "sum"}
 
     rule = f"{n_minutes}min"
 
@@ -642,40 +684,6 @@ def generate_indices_with_cutoff_day(_df, _dates, x_seq_length, y_seq_length, cu
         return _indices[:int(len(_indices)*split_ratio)], _indices[int(len(_indices)*split_ratio):], _df
     else:
         return _indices, _df
-
-
-def calculate_regression_metrics(y_true, y_pred):
-    """
-    Calculate metrics for regression.
-
-    Args:
-    y_true (torch.Tensor): Ground truth values.
-    y_pred (torch.Tensor): Predicted values.
-
-    Returns:
-    dict: Dictionary containing Mean Squared Error (MSE), Mean Absolute Error (MAE), and R-squared (R2).
-    """
-
-    assert y_pred.squeeze().shape == y_true.squeeze().shape
-    from torchmetrics import MeanSquaredError, MeanAbsoluteError, R2Score
-    mse_metric = MeanSquaredError()
-    mae_metric = MeanAbsoluteError()
-    r2_metric = R2Score()
-
-    if 1 == len(y_pred):
-        mse_metric.update(y_pred[0], y_true[0])
-        mae_metric.update(y_pred[0], y_true[0])
-        #r2_metric.update(y_pred[0], y_true[0])
-    else:
-        mse_metric.update(y_pred.squeeze(), y_true.squeeze())
-        mae_metric.update(y_pred.squeeze(), y_true.squeeze())
-        #r2_metric.update(y_pred.squeeze(), y_true.squeeze())
-
-    mse = mse_metric.compute()
-    mae = mae_metric.compute()
-    r2 = 0. #r2_metric.compute()
-
-    return {'MSE': mse, 'MAE': mae, 'R2': r2}
 
 
 def calculate_binary_classification_metrics(y_true, y_pred):
