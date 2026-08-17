@@ -24,6 +24,7 @@ import pandas_ta as ta
 from sklearn.model_selection import TimeSeriesSplit
 from utils import get_next_step, factory_load_data
 import math
+
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -93,7 +94,7 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
     if highlight_signals:
         for idx in longs.index: ax1.axvline(x=idx, color='green', linestyle=':', alpha=0.4, linewidth=0.8)
         for idx in shorts.index: ax1.axvline(x=idx, color='red', linestyle=':', alpha=0.4, linewidth=0.8)
-    ax1.set_title('Price + EMA-20 + Trading Signals', fontsize=13, fontweight='bold')
+    ax1.set_title('DGDR - Trading Signals', fontsize=13, fontweight='bold')
     ax1.set_ylabel('Price', fontsize=10)
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, alpha=0.3, linestyle='--')
@@ -175,7 +176,6 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
-    strat_group.add_argument('--cooldown-bars', type=int, default=0, dest='cooldown_bars', help='Minimum number of bars to wait between signals (cooldown period)')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
     strat_group.add_argument('--min-signal-density', type=float, default=0.01, help='Min signal frequency threshold')
     strat_group.add_argument('--put-strike-pct', type=float, default=0.9999, help='Base put strike multiplier')
@@ -289,7 +289,7 @@ def dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_
 
 
 def calculate_pnl_report(signals, df, close_col, high_col, low_col,
-                         B, method, put__strike_pct, call__strike_pct, silent=False):
+                         B, method, put__strike_pct, call__strike_pct, silent=False, eval_period_length=None):
     """Evaluates credit spread signals and generates a P&L report."""
     results = []
     assert method in ["touched", "final_close"]
@@ -332,17 +332,20 @@ def calculate_pnl_report(signals, df, close_col, high_col, low_col,
     total_trades = len(pnl_df)
     wins = pnl_df['Success'].sum()
     win_rate = (wins / total_trades) * 100
-    trade_density = total_trades / len(df)
+
+    # Calculate density relative to the specific evaluation period, not necessarily the whole dataframe
+    eval_len = eval_period_length if eval_period_length is not None else len(df)
+    trade_density = total_trades / eval_len
 
     pnl_df['trade_density'] = trade_density
-    pnl_df['dataset_length'] = len(df)
+    pnl_df['dataset_length'] = eval_len
     pnl_df['win_rate'] = win_rate
 
     if not silent:
         print("\n" + "=" * 42)
         print(" 📈 CREDIT SPREAD REPORT")
         print("=" * 42)
-        print(f" Dataset Length        : {len(df):,}")
+        print(f" Eval Period Length    : {eval_len:,}")
         print(f" Trade Density         : {trade_density:.2%}")
         print(f" Method Used           : {method.upper()}")
         print(f" Lookahead Bars (B)    : {B}")
@@ -362,8 +365,8 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density, wr_we
     return max(0.0, min(1.0, final_score))
 
 
-def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, ticker,
-              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits, cooldown_bars):
+def objective(trial, df_full, df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
+              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits):
     # 1. Suggest Parameters
     put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
     call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
@@ -374,24 +377,25 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
     inf_wick_null_coef = trial.suggest_float("inf_wick_null_coef", 0.0, 0.95, step=0.01)
     buy_rsi_threshold = trial.suggest_int("buy_rsi_threshold", 50, 95, step=1)
     sell_rsi_threshold = trial.suggest_int("sell_rsi_threshold", 5, 50, step=1)
+    cooldown_bars = trial.suggest_int("cooldown_bars", 0, 12, step=1)
 
     # ==========================================
     # 🚀 STEP 1: PRE-COMPUTE INDICATORS (ONCE PER TRIAL)
+    # Calculated on the FULL dataset to prevent state-reset and warm-up issues
     # ==========================================
-    # Calculated on the full dataset to avoid redundant recalculations in every CV fold
-    rsi_series = ta.rsi(df[close_col], length=rsi_length)
-    vwap_series = ta.vwap(df[high_col], df[low_col], df[close_col], df[volume_col])
-    st = ta.supertrend(df[high_col], df[low_col], df[close_col], multiplier=st_multipler, length=st_length)
+    rsi_series = ta.rsi(df_full[close_col], length=rsi_length)
+    vwap_series = ta.vwap(df_full[high_col], df_full[low_col], df_full[close_col], df_full[volume_col])
+    st = ta.supertrend(df_full[high_col], df_full[low_col], df_full[close_col], multiplier=st_multipler, length=st_length)
     st_direction_series = st.iloc[:, 1]
 
     # ==========================================
     # 🚀 STEP 2: PRE-COMPUTE PARAMETER-INDEPENDENT MASKS
+    # Operate on df_full to maintain proper OHLC history
     # ==========================================
-    # These conditions only depend on OHLC data, not Optuna parameters
-    C = df[close_col]
-    O = df[open_col]
-    H = df[high_col]
-    L = df[low_col]
+    C = df_full[close_col]
+    O = df_full[open_col]
+    H = df_full[high_col]
+    L = df_full[low_col]
 
     C_prev = C.shift(1)
     O_prev = O.shift(1)
@@ -433,21 +437,21 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
     signals = []
 
     # 🚀 Bonus: Pre-compute integer positions for faster cooldown sorting
-    buy_idx = df.index[buy_mask]
+    buy_idx = df_full.index[buy_mask]
     if len(buy_idx) > 0:
-        prices = df.loc[buy_idx, close_col]
-        sls = df.loc[buy_idx, low_col]
+        prices = df_full.loc[buy_idx, close_col]
+        sls = df_full.loc[buy_idx, low_col]
         tps = prices + (prices - sls) * 2
-        buy_idx_pos = df.index.get_indexer(buy_idx)
+        buy_idx_pos = df_full.index.get_indexer(buy_idx)
         signals.extend([{'Type': 'BUY', 'Index': idx, 'Pos': pos, 'Price': p, 'SL': s, 'TP': t}
                         for idx, pos, p, s, t in zip(buy_idx, buy_idx_pos, prices, sls, tps)])
 
-    sell_idx = df.index[sell_mask]
+    sell_idx = df_full.index[sell_mask]
     if len(sell_idx) > 0:
-        prices = df.loc[sell_idx, close_col]
-        sls = df.loc[sell_idx, high_col]
+        prices = df_full.loc[sell_idx, close_col]
+        sls = df_full.loc[sell_idx, high_col]
         tps = prices - (sls - prices) * 2
-        sell_idx_pos = df.index.get_indexer(sell_idx)
+        sell_idx_pos = df_full.index.get_indexer(sell_idx)
         signals.extend([{'Type': 'SELL', 'Index': idx, 'Pos': pos, 'Price': p, 'SL': s, 'TP': t}
                         for idx, pos, p, s, t in zip(sell_idx, sell_idx_pos, prices, sls, tps)])
 
@@ -464,34 +468,39 @@ def objective(trial, df, close_col, volume_col, open_col, high_col, low_col, tic
 
     # ==========================================
     # 🚀 STEP 4: TIME SERIES CROSS-VALIDATION LOOP
+    # Split df_train, evaluate PnL using df_train to prevent test-set lookahead leakage
     # ==========================================
     tscv = TimeSeriesSplit(n_splits=n_splits)
     fold_scores = []
 
-    for train_idx, test_idx in tscv.split(df):
+    for train_idx, test_idx in tscv.split(df_train):
         if len(test_idx) == 0:
             continue
 
         # Since signals were generated globally, we just filter them
         # to keep only those strictly within the current test fold!
-        test_indices_set = set(df.index[test_idx])
+        test_indices_set = set(df_train.index[test_idx])
         fold_signals = [s for s in signals if s['Index'] in test_indices_set]
-
+        assert signal_type in ['buy', 'sell', 'both']
+        assert all(s['Type'] in ["BUY", "SELL"] for s in fold_signals), f"{fold_signals}"
         if signal_type == 'buy':
             fold_signals = [s for s in fold_signals if s['Type'] == 'BUY']
         elif signal_type == 'sell':
             fold_signals = [s for s in fold_signals if s['Type'] == 'SELL']
-
-        # Pass full df to calculate_pnl_report so it can look ahead B bars for PnL calculation
+        # Strictly bound the evaluation data to the end of the current test fold
+        test_end_pos = test_idx[-1]
+        df_fold_eval = df_train.iloc[:test_end_pos + 1].copy()
+        #
         pnl_df = calculate_pnl_report(
-            signals=fold_signals, df=df.copy(), close_col=close_col, high_col=high_col, low_col=low_col,
-            B=B, method=method, put__strike_pct=put__strike_pct, call__strike_pct=call__strike_pct, silent=True
+            signals=fold_signals, df=df_fold_eval.copy(), close_col=close_col, high_col=high_col, low_col=low_col,
+            B=B, method=method, put__strike_pct=put__strike_pct, call__strike_pct=call__strike_pct,
+            silent=True, eval_period_length=len(test_idx)
         )
 
         if pnl_df.empty:
             fold_scores.append(0.0)
         else:
-            fold_trade_density = len(pnl_df) / len(test_idx)
+            fold_trade_density = pnl_df['trade_density'].iloc[0]
             score = compute_optimization_score(
                 win_rate=pnl_df['win_rate'].iloc[0],
                 trade_density=fold_trade_density,
@@ -515,14 +524,15 @@ def save_optimized_model(study, config, output_dir, ticker, dataset_id, train_me
     p_tag = config.get('B', 'NA')
     m_tag = config.get('method', 'NA')
     md_tag = config.get('min_signal_density', 'NA')
-    wr_tag = config.get('wr_weight', 'NA')
-    td_tag = config.get('td_weight', 'NA')
+    put_strike = config.get('put_strike_pct', 1.)
+    call_strike = config.get('call_strike_pct', 1.)
+    cooldown_bars = config.get('cooldown_bars', 0)
     st_tag = config.get('signal_type', 'NA')
     train_win_rate = train_metrics.get("win_rate")
     test_win_rate = test_metrics.get("win_rate")
     best_score = getattr(study.best_trial, 'value', None)
     score_tag = f"score{best_score:.8f}".replace('.', 'p') if best_score is not None else "scoreNA"
-    params_str = f"B{p_tag}__mh{m_tag}__md{md_tag}__wr{wr_tag}__td{td_tag}__st{st_tag}__train{score_tag}__trainwr{train_win_rate:.4f}__twr{test_win_rate:.4f}"
+    params_str = f"B{p_tag}__mh{m_tag}__msd{md_tag}__put{put_strike:.4f}__call{call_strike:.4f}__st{st_tag}__cdb{cooldown_bars}__train{score_tag}__trainwr{train_win_rate:.4f}__twr{test_win_rate:.4f}"
 
     safe_ticker = ticker.replace('^', '')
     safe_dataset = dataset_id.replace('/', '_').replace('\\', '_')
@@ -549,7 +559,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
     config = model_data['config']
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
-    cooldown_bars = config.get('cooldown_bars', 0)
+    cooldown_bars = best_params.get('cooldown_bars', config.get('cooldown_bars', 0))
     if verbose: print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
     dataset_id = model_data['config']['dataset_id']
@@ -570,68 +580,100 @@ def run_real_time_mode(model_path, clip_n, verbose):
         print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
         print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y-%m-%d')}  ->  {last_date.strftime('%Y-%m-%d')}\n")
         print(f"📂 Command line used for training: '{model_data['command_line']}'")
-    lookback_needed = 100
-    df_tail = df.tail(lookback_needed).copy()
     close_col = ('Close', ticker)
     volume_col = ('Volume', ticker)
     open_col = ('Open', ticker)
     high_col = ('High', ticker)
     low_col = ('Low', ticker)
 
-    signals = dgdr_strategy_vectorized(df_tail, close_col, volume_col, open_col, high_col, low_col, ticker,
+    signals = dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_col, ticker,
                                        cooldown_bars=cooldown_bars,
-                                       **{k: best_params[k] for k in ['st_multipler', 'st_length', 'sup_wick_null_coef', 'inf_wick_null_coef', 'buy_rsi_threshold', 'sell_rsi_threshold']})
+                                       **{k: best_params[k] for k in ['st_multipler', 'st_length', 'rsi_length', 'sup_wick_null_coef', 'inf_wick_null_coef', 'buy_rsi_threshold', 'sell_rsi_threshold']})
 
-    latest_idx = df_tail.index[-1]
-    prev_idx = df_tail.index[-2]
+    latest_idx = df.index[-1]
+    # Prevent IndexError if dataframe is too short
+    prev_idx = df.index[-2] if len(df) >= 2 else latest_idx
     latest_signals = [s for s in signals if s['Index'] in (latest_idx, prev_idx)]
-    current_price, entry_date = df_tail.iloc[-1][close_col], df_tail.index[-1].strftime('%Y-%m-%d')
-    target_date = get_next_step(the_date=entry_date, dataset_id=dataset_id, nn=lookahead).strftime('%Y-%m-%d')
-    target_price = "N/A"
+
+    current_price, current_date = df.iloc[-1][close_col], df.index[-1]
+
+    # 🛡️ Safe extraction with fallback to config, then to argparse defaults
+    put_pct = model_data['meta']['best_params']['put__strike_pct']
+    call_pct = model_data['meta']['best_params']['call__strike_pct']
+
+    # 1. Filter the signals based on the configured strategy type
     if signal_type == 'buy':
         latest_signals = [s for s in latest_signals if s['Type'] == 'BUY']
-        target_price = current_price * model_data['meta']['best_params']['put__strike_pct']
     elif signal_type == 'sell':
         latest_signals = [s for s in latest_signals if s['Type'] == 'SELL']
-        target_price = current_price * model_data['meta']['best_params']['call__strike_pct']
-    assert target_price not in ["N/A"]
-    if latest_signals:
-        sig = latest_signals[-1]
-        if verbose: print(f"⚡ REAL-TIME: [{sig['Type']}] @ {sig['Price']:.2f} | SL: {sig['SL']:.2f} | TP: {sig['TP']:.2f}")
+
+    # 2. Initialize defaults
+    trade_entry_price = current_price
+    trade_entry_date = current_date
+    target_price = "N/A"
+
+    # 3. Dynamically calculate target_price based on the ACTIVE signal's actual entry
+    if len(latest_signals) > 0:
+        active_signal = latest_signals[-1]  # Grab the most recent valid signal
+        trade_entry_price = active_signal['Price']  # 🎯 Use signal entry price, not current price
+        trade_entry_date = active_signal['Index']  # 🎯 Anchor to signal date
+
+        if active_signal['Type'] == 'BUY':
+            target_price = trade_entry_price * put_pct
+        elif active_signal['Type'] == 'SELL':
+            target_price = trade_entry_price * call_pct
+
+    # 🎯 FIX: Calculate target_date based on the actual trade entry date, not just the latest bar
+    target_date = get_next_step(the_date=trade_entry_date, dataset_id=dataset_id, nn=lookahead)
+
+    if len(latest_signals) > 0:
+        active_signal = latest_signals[-1]
+        if verbose: print(f"⚡ REAL-TIME: [{active_signal['Type']}] @ {active_signal['Price']:.2f} | SL: {active_signal['SL']:.2f} | TP: {active_signal['TP']:.2f}")
     else:
         if verbose: print("⚪ REAL-TIME: No new signal on latest closed bar.")
+
     if verbose:
         print("\n" + "─" * 40)
         print(" 🕒 REAL-TIME SIGNAL CHECK")
         print("─" * 40)
-        print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type} | Cooldown: {cooldown_bars} bars")
+        print(f" Dataset Id: {dataset_id} | Lookahead: {lookahead} bars | Method: {method} | Signal: {signal_type} | Minimum Signal Density: {min_signal_density:.2%} | Signal Type: {signal_type} | Cooldown: {cooldown_bars} bars")
         print(f" Train score : {train_score:.2%} | Train Win Rate: {train_win_rate:.2f}% | Train Density: {train_trade_density:.2%} | {config['train_range']}")
         print(f" Test score  : {test_score:.2%} | Test Win Rate : {test_win_rate:.2f}% | Test Density : {test_trade_density:.2%} | {config['val_range']}")
-        raw_strike = df_tail[close_col].iloc[-1] * model_data['meta']['best_params']['put__strike_pct']
+
+        raw_strike = df[close_col].iloc[-1] * put_pct
         put_strike = np.floor(raw_strike / 5) * 5
-        raw_strike = df_tail[close_col].iloc[-1] * model_data['meta']['best_params']['call__strike_pct']
+        raw_strike = df[close_col].iloc[-1] * call_pct
         call_strike = np.ceil(raw_strike / 5) * 5
-        if signal_type in ["both", "buy"]: print(f" Put Strike% : {model_data['meta']['best_params']['put__strike_pct']:.2%} :: @ ${put_strike:.2f}")
-        if signal_type in ["both", "sell"]: print(f" Call Strike%: {model_data['meta']['best_params']['call__strike_pct']:.2%} :: @ ${call_strike:.2f}")
-        print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d_%H%M')} @ ${df_tail[close_col].iloc[-1]:.2f}")
-        print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d_%H%M')} @ ${df_tail[close_col].iloc[-2]:.2f}")
+
+        if signal_type in ["both", "buy"]: print(f" Put Strike% : {put_pct:.2%} :: @ ${put_strike:.2f}")
+        if signal_type in ["both", "sell"]: print(f" Call Strike%: {call_pct:.2%} :: @ ${call_strike:.2f}")
+        print(f" Latest Bar Index : {latest_idx.strftime('%Y-%m-%d_%H%M')} @ ${df[close_col].iloc[-1]:.2f}")
+        print(f" Previous Bar     : {prev_idx.strftime('%Y-%m-%d_%H%M')} @ ${df[close_col].iloc[-2]:.2f}")
+
     buy_signal_detected, sell_signal_detected = False, False
-    if latest_signals:
-        sig = latest_signals[-1]
+    if len(latest_signals) > 0:
+        active_signal = latest_signals[-1]
         if verbose:
-            print(f"TODO --> {sig}")
-            print(f" 🟢 SIGNAL DETECTED: {sig['Type']}")
-            print(f"    Entry Price : ${sig['Price']:.2f}")
-        buy_signal_detected, sell_signal_detected = True, True
+            print(f" 🟢 SIGNAL DETECTED: {active_signal['Type']}")
+            print(f"    Entry Price : ${active_signal['Price']:.2f}")
+        buy_signal_detected = True if active_signal['Type'] == 'BUY' else False
+        sell_signal_detected = True if active_signal['Type'] == 'SELL' else False
     else:
         if verbose: print(" ⚪ NO SIGNAL on latest closed bar.")
     if verbose: print("─" * 40 + "\n")
-    result = {'train_score': train_score, 'train_trade_density': train_trade_density, 'val_score': test_score, 'val_trade_density': test_trade_density,
-              'train_win_rate': train_win_rate / 100., 'val_win_rate': test_win_rate / 100.,
-              'optimize_target': signal_type, 'current_price': current_price, 'current_date': entry_date, 'target_price': target_price, 'target_date': target_date,
-              'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead, 'method': method,
-              'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
-              'put_strike_pct': model_data['meta']['best_params']['put__strike_pct'], 'call_strike_pct': model_data['meta']['best_params']['call__strike_pct']}
+
+    result = {
+        'train_score': train_score, 'train_trade_density': train_trade_density,
+        'val_score': test_score, 'val_trade_density': test_trade_density,
+        'train_win_rate': train_win_rate / 100., 'val_win_rate': test_win_rate / 100.,
+        'close_col': close_col, 'optimize_target': signal_type,
+        'current_price': current_price, 'current_date': current_date,
+        'target_price': target_price, 'target_date': target_date,
+        'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead,
+        'method': method, 'df_realtime': df,
+        'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
+        'put_strike_pct': put_pct, 'call_strike_pct': call_pct
+    }
     return result
 
 
@@ -701,22 +743,22 @@ def entry(args):
     method = args.method
     min_density = args.min_signal_density
     put_base, call_base = args.put_strike_pct, args.call_strike_pct
-    assert  0.75 <= math.fabs(put_base) <= 1.25 and 0.75 <= math.fabs(call_base) <= 1.25
+    assert 0.75 <= math.fabs(put_base) <= 1.25 and 0.75 <= math.fabs(call_base) <= 1.25
     wr_w, td_w = args.wr_weight, args.td_weight
-
+    n_startup_trials = 99
     # ✅ OPTIMIZE ON TRAINING SET ONLY
     print(f"🔍 Starting Optuna optimization on TRAINING SET ({len(df_train):,} bars)...")
     print(f"📉 Min Trade Density: {min_density:.2%} | Look Ahead: {B} | Method: {method.upper()}")
-    print(f"📡 Signal Filter (Optimization): {args.signal_type.upper()} | Cooldown: {args.cooldown_bars} bars")
-    print(f"⚖️ Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w} | Strike Range: [{put_base:.4f}, {call_base:.4f}]")
-    print(f"🔄 Time Series Cross-Validation: {args.n_splits} splits\n")
+    print(f"📡 Signal for Optimization: {args.signal_type.upper()} | Cooldown: Optimized (0-12 bars)")
+    print(f"⚖️ Strike Range: [{put_base:.4f}, {call_base:.4f}] | Score Weights -> Win Rate: {wr_w}  Trade Density: {td_w}")
+    print(f"🔄 Time Series Cross-Validation: {args.n_splits} splits | Random startup trials: {n_startup_trials}\n")
 
     # 🆕 OPTUNA PERSISTENCE SETUP
     storage = args.optuna_storage
     study_name = args.optuna_study_name
     sampler = optuna.samplers.TPESampler(
-        seed=42,
-        n_startup_trials=99,
+        seed=args.seed,
+        n_startup_trials=n_startup_trials,
     )
     if storage:
         if not study_name:
@@ -741,10 +783,13 @@ def entry(args):
         print(f"   {'Previous Best Score':<25}: {study.best_trial.value:.4f}\n")
     else:
         print(f"🆕 Created new {'ín-memory' if not storage else ''} study.\n")
+
     study.optimize(
-        lambda trial: objective(trial, df_train.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
-                                B, method, min_density, wr_w, td_w, put_base, call_base,
-                                signal_type=args.signal_type, n_splits=args.n_splits, cooldown_bars=args.cooldown_bars),
+        # Pass df.copy() (full dataset) so indicators don't reset state, along with df_train for CV splits
+        lambda trial: objective(trial=trial, df_full=df.copy(), df_train=df_train.copy(), close_col=close_col, volume_col=volume_col,
+                                open_col=open_col, high_col=high_col, low_col=low_col, ticker=ticker,
+                                B=B, method=method, min_trade_density=min_density, wr_weight=wr_w, td_weight=td_w, put_base=put_base, call_base=call_base,
+                                signal_type=args.signal_type, n_splits=args.n_splits),
         n_trials=args.n_trials,
         timeout=args.timeout,
         show_progress_bar=args.verbose_study_progress_bar,
@@ -760,11 +805,17 @@ def entry(args):
     # ✅ FINAL TEST BACKTEST
     print("📉 Running final test backtest on TEST SET...")
     best = study.best_trial.params
-    signals_val = dgdr_strategy_vectorized(df_test.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
-                                           st_multipler=best['st_multipler'], st_length=best['st_length'],
-                                           sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
-                                           buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'],
-                                           cooldown_bars=args.cooldown_bars)
+
+    # ✅ Generate signals on the FULL dataset to preserve indicator state (VWAP, RSI warmup)
+    signals_val_all = dgdr_strategy_vectorized(df.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
+                                               st_multipler=best['st_multipler'], st_length=best['st_length'],
+                                               sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
+                                               buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'],
+                                               cooldown_bars=best['cooldown_bars'])
+
+    # Filter signals to only those that occurred during the test period
+    test_indices_set = set(df_test.index)
+    signals_val = [s for s in signals_val_all if s['Index'] in test_indices_set]
 
     main_signals = signals_val.copy()
     if args.signal_type == 'buy':
@@ -772,8 +823,10 @@ def entry(args):
     elif args.signal_type == 'sell':
         main_signals = [s for s in signals_val if s['Type'] == 'SELL']
 
-    pnl_df = calculate_pnl_report(main_signals, df_test.copy(), close_col, high_col, low_col,
-                                  B, method, best['put__strike_pct'], best['call__strike_pct'], silent=False)
+    # ✅ Pass the FULL df so it can properly look ahead B bars for PnL calculation at the boundary
+    pnl_df = calculate_pnl_report(main_signals, df.copy(), close_col, high_col, low_col,
+                                  B, method, best['put__strike_pct'], best['call__strike_pct'],
+                                  silent=False, eval_period_length=len(df_test))
 
     print("📊 DIRECTIONAL PERFORMANCE BREAKDOWN (TEST)")
     print("─" * 65)
@@ -786,8 +839,9 @@ def entry(args):
                 continue
         dir_signals = [s for s in signals_val if s['Type'] == dir_type]
         if dir_signals:
-            dir_pnl = calculate_pnl_report(dir_signals, df_test, close_col, high_col, low_col,
-                                           B, method, best['put__strike_pct'], best['call__strike_pct'], silent=True)
+            dir_pnl = calculate_pnl_report(dir_signals, df.copy(), close_col, high_col, low_col,
+                                           B, method, best['put__strike_pct'], best['call__strike_pct'],
+                                           silent=True, eval_period_length=len(df_test))
             if not dir_pnl.empty:
                 wr = dir_pnl['win_rate'].iloc[0]
                 td = dir_pnl['trade_density'].iloc[0]
@@ -815,16 +869,19 @@ def entry(args):
     print(" 🔄 TRAIN vs TEST PERFORMANCE COMPARISON")
     print("═" * 70)
 
-    # Re-evaluate training set with BEST parameters for fair comparison
-    signals_train_best = dgdr_strategy_vectorized(
-        df_train.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
+    # ✅ Re-evaluate training set with BEST parameters on the FULL dataset
+    signals_train_best_all = dgdr_strategy_vectorized(
+        df.copy(), close_col, volume_col, open_col, high_col, low_col, ticker,
         st_multipler=best['st_multipler'], st_length=best['st_length'],
         sup_wick_null_coef=best['sup_wick_null_coef'],
         inf_wick_null_coef=best['inf_wick_null_coef'],
         buy_rsi_threshold=best['buy_rsi_threshold'],
         sell_rsi_threshold=best['sell_rsi_threshold'],
-        cooldown_bars=args.cooldown_bars
+        cooldown_bars=best['cooldown_bars']
     )
+
+    train_indices_set = set(df_train.index)
+    signals_train_best = [s for s in signals_train_best_all if s['Index'] in train_indices_set]
 
     # Filter signals if needed for fair comparison
     if args.signal_type == 'buy':
@@ -832,9 +889,11 @@ def entry(args):
     elif args.signal_type == 'sell':
         signals_train_best = [s for s in signals_train_best if s['Type'] == 'SELL']
 
+    # Pass df_train to strictly evaluate within the training period without test-set lookahead leakage
     pnl_train = calculate_pnl_report(
         signals_train_best, df_train.copy(), close_col, high_col, low_col,
-        B, method, best['put__strike_pct'], best['call__strike_pct'], silent=True
+        B, method, best['put__strike_pct'], best['call__strike_pct'],
+        silent=True, eval_period_length=len(df_train)
     )
 
     # Extract comparable metrics
@@ -892,10 +951,11 @@ def entry(args):
     # ========================================================================
 
     config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method, 'train_ratio': args.train_ratio,
+              'put_strike_pct': args.put_strike_pct, 'call_strike_pct': args.call_strike_pct,
               'train_range': f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
               'val_range': f"({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})",
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type,
-              'cooldown_bars': args.cooldown_bars}
+              'cooldown_bars': best.get('cooldown_bars', 0)}
     save_optimized_model(study=study, config=config, output_dir=args.output_dir, ticker=ticker, dataset_id=dataset_id, train_metrics=train_metrics, test_metrics=test_metrics, command_line=command_line)
 
 
