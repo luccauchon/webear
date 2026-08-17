@@ -29,6 +29,8 @@ def entry():
         default=r".\models",
         help="Chemin vers le dossier contenant les modèles .pkl (par défaut: .\\models)"
     )
+    parser.add_argument('--verbose-per-study', action=argparse.BooleanOptionalAction, default=False, help='')
+    parser.add_argument('--n-back', type=int, default=365, help='Number of steps (bars) back')
     args = parser.parse_args()
 
     # Récupération du chemin saisi ou par défaut
@@ -55,7 +57,7 @@ def entry():
     }
 
     try:
-        for clip_n in range(0, 999999):
+        for clip_n in range(0, args.n_back):
             for root, dirs, files in os.walk(models_dir):
                 for file in files:
                     if not file.endswith('.pkl'):
@@ -99,11 +101,11 @@ def entry():
                         else:
                             compilation["global"]["failure"] += 1
                             compilation["by_model"][model_name]["failure"] += 1
-
-                        dual_print(f"{live_result['Signal']} ({live_result['type_option']}) at Entry: {entry_price:.2f} on {live_result['Date'].strftime('%Y-%m-%d')} "
-                              f"| Price at Expiration: {price_at_expiration:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d')}) "
-                              f"| {'Success' if is_success else 'Failure'} "
-                              f"| {test_wr:.2%} probability of success | Density: {density:.2%}")
+                        if args.verbose_per_study:
+                            dual_print(f"{live_result['Signal']} ({live_result['type_option']}) at Entry: {entry_price:.2f} on {live_result['Date'].strftime('%Y-%m-%d')} "
+                                  f"| Price at Expiration: {price_at_expiration:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d')}) "
+                                  f"| {'Success' if is_success else 'Failure'} "
+                                  f"| {test_wr:.2%} probability of success | Density: {density:.2%}")
 
                     elif 'no more data' in live_result['reason']:
                         raise NoMoreDataException()
