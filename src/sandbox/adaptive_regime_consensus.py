@@ -290,7 +290,7 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
             hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True, session=session, progress=False)["Close"].squeeze()
             lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True, session=session, progress=False)["Close"].squeeze()
         else:
-            spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True)
+            spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True, progress=False)
             spx_open = spx_data["Open"].squeeze()
             spx_high = spx_data["High"].squeeze()
             spx_low = spx_data["Low"].squeeze()
@@ -740,7 +740,6 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, n_fold: in
 
     tscv = TimeSeriesSplit(n_splits=n_fold)
     sharpe_scores = []
-
     for step, (train_idx, val_idx) in enumerate(tscv.split(X_all)):
         X_train, y_train = X_all[train_idx], y_all[train_idx]
         X_val, y_val = X_all[val_idx], y_all[val_idx]
@@ -766,8 +765,9 @@ def objective(trial: optuna.Trial, df: pd.DataFrame, model_type: str, n_fold: in
 
         except Exception:
             continue
-
-    return np.mean(sharpe_scores) if sharpe_scores else -1e9
+    alpha = 0.5
+    final_score = np.mean(sharpe_scores) - (alpha * np.std(sharpe_scores))
+    return float(final_score)
 
 
 def predict_latest_score(df: pd.DataFrame, params: dict, model_type: str, features: list, predict_next_period: bool = False) -> tuple:
