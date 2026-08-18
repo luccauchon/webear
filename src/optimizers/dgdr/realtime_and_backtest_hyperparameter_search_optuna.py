@@ -173,6 +173,15 @@ def setup_argparse() -> argparse.ArgumentParser:
     data_group.add_argument('--dataset-id', type=str, default='day', help='Dataset identifier')
     data_group.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     data_group.add_argument("--clip-n", type=int, default=0, help="Number of most recent bars to clip from the dataset.")
+    data_group.add_argument(
+        "--filter-per-day",
+        type=int,
+        nargs="+",  # Accepte un ou plusieurs entiers séparés par un espace
+        choices=range(0, 7),  # Limite les valeurs valides de 0 à 6
+        default=[],
+        help="Liste des jours à conserver (0=Lundi, ..., 6=Dimanche). Ex: --filter-per-day 0 4",
+        required=False
+    )
 
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
@@ -564,6 +573,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
     ticker = model_data['config']['ticker']
     dataset_id = model_data['config']['dataset_id']
     lookahead = model_data['config']['B']
+    filter_per_day = model_data['config'].get("filter_per_day", [])
     method = model_data['config']['method']
     min_signal_density = model_data['config']['min_signal_density']
     train_win_rate = model_data['train_metrics']['win_rate']
@@ -572,7 +582,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
     test_win_rate = model_data['test_metrics']['win_rate']
     test_score = model_data['test_metrics']['score']
     test_trade_density = model_data['test_metrics']['trade_density']
-    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n, "filter_per_day": filter_per_day})
     first_date = df.index[0]
     last_date = df.index[-1]
     num_bars = len(df)
@@ -721,7 +731,7 @@ def entry(args):
     high_col = ('High', ticker)
     low_col = ('Low', ticker)
     command_line = "python " + " ".join(sys.argv)
-    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"filter_per_day": args.filter_per_day})
 
     first_date = df.index[0]
     last_date = df.index[-1]
@@ -733,8 +743,8 @@ def entry(args):
     split_idx = int(len(df) * args.train_ratio)
     df_train = df.iloc[:split_idx].copy()
     df_test = df.iloc[split_idx:].copy()
-
-    print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Test: {len(df_test):,} ({1 - args.train_ratio:.0%})")
+    _ff_day = "" if 0 == len(args.filter_per_day) else f" | Filter by day: {args.filter_per_day}"
+    print(f"📐 Data Split -> Train: {len(df_train):,} ({args.train_ratio:.0%}) | Test: {len(df_test):,} ({1 - args.train_ratio:.0%}){_ff_day}")
     print(f"📐 Train from {df_train.index[0].strftime('%Y-%m-%d_%H%M')} to {df_train.index[-1].strftime('%Y-%m-%d_%H%M')} | Test from {df_test.index[0].strftime('%Y-%m-%d_%H%M')} to {df_test.index[-1].strftime('%Y-%m-%d_%H%M')}")
     if len(df_test) < 50:
         print(f"⚠️  Test set is small ({len(df_test)} bars). Out-of-sample metrics may be noisy.\n")
@@ -951,7 +961,7 @@ def entry(args):
     # ========================================================================
 
     config = {'ticker': ticker, 'dataset_id': dataset_id, 'B': B, 'method': method, 'train_ratio': args.train_ratio,
-              'put_strike_pct': args.put_strike_pct, 'call_strike_pct': args.call_strike_pct,
+              'put_strike_pct': args.put_strike_pct, 'call_strike_pct': args.call_strike_pct, "filter_per_day": args.filter_per_day,
               'train_range': f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
               'val_range': f"({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})",
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type,
