@@ -249,7 +249,9 @@ def get_parser():
     parser.add_argument("--study-name", type=str, default="market_prediction_study",
                         help="Name of the Optuna study (used with --storage).")
     parser.add_argument("--random-sampler", action="store_true",
-                        help="Use RandomSampler instead of the default TPESampler.")
+                        help="Use pure RandomSampler instead of the default TPESampler.")
+    parser.add_argument("--random-startup-trials", type=int, default=10,
+                        help="Number of initial trials to use RandomSampler before TPESampler takes over with its knowledge (default: 10). Ignored if --random-sampler is set.")
 
     return parser
 
@@ -278,15 +280,15 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
             os.environ["CURL_CA_BUNDLE"] = ""
             session = requests.Session(impersonate="chrome", verify=False)
 
-            spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True, session=session)
+            spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True, session=session, progress=False)
             spx_open = spx_data["Open"].squeeze()
             spx_high = spx_data["High"].squeeze()
             spx_low = spx_data["Low"].squeeze()
             spx = spx_data["Close"].squeeze()
             spx_vol = spx_data["Volume"].squeeze()
-            vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True, session=session)["Close"].squeeze()
-            hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True, session=session)["Close"].squeeze()
-            lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True, session=session)["Close"].squeeze()
+            vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True, session=session, progress=False)["Close"].squeeze()
+            hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True, session=session, progress=False)["Close"].squeeze()
+            lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True, session=session, progress=False)["Close"].squeeze()
         else:
             spx_data = yf.download("^GSPC", start="2000-01-01", auto_adjust=True)
             spx_open = spx_data["Open"].squeeze()
@@ -294,9 +296,9 @@ def load_data(filename: str = None, timeframe: str = 'day') -> pd.DataFrame:
             spx_low = spx_data["Low"].squeeze()
             spx = spx_data["Close"].squeeze()
             spx_vol = spx_data["Volume"].squeeze()
-            vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True)["Close"].squeeze()
-            hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
-            lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True)["Close"].squeeze()
+            vix = yf.download("^VIX", start="2000-01-01", auto_adjust=True, progress=False)["Close"].squeeze()
+            hyg = yf.download("HYG", start="2007-01-01", auto_adjust=True, progress=False)["Close"].squeeze()
+            lqd = yf.download("LQD", start="2007-01-01", auto_adjust=True, progress=False)["Close"].squeeze()
 
         print(f"File '{filename}' not found. Fetching new data...")
         fred = Fred(api_key=FRED_API_KEY)
@@ -554,17 +556,22 @@ def get_model_and_scaler(model_type: str, params: dict):
     return model, scaler
 
 
-def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dict, features: list, model_type: str) -> tuple:
+def evaluate_datasets(df_full: pd.DataFrame, train_ratio: float, params: dict, features: list, model_type: str) -> tuple:
     """Fits model on TRAIN set and evaluates on BOTH train and TEST sets properly."""
-    df_train_feat = compute_features(df_train, params)
-    df_train_feat['forward_return'] = (df_train_feat["ground_truth_spx"] / df_train_feat["spx"]) - 1.0
-    valid_train = df_train_feat.dropna(subset=features + ['forward_return'])
+    # FIX: Compute features on the FULL dataset to preserve rolling window history
+    df_feat = compute_features(df_full, params)
+    df_feat['forward_return'] = (df_feat["ground_truth_spx"] / df_feat["spx"]) - 1.0
+    valid_df = df_feat.dropna(subset=features + ['forward_return'])
 
-    df_test_feat = compute_features(df_test, params)
-    df_test_feat['forward_return'] = (df_test_feat["ground_truth_spx"] / df_test_feat["spx"]) - 1.0
-    valid_test = df_test_feat.dropna(subset=features + ['forward_return'])
+    # Split AFTER computing features
+    idx = int(len(valid_df) * train_ratio)
+    valid_train = valid_df.iloc[:idx]
+    valid_test = valid_df.iloc[idx:]
 
-    # OPTIMIZATION: Convert features to NumPy, but KEEP targets as Series to preserve index!
+    # If test set is empty (e.g. train_ratio == 1.0), duplicate the last row to avoid empty array errors
+    if len(valid_test) == 0:
+        valid_test = valid_train.iloc[[-1]]
+
     X_train_np = valid_train[features].to_numpy(dtype=np.float32)
     y_train_np = valid_train['forward_return']
     X_test_np = valid_test[features].to_numpy(dtype=np.float32)
@@ -608,7 +615,8 @@ def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dic
                 test_r2, test_wr, test_sharpe, test_correction_direction,
                 train_cons_r2, train_cons_wr, train_cons_sharpe, train_cons_correct_direction,
                 test_cons_r2, test_cons_wr, test_cons_sharpe, test_cons_correction_direction)
-    except Exception:
+    except Exception as e:
+        print(f"Evaluation Exception: {e}")
         return (-1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0, -1e9, 0.0)
 
 
@@ -842,6 +850,9 @@ Key Components:
    - Employs Time Series Cross-Validation (Walk-Forward) to prevent data leakage.
    - Optimizes specifically for a risk-adjusted metric: the Sharpe Ratio, 
      incorporating a penalty for trading frequency (density).
+   - SAMPLER STRATEGY: Uses TPESampler with an initial RandomSampler phase 
+     (`--random-startup-trials`) to broadly explore the parameter space first, 
+     then intelligently focuses on the best regions using the gathered knowledge.
 
 4. MACHINE LEARNING MODELS:
    - Supports multiple regression algorithms (Ridge, Lasso, Random Forest, 
@@ -914,7 +925,7 @@ def entry(args=None):
 
         last_row = df_feat.iloc[[-1]]
         X_last = last_row[features].ffill().bfill()
-        X_last_scaled = scaler.transform(X_last) if scaler else X_last.values
+        X_last_scaled = scaler.transform(X_last.values) if scaler else X_last.values
 
         pred_return = model.predict(X_last_scaled)[0]
         latest_heuristic_score = last_row['heuristic_market_score'].iloc[0]
@@ -981,7 +992,18 @@ def entry(args=None):
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5)
 
     # Setup Sampler
-    sampler = optuna.samplers.RandomSampler() if args.random_sampler else None
+    if args.random_sampler:
+        sampler = optuna.samplers.RandomSampler()
+        print(">>> Using pure RandomSampler for all trials.")
+    else:
+        # TPESampler natively uses RandomSampler for the first `n_startup_trials`.
+        # After that, it switches to TPE, utilizing the knowledge from the initial random trials
+        # to focus on the most promising parameter spaces.
+        sampler = optuna.samplers.TPESampler(
+            n_startup_trials=args.random_startup_trials,
+            seed=42
+        )
+        print(f">>> Using TPESampler (initial RandomSampler phase: {args.random_startup_trials} trials).")
 
     # Create or load study
     study_kwargs = {
@@ -1042,28 +1064,28 @@ def entry(args=None):
 
     print("\n--- Evaluating on Training and Hold-Out Test Set ---")
 
+    # 1. Evaluate Train vs Test (Split ratio e.g., 0.9)
     (train_r2, train_wr, train_sharpe, train_correct_direction,
      test_r2, test_wr, test_sharpe, test_correction_direction,
      train_cons_r2, train_cons_wr, train_cons_sharpe, train_cons_correct_direction,
-     test_cons_r2, test_cons_wr, test_cons_sharpe, test_cons_correction_direction) = evaluate_datasets(df_train, df_test, best_params, best_features, best_model_type)
+     test_cons_r2, test_cons_wr, test_cons_sharpe, test_cons_correction_direction) = evaluate_datasets(df, train_val_split_ratio, best_params, best_features, best_model_type)
 
-    (alldata_r2, alldata_wr, alldata_sharpe, alldata_correct_direction,
-     train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2,
-     alldata_cons_r2, alldata_cons_wr, alldata_cons_sharpe, alldata_cons_correct_direction,
-     train_cons_r2_2, train_cons_wr_2, train_cons_sharpe_2, train_cons_correction_direction_2) = evaluate_datasets(df, df_train, best_params, best_features, best_model_type)
+    # 2. Evaluate All DF (Train ratio 1.0 means it trains on everything, test set is just the last row)
+    (alldata_r2, alldata_wr, alldata_sharpe, _,
+     _, _, _, _,
+     alldata_cons_r2, alldata_cons_wr, alldata_cons_sharpe, _,
+     _, _, _, _) = evaluate_datasets(df, 1.0, best_params, best_features, best_model_type)
 
-    recomputed_test_win_rate = alldata_correct_direction.reindex(df_test.index).mean()
-    recomputed_test_cons_win_rate = alldata_cons_correct_direction.reindex(df_test.index).mean()
+    idx = int(len(df) * train_val_split_ratio)
+    test_start_date = df.index[idx].strftime('%Y-%m-%d') if idx < len(df) else df.index[-1].strftime('%Y-%m-%d')
+    test_end_date = df.index[-1].strftime('%Y-%m-%d')
 
-    if train_wr in [0.] and test_wr in [0.] and train_r2 in [-1e9] and train_sharpe in [-1e9] and test_sharpe in [-1e9]:
-        train_r2, train_wr, train_sharpe, train_correct_direction = train_r2_2, train_wr_2, train_sharpe_2, train_correction_direction_2
-        test_wr = recomputed_test_win_rate
-        train_cons_wr = train_cons_wr_2
-        train_cons_sharpe = train_cons_sharpe_2
-        test_cons_wr = recomputed_test_cons_win_rate
+    # The recomputed win rates are simply the test metrics we just calculated correctly
+    recomputed_test_win_rate = test_wr
+    recomputed_test_cons_win_rate = test_cons_wr
 
-    _test_str_keeped = f"*** ML Win Rate on the Test Dataset : {recomputed_test_win_rate:.2%}  (recomputed) ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})"
-    _test_str_keeped_cons = f"*** Consensus Win Rate on the Test Dataset : {recomputed_test_cons_win_rate:.2%}  (recomputed) ({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})"
+    _test_str_keeped = f"*** ML Win Rate on the Test Dataset : {test_wr:.2%}  ({test_start_date}::{test_end_date})"
+    _test_str_keeped_cons = f"*** Consensus Win Rate on the Test Dataset : {test_cons_wr:.2%}  ({test_start_date}::{test_end_date})"
 
     print(f"* All DF Set R-squared           : {alldata_r2:.4f}")
     print(f"* All DF Set ML Win Rate         : {alldata_wr:.2%}")
