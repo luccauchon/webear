@@ -276,6 +276,7 @@ def factory_load_data(_dataset_id, _ticker, _args):
     _overwrite_col = _args.get("overwrite_col", True)
     _realtime_data = _args.get("realtime", False)
     _get_vix = _args.get("get_vix", False)
+    _filter_per_day = _args.get("filter_per_day", [])
     if _realtime_data:
         if _dataset_id.startswith("intraday"):
             assert _ticker in ["^GSPC"]
@@ -366,6 +367,12 @@ def factory_load_data(_dataset_id, _ticker, _args):
         df_main = df_main.iloc[:-_clip_n]
     if _reduce_n > 0:
         df_main = df_main.iloc[_reduce_n:]
+    if len(_filter_per_day) > 0:
+        # Le vendredi correspond au jour de la semaine 4 (Lundi = 0, Dimanche = 6)
+        assert len([n for n in _filter_per_day if 0 <= n <= 6]) == len(_filter_per_day)
+        df_main = df_main[df_main.index.dayofweek.isin(_filter_per_day)]
+        if _get_vix:
+            df_vix = df_vix[df_vix.index.dayofweek.isin(_filter_per_day)]
     if _get_vix:
         return df_main.copy(), df_vix.copy()
     return df_main.copy()
@@ -684,49 +691,6 @@ def generate_indices_with_cutoff_day(_df, _dates, x_seq_length, y_seq_length, cu
         return _indices[:int(len(_indices)*split_ratio)], _indices[int(len(_indices)*split_ratio):], _df
     else:
         return _indices, _df
-
-
-def calculate_binary_classification_metrics(y_true, y_pred):
-    """
-    Calculate metrics for binary classification.
-
-    Args:
-    y_true (torch.Tensor): Ground truth labels.
-    y_pred (torch.Tensor): Predicted probabilities.
-
-    Returns:
-    dict: Dictionary containing accuracy, precision, recall, F1 score, and AUC-ROC.
-    """
-    from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
-    metric = BinaryAccuracy(threshold=0.5)
-    assert y_pred.squeeze().shape == y_true.squeeze().shape
-    if 1 == len(y_pred):
-        metric.update(y_pred[0], y_true[0])
-    else:
-        metric.update(y_pred.squeeze(), y_true.squeeze())
-    accuracy = metric.compute()
-
-    return {'accuracy': accuracy}
-
-
-def calculate_multiclass_classification_metrics(y_true, y_pred, num_classes):
-    """
-
-
-    Args:
-    y_true (torch.Tensor): Ground truth labels.
-    y_pred (torch.Tensor): Predicted probabilities.
-
-    Returns:
-    dict: Dictionary containing accuracy, precision, recall, F1 score, and AUC-ROC.
-    """
-    from torcheval.metrics import BinaryAccuracy, MulticlassAccuracy
-    metric = MulticlassAccuracy()
-    assert y_pred.shape[1] == num_classes and y_true.shape[0] == y_pred.shape[0]
-    metric.update(y_pred, y_true)
-    accuracy = metric.compute()
-
-    return {'accuracy': accuracy}
 
 
 def get_all_checkpoints(_a_directory):
