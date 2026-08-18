@@ -419,8 +419,8 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
     return {'realtime': {'predicted_high': predicted_high, 'predicted_low': predicted_low,
                          'actual_high': actual_close if use_close_for_range else actual_high,
                          'actual_low': actual_close if use_close_for_range else actual_low,
-                         'actual_close': actual_close,
-                         'vix_regime': regime.upper(), 'vix_rank': vix_rank, 'ticker': ticker, 'last_date': last_date}}
+                         'actual_close': actual_close, 'actual_open': current_open,
+                         'vix_regime': regime, 'vix_rank': vix_rank, 'ticker': ticker, 'last_date': last_date}}
 
 
 def entry(args=None):
@@ -467,9 +467,8 @@ def entry(args=None):
         # Calculates the rank of the current element within its rolling window automatically
         df_bt['VIX_Rolling_Rank'] = df_bt[vix_col].rolling(window=252, min_periods=20).rank(pct=True)
     else:
-        df_bt = args.dataframe
-        vix_col = next((col for col in df_bt.columns if isinstance(col, tuple) and 'Close' in col and 'VIX' in col[1]), None)
-        atr_col = (f'ATR_{args.atr_window}', args.ticker)
+        df_bt, vix_col, atr_col = args.dataframe
+
     if args.clip_n > 0:
         df_bt = df_bt.iloc[:-args.clip_n].copy()
     if args.verbose: print(f"WORKING DATASET : {df_bt.index[0].strftime('%Y-%m-%d_%H%M')}::{df_bt.index[-1].strftime('%Y-%m-%d_%H%M')}")
@@ -543,6 +542,9 @@ def entry(args=None):
         use_close_for_range=args.use_close_for_range,
         verbose=args.verbose,
     )
+    realtime_results['global_metrics'] = global_stats
+    realtime_results['regime_metrics'] = regime_stats
+    realtime_results['dataframe_and_cols'] = (df_bt, vix_col, atr_col)
     timings['realtime_prediction'] = time.time() - t0
 
     # --- TIMING SUMMARY ---

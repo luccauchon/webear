@@ -21,7 +21,9 @@ from collections import defaultdict
 from tqdm import tqdm
 import pickle
 from fetchers.serialize_fyahoo import realtime as fyahoo_realtime
-
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 os_name = platform.system()
 IS_RUNNING_ON_WINDOWS = True
@@ -1654,3 +1656,49 @@ def get_next_step(the_date, dataset_id, nn):
     else:
         assert False, f"Implement for {dataset_id}"
     return _next_
+
+
+def send_html_email(destinataire, sujet, corps):
+    expediteur = "luccauchon@gmail.com"
+    mot_de_passe_app = "thhy qvae fbsb zsbe"
+    _send_email(expediteur=expediteur, destinataire=destinataire, sujet=sujet, corps=ansi_to_html(corps), mot_de_passe_app=mot_de_passe_app, subtype='html')
+
+
+def _send_email(
+        expediteur,
+        destinataire,
+        sujet,
+        corps,
+        mot_de_passe_app,
+        serveur_smtp="smtp.gmail.com",
+        port_smtp=587,
+        subtype='plain'
+):
+    # Construire le message
+    msg = MIMEMultipart()
+    msg['From'] = expediteur
+    msg['To'] = destinataire
+    msg['Subject'] = sujet
+    msg.attach(MIMEText(corps, subtype))
+
+    # Serveur SMTP
+    server = smtplib.SMTP(serveur_smtp, port_smtp)
+    server.starttls()
+    server.login(expediteur, mot_de_passe_app)
+
+    # Envoyer le courriel
+    texte = msg.as_string()
+    server.sendmail(expediteur, destinataire, texte)
+    server.quit()
+
+
+def ansi_to_html(text):
+    # 1. Remplace le code de désactivation [0m par la fermeture du gras </b>
+    text = re.sub(r'\x1b\[0m|\[0m', '</b>', text)
+
+    # 2. Remplace le code d'activation [1m par l'ouverture du gras <b>
+    text = re.sub(r'\x1b\[1m|\[1m', '<b>', text)
+
+    # 3. Encapsule dans <pre> pour garder les espaces et sauts de ligne intacts
+    html_output = f"<pre style='font-family: monospace; font-size: 14px;'>{text}</pre>"
+    return html_output
