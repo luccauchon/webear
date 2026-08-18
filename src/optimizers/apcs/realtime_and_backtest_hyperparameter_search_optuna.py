@@ -1743,7 +1743,7 @@ def entry(args):
         return final_score
 
     # Ensure at least 10 startup trials to prevent crashes with low n_trials
-    n_startup_trials = max(10, min(500, int(0.0125 * n_trials)))
+    n_startup_trials = max(10, min(250, int(0.0125 * n_trials)))
 
     if verbose:
         print(f"Starting Optuna optimization with TimeSeriesSplit and {n_startup_trials} random trials...")
