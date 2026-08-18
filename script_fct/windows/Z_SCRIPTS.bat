@@ -22,3 +22,6 @@ start "HTML Week" cmd /k "call R_HTML___Saturday.bat"
 :: Script 6 : 
 :: Fonctionne pas
 :: start "HTML End Month" cmd /k "call R_HTML___End_of_month.bat"
+
+:: Script 7 : 
+start "ATR P ZONE" cmd /k "call R_ATR_PROBABILITY_ZONE___09h31m.bat"
