@@ -21,16 +21,16 @@ if not defined HEURE goto SUIVANT
 :: 2. Vérification du Lundi au Vendredi à 09:31
 if !JOUR! geq 1 if !JOUR! leq 5 (
     if "!HEURE!"=="09:31" (        
-        start "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_DAY.bat"
+        start "ATR PZ DAY" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_DAY.bat"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )
 )
-start "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_WEEK.bat"
+
 :: 3. Vérification du Lucdi (1 = Lundi) à 09:39
 if "!JOUR!"=="1" (
     if "!HEURE!"=="09:39" (        
-        start "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_WEEK.bat"
+        start "ATR PZ WEEK" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_WEEK.bat"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )
