@@ -27,4 +27,4 @@ start "HTML Week" cmd /k "call R_HTML___Saturday.bat"
 start "ATR P ZONE" cmd /k "call R_ATR_PROBABILITY_ZONE___09h31_09h39m.bat"
 
 :: Script 8 :
-start "STREAK PROBABILITY" cmd /k "call R_STREAK_PROBABILITY___16h19.bat"
+start "STREAK PROBABILITY" cmd /k "call R_STREAK_PROBABILITY___16h19_15h45.bat"

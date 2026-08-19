@@ -27,9 +27,9 @@ if !JOUR! geq 1 if !JOUR! leq 5 (
     )
 )
 
-:: 3. Vérification du Lundi (1 = Lundi) à 09:39
-if "!JOUR!"=="1" (
-    if "!HEURE!"=="09:39" (                
+:: 3. Vérification du Lundi au Vendredi à 15:45
+if !JOUR! geq 1 if !JOUR! leq 5 (
+    if "!HEURE!"=="15:45" (                
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )
