@@ -24,7 +24,16 @@ from fetchers.serialize_fyahoo import realtime as fyahoo_realtime
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-
+import smtplib
+import re
+import os
+import mimetypes
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+from pathlib import Path
+import shutil
 os_name = platform.system()
 IS_RUNNING_ON_WINDOWS = True
 IS_RUNNING_ON_CASIR   = False
@@ -528,8 +537,30 @@ def _get_root_dir():
     return os.path.abspath(os.path.join(current_dir, '..'))
 
 
-def get_stub_dir():
+def get_stub_dir(local_dir=None):
     a_dir = os.path.join(_get_root_dir(), "stubs")
+    os.makedirs(a_dir, exist_ok=True)
+    if local_dir:
+        a_dir = os.path.join(a_dir, local_dir)
+        os.makedirs(a_dir, exist_ok=True)
+    return a_dir
+
+
+def get_and_clean_stub_dir(local_dir):
+    a_dir = get_stub_dir(local_dir)
+
+    # Convertit le chemin en objet Path
+    dir_path = Path(a_dir)
+
+    # Boucle sur tout le contenu du dossier
+    for item in dir_path.iterdir():
+        try:
+            if item.is_dir():
+                shutil.rmtree(item)  # Supprime un sous-répertoire et tout son contenu
+            else:
+                item.unlink()  # Supprime un fichier
+        except:
+            pass
     return a_dir
 
 
@@ -1658,10 +1689,18 @@ def get_next_step(the_date, dataset_id, nn):
     return _next_
 
 
-def send_html_email(destinataire, sujet, corps):
+def send_html_email(destinataire, sujet, corps, pieces_jointes=None):
     expediteur = "luccauchon@gmail.com"
     mot_de_passe_app = "thhy qvae fbsb zsbe"
-    _send_email(expediteur=expediteur, destinataire=destinataire, sujet=sujet, corps=ansi_to_html(corps), mot_de_passe_app=mot_de_passe_app, subtype='html')
+    _send_email(
+        expediteur=expediteur,
+        destinataire=destinataire,
+        sujet=sujet,
+        corps=ansi_to_html(corps),
+        mot_de_passe_app=mot_de_passe_app,
+        subtype='html',
+        pieces_jointes=pieces_jointes
+    )
 
 
 def _send_email(
@@ -1672,7 +1711,8 @@ def _send_email(
         mot_de_passe_app,
         serveur_smtp="smtp.gmail.com",
         port_smtp=587,
-        subtype='plain'
+        subtype='plain',
+        pieces_jointes=None
 ):
     # Construire le message
     msg = MIMEMultipart()
@@ -1680,6 +1720,32 @@ def _send_email(
     msg['To'] = destinataire
     msg['Subject'] = sujet
     msg.attach(MIMEText(corps, subtype))
+
+    # Gestion des pièces jointes (images, etc.)
+    if pieces_jointes:
+        for fichier in pieces_jointes:
+            if os.path.isfile(fichier):
+                # Déterminer le type MIME du fichier (ex: image/png, image/jpeg)
+                mime_type, _ = mimetypes.guess_type(fichier)
+                if mime_type is None:
+                    mime_type = 'application/octet-stream'
+
+                main_type, sub_type = mime_type.split('/', 1)
+
+                # Lire le fichier en mode binaire
+                with open(fichier, 'rb') as f:
+                    part = MIMEBase(main_type, sub_type)
+                    part.set_payload(f.read())
+
+                # Encoder en base64 pour l'envoi par e-mail
+                encoders.encode_base64(part)
+
+                # Ajouter l'en-tête pour indiquer qu'il s'agit d'une pièce jointe
+                nom_fichier = os.path.basename(fichier)
+                part.add_header('Content-Disposition', f'attachment; filename="{nom_fichier}"')
+                msg.attach(part)
+            else:
+                print(f"Attention : Le fichier '{fichier}' n'existe pas et sera ignoré.")
 
     # Serveur SMTP
     server = smtplib.SMTP(serveur_smtp, port_smtp)
