@@ -335,7 +335,7 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
     else:
         metric = "accuracy"
     score = metrics_val.get(metric, 0.0)
-    model_name = f"oerh__m{metric}__la{args.lookahead_bars}__th{args.threshold_pct:.5f}__tt{args.target_type}__twr{score:.4f}__sd{signal_density:.4f}__ds{args.dataset_id}__cdb{args.cooldown_bars}__{args.ticker}__{timestamp}.pkl"
+    model_name = f"oerh__m{metric}__la{args.lookahead_bars}__th{args.threshold_pct:.5f}__tt{args.target_type}__twr{score:.4f}__sd{signal_density:.4f}__ds{args.dataset_id}__cdb{best_params.get('cooldown_bars', 0)}__{args.ticker}__{timestamp}.pkl"
     model_filename = os.path.join(output_dir, model_name)
     model_data = {
         'best_params': best_params,
@@ -1019,7 +1019,6 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--macd-signal", type=int, default=9, help="MACD signal line period")
     algo_grp.add_argument("--one-euro-min", type=float, default=10.0, help="One-Euro filter min cutoff")
     algo_grp.add_argument("--one-euro-factor", type=float, default=0.2, help="One-Euro filter beta factor")
-    algo_grp.add_argument("--cooldown-bars", type=int, default=0, help="Minimum number of bars to wait between signals (cooldown period)")
     algo_grp.add_argument("--lookahead-bars", type=int, default=10, help="Future bars to forecast")
     algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target (use NEGATIVE for floor mode)")
     algo_grp.add_argument("--density-target", type=float, default=0.04, help="Target trade density (signals per bar) for optimization penalty. A 0 value disable it.")
@@ -1122,7 +1121,7 @@ def entry(args):
         str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
         str_te = f"({df_val.index[0].strftime('%Y-%m-%d_%H%M')}::{df_val.index[-1].strftime('%Y-%m-%d_%H%M')})"
         print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
-        print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: {args.cooldown_bars}")
+        print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: optimized [0, 12]")
 
     # ✅ PRE-COMPUTE LABELS ONCE (Before Optuna)
     # Since target generation does NOT depend on RSI/MACD/OneEuro parameters,
@@ -1152,7 +1151,7 @@ def entry(args):
         macd_signal = trial.suggest_int("macd_signal", 5, 15)
         one_euro_min = trial.suggest_float("one_euro_min", 1.0, 50.0)
         one_euro_factor = trial.suggest_float("one_euro_factor", 0.01, 1.0)
-        cooldown_bars = trial.suggest_int("cooldown_bars", args.cooldown_bars, args.cooldown_bars)
+        cooldown_bars = trial.suggest_int("cooldown_bars", 0, 12)
 
         tscv = TimeSeriesSplit(n_splits=20)
         fold_scores = []
@@ -1312,7 +1311,7 @@ def entry(args):
             threshold_pct=args.threshold_pct,
             target_type=args.target_type,
             use_jit_signals=args.use_jit_signals,
-            cooldown_bars=params.get('cooldown_bars', args.cooldown_bars),
+            cooldown_bars=params.get('cooldown_bars', 0),
             precomputed_labels=labels_to_use
         )
         if not args.disable_print:

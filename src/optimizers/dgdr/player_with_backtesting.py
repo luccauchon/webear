@@ -126,62 +126,6 @@ def entry():
                               f"| {'Success' if is_success else 'Failure'} "
                               f"| {train_win_rate:.2%} probability of success in TRAIN , Density: {train_trade_density:.2%} "
                               f"| {test_win_rate:.2%} probability of success in TEST , Density: {test_trade_density:.2%}")
-
-            # print(file_list)
-            # for root, dirs, files in os.walk(models_dir):
-            #     for file in files:
-            #         if not file.endswith('.pkl'):
-            #             continue
-            #         target_file = os.path.join(root, file)
-            #         model_name = file  # Nom du fichier pour le suivi individuel
-            #
-            #         config = Namespace(real_time=True, use_realtime_data=False, clip_n=clip_n, model_path=target_file, verbose=False, seed=123)
-            #         live_result = dgdr_entry_point(config)#['local_results']
-            #         if live_result['buy_signal_detected'] or live_result['sell_signal_detected']:
-            #             print(live_result)
-            #             import sys
-            #             sys.exit()
-            #         # if live_result['reason'] is None:
-            #         #     test_wr = live_result['model_info']['test_wr']
-            #         #     close_col = live_result['close_col']
-            #         #     lookahead = live_result['model_info']['lookahead']
-            #         #     dataset_id = live_result['model_info']['dataset_id']
-            #         #     df_realtime = live_result['df_realtime']
-            #         #     df_realtime_not_clipped = live_result['df_realtime_not_clipped']
-            #         #     density = live_result['model_info']['test_den']
-            #         #     bar_on_which_signal_was_triggered = df_realtime.index[-1]
-            #         #     bar_on_which_credit_spread_expired = get_next_step(the_date=bar_on_which_signal_was_triggered, dataset_id=dataset_id, nn=lookahead)
-            #         #
-            #         #     while True:
-            #         #         try:
-            #         #             values_of_bar_on_which_credit_spread_expired = df_realtime_not_clipped.loc[bar_on_which_credit_spread_expired]
-            #         #             break
-            #         #         except KeyError:
-            #         #             bar_on_which_credit_spread_expired = get_next_step(the_date=bar_on_which_credit_spread_expired, dataset_id=dataset_id, nn=lookahead)
-            #         #
-            #         #     entry_price = live_result['Price']
-            #         #     price_at_expiration = values_of_bar_on_which_credit_spread_expired[close_col]
-            #         #     is_success = entry_price < price_at_expiration if live_result['Signal'] == "BUY" else entry_price > price_at_expiration
-            #         #
-            #         #     # Initialisation des stats pour ce modèle spécifique si premier passage
-            #         #     if model_name not in compilation["by_model"]:
-            #         #         compilation["by_model"][model_name] = {"success": 0, "failure": 0}
-            #         #
-            #         #     # Enregistrement du résultat
-            #         #     if is_success:
-            #         #         compilation["global"]["success"] += 1
-            #         #         compilation["by_model"][model_name]["success"] += 1
-            #         #     else:
-            #         #         compilation["global"]["failure"] += 1
-            #         #         compilation["by_model"][model_name]["failure"] += 1
-            #         #
-            #         #     dual_print(f"{live_result['Signal']} ({live_result['type_option']}) at Entry: {entry_price:.2f} on {live_result['Date'].strftime('%Y-%m-%d')} "
-            #         #           f"| Price at Expiration: {price_at_expiration:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d')}) "
-            #         #           f"| {'Success' if is_success else 'Failure'} "
-            #         #           f"| {test_wr:.2%} probability of success | Density: {density:.2%}")
-            #         #
-            #         # elif 'no more data' in live_result['reason']:
-            #         #     raise NoMoreDataException()
     except NoMoreDataException:
         dual_print("\n[INFO] Fin prématurée détectée ('no more data'). Génération des statistiques...")
 
@@ -210,8 +154,9 @@ def entry():
         dual_print(f"\n📊 STATS PAR MODÈLE :")
         for m_name, m_stats in compilation["by_model"].items():
             m_total = m_stats["success"] + m_stats["failure"]
+            m_density = float(m_total) / float(args.n_back)
             m_wr = (m_stats["success"] / m_total) * 100 if m_total > 0 else 0
-            dual_print(f"  • {m_name:<30} -> Total: {m_total:<4} | Win: {m_stats['success']:<4} | Loss: {m_stats['failure']:<4} | WR: {m_wr:.2f}%")
+            dual_print(f"  • {m_name:<30} -> Total: {m_total:<4} | Density: {m_density:.2%} | WR: {m_wr:.2f}%")
 
     dual_print("=" * 50)
 
