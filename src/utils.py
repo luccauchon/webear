@@ -1759,7 +1759,7 @@ def _send_email(
                 print(f"Attention : Le fichier '{fichier}' n'existe pas et sera ignoré.")
 
     # Liste unique de TOUS les serveurs de réception finaux (To + Cc + Cci)
-    tous_les_destinataires = list(set(destinataires + cc + cci))
+    tous_les_destinataires = list(set(list(destinataires) + list(cc) + list(cci)))
 
     # Serveur SMTP
     server = smtplib.SMTP(serveur_smtp, port_smtp)
