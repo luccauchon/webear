@@ -74,7 +74,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             actual_high, actual_low, actual_close, actual_open = result['realtime']['actual_high'], result['realtime']['actual_low'], result['realtime']['actual_close'], result['realtime']['actual_open']
             atr_config.dataframe=None
             all_results_computed.append({'actual_high': actual_high, 'actual_low': actual_low, 'actual_close': actual_close, 'actual_open': actual_open,
-                                         'predicted_high': predicted_high, 'predicted_low': predicted_low,
+                                         'predicted_high': predicted_high, 'predicted_low': predicted_low, 'vix_regime': vix_regime,
                                          'probability_predicted_high': probability_predicted_high, 'probability_predicted_low': probability_predicted_low,
                                          'atr_config': atr_config})
     out__shared.put(all_results_computed)
@@ -118,8 +118,8 @@ def entry(args):
     # Récupération des résultats
     for k in range(0, nb_worker):
         data_from_workers.extend(out__shared[k].get())
-    actual_high, actual_low, actual_close, actual_open = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open']}.values() for item in data_from_workers))
-    subject = (f"[REALTIME @{datetime.now().strftime("%Y%m%d_%H%M")}]   O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f}   [BREAK EVEN ON 5-POINT WIDE SPREAD]")
+    actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
+    subject = (f"[REALTIME @{datetime.now().strftime("%Y%m%d_%H%M")}] | {args.dataset_id} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | VIX Regime is {vix_regime} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
     string_generated = subject + "\n"
     for col_for_sort in ["predicted_low", "predicted_high"]:
         # 1. Tri du plus GRAND au plus PETIT
@@ -146,8 +146,6 @@ def entry(args):
 
             # On garde l'élément s'il est unique par rapport au précédent
             filtered_probabilities.append(current)
-        spread_width = 500.0
-        actual_high, actual_low, actual_close, actual_open = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open']}.values() for item in filtered_probabilities))
         if 'low' in col_for_sort:
             string_generated += (f"\t::  {WEBEARStyle.BOLD}Low  @P    BE$   {WEBEARStyle.END}")+ "\n"
         else:
@@ -159,6 +157,8 @@ def entry(args):
             assert actual_low == sorted_probability['actual_low']
             assert actual_close == sorted_probability['actual_close']
             assert actual_open == sorted_probability['actual_open']
+            assert vix_regime == sorted_probability['vix_regime']
+            spread_width = 500.0
             breakeven_high = int((1.0 - probability_predicted_high/100.) * spread_width)
             breakeven_low = int((1.0 - probability_predicted_low/100.) * spread_width)
             if 'low' in col_for_sort:
