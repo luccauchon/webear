@@ -84,8 +84,8 @@ def entry(args):
     nb_worker = 15
     verbose = True
     n_trials = 999
-
-    # Obtention du dataframe en realtime
+    destinataires = ["luccauchon@gmail.com", "luc.vouligny@gmail.com"]
+    # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
     atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=None, verbose=False, n_trials=9, use_realtime_data=True, atr_window=14,
                            n_split=0.9, tightness_weight=0., use_close_for_range=True, clip_n=0, timeout=9999)
     result = atr_entry(args=atr_config)
@@ -120,7 +120,7 @@ def entry(args):
         data_from_workers.extend(out__shared[k].get())
     actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
     subject = (f"[REALTIME @{datetime.now().strftime("%Y%m%d_%H%M")}] | {args.dataset_id} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | VIX Regime is {vix_regime} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
-    string_generated = subject + "\n"
+    string_generated, vlow_text, vhigh_text = subject + "\n", None, None
     for col_for_sort in ["predicted_low", "predicted_high"]:
         # 1. Tri du plus GRAND au plus PETIT
         liste_triee = sorted(data_from_workers, key=lambda x: x[f"probability_{col_for_sort}"], reverse=True)
@@ -164,11 +164,22 @@ def entry(args):
             if 'low' in col_for_sort:
                 string_generated += (f"\t"                      
                       f"{' ':<4}{predicted_low:04d} @{probability_predicted_low:02d}% {breakeven_low:03d}$")+ "\n"
+                vlow_text = (predicted_low, probability_predicted_low,breakeven_low) if vlow_text is None else vlow_text
             else:
                 string_generated += (f"\t"                      
                       f"{' ':<20}{predicted_high:04d} @{probability_predicted_high:02d}% {breakeven_high:03d}$")+ "\n"
+                vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
+    string_generated += (f"\n\nBonjour,\nCe sont des zones de probabilités de la valeur de fermeture du SPX500.\n"
+                         f"Par exemple, à la fermeture des marchés aujourd'hui ({datetime.now().strftime('%Y-%m-%d')}), "
+                         f"le SPX500 a {vlow_text[1]}% de chance de terminer au dessus de {vlow_text[0]} et "
+                         f"{vhigh_text[1]}% de chance de terminer sous la barre des {vhigh_text[0]}.\n"
+                         f"Pour la monétisation, utilisez un Credit Put Spread (partie inférieure) et un Call Credit Spread (partie supérieure).\n"
+                         f"Idéalement, assurez-vous de recevoir la valeur du Break Event spécifiée ci-haut. "
+                         f"Par exemple, lors de la vente d\'un '0DTE 5 points Put Credit Spread' ([-1 @PUT {vlow_text[0]} 0DTE] & [+1 @PUT {vlow_text[0]-5} 0DTE]), "
+                         f"la prime à recevoir devrait être au minimum de {vlow_text[2]}$ (perte maximale de {500-vlow_text[2]}$ "
+                         f"si le SPX clôture en dessous de {vlow_text[0]-5})")
     print(string_generated)
-    send_html_email(destinataire="luccauchon@gmail.com", sujet=subject, corps=string_generated)
+    send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated)
     return None
 
 

@@ -1689,12 +1689,20 @@ def get_next_step(the_date, dataset_id, nn):
     return _next_
 
 
-def send_html_email(destinataire, sujet, corps, pieces_jointes=None):
+def send_html_email(destinataires, sujet, corps, cc=None, cci=None, pieces_jointes=None):
     expediteur = "luccauchon@gmail.com"
     mot_de_passe_app = "thhy qvae fbsb zsbe"
+
+    # Assurer que les arguments sont des listes
+    dest_list = [destinataires] if isinstance(destinataires, str) else (destinataires or [])
+    cc_list = [cc] if isinstance(cc, str) else (cc or [])
+    cci_list = [cci] if isinstance(cci, str) else (cci or [])
+
     _send_email(
         expediteur=expediteur,
-        destinataire=destinataire,
+        destinataires=dest_list,
+        cc=cc_list,
+        cci=cci_list,
         sujet=sujet,
         corps=ansi_to_html(corps),
         mot_de_passe_app=mot_de_passe_app,
@@ -1705,7 +1713,9 @@ def send_html_email(destinataire, sujet, corps, pieces_jointes=None):
 
 def _send_email(
         expediteur,
-        destinataire,
+        destinataires,
+        cc,
+        cci,
         sujet,
         corps,
         mot_de_passe_app,
@@ -1717,35 +1727,39 @@ def _send_email(
     # Construire le message
     msg = MIMEMultipart()
     msg['From'] = expediteur
-    msg['To'] = destinataire
+    msg['To'] = ", ".join(destinataires)
+
+    if cc:
+        msg['Cc'] = ", ".join(cc)
+
+    # Note : On n'ajoute JAMAIS les 'Cci' dans msg['Bcc'] pour des raisons de confidentialité.
+
     msg['Subject'] = sujet
     msg.attach(MIMEText(corps, subtype))
 
-    # Gestion des pièces jointes (images, etc.)
+    # Gestion des pièces jointes
     if pieces_jointes:
         for fichier in pieces_jointes:
             if os.path.isfile(fichier):
-                # Déterminer le type MIME du fichier (ex: image/png, image/jpeg)
                 mime_type, _ = mimetypes.guess_type(fichier)
                 if mime_type is None:
                     mime_type = 'application/octet-stream'
 
                 main_type, sub_type = mime_type.split('/', 1)
 
-                # Lire le fichier en mode binaire
                 with open(fichier, 'rb') as f:
                     part = MIMEBase(main_type, sub_type)
                     part.set_payload(f.read())
 
-                # Encoder en base64 pour l'envoi par e-mail
                 encoders.encode_base64(part)
-
-                # Ajouter l'en-tête pour indiquer qu'il s'agit d'une pièce jointe
                 nom_fichier = os.path.basename(fichier)
                 part.add_header('Content-Disposition', f'attachment; filename="{nom_fichier}"')
                 msg.attach(part)
             else:
                 print(f"Attention : Le fichier '{fichier}' n'existe pas et sera ignoré.")
+
+    # Liste unique de TOUS les serveurs de réception finaux (To + Cc + Cci)
+    tous_les_destinataires = list(set(destinataires + cc + cci))
 
     # Serveur SMTP
     server = smtplib.SMTP(serveur_smtp, port_smtp)
@@ -1754,17 +1768,12 @@ def _send_email(
 
     # Envoyer le courriel
     texte = msg.as_string()
-    server.sendmail(expediteur, destinataire, texte)
+    server.sendmail(expediteur, tous_les_destinataires, texte)
     server.quit()
 
 
 def ansi_to_html(text):
-    # 1. Remplace le code de désactivation [0m par la fermeture du gras </b>
     text = re.sub(r'\x1b\[0m|\[0m', '</b>', text)
-
-    # 2. Remplace le code d'activation [1m par l'ouverture du gras <b>
     text = re.sub(r'\x1b\[1m|\[1m', '<b>', text)
-
-    # 3. Encapsule dans <pre> pour garder les espaces et sauts de ligne intacts
     html_output = f"<pre style='font-family: monospace; font-size: 14px;'>{text}</pre>"
     return html_output
