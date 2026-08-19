@@ -201,7 +201,7 @@ def dump_spx_futures_to_disk(output_dir=r"D:\Finance\data\futures"):
 
 if __name__ == '__main__':
     dump_spx_futures_to_disk()
-    schedule.every().day.at("18:00").do(dump_spx_futures_to_disk)  # Run every day at 17:00
+    schedule.every().day.at("18:00").do(dump_spx_futures_to_disk)  # Run every day at 18:00
 
     while True:
         schedule.run_pending()

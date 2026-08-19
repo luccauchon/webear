@@ -241,7 +241,7 @@ def main(args):
         fig.write_image(output_filename, width=1600, height=1000)
     if GENERATE_HTML:
         fig.show()
-    return {"output_filename": output_filename}
+    return {"output_filename": output_filename, "target_date": next_date}
 
 
 if __name__ == "__main__":

@@ -84,3 +84,8 @@ os.makedirs(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, exist_ok=True)
 # import os
 # FRED_API_KEY = os.getenv('FRED_API_KEY')
 FRED_API_KEY = '213742dc08592772cb9502214cdc4397'
+
+#
+def GET_EMAILS():
+    destinataires = ("luccauchon@gmail.com", "luc.vouligny@gmail.com")
+    return destinataires

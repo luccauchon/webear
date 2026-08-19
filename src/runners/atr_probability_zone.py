@@ -32,6 +32,7 @@ import sys
 import time
 from runners.atr import entry as atr_entry
 from utils import WEBEARStyle, send_html_email
+from constants import GET_EMAILS
 
 
 def get_parser():
@@ -84,7 +85,7 @@ def entry(args):
     nb_worker = 15
     verbose = True
     n_trials = 999
-    destinataires = ["luccauchon@gmail.com", "luc.vouligny@gmail.com"]
+    destinataires = GET_EMAILS()
     # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
     atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=None, verbose=False, n_trials=9, use_realtime_data=True, atr_window=14,
                            n_split=0.9, tightness_weight=0., use_close_for_range=True, clip_n=0, timeout=9999)
