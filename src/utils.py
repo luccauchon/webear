@@ -1739,24 +1739,29 @@ def _send_email(
 
     # Gestion des pièces jointes
     if pieces_jointes:
-        for fichier in pieces_jointes:
-            if os.path.isfile(fichier):
-                mime_type, _ = mimetypes.guess_type(fichier)
-                if mime_type is None:
-                    mime_type = 'application/octet-stream'
+        try:
+            if not isinstance(pieces_jointes, list|tuple):
+                pieces_jointes = [pieces_jointes]
+            for fichier in pieces_jointes:
+                if os.path.isfile(fichier):
+                    mime_type, _ = mimetypes.guess_type(fichier)
+                    if mime_type is None:
+                        mime_type = 'application/octet-stream'
 
-                main_type, sub_type = mime_type.split('/', 1)
+                    main_type, sub_type = mime_type.split('/', 1)
 
-                with open(fichier, 'rb') as f:
-                    part = MIMEBase(main_type, sub_type)
-                    part.set_payload(f.read())
+                    with open(fichier, 'rb') as f:
+                        part = MIMEBase(main_type, sub_type)
+                        part.set_payload(f.read())
 
-                encoders.encode_base64(part)
-                nom_fichier = os.path.basename(fichier)
-                part.add_header('Content-Disposition', f'attachment; filename="{nom_fichier}"')
-                msg.attach(part)
-            else:
-                print(f"Attention : Le fichier '{fichier}' n'existe pas et sera ignoré.")
+                    encoders.encode_base64(part)
+                    nom_fichier = os.path.basename(fichier)
+                    part.add_header('Content-Disposition', f'attachment; filename="{nom_fichier}"')
+                    msg.attach(part)
+                else:
+                    print(f"Attention : Le fichier '{fichier}' n'existe pas et sera ignoré.")
+        except:
+            pass
 
     # Liste unique de TOUS les serveurs de réception finaux (To + Cc + Cci)
     tous_les_destinataires = list(set(list(destinataires) + list(cc) + list(cci)))
