@@ -14,7 +14,7 @@ from argparse import Namespace
 import os
 from datetime import datetime
 from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import entry as apcs_entry_point
-from utils import get_next_step
+from utils import get_next_step, factory_load_data
 class NoMoreDataException(Exception):
     """Exception pour interrompre instantanément toutes les boucles imbriquées."""
     pass
@@ -55,7 +55,17 @@ def entry():
         "global": {"success": 0, "failure": 0},
         "by_model": {}  # Permet de voir quel modèle .pkl performe le mieux
     }
+    dataset_id = "day"
+    ticker = "^GSPC"
 
+    df_not_clipped = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": 0})
+    # 1. Statistiques Globales
+    t1 = df_not_clipped.index[-1]
+    t2 = df_not_clipped.index[-args.n_back]
+    dual_print(f"\n🌍 STATS GLOBALES :")
+    dual_print(f"  • Dataset     : {dataset_id}")
+    dual_print(f"  • Ticker      : {ticker}")
+    dual_print(f"  • Dates       : {t1.strftime('%Y-%m-%d_%H%M')} :: {t2.strftime('%Y-%m-%d_%H%M')}")
     try:
         for clip_n in range(0, args.n_back):
             for root, dirs, files in os.walk(models_dir):
@@ -117,28 +127,14 @@ def entry():
     dual_print(" STATISTIQUES FINALES DE COMPILATION ".center(50, "="))
     dual_print("=" * 50)
 
-    # 1. Statistiques Globales
-    g_success = compilation["global"]["success"]
-    g_failure = compilation["global"]["failure"]
-    g_total = g_success + g_failure
-
-    if g_total > 0:
-        g_wr = (g_success / g_total) * 100
-        dual_print(f"\n🌍 STATS GLOBALES :")
-        dual_print(f"  • Total d'essais     : {g_total}")
-        dual_print(f"  • Succès (Win)       : {g_success}")
-        dual_print(f"  • Échecs (Loss)      : {g_failure}")
-        dual_print(f"  • Taux de réussite   : {g_wr:.2f}%")
-    else:
-        dual_print("\n🌍 STATS GLOBALES : Aucun trade simulé")
-
     # 2. Statistiques par Modèle (.pkl)
     if compilation["by_model"]:
         dual_print(f"\n📊 STATS PAR MODÈLE :")
         for m_name, m_stats in compilation["by_model"].items():
             m_total = m_stats["success"] + m_stats["failure"]
+            m_density = float(m_total) / float(args.n_back)
             m_wr = (m_stats["success"] / m_total) * 100 if m_total > 0 else 0
-            dual_print(f"  • {m_name:<30} -> Total: {m_total:<4} | Win: {m_stats['success']:<4} | Loss: {m_stats['failure']:<4} | WR: {m_wr:.2f}%")
+            dual_print(f"  • {m_name:<30} -> Total: {m_total:<4} | Density: {m_density:.2%} | WR: {m_wr:.2f}%")
 
     dual_print("=" * 50)
 
