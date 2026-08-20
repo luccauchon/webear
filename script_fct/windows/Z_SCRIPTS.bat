@@ -23,7 +23,7 @@ start "HTML Week" cmd /k "call R_HTML___Saturday.bat"
 :: Fonctionne pas
 :: start "HTML End Month" cmd /k "call R_HTML___End_of_month.bat"
 
-:: Script 7 : 
+:: Script 7 : ATR quoditien à 09h31 et ATR hebdomadaire le lundi à 09h39
 start "ATR P ZONE" cmd /k "call R_ATR_PROBABILITY_ZONE___09h31_09h39m.bat"
 
 :: Script 8 :

@@ -242,6 +242,8 @@ def get_parser():
     parser.add_argument("--debug", action="store_true", default=False, help="Debug mode. Don't send the emails.")
     parser.add_argument("--n-trials", type=int, default=999)
     parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
+
     return parser
 
 
@@ -284,7 +286,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 def entry(args):
     nb_worker = 15
     verbose = True
-    destinataires = GET_EMAILS()
+    destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
     spread_width = 500.0
 
     # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
@@ -381,18 +383,18 @@ def entry(args):
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
             if dataset_configuration is None:
                 dataset_configuration = sorted_probability['dataset_configuration']
-    string_explicative = (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles) :: "
+    string_explicative = (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles)\n"
                           f"Test du {dataset_configuration['test_info']['start_date']} au {dataset_configuration['test_info']['end_date']} ({dataset_configuration['test_info']['bars']} chandelles)")
     string_generated += ("\n\n"+string_explicative)
-    string_generated += (f"\n\nBonjour,\nCe sont des zones de probabilités de la valeur de fermeture du SPX500.\n"
-                         f"Par exemple, à la fermeture des marchés aujourd'hui ({datetime.now().strftime('%Y-%m-%d')}), "
-                         f"le SPX500 a {vlow_text[1]}% de chance de terminer au dessus de {vlow_text[0]} et "
-                         f"{vhigh_text[1]}% de chance de terminer sous la barre des {vhigh_text[0]}.\n"
-                         f"Pour la monétisation, utilisez un Credit Put Spread (partie inférieure) et un Call Credit Spread (partie supérieure).\n"
-                         f"Idéalement, assurez-vous de recevoir la valeur du Break Event spécifiée ci-haut. "
-                         f"Par exemple, lors de la vente d\'un '0DTE 5 points Put Credit Spread' ([-1 @PUT {vlow_text[0]} 0DTE] & [+1 @PUT {vlow_text[0]-5} 0DTE]), "
-                         f"la prime à recevoir devrait être au minimum de {vlow_text[2]}$ (perte maximale de {500-vlow_text[2]}$ "
-                         f"si le SPX clôture en dessous de {vlow_text[0]-5})")
+    string_generated += ("\n\nBonjour,\n"
+                         f"Voici les zones de probabilités pour la valeur de clôture du {args.ticker}. "
+                         f"Par exemple, pour la fermeture des marchés d'aujourd'hui ({datetime.now().strftime('%Y-%m-%d')}), "
+                         f"le {args.ticker} a {vlow_text[1]}% de chances de terminer au-dessus de {vlow_text[0]} et {vhigh_text[1]}% de chances de clôturer sous la barre des {vhigh_text[0]}."
+                         f"Pour monétiser cette analyse, vous pouvez utiliser un Put Credit Spread (pour la borne inférieure) et un Call Credit Spread (pour la borne supérieure). "
+                         f"Idéalement, assurez-vous de percevoir une prime qui correspond au seuil de rentabilité (Break-Even) spécifié ci-dessus. "
+                         f"Par exemple, lors de la vente d'un Put Credit Spread 0DTE de 5 points de large (vendre le PUT {vlow_text[0]} et acheter le PUT {vlow_text[0]-5}), "
+                         f"la prime minimale à recevoir devrait être de {vlow_text[2]}$. "
+                         f"Cela représente un risque maximal de {500-vlow_text[2]}$ si le {args.ticker} clôture en dessous de {vlow_text[0]-5}.")
     print(string_generated)
     output_file = os.path.join(get_and_clean_stub_dir("atr_make_graphics"), f"{args.ticker}_{args.dataset_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png")
     make_plot(current_price=actual_close, low_levels=low_levels_for_graphics, high_levels=high_levels_for_graphics, display_plot=False, output_file=output_file, use_plotly=False)

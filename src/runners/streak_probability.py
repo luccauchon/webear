@@ -371,7 +371,10 @@ def get_label(data_frequency):
         'quarter': 'Quarters',
         'year': 'Years'
     }
-    return labels[data_frequency]
+    if data_frequency in labels:
+        return labels[data_frequency]
+    else:
+        return data_frequency
 
 
 def load_data(data_frequency, ticker):
@@ -403,6 +406,8 @@ def new_main(args, bring_my_own_df=None):
         _spx500 = load_data(data_frequency, ticker)
     else:
         _spx500 = bring_my_own_df
+        if close_col not in _spx500.columns:
+            close_col = 'Close'
 
     _returns, _mean, _std = compute_stats_close_to_close(_spx500, close_col=close_col, label=get_label(data_frequency), verbose=verbose)
     direction_label = "Positive" if direction == "pos" else "Negative"

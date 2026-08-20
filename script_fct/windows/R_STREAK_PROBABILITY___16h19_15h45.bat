@@ -21,7 +21,7 @@ if not defined HEURE goto SUIVANT
 :: 2. Vérification du Lundi au Vendredi à 16:19
 if !JOUR! geq 1 if !JOUR! leq 5 (
     if "!HEURE!"=="16:19" (        
-        start "STREAK PROBABILITY PZ DAY" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\runners & python streak_probability_informer.py --dataset-id day"
+        start "STREAK PROBABILITY PZ DAY" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\runners & python streak_probability_informer.py --dataset-id day --production-setup"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )
@@ -29,13 +29,23 @@ if !JOUR! geq 1 if !JOUR! leq 5 (
 
 :: 3. Vérification du Lundi au Vendredi à 15:45
 if !JOUR! geq 1 if !JOUR! leq 5 (
-    if "!HEURE!"=="15:45" (                
+    if "!HEURE!"=="15:45" (
+		start "STREAK PROBABILITY PZ DAY" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\runners & python streak_probability_informer.py --dataset-id day --production-setup --realtime"
+        :: Attendre la minute suivante pour éviter les doublons
+        timeout /t 60 /nobreak > nul
+    )
+)
+
+:: 4. Vérification du Vendredi (5 = Vendredi) à 15:30
+if "!JOUR!"=="5" (
+    if "!HEURE!"=="15:30" (        
+        start "STREAK PROBABILITY PZ WEEK" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\runners & python streak_probability_informer.py --dataset-id week --production-setup --realtime"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )
 )
 
 :SUIVANT
-:: 4. Attendre 10 secondes avant la prochaine vérification
+:: 5. Attendre 10 secondes avant la prochaine vérification
 timeout /t 10 /nobreak > nul
 goto BOUCLE_INFINIE

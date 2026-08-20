@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
-from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR
+from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API
 import sys
 import re
 from types import SimpleNamespace
@@ -1690,14 +1690,12 @@ def get_next_step(the_date, dataset_id, nn):
 
 
 def send_html_email(destinataires, sujet, corps, cc=None, cci=None, pieces_jointes=None):
-    expediteur = "luccauchon@gmail.com"
-    mot_de_passe_app = "thhy qvae fbsb zsbe"
-
     # Assurer que les arguments sont des listes
     dest_list = [destinataires] if isinstance(destinataires, str) else (destinataires or [])
     cc_list = [cc] if isinstance(cc, str) else (cc or [])
     cci_list = [cci] if isinstance(cci, str) else (cci or [])
-
+    expediteur = EMAIL_SENDER_WEBEAR
+    mot_de_passe_app = PWD_GOOGLE_API
     _send_email(
         expediteur=expediteur,
         destinataires=dest_list,

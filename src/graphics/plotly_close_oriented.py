@@ -37,7 +37,7 @@ def main(args):
     df.sort_index(inplace=True)  # Ensure chronological order
     assert df.index.is_monotonic_increasing
     assert df.index[-1] > df.index[0]
-
+    full_df = df.copy()
     # Compute direction: compare close with previous close
     # NOTE: Computed BEFORE limiting to last N points so the first plotted candle has a valid previous close
     df['PrevClose'] = df['Close'].shift(1)
@@ -51,9 +51,9 @@ def main(args):
     df_down = copy.deepcopy(df[~df['UpDay']])
 
     sp_pos_config = Namespace(ticker=TICKER, frequency=DATASET_ID, direction="pos", max_n=10, min_n=0, delta=0, verbose=False, debug_verify_speeding=False, forward_steps=1, epsilon=0.00005)
-    sp_pos = streak_probability(sp_pos_config)
+    sp_pos = streak_probability(args=sp_pos_config, bring_my_own_df=full_df)
     sp_neg_config = Namespace(ticker=TICKER, frequency=DATASET_ID, direction="neg", max_n=10, min_n=0, delta=0, verbose=False, debug_verify_speeding=False, forward_steps=1, epsilon=0.00005)
-    sp_neg = streak_probability(sp_neg_config)
+    sp_neg = streak_probability(args=sp_neg_config, bring_my_own_df=full_df)
 
     # After 0 positive bar,  proability of having a positive bar is sp_pos[0]['prob']
     # After 1 positive bar,  proability of having a second positive bar is sp_pos[1]['prob']
