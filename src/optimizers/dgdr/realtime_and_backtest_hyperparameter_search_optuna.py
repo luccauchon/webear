@@ -64,7 +64,7 @@ def prepare_plot_dataframe(df: pd.DataFrame, ticker: str, signals: list, pnl_df:
     return df_plot
 
 
-def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_idx: int = -1,
+def plot_forecast_results(df: pd.DataFrame, price_col, win_rate: float = None, sample: int = 200, start_idx: int = -1,
                           highlight_signals: bool = True, zoom_region: Optional[Tuple[int, int]] = None):
     if start_idx == -1:
         start_idx = max(0, len(df) - sample)
@@ -94,7 +94,13 @@ def plot_forecast_results(df: pd.DataFrame, price_col, sample: int = 200, start_
     if highlight_signals:
         for idx in longs.index: ax1.axvline(x=idx, color='green', linestyle=':', alpha=0.4, linewidth=0.8)
         for idx in shorts.index: ax1.axvline(x=idx, color='red', linestyle=':', alpha=0.4, linewidth=0.8)
-    ax1.set_title('DGDR - Trading Signals', fontsize=13, fontweight='bold')
+
+    # Updated title to include Test Win Rate
+    title_str = 'DGDR - Trading Signals'
+    if win_rate is not None:
+        title_str += f' | Test Win Rate: {win_rate:.2f}%'
+    ax1.set_title(title_str, fontsize=13, fontweight='bold')
+
     ax1.set_ylabel('Price', fontsize=10)
     ax1.legend(loc='upper left', fontsize=9)
     ax1.grid(True, alpha=0.3, linestyle='--')
@@ -868,7 +874,9 @@ def entry(args):
         plot_signals = main_signals
         if plot_signals:
             df_plot = prepare_plot_dataframe(df_test, ticker, plot_signals, pnl_df=pnl_df, price_col_name="Close")
-            plot_forecast_results(df_plot, price_col='Close', sample=2000, highlight_signals=True)
+            # Extract win rate to pass to the plot function
+            test_win_rate = float(pnl_df['win_rate'].iloc[0]) if 'win_rate' in pnl_df.columns else None
+            plot_forecast_results(df_plot, price_col='Close', win_rate=test_win_rate, sample=2000, highlight_signals=True)
         else:
             print("⚠️ No signals of the selected type found to plot.")
 
