@@ -545,6 +545,7 @@ def entry(args=None):
     realtime_results['global_metrics'] = global_stats
     realtime_results['regime_metrics'] = regime_stats
     realtime_results['dataframe_and_cols'] = (df_bt, vix_col, atr_col)
+    realtime_results['dataset_configuration'] = {'ticker': args.ticker, 'dataset_id': args.dataset_id, 'train_info': train_info, 'test_info': test_info}
     timings['realtime_prediction'] = time.time() - t0
 
     # --- TIMING SUMMARY ---
