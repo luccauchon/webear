@@ -41,7 +41,8 @@ def get_parser():
 
     parser.add_argument("--dataset-id", type=str, default="day")
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
-
+    parser.add_argument("--debug", action="store_true", default=False, help="Debug mode. Don't send the emails.")
+    parser.add_argument("--n-trials", type=int, default=999)
     return parser
 
 
@@ -77,14 +78,14 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             all_results_computed.append({'actual_high': actual_high, 'actual_low': actual_low, 'actual_close': actual_close, 'actual_open': actual_open,
                                          'predicted_high': predicted_high, 'predicted_low': predicted_low, 'vix_regime': vix_regime,
                                          'probability_predicted_high': probability_predicted_high, 'probability_predicted_low': probability_predicted_low,
-                                         'atr_config': atr_config})
+                                         'atr_config': atr_config, 'dataset_configuration': result['dataset_configuration']})
     out__shared.put(all_results_computed)
 
 
 def entry(args):
     nb_worker = 15
     verbose = True
-    n_trials = 999
+    n_trials = args.n_trials
     destinataires = GET_EMAILS()
     # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
     atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=None, verbose=False, n_trials=9, use_realtime_data=True, atr_window=14,
@@ -120,8 +121,8 @@ def entry(args):
     for k in range(0, nb_worker):
         data_from_workers.extend(out__shared[k].get())
     actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
-    subject = (f"[REALTIME @{datetime.now().strftime("%Y%m%d_%H%M")}] | {args.dataset_id} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | VIX Regime is {vix_regime} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
-    string_generated, vlow_text, vhigh_text = subject + "\n", None, None
+    subject = (f"[REALTIME @{datetime.now().strftime("%Y%m%d_%H%M")}] | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
+    string_generated, vlow_text, vhigh_text, dataset_configuration = subject + "\n", None, None, None
     for col_for_sort in ["predicted_low", "predicted_high"]:
         # 1. Tri du plus GRAND au plus PETIT
         liste_triee = sorted(data_from_workers, key=lambda x: x[f"probability_{col_for_sort}"], reverse=True)
@@ -170,6 +171,11 @@ def entry(args):
                 string_generated += (f"\t"                      
                       f"{' ':<20}{predicted_high:04d} @{probability_predicted_high:02d}% {breakeven_high:03d}$")+ "\n"
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
+            if dataset_configuration is None:
+                dataset_configuration = sorted_probability['dataset_configuration']
+    string_explicative = (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles) :: "
+                          f"Test du {dataset_configuration['test_info']['start_date']} au {dataset_configuration['test_info']['end_date']} ({dataset_configuration['test_info']['bars']} chandelles)")
+    string_generated += ("\n\n"+string_explicative)
     string_generated += (f"\n\nBonjour,\nCe sont des zones de probabilités de la valeur de fermeture du SPX500.\n"
                          f"Par exemple, à la fermeture des marchés aujourd'hui ({datetime.now().strftime('%Y-%m-%d')}), "
                          f"le SPX500 a {vlow_text[1]}% de chance de terminer au dessus de {vlow_text[0]} et "
@@ -180,7 +186,8 @@ def entry(args):
                          f"la prime à recevoir devrait être au minimum de {vlow_text[2]}$ (perte maximale de {500-vlow_text[2]}$ "
                          f"si le SPX clôture en dessous de {vlow_text[0]-5})")
     print(string_generated)
-    send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated)
+    if not args.debug:
+        send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated)
     return None
 
 
