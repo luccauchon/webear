@@ -43,6 +43,7 @@ def get_parser():
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     parser.add_argument("--debug", action="store_true", default=False, help="Debug mode. Don't send the emails.")
     parser.add_argument("--n-trials", type=int, default=999)
+    parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=True)
     return parser
 
 
@@ -85,11 +86,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 def entry(args):
     nb_worker = 15
     verbose = True
-    n_trials = args.n_trials
     destinataires = GET_EMAILS()
+
     # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
     atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=None, verbose=False, n_trials=9, use_realtime_data=True, atr_window=14,
-                           n_split=0.9, tightness_weight=0., use_close_for_range=True, clip_n=0, timeout=9999)
+                           n_split=0.9, tightness_weight=0., use_close_for_range=args.use_close_for_range, clip_n=0, timeout=9999)
     result = atr_entry(args=atr_config)
     dataframe = result['dataframe_and_cols']
 
@@ -100,8 +101,8 @@ def entry(args):
     use_cases = []
     tightness_weights = np.linspace(0, 1, 30).tolist()
     for tightness_weight in tightness_weights + [2., 4., 8., 16.]:
-        atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=dataframe, verbose=False, n_trials=n_trials, use_realtime_data=True, atr_window=14,
-                               n_split=0.9, tightness_weight=tightness_weight, use_close_for_range=False, clip_n=0, timeout=9999)
+        atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=dataframe, verbose=False, n_trials=args.n_trials, use_realtime_data=True, atr_window=14,
+                               n_split=0.9, tightness_weight=tightness_weight, use_close_for_range=args.use_close_for_range, clip_n=0, timeout=9999)
         use_cases.append(atr_config)
 
     use_cases__shared, master_cmd__shared = Queue(256000), Value("i", 0)
@@ -121,7 +122,8 @@ def entry(args):
     for k in range(0, nb_worker):
         data_from_workers.extend(out__shared[k].get())
     actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
-    subject = (f"[REALTIME @{datetime.now().strftime("%Y%m%d_%H%M")}] | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
+    ref_range = "Plage maintenue à la clôture (close)" if args.use_close_for_range else "Plage maintenue max/min (High/Low) en cours de séance"
+    subject = (f"[@{datetime.now().strftime("%Y%m%d_%H%M")}] | {ref_range} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
     string_generated, vlow_text, vhigh_text, dataset_configuration = subject + "\n", None, None, None
     for col_for_sort in ["predicted_low", "predicted_high"]:
         # 1. Tri du plus GRAND au plus PETIT
