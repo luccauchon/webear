@@ -9,7 +9,8 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 import os
 import argparse
 import numpy as np
@@ -1013,7 +1014,25 @@ def entry(args=None):
         "sampler": sampler
     }
     if args.storage:
-        study_kwargs["storage"] = args.storage
+        # Use the provided URL directly. Optuna supports postgresql://, mysql://, sqlite://, etc.
+        if "://" not in args.storage:
+            db_path = args.storage
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+            storage = f"sqlite:///{db_path}"
+        else:
+            def parse_storage_url(url: str):
+                """Convertit une chaîne d'URL en objet Storage Optuna adapté."""
+                if url.startswith("journal://"):
+                    # Extrait le chemin après "journal://"
+                    file_path = url.replace("journal://", "", 1)
+                    return JournalStorage(JournalFileBackend(file_path))
+                # Pour sqlite://, postgresql://, redis://, etc.
+                return url
+            storage = parse_storage_url(args.storage)
+
+        study_kwargs["storage"] = storage
         study_kwargs["load_if_exists"] = True
 
     study = optuna.create_study(**study_kwargs)
