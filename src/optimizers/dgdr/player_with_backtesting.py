@@ -61,6 +61,13 @@ def entry():
     ticker = "^GSPC"
 
     df_not_clipped = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": 0})
+    # 1. Statistiques Globales
+    t1 = df_not_clipped.index[-1]
+    t2 = df_not_clipped.index[-args.n_back]
+    dual_print(f"\n🌍 STATS GLOBALES :")
+    dual_print(f"  • Dataset     : {dataset_id}")
+    dual_print(f"  • Ticker      : {ticker}")
+    dual_print(f"  • Dates       : {t1.strftime('%Y-%m-%d_%H%M')} :: {t2.strftime('%Y-%m-%d_%H%M')}")
     try:
         for clip_n in tqdm(range(0, args.n_back), desc="Clips"):
             # Récupération préalable de la liste des fichiers pour connaître la taille totale
@@ -133,21 +140,6 @@ def entry():
     dual_print("\n" + "=" * 50)
     dual_print(" STATISTIQUES FINALES DE COMPILATION ".center(50, "="))
     dual_print("=" * 50)
-
-    # 1. Statistiques Globales
-    g_success = compilation["global"]["success"]
-    g_failure = compilation["global"]["failure"]
-    g_total = g_success + g_failure
-
-    if g_total > 0:
-        g_wr = (g_success / g_total) * 100
-        dual_print(f"\n🌍 STATS GLOBALES :")
-        dual_print(f"  • Total d'essais     : {g_total}")
-        dual_print(f"  • Succès (Win)       : {g_success}")
-        dual_print(f"  • Échecs (Loss)      : {g_failure}")
-        dual_print(f"  • Taux de réussite   : {g_wr:.2f}%")
-    else:
-        dual_print("\n🌍 STATS GLOBALES : Aucun trade simulé")
 
     # 2. Statistiques par Modèle (.pkl)
     if compilation["by_model"]:
