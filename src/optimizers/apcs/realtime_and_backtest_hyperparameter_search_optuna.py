@@ -1354,8 +1354,6 @@ def entry(args):
         values_returned.update({'val_score': model_info['test_wr']})
         values_returned.update({'val_win_rate': model_info['test_wr']})
 
-        df_realtime, df_realtime_not_clipped = None, None
-
         try:
             if verbose:
                 print(f"Command line used: {command_line}")
