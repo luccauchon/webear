@@ -750,7 +750,7 @@ def entry(args):
             results=results_valid, params=best_params, metrics=final_metrics,
             ticker=ticker, dataset_id=dataset_id, output_dir=output_dir,
             verbose=verbose, signal_type=signal_label, optimize_metric=optimize,
-            win_threshold=win_threshold,
+            win_threshold=win_threshold, test_win_rate=validation_win_rate,
         )
 
 
@@ -760,7 +760,8 @@ def entry(args):
 def plot_strategy_results(results: pd.DataFrame, params: dict, metrics: dict,
                           ticker: str, dataset_id: str, output_dir: str = '.',
                           verbose: bool = True, signal_type: str = 'both',
-                          optimize_metric: str = 'profit_target', win_threshold: float = 0.04) -> str:
+                          optimize_metric: str = 'profit_target', win_threshold: float = 0.04,
+                          test_win_rate: float = 0.0) -> str:
     try:
         plt.style.use('seaborn-v0_8-darkgrid')
     except:
@@ -833,6 +834,7 @@ def plot_strategy_results(results: pd.DataFrame, params: dict, metrics: dict,
 
     metrics_text = (f"Optimized Metric: {optimize_metric.upper()}\n"
                     f"Win Threshold: {win_threshold:.2%} | Lookahead: {LA} bars\n\n"
+                    f"Test Win Rate: {test_win_rate:.2%}\n\n"
                     f"Performance:\n")
     metrics_text += (f"\n📊 Visual Classification (per {optimize_metric}):\n"
                      f"  Success: {n_long_win + n_short_win} | Fail: {n_long_fail + n_short_fail}\n"
