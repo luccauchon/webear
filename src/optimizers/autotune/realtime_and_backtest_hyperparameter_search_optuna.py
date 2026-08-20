@@ -103,24 +103,22 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.ticker import FuncFormatter
-from optuna.pruners import MedianPruner
 import argparse
+import glob
+import os
+import pickle
+import sys
+from typing import Tuple, Dict
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import pandas as pd
 from numba import njit
-from typing import Tuple, Dict
-import warnings
-import optuna
+from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-from utils import factory_load_data, get_next_step
-import pickle
-import os
-import glob
-import sys
 from sklearn.model_selection import TimeSeriesSplit
+from utils import factory_load_data, get_next_step
 
 # =============================================================================
 # 📊 CENTRAL METRIC MAPPING (Single Source of Truth)
@@ -440,6 +438,8 @@ def entry(args):
             if verbose and not verbose_short: print(f"📥 Loading most recent real-time model: {model_path}")
         with open(model_path, 'rb') as f:
             saved_model = pickle.load(f)
+        command_line = saved_model["command_line"] if "command_line" in saved_model else ""
+        if verbose: print(f"Command line used: {command_line}")
         rt_params = saved_model['params']
         assert 'win_threshold' in saved_model
         rt_win_threshold = saved_model['win_threshold']
@@ -530,7 +530,7 @@ def entry(args):
                 'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': optimization_metric,
                 'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'], 'method': method,
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
-
+    command_line = "python " + " ".join(sys.argv)
     dataset_id, ticker = args.dataset_id, args.ticker
     spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n})
     if verbose:
@@ -580,7 +580,7 @@ def entry(args):
 
     if verbose:
         print(f"\n🔧 Running AutoTune Strategy with Optuna Optimization  |  Optimize: {optimize} ({signal_label})  |  Look Ahead: {lookahead_bars}b  |  Dataset id: {dataset_id}  |  "
-              f"Win Threshold: {win_threshold:.4%}  |  Optuna: {n_trials}/{timeout}  |  Dataset Length: {len(closes)}")
+              f"Win Threshold: {win_threshold:.4%}  |  Optuna: {n_trials}/{timeout}  |  Dataset Length: {len(closes)}  |  Minimum Signal Density: {required_signal_density}")
 
     def objective(trial):
         try:
@@ -737,7 +737,7 @@ def entry(args):
         'signal_type_code': signal_type, 'optimize_metric': optimize,
         'train_score': train_score, 'val_score': val_score,
         'train_win_rate': train_win_rate, 'validation_win_rate': validation_win_rate,
-        'dataset_id': dataset_id, 'ticker': ticker,
+        'dataset_id': dataset_id, 'ticker': ticker, 'command_line': command_line,
     }
     with open(model_path, 'wb') as f:
         pickle.dump(model_data, f)
