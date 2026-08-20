@@ -618,7 +618,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
         latest_signals = [s for s in latest_signals if s['Type'] == 'SELL']
 
     # 2. Initialize defaults
-    trade_entry_price = current_price
+    trade_entry_price = None
     trade_entry_date = current_date
     target_price = "N/A"
 
@@ -633,7 +633,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
         elif active_signal['Type'] == 'SELL':
             target_price = trade_entry_price * call_pct
 
-    # 🎯 FIX: Calculate target_date based on the actual trade entry date, not just the latest bar
+    # 🎯 Calculate target_date based on the actual trade entry date, not just the latest bar
     target_date = get_next_step(the_date=trade_entry_date, dataset_id=dataset_id, nn=lookahead)
 
     if len(latest_signals) > 0:
