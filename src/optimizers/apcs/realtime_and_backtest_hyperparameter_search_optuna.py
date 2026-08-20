@@ -771,6 +771,13 @@ def plot_test_trades(
 
     fig, ax = plt.subplots(figsize=(16, 9))
 
+    # Extract win rate from test results for the title
+    test_win_rate_str = "N/A"
+    if isinstance(test_results, dict) and 'win_rate' in test_results:
+        wr = test_results['win_rate']
+        if wr is not None:
+            test_win_rate_str = f"{wr:.2%}"
+
     # Plot the test close series as the main market context.
     ax.plot(
         close_series.index,
@@ -781,7 +788,7 @@ def plot_test_trades(
     )
 
     ax.set_title(
-        f"APCS - Asymmetric Pivot Credit Strategy - TEST Set\n"
+        f"APCS - Asymmetric Pivot Credit Strategy - TEST Set (Win Rate: {test_win_rate_str})\n"
         f"{ticker} | dataset={dataset_id} | lookahead={lookahead} | direction={trade_direction}",
         fontsize=16,
         fontweight="bold"
