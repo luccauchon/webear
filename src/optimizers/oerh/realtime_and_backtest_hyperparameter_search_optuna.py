@@ -868,7 +868,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
 # 7. PLOTTING HELPER (Unchanged)
 # ============================================
 def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: int = 200, start_idx: int = -1,
-                          highlight_signals: bool = True, zoom_region: Optional[Tuple[int, int]] = None):
+                          highlight_signals: bool = True, zoom_region: Optional[Tuple[int, int]] = None, test_win_rate: float = 0.0):
     if start_idx == -1:
         start_idx = max(0, len(df) - sample)
     plot_df = df.iloc[start_idx:start_idx + sample].copy()
@@ -983,7 +983,7 @@ def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: 
 
     plt.setp(ax3.xaxis.get_majorticklabels(), rotation=45, ha='right')
     for ax in [ax1, ax2]: ax.tick_params(labelbottom=False)
-    plt.suptitle('🔗 Linked Technical Analysis Dashboard (Zoom: sharex enabled)', fontsize=14, fontweight='bold', y=0.995)
+    plt.suptitle(f'🔗 Linked Technical Analysis Dashboard (Test Win Rate: {test_win_rate:.2%} | Zoom: sharex enabled)', fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     fig.text(0.5, 0.01, "💡 Tip: Use mouse wheel to zoom, drag to pan — all panels stay synchronized!", ha='center', fontsize=9, style='italic', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
     plt.show()
@@ -1276,6 +1276,7 @@ def entry(args):
         if study.best_value is not None and study.best_value >= 0.9999:
             print("\n🎯 Perfect score reached (≥ 0.9999). Stopping optimization early.")
             study.stop()
+
     study = optuna.create_study(**create_study_kwargs)
     study.optimize(objective, n_trials=args.n_trials, show_progress_bar=args.verbose, timeout=args.timeout, callbacks=[perfect_score_callback, ])
 
@@ -1329,7 +1330,15 @@ def entry(args):
             print(f"   Target Mode: '{args.target_type}'")
             print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
         if plot_results and not args.disable_plot_sample:
-            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample, optimize_target=optimize_target)
+            # Determine test win rate based on optimization target
+            if args.optimize_target == "buy":
+                wr = metrics.get('long_accuracy', 0.0)
+            elif args.optimize_target == "sell":
+                wr = metrics.get('short_accuracy', 0.0)
+            else:
+                wr = metrics.get('accuracy', 0.0)
+
+            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample, optimize_target=optimize_target, test_win_rate=wr)
         return df_results, metrics
 
     # Run on training set (backtest)
