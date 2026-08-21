@@ -78,6 +78,7 @@ def entry():
                     config = Namespace(realtime=True, use_realtime_data=False, clip_n=clip_n, model_file=target_file, verbose=False)
                     live_result = apcs_entry_point(config)['local_results']
                     if live_result['reason'] is None:
+                        assert live_result['Signal'] in ["BUY", "SELL"]
                         test_wr = live_result['model_info']['test_wr']
                         close_col = live_result['close_col']
                         open_col = live_result['open_col']
@@ -105,12 +106,10 @@ def entry():
                         assert live_result['Entry_Execution'] == 'NextOpen'
                         if values_of_bar_on_which_entry_is_made is None:
                             continue
-                        entry_price = values_of_bar_on_which_entry_is_made[open_col]
+                        entry_price = values_of_bar_on_which_entry_is_made[open_col]*live_result['model_info']['buy_offset'] if live_result['Signal']=="BUY" else values_of_bar_on_which_entry_is_made[open_col]*live_result['model_info']['sell_offset']
                         entry_date = values_of_bar_on_which_entry_is_made.name
                         exit_price = values_of_bar_on_which_credit_spread_expired[close_col]
                         exit_date = values_of_bar_on_which_credit_spread_expired.name
-
-                        assert live_result['Signal'] in ["BUY", "SELL"]
                         is_success = entry_price < exit_price if live_result['Signal'] == "BUY" else entry_price > exit_price
 
                         # Initialisation des stats pour ce modèle spécifique si premier passage
