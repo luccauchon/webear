@@ -9,7 +9,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import argparse
-import pathlib
+from pathlib import Path
 from argparse import Namespace
 import os
 from datetime import datetime
@@ -80,6 +80,7 @@ def entry():
                     if live_result['reason'] is None:
                         test_wr = live_result['model_info']['test_wr']
                         close_col = live_result['close_col']
+                        open_col = live_result['open_col']
                         lookahead = live_result['model_info']['lookahead']
                         dataset_id = live_result['model_info']['dataset_id']
                         df_realtime = live_result['df_realtime']
@@ -87,18 +88,30 @@ def entry():
                         density = live_result['model_info']['test_den']
                         bar_on_which_signal_was_triggered = df_realtime.index[-1]
                         bar_on_which_credit_spread_expired = get_next_step(the_date=bar_on_which_signal_was_triggered, dataset_id=dataset_id, nn=lookahead)
-
+                        bar_on_which_entry_is_made = get_next_step(the_date=bar_on_which_signal_was_triggered, dataset_id=dataset_id, nn=1)
                         while True:
                             try:
                                 values_of_bar_on_which_credit_spread_expired = df_realtime_not_clipped.loc[bar_on_which_credit_spread_expired]
                                 break
                             except KeyError:
                                 bar_on_which_credit_spread_expired = get_next_step(the_date=bar_on_which_credit_spread_expired, dataset_id=dataset_id, nn=lookahead)
+                        while True:
+                            try:
+                                values_of_bar_on_which_entry_is_made = df_realtime_not_clipped.loc[bar_on_which_entry_is_made]
+                                break
+                            except KeyError:
+                                values_of_bar_on_which_entry_is_made = None
+                                break
+                        assert live_result['Entry_Execution'] == 'NextOpen'
+                        if values_of_bar_on_which_entry_is_made is None:
+                            continue
+                        entry_price = values_of_bar_on_which_entry_is_made[open_col]
+                        entry_date = values_of_bar_on_which_entry_is_made.name
+                        exit_price = values_of_bar_on_which_credit_spread_expired[close_col]
+                        exit_date = values_of_bar_on_which_credit_spread_expired.name
 
-                        entry_price = live_result['Price']
-                        price_at_expiration = values_of_bar_on_which_credit_spread_expired[close_col]
                         assert live_result['Signal'] in ["BUY", "SELL"]
-                        is_success = entry_price < price_at_expiration if live_result['Signal'] == "BUY" else entry_price > price_at_expiration
+                        is_success = entry_price < exit_price if live_result['Signal'] == "BUY" else entry_price > exit_price
 
                         # Initialisation des stats pour ce modèle spécifique si premier passage
                         if model_name not in compilation["by_model"]:
@@ -112,11 +125,12 @@ def entry():
                             compilation["global"]["failure"] += 1
                             compilation["by_model"][model_name]["failure"] += 1
                         if args.verbose_per_study:
-                            dual_print(f"{live_result['Signal']} ({live_result['type_option']}) at Entry: {entry_price:.2f} on {live_result['Date'].strftime('%Y-%m-%d')} "
-                                  f"| Price at Expiration: {price_at_expiration:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d')}) "
+                            assert live_result['Date'] == bar_on_which_signal_was_triggered
+                            assert exit_date == bar_on_which_credit_spread_expired
+                            dual_print(f"[{Path(file).stem}] | {live_result['Signal']} ({live_result['type_option']}) | Triggered: {live_result['Date'].strftime('%Y-%m-%d_%H%M')} | Entry: {entry_price:.2f} ({entry_date.strftime('%Y-%m-%d_%H%M')}) "
+                                  f"| Exit: {exit_price:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d_%H%M')}) "
                                   f"| {'Success' if is_success else 'Failure'} "
-                                  f"| {test_wr:.2%} probability of success | Density: {density:.2%}")
-
+                                  f"| twr: {test_wr:.2%} | Density: {density:.2%}")
                     elif 'no more data' in live_result['reason']:
                         raise NoMoreDataException()
     except NoMoreDataException:
