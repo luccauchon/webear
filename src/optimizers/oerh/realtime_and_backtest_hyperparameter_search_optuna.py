@@ -325,7 +325,7 @@ def load_model(model_path: str) -> dict:
     return model_data
 
 
-def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, signal_density):
+def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, signal_density, command_line):
     """Save the best model parameters and metadata to a pickle file."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.optimize_target == "buy":
@@ -356,7 +356,8 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
             'val_short_win_rate': metrics_val.get('short_accuracy', 0.0),
             'train_accuracy': metrics_train.get('accuracy', 0.0),
             'val_accuracy': metrics_val.get('accuracy', 0.0),
-        }
+        },
+        'command_line': command_line,
     }
     os.makedirs(output_dir, exist_ok=True)
     with open(model_filename, 'wb') as f:
@@ -369,6 +370,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
+    command_line = model_data['command_line'] if 'command_line' in model_data else ""
     params = model_data['best_params']
     metadata = model_data.get('metadata', {})
     assert 'lookahead_bars' in metadata
@@ -398,6 +400,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
         print(model_data)
         assert False, f"TODO: {metric_used}"
     if verbose:
+        print(f"\n🛠 Command Line: {command_line}")
         print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
         print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
               f":: Test Win Rate: {val_win_rate:.2%}  @{signal_ratio:.2%} signal density")
@@ -1074,6 +1077,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 
 def entry(args):
+    command_line = "python " + " ".join(sys.argv)
     # ✅ JIT VALIDATION (optional, disabled by default)
     if args.validate_jit:
         if not _validate_jit_consistency(verbose=args.verbose):
@@ -1377,7 +1381,8 @@ def entry(args):
         metrics_train=metrics_train,
         metrics_val=metrics_val,
         args=args,
-        signal_density=signal_density
+        signal_density=signal_density,
+        command_line=command_line,
     )
 
     return metrics_val, metrics_train
