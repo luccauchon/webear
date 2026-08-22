@@ -773,7 +773,7 @@ def entry_main(args):
             return JournalStorage(JournalFileBackend(file_path))
         # Pour sqlite://, postgresql://, redis://, etc.
         return url
-    storage_url = parse_storage_url(args.storage)
+    storage_url = parse_storage_url(storage_url)
     print(f"\n🔬 Initializing Optuna study: '{study_name}' using storage {storage_url}")
     study = optuna.create_study(study_name=study_name, direction="maximize",
                                 sampler=TPESampler(seed=random_seed),
