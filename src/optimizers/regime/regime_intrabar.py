@@ -668,7 +668,7 @@ def entry_main(args):
     np.random.seed(random_seed)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    print(f"🚀 Starting Bullish Day Regime Optimization")
+    print(f"🚀 Starting Bullish IntraBar Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
     print(f"   Target: Close > Open | Mininum number of samples in a cluster: {min_n_in_cluster}  (yet don't understand why this is needed)")
     print(f"   Trials: {max_n_trials} | Timeout: {timeout}s")
