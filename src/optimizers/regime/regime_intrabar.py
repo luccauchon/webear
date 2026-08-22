@@ -8,10 +8,11 @@ Optimizes clustering-based market regime detection to identify conditions
 favorable for bullish price action (Close > Open) using Optuna for hyperparameter tuning.
 
 Key Features:
-• Regime detection via K-Means or Gaussian Mixture clustering
+• Regime detection via K-Means, Gaussian Mixture, or BIRCH clustering
 • Binary target: 1 if Close > Open (bullish day), 0 otherwise
 • Expectancy-based filtering with risk-adjusted edge ratio
-• Optuna optimization with SQLite/PostgreSQL persistence
+• Optuna optimization with TimeSeriesSplit cross-validation for generalizability
+• SQLite/PostgreSQL persistence
 • CLI interface for flexible configuration
 • Configurable enhanced features via --add-enhanced-features flag
 
@@ -43,7 +44,8 @@ import warnings
 from pathlib import Path
 from datetime import datetime
 import shutil
-
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 # Technical analysis
 import pandas_ta as ta
 from pandas_ta import macd
@@ -57,6 +59,7 @@ from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN, Birch, OPTI
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
 from sklearn.neighbors import NearestNeighbors
+from sklearn.model_selection import TimeSeriesSplit
 
 # Optimization
 import optuna
@@ -66,6 +69,7 @@ from optuna.samplers import TPESampler
 # Statistics
 from statsmodels.stats.proportion import proportion_confint
 from numba import njit
+
 # Logging configuration
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -130,8 +134,7 @@ def generate_model_filename(_ticker, _study_name, _params, _metadata_extra=None)
     n_clusters = _params.get('n_clusters', 'NA')
     enhanced = "enh" if _metadata_extra and _metadata_extra.get('add_enhanced_features', False) else "std"
 
-    # For Close>Open target, these are metadata only (not used in logic)
-    target_type = "bullish"  # New target identifier
+    target_type = "bullish"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     filename = (
@@ -215,23 +218,6 @@ def print_all_cluster_characteristics(_stats, _features, _model, _scaler, _n_clu
 def should_trade_binary_outcome(_regime_stats, _win_payout, _loss_amount, _min_edge_ratio):
     """
     Evaluate whether a trade has positive expectancy given regime probabilities.
-
-    This function is generalized for any binary outcome (e.g., Close > Open).
-
-    Parameters:
-    -----------
-    _regime_stats : dict
-        Must contain 'prob_bullish' (probability of favorable outcome)
-    _win_payout : float
-        Profit if outcome is favorable (e.g., +1.0 for +100% return)
-    _loss_amount : float
-        Loss if outcome is unfavorable (e.g., 1.0 for -100% return)
-    _min_edge_ratio : float
-        Minimum edge per dollar risked to approve trade
-
-    Returns:
-    --------
-    dict with trade decision and metrics
     """
     prob_bullish = _regime_stats.get('prob_bullish')
 
@@ -245,7 +231,6 @@ def should_trade_binary_outcome(_regime_stats, _win_payout, _loss_amount, _min_e
     expectancy = (prob_bullish * _win_payout) - (prob_bearish * _loss_amount)
     edge_ratio = expectancy / _loss_amount if _loss_amount > 0 else 0
 
-    # Break-even: p*win - (1-p)*loss = 0 → p = loss / (win + loss)
     denominator = _win_payout + _loss_amount
     break_even_prob = _loss_amount / denominator if denominator > 0 else 1.0
 
@@ -305,9 +290,6 @@ def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3,
                    _rsi_length, _ema1, _ema2, _atr_period, _add_enhanced_features):
     """
     Build technical features for regime classification.
-
-    Features include: returns, volatility, momentum, trend, volume,
-    seasonality, and enhanced metrics (tail risk, Bollinger Bands, ADX, etc.)
     """
     close = _df["Close"]
     _features = pd.DataFrame(index=_df.index)
@@ -438,16 +420,6 @@ def build_features(_df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3,
 def build_target(_df, _bullish_threshold=0.0):
     """
     Build binary target: 1 if Close > Open * (1 + threshold), 0 otherwise.
-
-    Parameters:
-    -----------
-    _df : pd.DataFrame with 'Close' and 'Open' columns
-    _bullish_threshold : float, optional (default=0.0)
-        Minimum fractional gain required. E.g., 0.005 = Close must exceed Open by 0.5%%
-
-    Returns:
-    --------
-    pd.Series : Binary target aligned with dataframe index
     """
     close = _df["Close"]
     open_price = _df["Open"]
@@ -515,7 +487,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         print("⚡ REAL-TIME INFERENCE MODE – Bullish Day Prediction")
         print("-" * 60)
 
-    # Handle --list-models
     if list_models:
         models_dir = Path(args.output_dir)
         if not models_dir.exists():
@@ -535,7 +506,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         print("─" * 70)
         return
 
-    # Determine model path
     if model_filename:
         model_path = f"{args.output_dir}/{args.model_filename}"
         if not os.path.exists(model_path):
@@ -554,7 +524,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
                 return
             model_path = str(max(models, key=lambda x: x.stat().st_mtime))
 
-    # Load model
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
 
@@ -572,7 +541,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
     if not hyper_silence:
         print(f"✅ Model loaded ({_metadata.get('timestamp', 'N/A')})")
 
-    # Load data
     try:
         df = load_data(ticker, _metadata['dataset_id'])
         if not hyper_silence:
@@ -581,7 +549,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         print(f"❌ ERROR loading data: {e}")
         return
 
-    # Clip incomplete bar if needed
     if _metadata['dataset_id'] in ['day', 'week', 'month'] and args.clip:
         now = datetime.now()
         if _metadata['dataset_id'] == 'day' and now.date() == df.index[-1].date():
@@ -591,7 +558,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         elif _metadata['dataset_id'] == 'month' and not is_last_weekend_of_month(now):
             df = df.iloc[:-1].copy()
 
-    # Build features with saved params
     features = build_features(
         _df=df,
         _pct1=_params.get('pct1', 5), _pct2=_params.get('pct2', 10), _pct3=_params.get('pct3', 20),
@@ -602,7 +568,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         _add_enhanced_features=use_enhanced_features,
     )
 
-    # Predict latest regime
     valid_features = features.dropna()
     if len(valid_features) == 0:
         print("❌ ERROR: No valid features")
@@ -619,15 +584,12 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
 
     regime_stats = _stats[regime]
 
-    # Print report
     if normal_verbose and not hyper_silence:
         print_report(regime, regime_stats, latest_date, latest_close)
 
-    # Show all regimes summary
     if normal_verbose and not hyper_silence:
         print_all_regimes_summary(_stats=_stats, _n_clusters=_params['n_clusters'], bullish_threshold=model_threshold)
 
-    # Final output
     regime_probs = {r: _stats[r]['prob_bullish'] for r in range(_params['n_clusters']) if r in _stats}
     regime_counts = {r: _stats[r]['count'] for r in range(_params['n_clusters']) if r in _stats}
     sorted_r = dict(sorted(regime_probs.items(), key=lambda x: x[1], reverse=True))
@@ -649,7 +611,6 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
 # =========================================================
 def entry_main(args):
     """Main execution pipeline for regime optimization."""
-    # Extract arguments
     ticker = getattr(args, 'ticker', '^GSPC')
     dataset_id = getattr(args, 'dataset_id', 'day')
     study_name = getattr(args, 'study_name', 'bullish_clustering')
@@ -660,9 +621,8 @@ def entry_main(args):
     random_seed = getattr(args, 'random_seed', DEFAULT_RANDOM_SEED)
     min_n_in_cluster = getattr(args, 'min_n_in_cluster', 160)
 
-    # Trade evaluation params (generalized for binary outcome)
-    win_payout = getattr(args, 'credit_received', 1.0)  # Profit if Close > Open
-    loss_amount = getattr(args, 'spread_width', 1.0) - getattr(args, 'credit_received', 0.0)  # Loss if not
+    win_payout = getattr(args, 'credit_received', 1.0)
+    loss_amount = getattr(args, 'spread_width', 1.0) - getattr(args, 'credit_received', 0.0)
     min_edge_ratio = getattr(args, 'min_edge_ratio', 0.04)
 
     np.random.seed(random_seed)
@@ -670,12 +630,11 @@ def entry_main(args):
 
     print(f"🚀 Starting Bullish IntraBar Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
-    print(f"   Target: Close > Open | Mininum number of samples in a cluster: {min_n_in_cluster}  (yet don't understand why this is needed)")
-    print(f"   Trials: {max_n_trials} | Timeout: {timeout}s")
+    print(f"   Target: Close > Open | Min samples in a cluster: {min_n_in_cluster}")
+    print(f"   Trials: {max_n_trials} | Timeout: {timeout}s | CV Splits: {args.cv_splits}")
     print(f"   Enhanced Features: {'✅ ENABLED' if args.add_enhanced_features else '❌ DISABLED (standard)'}")
     print("-" * 60)
 
-    # Load data
     df = load_data(ticker, dataset_id)
     if args.lookback_years > 0:
         rows_per_year = {'day': 252, 'week': 52, 'month': 12}.get(dataset_id, 252)
@@ -683,17 +642,15 @@ def entry_main(args):
         print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
         df = df.iloc[-cutoff:].copy()
 
-    print(f"📦 Loaded {len(df)} rows ({df.index[0].date()} to {df.index[-1].date()})")
-
     total_rows = len(df)
-    split_idx = int(len(df) * 0.8)
-    print(f"   Train: {split_idx} | Test: {total_rows - split_idx}")
+    print(f"📦 Loaded {total_rows} rows ({df.index[0].date()} to {df.index[-1].date()})")
+    print(f"   Validation: TimeSeriesSplit with {args.cv_splits} folds")
 
     # =========================================================
     # OPTUNA OBJECTIVE FUNCTION
     # =========================================================
     def objective(trial):
-        """Maximize regime-based predictive edge for bullish days."""
+        """Maximize regime-based predictive edge for bullish days using TimeSeries CV."""
         # Hyperparameter suggestions (dataset-specific ranges)
         if dataset_id == 'day':
             _n_clusters = trial.suggest_int("n_clusters", args.min_clusters, args.max_clusters)
@@ -714,80 +671,110 @@ def entry_main(args):
             _ema1, _ema2 = trial.suggest_int("ema1", 2, 6), trial.suggest_int("ema2", 12, 24)
             _atr_period, _rsi_length = trial.suggest_int("atr_period", 3, 8), trial.suggest_int("rsi_length", 4, 10)
 
-        _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture"])
+        # Added "birch" to categorical choices so it can actually be sampled
+        _clustering_algo = trial.suggest_categorical("clustering_algo", ["kmeans", "gaussian_mixture", "birch"])
 
-        # Time-series split (prevent look-ahead bias)
-        df_train, df_test = df.iloc[:split_idx].copy(), df.iloc[split_idx:].copy()
+        # Build features & target for the entire dataset (or lookback period)
+        # This is safe from look-ahead bias because rolling windows only use past data.
+        # Building once per trial is also more efficient and prevents edge-effect NaNs at split boundaries.
+        feats = build_features(df, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3,
+                               _rsi_length, _ema1, _ema2, _atr_period,
+                               _add_enhanced_features=args.add_enhanced_features)
+        targ = build_target(df, _bullish_threshold=args.bullish_threshold)
+        data = pd.concat([feats, targ.rename('target')], axis=1).dropna()
 
-        # Build features & target
-        def _build(df_subset):
-            feats = build_features(df_subset, _pct1, _pct2, _pct3, _vol1, _vol2, _vol3,
-                                   _rsi_length, _ema1, _ema2, _atr_period,
-                                   _add_enhanced_features=args.add_enhanced_features)
-            targ = build_target(df_subset, _bullish_threshold=args.bullish_threshold)
-            return pd.concat([feats, targ.rename('target')], axis=1).dropna()
-
-        train_data, test_data = _build(df_train), _build(df_test)
-        # Validate minimum data requirements
-        if len(train_data) < 1 or len(test_data) < 1:
-            return 0.0  # length of "0" make Optuna crash
-
-        # Scale features (fit on train only)
-        scaler = RobustScaler()
-        X_train = scaler.fit_transform(train_data.drop(columns=['target']))
-        X_test = scaler.transform(test_data.drop(columns=['target']))
-
-        # Train clustering model
-        if _clustering_algo == 'kmeans':
-            model = KMeans(n_clusters=_n_clusters, init='k-means++', n_init=10, max_iter=900,
-                           tol=1e-4, random_state=random_seed, algorithm='lloyd', verbose=0)
-        elif _clustering_algo == 'gaussian_mixture':
-            model = GaussianMixture(n_components=_n_clusters, covariance_type='full', tol=1e-3,
-                                    reg_covar=1e-5, max_iter=900, n_init=20, init_params='k-means++',
-                                    random_state=random_seed, verbose=0)
-        elif _clustering_algo == 'birch':
-            _thresh = trial.suggest_float("birch_threshold", 0.1, 1.0, log=True)
-            _branch = trial.suggest_int("birch_branching", 20, 100)
-            model = Birch(threshold=_thresh, branching_factor=_branch, n_clusters=_n_clusters)
-        else:
-            raise ValueError(f"Unknown algorithm: {_clustering_algo}")
-
-        regimes_train = model.fit_predict(X_train)
-        regimes_test = model.predict(X_test)
-        test_data = test_data.copy()
-        test_data['regime'] = regimes_test
-
-        # Evaluate each regime on test data
-        scores, valid = [], 0
-        for r in range(_n_clusters):
-            subset = test_data[test_data["regime"] == r]["target"]
-            if len(subset) < min_n_in_cluster:
-                continue
-
-            prob_bullish = subset.mean()
-            prob_score = prob_bullish
-            consistency = 1 - (prob_bullish * (1 - prob_bullish))
-            sample_bonus = np.clip(len(subset) / (2 * min_n_in_cluster), 0, 1)
-
-            # Separation from other regimes
-            other = [test_data[test_data["regime"] == i]["target"].mean()
-                     for i in range(_n_clusters) if i != r and len(test_data[test_data["regime"] == i]["target"]) >= min_n_in_cluster]
-            separation = abs(prob_bullish - np.average(other, weights=[len(test_data[test_data["regime"] == i]["target"])
-                                                                       for i in range(_n_clusters) if i != r and len(test_data[test_data["regime"] == i]["target"]) >= min_n_in_cluster])) if len(other) >= 2 else (abs(prob_bullish - other[0]) if other else 0)
-
-            combined = 0.50 * prob_score + 0.25 * consistency + 0.15 * sample_bonus + 0.10 * separation
-            scores.append(combined)
-            valid += 1
-
-        if not scores:
+        if len(data) < 100:
             return 0.0
-        base = np.mean(scores)
-        return base * (valid / _n_clusters) if args.penalize_invalid_cluster else base
+
+        # Time-series cross-validation to ensure generalizability
+        tscv = TimeSeriesSplit(n_splits=args.cv_splits)
+        fold_scores = []
+        for train_idx, val_idx in tscv.split(data):
+            train_data = data.iloc[train_idx]
+            val_data = data.iloc[val_idx]
+
+            # Scale features (fit on train only to prevent data leakage)
+            scaler = RobustScaler()
+            X_train = scaler.fit_transform(train_data.drop(columns=['target']))
+            X_val = scaler.transform(val_data.drop(columns=['target']))
+
+            # Train clustering model
+            if _clustering_algo == 'kmeans':
+                model = KMeans(n_clusters=_n_clusters, init='k-means++', n_init=10, max_iter=900,
+                               tol=1e-4, random_state=random_seed, algorithm='lloyd', verbose=0)
+            elif _clustering_algo == 'gaussian_mixture':
+                model = GaussianMixture(n_components=_n_clusters, covariance_type='full', tol=1e-3,
+                                        reg_covar=1e-5, max_iter=900, n_init=20, init_params='k-means++',
+                                        random_state=random_seed, verbose=0)
+            elif _clustering_algo == 'birch':
+                _thresh = trial.suggest_float("birch_threshold", 0.1, 1.0, log=True)
+                _branch = trial.suggest_int("birch_branching", 20, 100)
+                model = Birch(threshold=_thresh, branching_factor=_branch, n_clusters=_n_clusters)
+            else:
+                raise ValueError(f"Unknown algorithm: {_clustering_algo}")
+
+            regimes_train = model.fit_predict(X_train)
+            regimes_val = model.predict(X_val)
+
+            val_data = val_data.copy()
+            val_data['regime'] = regimes_val
+
+            # Evaluate each regime on validation data
+            scores = []
+            valid_regimes = 0
+            for r in range(_n_clusters):
+                subset = val_data[val_data["regime"] == r]["target"]
+                if len(subset) < min_n_in_cluster:
+                    continue
+
+                prob_bullish = subset.mean()
+                prob_score = prob_bullish
+                consistency = 1 - (prob_bullish * (1 - prob_bullish))
+                sample_bonus = np.clip(len(subset) / (2 * min_n_in_cluster), 0, 1)
+
+                # Separation from other regimes
+                other_probs = []
+                other_weights = []
+                for i in range(_n_clusters):
+                    if i != r:
+                        other_subset = val_data[val_data["regime"] == i]["target"]
+                        if len(other_subset) >= min_n_in_cluster:
+                            other_probs.append(other_subset.mean())
+                            other_weights.append(len(other_subset))
+
+                if len(other_probs) >= 2:
+                    separation = abs(prob_bullish - np.average(other_probs, weights=other_weights))
+                elif len(other_probs) == 1:
+                    separation = abs(prob_bullish - other_probs[0])
+                else:
+                    separation = 0
+
+                combined = 0.50 * prob_score + 0.25 * consistency + 0.15 * sample_bonus + 0.10 * separation
+                scores.append(combined)
+                valid_regimes += 1
+
+            if not scores:
+                fold_scores.append(0.0)
+            else:
+                base = np.mean(scores)
+                fold_scores.append(base * (valid_regimes / _n_clusters) if args.penalize_invalid_cluster else base)
+        alpha = 0.5
+        final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
+        return final_score
 
     # =========================================================
     # OPTUNA STUDY SETUP
     # =========================================================
-    print(f"\n🔬 Initializing Optuna study: '{study_name}'")
+    def parse_storage_url(url: str):
+        """Convertit une chaîne d'URL en objet Storage Optuna adapté."""
+        if url.startswith("journal://"):
+            # Extrait le chemin après "journal://"
+            file_path = url.replace("journal://", "", 1)
+            return JournalStorage(JournalFileBackend(file_path))
+        # Pour sqlite://, postgresql://, redis://, etc.
+        return url
+    storage_url = parse_storage_url(args.storage)
+    print(f"\n🔬 Initializing Optuna study: '{study_name}' using storage {storage_url}")
     study = optuna.create_study(study_name=study_name, direction="maximize",
                                 sampler=TPESampler(seed=random_seed),
                                 pruner=MedianPruner(n_startup_trials=10),
@@ -948,6 +935,9 @@ if __name__ == "__main__":
     parser.add_argument("--timeout", type=int, default=86400, help="Max runtime (seconds)")
     parser.add_argument("--n-jobs", type=int, default=1, help="Parallel jobs")
     parser.add_argument("--random-seed", type=int, default=DEFAULT_RANDOM_SEED, help="Reproducibility seed")
+
+    # Cross-validation config
+    parser.add_argument("--cv-splits", type=int, default=5, help="Number of splits for TimeSeriesSplit cross-validation")
 
     # Clustering config
     parser.add_argument("--min-n-in-cluster", type=int, default=33, help="Min samples per cluster")
