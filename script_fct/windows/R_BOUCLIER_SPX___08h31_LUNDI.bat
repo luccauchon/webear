@@ -17,10 +17,10 @@ if not defined HEURE goto SUIVANT
 :: Le caractère | doit être échappé avec ^ en batch
 :: echo [%DATE% %TIME%] Debug - Jour: !JOUR! ^| Heure: !HEURE!
 
-:: 2. Vérification du Lundi au Vendredi à 08:31
-if !JOUR! geq 1 if !JOUR! leq 5 (
+:: 2. Vérification du Lundi
+if "%JOUR%"=="1" (
     if "!HEURE!"=="08:31" (        
-        start "BOUCLIER SPX" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\SPX_drop & python player.py --production-setup"
+        start "BOUCLIER SPX" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\SPX_drop & python player.py --production-setup --update-dataset"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )

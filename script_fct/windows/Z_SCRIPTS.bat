@@ -30,7 +30,7 @@ start "ATR P ZONE" cmd /k "call R_ATR_PROBABILITY_ZONE___09h31_09h39m.bat"
 start "STREAK PROBABILITY" cmd /k "call R_STREAK_PROBABILITY___16h19_15h45.bat"
 
 :: Script 9 :
-start "BOUCLIER SPX" cmd /k "call R_BOUCLIER_SPX___08h31.bat"
+start "BOUCLIER SPX" cmd /k "call R_BOUCLIER_SPX___08h31_LUNDI.bat"
 
 :: Script 10 :
 start "PERSISTANCE CONDITIONNELLE ECART SPX" cmd /k "call R_PERSISTANCE_CONDITIONNELLE_ECART_SPX___08h41.bat"
