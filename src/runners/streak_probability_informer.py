@@ -13,7 +13,7 @@ from argparse import Namespace
 from graphics.plotly_close_oriented import main as plotly_close_oriented
 from utils import send_html_email
 from pathlib import Path
-from constants import GET_EMAILS
+from constants import GET_EMAILS, TITLE_WEBEAR
 
 
 def get_parser():
@@ -34,7 +34,7 @@ def entry(args):
     output_file = Path(result['output_filename'])
     target_date = result['target_date']
     destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
-    subject=f"Analyse statistique des séries | {args.ticker} | {args.dataset_id} | {target_date.strftime('%Y-%m-%d %H:%M')}"
+    subject=f"{TITLE_WEBEAR} | Analyse statistique des séries | {args.ticker} | {args.dataset_id} | {target_date.strftime('%Y-%m-%d %H:%M')}"
     string_generated = "Bonjour,\n"
     tt1 = "jours" if args.dataset_id in ["day"] else ("semaines"if args.dataset_id in ["week"] else ("mois" if args.dataset_id in ["month"] else "?"))
     string_generated += (f"Quand le prix d'une action baisse (ou monte) plusieurs {tt1} de suite, "

@@ -366,7 +366,7 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
     print(f"\n💾 Best model saved as: {model_filename}")
 
 
-def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int):
+def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int, use_realtime_data):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
@@ -378,12 +378,12 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
     dataset_id = metadata.get('dataset_id')
     ticker = metadata.get('ticker')
 
-    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n})
+    df = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": clip_n, "realtime": use_realtime_data})
     assert isinstance(df.columns, pd.MultiIndex)
     df.columns = ['_'.join(str(c) for c in col).strip('_') for col in df.columns]
     price_col = f'Close_{ticker}'
 
-    signal_ratio = model_data['user_attrs']['signal_ratio']
+    test_signal_ratio = model_data['user_attrs']['signal_ratio']  # C'est la valeur de test
     metric_used = model_data['user_attrs']['metric_used']
     assert 'threshold_pct' in metadata
     threshold_pct = params.get('threshold_pct', metadata.get('threshold_pct', 0.))
@@ -403,7 +403,7 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
         print(f"\n🛠 Command Line: {command_line}")
         print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
         print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
-              f":: Test Win Rate: {val_win_rate:.2%}  @{signal_ratio:.2%} signal density")
+              f":: Test Win Rate: {val_win_rate:.2%}  @{test_signal_ratio:.2%} signal density")
 
     # Determine minimum history needed for indicators
     assert 'rsi_period' in params and 'macd_slow' in params
@@ -501,10 +501,10 @@ def run_real_time(model_path: str, output_signal_only: bool, verbose: bool, clip
                 else:
                     target_mode_desc = "exact future point"
                 print(f"\n🎯 Real-Time Signal Detected:")
-                print(f"On {current_date.strftime('%Y-%m-%d')} {ticker_display} is at {current_price:.2f} and {direction} activated for +{lookahead_bars}Bars , {ticker_display} {operator} {target_price:.2f} on {target_date.strftime('%Y-%m-%d')}")
+                print(f"On {current_date.strftime('%Y-%m-%d_%H%M')} {ticker_display} is at {current_price:.2f} and {direction} activated for +{lookahead_bars}Bars , {ticker_display} {operator} {target_price:.2f} on {target_date.strftime('%Y-%m-%d_%H%M')}")
                 print(f"   Threshold: {threshold_pct * 100:.2f}% | Target Mode: '{target_type}' ({target_mode_desc}) | Model: {os.path.basename(model_path)}\n")
             else:
-                print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d')}: {ticker_display} at {current_price:.2f}")
+                print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d_%H%M')}: {ticker_display} at {current_price:.2f}")
                 print(f"   (Threshold: {threshold_pct * 100:.4f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
 
     return signal, current_price, current_date.strftime('%Y-%m-%d'), target_price, target_date, train_win_rate, val_win_rate, threshold_pct, f"{metric_used}::{target_type}", dataset_id, ticker, lookahead_bars
@@ -1058,10 +1058,11 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     realtime_grp = parser.add_argument_group("Real-Time Mode")
     realtime_grp.add_argument(
-        "--real-time",
+        "--realtime",
         action="store_true",
         help="Run in real-time mode: evaluate only the latest data point using a saved model"
     )
+    realtime_grp.add_argument("--use-realtime-data", action=argparse.BooleanOptionalAction, default=False)
     realtime_grp.add_argument(
         "--model-path",
         type=str,
@@ -1087,10 +1088,10 @@ def entry(args):
         warmup_jit()
 
     # ✅ REAL-TIME MODE: Load model and evaluate latest point only
-    if args.real_time:
+    if args.realtime:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
-        return run_real_time(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip_n=args.clip_n)
+        return run_realtime(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip_n=args.clip_n, use_realtime_data=args.use_realtime_data)
 
     if args.verbose:
         print("✅ __doc__ length:", len(__doc__ or ""))

@@ -305,7 +305,12 @@ def entry():
     print("| **4–6**  | Medium risk                                      | Reduce size 30–50%            |")
     print("| **7–8**  | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
     # Note: max possible is 8 (2+3+1? Actually A=3, B=3, C=2 → max=8)
-    return score, str_response
+    recommendation = "| **0–3**  | Low drop probability                             | Enter normal position         |"
+    if 4 <= score <= 6:
+        recommendation = "| **4–6**  | Medium risk                                      | Reduce size 30–50%            |"
+    elif 7 <= score <= 8:
+        recommendation = "| **7–8**  | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |"
+    return {'score': score, 'str_response': str_response, 'recommendation': recommendation}
 
 
 if __name__ == "__main__":

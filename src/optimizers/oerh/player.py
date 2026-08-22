@@ -41,6 +41,7 @@ def parse_args():
         help="Hide rows where signal is 0 (default: False)"
     )
     parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    parser.add_argument("--use-realtime-data", action=argparse.BooleanOptionalAction, default=False)
     return parser.parse_args()
 
 
@@ -75,6 +76,7 @@ def entry(args):
             verbose=verbose,
             validate_jit=False,
             clip=args.clip,
+            use_realtime_data=getattr(args, 'use_realtime_data', False),
         )
         try:
             signal, current_price, current_date, target_price, target_date, train_acc, val_acc, threshold_pct, metric_used_and_target_type, dataset_id, ticker, lookahead_bars = oerh(configuration)

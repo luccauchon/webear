@@ -20,6 +20,9 @@ import os
 from datetime import datetime, timedelta
 from constants import FYAHOO_SPX500__OUTPUTFILENAME
 from tqdm import tqdm
+import argparse
+from pathlib import Path
+
 
 # Step 1: Parse S&P 500 tickers from your local HTML file
 def get_sp500_tickers_from_file(filepath):
@@ -53,28 +56,41 @@ def download_sp500_data(tickers, period="max"):
     print(f"Downloading data for {len(tickers)} tickers...")
     for i, ticker in enumerate(tqdm(tickers)):
         try:
-            # data = yf.download(ticker, period=period, progress=False, auto_adjust=True)
             end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
             start_date = "2020-01-01"
             data = yf.download(ticker, start=start_date, end=end_date, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
             if not data.empty:
                 all_data[ticker] = data
+            else:
+                print(f"Failed to download {ticker}")
                 failed_tickers.append(ticker)
         except Exception as e:
             print(f"Failed to download {ticker}: {e}")
             failed_tickers.append(ticker)
-        time.sleep(0.5)  # Be respectful to Yahoo's servers
+        time.sleep(0.25)  # Be respectful to Yahoo's servers
 
     print(f"\nDownload complete. Failed tickers: {failed_tickers}")
     return all_data, failed_tickers
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="",
+        description=""
+    )
+    parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--html-file",type=str,default=None,help="")
+    return parser.parse_args()
+
+
 # Step 3: Main execution
-if __name__ == "__main__":
+def entry(args):
     # Save this web-page to data
     # https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
-    from pathlib import Path
-    html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.2026.05.29.html').resolve()
+    if args.html_file is None:
+        html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.2026.08.21.html').resolve()
+    else:
+        html_file = args.html_file
     print(f"Reading file {html_file}")
 
     if not os.path.exists(html_file):
@@ -94,3 +110,8 @@ if __name__ == "__main__":
         print(f"\nAll data saved to {FYAHOO_SPX500__OUTPUTFILENAME}")
     else:
         print("No data downloaded.")
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    entry(args)

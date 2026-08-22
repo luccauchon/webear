@@ -25,6 +25,7 @@ import pandas_ta as ta
 import pandas_datareader.data as web
 import logging
 from constants import FYAHOO_SPX500__OUTPUTFILENAME as LOCAL_SP500_PARQUET, FYAHOO__OUTPUTFILENAME_DAY
+from constants import FRED_API_KEY
 from utils import get_filename_for_dataset, DATASET_AVAILABLE, str2bool
 import pickle
 
@@ -32,7 +33,6 @@ import pickle
 # ---------------------------
 # CONFIG
 # ---------------------------
-FRED_API_KEY = os.getenv("FRED_API_KEY", "213742dc08592772cb9502214cdc4397")
 VERBOSE = True
 
 config = {
@@ -419,13 +419,16 @@ def run_live_scan(parquet_path=LOCAL_SP500_PARQUET):
     logger.info("Raw Score: %d / 8", raw_total)
     logger.info("Normalized Score: %.2f / 10", norm_score)
     logger.info("=" * 50)
-
+    recommendation = ""
     if norm_score >= 7.0:
-        logger.warning("⚠️  HIGH DROP RISK SIGNAL DETECTED!")
+        recommendation = "⚠️  HIGH DROP RISK SIGNAL DETECTED!"
+        logger.warning(recommendation)
     elif norm_score >= 5.0:
-        logger.info("🟡 Moderate risk signal.")
+        recommendation = "🟡 Moderate risk signal."
+        logger.info(recommendation)
     else:
-        logger.info("🟢 Low risk environment.")
+        recommendation = "🟢 Low risk environment."
+        logger.info(recommendation)
 
     return {
         "asof": asof,
@@ -433,7 +436,9 @@ def run_live_scan(parquet_path=LOCAL_SP500_PARQUET):
         "B": B_pts,
         "C": C_pts,
         "raw_total": raw_total,
-        "norm_score": norm_score
+        "norm_score": norm_score,
+        "score": norm_score,
+        "recommendation": recommendation,
     }
 
 
@@ -481,7 +486,7 @@ score_bucket
             logger.info("Backtest completed. Summary:\n%s", out['summary'])
     else:
         # Run live scan
-        run_live_scan()
+        return run_live_scan()
 
 
 if __name__ == "__main__":

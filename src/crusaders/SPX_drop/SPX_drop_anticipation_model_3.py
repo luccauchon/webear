@@ -22,6 +22,7 @@ import os
 from datetime import datetime, timedelta
 import time
 from constants import FYAHOO_SPX500__OUTPUTFILENAME as LOCAL_SP500_PARQUET
+from constants import FRED_API_KEY
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -31,7 +32,6 @@ import pandas_datareader.data as web
 # ---------------------------
 # CONFIG / TUNABLES
 # ---------------------------
-FRED_API_KEY = os.getenv("FRED_API_KEY", "213742dc08592772cb9502214cdc4397")
 YF_RETRY = 2
 YF_SLEEP_BETWEEN = 1.0
 VERBOSE = True
@@ -350,6 +350,7 @@ def run_once():
         "B": b,
         "C": c,
         "normalized_score": norm_score,
+        "score": norm_score,
         "recommendation": action
     }
 

@@ -288,6 +288,7 @@ def factory_load_data(_dataset_id, _ticker, _args):
     _realtime_data = _args.get("realtime", False)
     _get_vix = _args.get("get_vix", False)
     _filter_per_day = _args.get("filter_per_day", [])
+    _meta_info = ""
     if _realtime_data:
         if _dataset_id.startswith("intraday"):
             assert _ticker in ["^GSPC"]
@@ -341,7 +342,6 @@ def factory_load_data(_dataset_id, _ticker, _args):
             if _dataset_id == "year":
                 df_main = yearly_data_cache[_ticker].sort_index().copy()
                 the_vix = yearly_data_cache["^VIX"]
-
             if _get_vix:
                 df_vix = the_vix.sort_index().copy()
     else:
@@ -357,11 +357,9 @@ def factory_load_data(_dataset_id, _ticker, _args):
                     df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
         else:
             if _dataset_id not in DATASET_AVAILABLE:
-                # Style: day_heikinashi
+                # Style: day_heikinashi or day_2B
                 # Extra information is already extracted
-                _dataset_id = _dataset_id.split("_")[0]
-                if _dataset_id not in DATASET_AVAILABLE:
-                    _dataset_id = _dataset_id.split("-")[0]
+                _dataset_id, _meta_info = _dataset_id.split("_")
                 assert _dataset_id in DATASET_AVAILABLE
             with open(get_filename_for_dataset(_dataset_id, older_dataset=None), 'rb') as f:
                 _master_data_cache = pickle.load(f)
@@ -384,6 +382,12 @@ def factory_load_data(_dataset_id, _ticker, _args):
         df_main = df_main[df_main.index.dayofweek.isin(_filter_per_day)]
         if _get_vix:
             df_vix = df_vix[df_vix.index.dayofweek.isin(_filter_per_day)]
+    if bool(re.match(r"^[1-9]\d?B$", _meta_info)):
+        n_bars = int(_meta_info[:-1])
+        df_main = resample_macro_candles(df=df_main, n=n_bars, timeframe=_dataset_id, ticker=_ticker)
+        if _get_vix:
+            df_vix = resample_macro_candles(df=df_main, n=n_bars, timeframe=_dataset_id, ticker="^VIX")
+    # Retour des valeurs
     if _get_vix:
         return df_main.copy(), df_vix.copy()
     return df_main.copy()
@@ -443,6 +447,58 @@ def convert_to_heikin_ashi(df, ticker, overwrite=False):
         df_ha[("Close_HA", ticker)] = ha_close
 
     return df_ha
+
+
+def resample_macro_candles(df, n, timeframe, ticker):
+    """
+    Convertit un DataFrame de bougies (ex: Day, Week) en bougies de taille 'n * timeframe'.
+
+    Paramètres:
+    -----------
+    df : pandas.DataFrame
+        DataFrame avec un DateTimeIndex.
+    n : int
+        Le multiplicateur (ex: 3 pour 3 jours, 4 pour 4 semaines).
+    timeframe : str
+        Le type de bougie d'origine/cible: 'day', 'week', 'month', 'quarter', 'annual'.
+    ticker : str
+        Le symbole boursier pour mapper les colonnes.
+    """
+    cols = _build_cols_dict(ticker)
+
+    # Définition du dictionnaire d'agrégation standard
+    agg_dict = {
+        cols["open_col"]: "first",
+        cols["high_col"]: "max",
+        cols["low_col"]: "min",
+        cols["close_col"]: "last"
+    }
+    if ticker != "^VIX" and "volume_col" in cols:
+        agg_dict[cols["volume_col"]] = "sum"
+
+    # Mappage des timeframes vers les codes d'ancrage Pandas
+    tf_mapping = {
+        "day": "D",
+        "week": "W",  # Aligné sur le dimanche par défaut ou fin de semaine
+        "month": "ME",  # Month End (fin de mois)
+        "quarter": "QE",  # Quarter End (fin de trimestre)
+        "annual": "YE"  # Year End (fin d'année)
+    }
+
+    tf_lower = timeframe.lower()
+    if tf_lower not in tf_mapping:
+        raise ValueError("timeframe doit être: 'day', 'week', 'month', 'quarter' ou 'annual'")
+
+    # Construction de la règle (ex: '3D', '4W', '2ME')
+    rule = f"{n}{tf_mapping[tf_lower]}"
+
+    # Rééchantillonnage et agrégation
+    df_resampled = df.resample(rule).agg(agg_dict)
+
+    # Nettoyage des périodes sans données (ex: weekends ou jours fériés)
+    df_resampled = df_resampled.dropna(subset=[cols["open_col"]])
+
+    return df_resampled.copy()
 
 
 def resample_candles(df, n_minutes, ticker):

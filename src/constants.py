@@ -88,9 +88,12 @@ FRED_API_KEY = '213742dc08592772cb9502214cdc4397'
 #
 def GET_EMAILS(dev=False):
     if dev:
-        return ("luccauchon@gmail.com",)
-    destinataires = ("luccauchon@gmail.com", "luc.vouligny@gmail.com")
+        return ("luccauchon@gmail.com", "coalitiondurable@gmail.com")
+    # destinataires = ("luccauchon@gmail.com", "luc.vouligny@gmail.com")
+    destinataires = ("luccauchon@gmail.com",)
     return destinataires
 
 EMAIL_SENDER_WEBEAR = "luccauchon@gmail.com"
 PWD_GOOGLE_API = "thhy qvae fbsb zsbe"
+
+TITLE_WEBEAR = "WEBEAR 1.0"

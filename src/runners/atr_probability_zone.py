@@ -32,7 +32,7 @@ import sys
 import time
 from runners.atr import entry as atr_entry
 from utils import WEBEARStyle, send_html_email, get_and_clean_stub_dir
-from constants import GET_EMAILS
+from constants import GET_EMAILS, TITLE_WEBEAR
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
@@ -287,6 +287,7 @@ def entry(args):
     nb_worker = 15
     verbose = True
     destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
+    signature_for_prod = TITLE_WEBEAR if args.production_setup else "DEV"
     spread_width = 500.0
 
     # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
@@ -325,9 +326,15 @@ def entry(args):
     actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
     low_levels_for_graphics, high_levels_for_graphics = [], []
     ref_range = "Plage maintenue à la clôture (close)" if args.use_close_for_range else "Plage maintenue max/min (High/Low) en cours de séance"
-    subject = (f"[@{datetime.now().strftime("%Y%m%d_%H%M")}] | {ref_range} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]")
+    if args.use_close_for_range:
+        subject = f"[{signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")}] | {ref_range} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} , Actuelle:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
+    else:
+        subject = f"[{signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")}] | {ref_range} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
     string_generated, vlow_text, vhigh_text, dataset_configuration = subject + "\n", None, None, None
-    for col_for_sort in ["predicted_low", "predicted_high"]:
+    for col_for_sort in ["predicted_low", "in_between", "predicted_high"]:
+        if col_for_sort == "in_between":
+            string_generated += f"    {':' * 20} OUVERTURE à {actual_open:.0f} {':' * 20}\n"
+            continue
         # 1. Tri du plus GRAND au plus PETIT
         liste_triee = sorted(data_from_workers, key=lambda x: x[f"probability_{col_for_sort}"], reverse=True)
         # 2. Le dictionnaire garde la DERNIÈRE valeur lue (donc la plus basse)
@@ -353,9 +360,9 @@ def entry(args):
             # On garde l'élément s'il est unique par rapport au précédent
             filtered_probabilities.append(current)
         if 'low' in col_for_sort:
-            string_generated += (f"\t::  {WEBEARStyle.BOLD}Low  @P    BE$   {WEBEARStyle.END}")+ "\n"
-        else:
-            string_generated += (f"\t::  {' ':<16}{WEBEARStyle.BOLD}High @P    BE${WEBEARStyle.END}")+ "\n"
+            string_generated += (f"\t::  {WEBEARStyle.BOLD}Low   Open   / Close   @P    BE$   {WEBEARStyle.END}")+ "\n"
+        elif 'high' in col_for_sort:
+            string_generated += (f"\t::  {' ':<16}{WEBEARStyle.BOLD}High  Open  / Close   @P    BE${WEBEARStyle.END}")+ "\n"
         for sorted_probability in filtered_probabilities:
             predicted_low, predicted_high = int(sorted_probability['predicted_low']), int(sorted_probability['predicted_high'])
             probability_predicted_low, probability_predicted_high = int(sorted_probability['probability_predicted_low']), int(sorted_probability['probability_predicted_high'])
@@ -374,16 +381,27 @@ def entry(args):
             breakeven_high = int((1.0 - probability_predicted_high/100.) * spread_width)
             breakeven_low = int((1.0 - probability_predicted_low/100.) * spread_width)
             if 'low' in col_for_sort:
+                distance_from_open = float((predicted_low - actual_open) / actual_open)
+                distance_from_current_value = float((predicted_low - actual_close) / actual_close)
                 string_generated += (f"\t"                      
-                      f"{' ':<4}{predicted_low:04d} @{probability_predicted_low:02d}% {breakeven_low:03d}$")+ "\n"
+                      f"{' ':<4}{predicted_low:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}) @{probability_predicted_low:02d}% {breakeven_low:03d}$")+ "\n"
                 vlow_text = (predicted_low, probability_predicted_low,breakeven_low) if vlow_text is None else vlow_text
-            else:
+            elif 'high' in col_for_sort:
+                distance_from_open = float((predicted_high - actual_open) / actual_open)
+                distance_from_current_value = float((predicted_high - actual_close) / actual_close)
                 string_generated += (f"\t"                      
-                      f"{' ':<20}{predicted_high:04d} @{probability_predicted_high:02d}% {breakeven_high:03d}$")+ "\n"
+                      f"{' ':<20}{predicted_high:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}) @{probability_predicted_high:02d}% {breakeven_high:03d}$")+ "\n"
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
             if dataset_configuration is None:
                 dataset_configuration = sorted_probability['dataset_configuration']
-    string_explicative = (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles)\n"
+    assert vix_regime in ['Normal', 'Low', 'High']
+    string_explicative = "VIX bas (Faible)\n\tMarché calme\n\tMouvement intrajournalier attendu plus faible\n\tL'ATR a tendance à être plus bas\n\tVous pourriez avoir besoin d'écarts (ranges) relativement plus serrés"
+    if vix_regime == "Normal":
+        string_explicative = "VIX normal\n\tEnvironnement de volatilité typique\n\tMouvement attendu modéré"
+    elif vix_regime == "High":
+        string_explicative = "VIX élevé (Haut)\n\tStress / incertitude\n\tMouvements de prix plus amples et plus violents\n\tL'ATR a tendance à augmenter\n\tVous avez généralement besoin d'écarts (ranges) plus larges"
+    string_explicative += "\n\n"
+    string_explicative += (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles)\n"
                           f"Test du {dataset_configuration['test_info']['start_date']} au {dataset_configuration['test_info']['end_date']} ({dataset_configuration['test_info']['bars']} chandelles)")
     string_generated += ("\n\n"+string_explicative)
     string_generated += ("\n\nBonjour,\n"

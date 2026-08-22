@@ -8,8 +8,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from constants import FYAHOO__OUTPUTFILENAME_YEAR, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_DAY
-from utils import str2bool
+from utils import str2bool, factory_load_data
 import pickle
 import copy
 import numpy as np
@@ -377,23 +376,12 @@ def get_label(data_frequency):
         return data_frequency
 
 
-def load_data(data_frequency, ticker):
-    mapping = {
-        'day': FYAHOO__OUTPUTFILENAME_DAY,
-        'week': FYAHOO__OUTPUTFILENAME_WEEK,
-        'month': FYAHOO__OUTPUTFILENAME_MONTH,
-        'quarter': FYAHOO__OUTPUTFILENAME_QUARTER,
-        'year': FYAHOO__OUTPUTFILENAME_YEAR,
-    }
-    with open(mapping[data_frequency], 'rb') as f:
-        master_data_cache = pickle.load(f)
-    return master_data_cache[ticker]
-
-
 def new_main(args, bring_my_own_df=None):
     ticker = args.ticker
     close_col = ('Close', ticker)
     data_frequency = args.frequency
+    if args.dataset_id is not None:
+        data_frequency = args.dataset_id
     direction = args.direction
     max_n = args.max_n
     min_n = args.min_n
@@ -403,7 +391,7 @@ def new_main(args, bring_my_own_df=None):
     forward_steps = args.forward_steps
 
     if bring_my_own_df is None:
-        _spx500 = load_data(data_frequency, ticker)
+        _spx500 = factory_load_data(_dataset_id=data_frequency, _ticker=ticker, _args={})
     else:
         _spx500 = bring_my_own_df
         if close_col not in _spx500.columns:
@@ -421,7 +409,7 @@ def new_main(args, bring_my_own_df=None):
         print(f"Min streak: {min_n}")
         print(f"Max streak: {max_n}")
         print(f"Forward steps: {forward_steps}")
-        print(f"Data range: {_spx500.index[0].strftime('%Y-%m-%d')} to {_spx500.index[-1].strftime('%Y-%m-%d')}")
+        print(f"Data range: {_spx500.index[0].strftime('%Y-%m-%d_%H%M')} to {_spx500.index[-1].strftime('%Y-%m-%d_%H%M')}")
         print(f"Data size: {len(_spx500)}")
         print(f"{'=' * 50}")
     assert delta >= 0
@@ -529,8 +517,12 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default='^GSPC')
     parser.add_argument(
         "--frequency",
-        choices=["day", "week", "month", "quarter", "year"],
         default="day",
+        help="Time frequency of the data"
+    )
+    parser.add_argument(
+        "--dataset-id",
+        default=None,
         help="Time frequency of the data"
     )
     parser.add_argument(
