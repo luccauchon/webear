@@ -966,6 +966,7 @@ if __name__ == "__main__":
 
     # Execution mode
     parser.add_argument("--real-time", action="store_true", help="Inference mode (skip optimization)")
+    parser.add_argument("--realtime", action="store_true", help="Inference mode (skip optimization)")
     parser.add_argument("--short-verbose", action="store_true", help="Minimal output in real-time mode")
     parser.add_argument("--hypershort-verbose", action="store_true", help="Very minimal output")
     parser.add_argument("--confirmation-before-run", action="store_true", help="Prompt before running")
@@ -979,7 +980,7 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
 
     try:
-        if args.real_time:
+        if args.real_time or args.realtime:
             run_real_time_inference(args, args.ticker, args.list_models, args.model_filename)
         else:
             entry_main(args)
