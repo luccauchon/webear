@@ -33,7 +33,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+from utils import factory_load_data
 import numpy as np
 import pandas as pd
 import pickle
@@ -256,30 +256,10 @@ def should_trade_binary_outcome(_regime_stats, _win_payout, _loss_amount, _min_e
 # =========================================================
 # DATA LOADING
 # =========================================================
-def load_data(_ticker, _dataset_id):
-    """Load preprocessed price data from pickle cache."""
-    try:
-        from utils import get_filename_for_dataset
-        filename = get_filename_for_dataset(_dataset_id, older_dataset=None)
-    except ImportError:
-        filename = f"data/{_dataset_id}_cache.pkl"
-
-    if not os.path.exists(filename):
-        raise FileNotFoundError(f"Dataset file not found: {filename}")
-
-    with open(filename, "rb") as f:
-        cache = pickle.load(f)
-
-    if _ticker not in cache:
-        raise KeyError(f"Ticker '{_ticker}' not found. Available: {list(cache.keys())}")
-
-    df = cache[_ticker].copy()
+def load_data(_ticker, _dataset_id, realtime=False):
+    df = factory_load_data(_dataset_id=_dataset_id, _ticker=_ticker, _args={"realtime": realtime})
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-
-    df = df.sort_index().dropna()
-    if len(df) == 0:
-        raise ValueError(f"No valid data for ticker {_ticker} after cleaning")
     return df
 
 
@@ -542,7 +522,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
         print(f"✅ Model loaded ({_metadata.get('timestamp', 'N/A')})")
 
     try:
-        df = load_data(ticker, _metadata['dataset_id'])
+        df = load_data(ticker, _metadata['dataset_id'], realtime=True)
         if not hyper_silence:
             print(f"✅ Data loaded for \"{_metadata['dataset_id']}\"")
     except Exception as e:
