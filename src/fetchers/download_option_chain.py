@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-from utils import get_df_SPY_and_VIX_virgin_at_minutes
+from fetchers.data_factory import get_df_SPY_and_VIX_virgin_at_minutes
 import os
 import schedule
 import time

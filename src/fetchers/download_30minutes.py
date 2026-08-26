@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-from utils import get_df_SPY_and_VIX_virgin_at_30minutes
+from fetchers.data_factory import get_df_SPY_and_VIX_virgin_at_30minutes
 from constants import BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR
 import os
 import schedule

@@ -13,7 +13,7 @@ from datetime import datetime
 import argparse
 import pathlib
 from argparse import Namespace
-from optimizers.oerh.realtime_and_backtest import entry as oerh
+from optimizers.oerh.realtime_and_backtest_hyperparameter_search_optuna import entry as oerh
 import traceback
 
 
@@ -40,7 +40,7 @@ def parse_args():
         default=False,
         help="Hide rows where signal is 0 (default: False)"
     )
-    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    parser.add_argument("--clip_n", action="store_true", help="Exclude incomplete current bar in real-time")
     parser.add_argument("--use-realtime-data", action=argparse.BooleanOptionalAction, default=False)
     return parser.parse_args()
 
@@ -70,12 +70,12 @@ def entry(args):
             print(f"{'=' * 60}")
 
         configuration = Namespace(
-            real_time=True,
+            realtime=True,
             model_path=str(file_path),
             output_signal_only=False,
             verbose=verbose,
             validate_jit=False,
-            clip=args.clip,
+            clip_n=args.clip_n,
             use_realtime_data=getattr(args, 'use_realtime_data', False),
         )
         try:

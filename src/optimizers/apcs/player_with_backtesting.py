@@ -14,7 +14,8 @@ from argparse import Namespace
 import os
 from datetime import datetime
 from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import entry as apcs_entry_point
-from utils import get_next_step, factory_load_data
+from utils import get_next_step
+from fetchers.data_factory import factory_load_data
 class NoMoreDataException(Exception):
     """Exception pour interrompre instantanément toutes les boucles imbriquées."""
     pass

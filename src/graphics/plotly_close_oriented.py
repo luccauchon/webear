@@ -14,7 +14,8 @@ import os
 import copy
 import plotly.graph_objects as go
 import pandas as pd
-from utils import get_next_step, factory_load_data, get_and_clean_stub_dir
+from utils import get_next_step, get_and_clean_stub_dir
+from fetchers.data_factory import factory_load_data
 from runners.streak_probability import new_main as streak_probability
 from argparse import Namespace
 from datetime import datetime

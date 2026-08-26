@@ -22,7 +22,8 @@ import optuna
 import pandas as pd
 import pandas_ta as ta
 from sklearn.model_selection import TimeSeriesSplit
-from utils import get_next_step, factory_load_data
+from utils import get_next_step
+from fetchers.data_factory import factory_load_data
 import math
 
 # Suppress Optuna & pandas_ta debug logs

@@ -31,7 +31,7 @@ def entry(args_player):
     destinataires = GET_EMAILS() if args_player.production_setup else GET_EMAILS(dev=True)
     signature_for_prod = TITLE_WEBEAR if args_player.production_setup else "DEV"
 
-    result = entry_conditional_gap_persistence(args=Namespace(dataset_id="day",ticker="^GSPC",epsilon=0,use_realtime_data=False,display_all=False))
+    result = entry_conditional_gap_persistence(args=Namespace(dataset_id="day",ticker="^GSPC",epsilon=0,use_realtime_data=True,display_all=False))
     result = result['string_generated']
     subject = f"[{signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')}] | Persistance conditionnelle de l'écart | "
     # Construction du corps du courriel

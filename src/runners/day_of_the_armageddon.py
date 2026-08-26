@@ -19,6 +19,7 @@ import pickle
 from constants import FYAHOO__OUTPUTFILENAME_DAY
 import copy
 
+
 def main():
     # Load data
     with open(FYAHOO__OUTPUTFILENAME_DAY, 'rb') as f:

@@ -8,7 +8,8 @@ except ImportError:
     parent_dir = current_dir.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from utils import str2bool, factory_load_data
+from utils import str2bool
+from fetchers.data_factory import factory_load_data
 import pickle
 import copy
 import numpy as np
@@ -380,7 +381,7 @@ def new_main(args, bring_my_own_df=None):
     ticker = args.ticker
     close_col = ('Close', ticker)
     data_frequency = args.frequency
-    if args.dataset_id is not None:
+    if hasattr(args, 'dataset_id') and args.dataset_id is not None:
         data_frequency = args.dataset_id
     direction = args.direction
     max_n = args.max_n

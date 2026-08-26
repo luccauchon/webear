@@ -33,7 +33,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-from utils import factory_load_data
+from fetchers.data_factory import factory_load_data
 import numpy as np
 import pandas as pd
 import pickle

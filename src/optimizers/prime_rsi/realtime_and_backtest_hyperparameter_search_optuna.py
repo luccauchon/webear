@@ -146,7 +146,8 @@ from numba import njit
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
-from utils import get_next_step, factory_load_data
+from utils import get_next_step
+from fetchers.data_factory import factory_load_data
 import pickle
 import argparse
 import os

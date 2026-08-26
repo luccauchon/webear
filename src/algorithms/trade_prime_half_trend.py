@@ -38,7 +38,16 @@ HALF_TREND_DEFAULT_CONFIG = {
     #     Use: Require the HT1 reversal candle (the buy candle) to be:
     #
     # A bullish engulfing, hammer, or simply close in top 50% of its range.
-    'use__candlestick_confirmation_pattern': {'enable': False}
+    'use__candlestick_confirmation_pattern': {'enable': False},
+
+    #
+    'lookahead': 7*21,
+
+    #
+    'stop_loss_atr_factor': 1.5,
+
+    #
+    'take_profit_atr_factor': 2.0,
 }
 
 def get_entry_type(**kwargs):
@@ -238,7 +247,9 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     """.format('\n'.join(f'    - {key}: {value}' for key, value in HALF_TREND_DEFAULT_CONFIG.items()))
 
     close_label, high_label, low_label = ('Close', ticker_name), ('High', ticker_name), ('Low', ticker_name)
-
+    lookahead = int(_get_config('lookahead', **kwargs))
+    stop_loss_atr_factor = float(_get_config('stop_loss_atr_factor', **kwargs))
+    take_profit_atr_factor = float(_get_config('take_profit_atr_factor', **kwargs))
     use__entry_type = kwargs.get('use__entry_type', HALF_TREND_DEFAULT_CONFIG['use__entry_type'])
     assert use__entry_type in ['Soft', 'Hard']
     buy_setup_trigger_colname, sell_setup_trigger_colname = ('Close', ticker_name), ('Close', ticker_name)
@@ -317,6 +328,8 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     stop_loss = np.full(n, np.nan, dtype=float)
     take_profit = np.full(n, np.nan, dtype=float)
     execution_price = np.full(n, np.nan, dtype=float)
+    win_setup = np.full(n, 0, dtype=int)
+    length_before_win = np.full(n, 0, dtype=int)
     while i < n:
         # Conditions for BUY setup at candle i:
         # 1. ht10 is in uptrend (trend10 == 0)
@@ -397,13 +410,16 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
                     triggered_distance[j] = j - i
                     entry_price[j] = df[close_colname].iloc[j]
                     atr_val = df[atr14_colname].iloc[j]
-                    stop_loss[j]   = entry_price[j] - 1.5 * atr_val if buy_setup else entry_price[j] + 1.5 * atr_val
-                    take_profit[j] = entry_price[j] + 2.0 * atr_val if buy_setup else entry_price[j] - 2.0 * atr_val
-                    for k in range(j + 1, j + 1 + 7*21):
+                    stop_loss[j]   = entry_price[j] - stop_loss_atr_factor * atr_val if buy_setup else entry_price[j] + stop_loss_atr_factor * atr_val
+                    take_profit[j] = entry_price[j] + take_profit_atr_factor * atr_val if buy_setup else entry_price[j] - take_profit_atr_factor * atr_val
+                    for k in range(j + 1, j + 1 + lookahead):
+                        assert k >= j
                         if k >= n:
                             break
                         if (buy_setup and df[high_colname].iloc[k] >= take_profit[j]) or (not buy_setup and df[low_colname].iloc[k] <= take_profit[j]):
                             execution_price[j] = df[high_colname].iloc[k] if buy_setup else df[low_colname].iloc[k]
+                            win_setup[j] = 1
+                            length_before_win[j] = k - j
                             break
                     break
             i = new_i
@@ -416,5 +432,7 @@ def trade_prime_half_trend_strategy(ticker_df, ticker_name, buy_setup=True, **kw
     df[('stop_loss', ticker_name)] = stop_loss
     df[('take_profit', ticker_name)] = take_profit
     df[('execution_price', ticker_name)] = execution_price
+    df[('win_setup', ticker_name)] = win_setup
+    df[('length_before_win', ticker_name)] = length_before_win
     df[('is_buy_setup', ticker_name)] = np.full(n, buy_setup, dtype=bool)
     return df

@@ -118,7 +118,8 @@ from numba import njit
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.model_selection import TimeSeriesSplit
-from utils import factory_load_data, get_next_step
+from utils import get_next_step
+from fetchers.data_factory import factory_load_data
 
 # =============================================================================
 # 📊 CENTRAL METRIC MAPPING (Single Source of Truth)

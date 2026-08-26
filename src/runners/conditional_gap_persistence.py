@@ -15,7 +15,7 @@ import yfinance as yf
 import pandas as pd
 import argparse
 import pickle
-from utils import factory_load_data
+from fetchers.data_factory import factory_load_data
 
 
 def compute_break_even_credit(win_rate, spread_width):

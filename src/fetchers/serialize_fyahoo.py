@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 from curl_cffi.requests import Session
 from constants import IS_RUNNING_ON_LINUX_VMWARE, IS_RUNNING_ON_CASIR
+from utils import get_stub_dir
 
 
 from constants import (
@@ -62,7 +63,7 @@ def get_realtime_dataset(dataset_id, tickers=("^GSPC", "^VIX")):
     return _master_data_cache
 
 
-def realtime(tickers=("^GSPC", "^VIX"), verbose=False):
+def realtime(tickers=("^GSPC", "^VIX"), verbose=False, auto_adjust=False):
     # Default dates if not provided
     today = datetime.today()
     end_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -80,9 +81,9 @@ def realtime(tickers=("^GSPC", "^VIX"), verbose=False):
         daily_end = end_date
         for ticker in tqdm(tickers, desc="Daily") if verbose else tickers:
             if IS_RUNNING_ON_LINUX_VMWARE:
-                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False, session=session)
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=auto_adjust, ignore_tz=True, progress=False, session=session)
             else:
-                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=auto_adjust, ignore_tz=True, progress=False)
             daily_data_cache[ticker] = data
 
     ###########################################################################
@@ -176,7 +177,11 @@ def entry(
     skip_monthly=False,
     skip_quarterly=False,
     skip_yearly=False,
-    skip_economic=False
+    skip_economic=False,
+    auto_adjust=False,
+    dont_serialize_return_df_instead=False,
+    specify_tickers=None,
+    enable_cached_for_debug=False,
 ):
     from colorama import init, Fore, Style
     init(autoreset=True)
@@ -190,7 +195,7 @@ def entry(
         start_date = (today - timedelta(days=600)).strftime('%Y-%m-%d')
 
     tickers = sorted(list(set(MY_TICKERS if use_all_tickers else MY_TICKERS_SMALL_SET)), reverse=True)
-
+    tickers = tickers if specify_tickers is None else specify_tickers
     print(f"{len(tickers)} tickers selected. Date range: {start_date} to {end_date}", flush=True)
     session = Session()
     session.verify = False
@@ -206,18 +211,27 @@ def entry(
             if ticker == '^SKEW':
                 if IS_RUNNING_ON_LINUX_VMWARE:
                     data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1d',
-                                       auto_adjust=False, ignore_tz=True, progress=False, session=session)
+                                       auto_adjust=auto_adjust, ignore_tz=True, progress=False, session=session)
                 else:
                     data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1d',
-                                       auto_adjust=False, ignore_tz=True, progress=False)
+                                       auto_adjust=auto_adjust, ignore_tz=True, progress=False)
             else:
                 if IS_RUNNING_ON_LINUX_VMWARE:
                     data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1h',
-                                       auto_adjust=False, ignore_tz=True, progress=False, session=session)
+                                       auto_adjust=auto_adjust, ignore_tz=True, progress=False, session=session)
                 else:
+                    output_filename = os.path.join(get_stub_dir(local_dir=f"data_factory_hourly_"), f"{ticker}")
+                    if enable_cached_for_debug:
+                        if os.path.exists(output_filename):
+                            pass
                     data = yf.download(ticker, start=hourly_start, end=hourly_end, interval='1h',
-                                       auto_adjust=False, ignore_tz=True, progress=False)
+                                       auto_adjust=auto_adjust, ignore_tz=True, progress=False)
+                    if enable_cached_for_debug:
+                        os.makedirs(Path(output_filename).parent, exist_ok=True)
+                        pass
             data_cache[ticker] = data
+        if dont_serialize_return_df_instead:
+            return data_cache
         with open(FYAHOO__OUTPUTFILENAME, 'wb') as f:
             pickle.dump(data_cache, f)
         print(f"Hourly data saved to {FYAHOO__OUTPUTFILENAME}")
@@ -232,9 +246,9 @@ def entry(
         data_cache = {}
         for ticker in tqdm(tickers, desc="Daily"):
             if IS_RUNNING_ON_LINUX_VMWARE:
-                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False, session=session)
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=auto_adjust, ignore_tz=True, progress=False, session=session)
             else:
-                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=False, ignore_tz=True, progress=False)
+                data = yf.download(ticker, start=daily_start, end=daily_end, interval='1d', auto_adjust=auto_adjust, ignore_tz=True, progress=False)
             data_cache[ticker] = data
         with open(FYAHOO__OUTPUTFILENAME_DAY, 'wb') as f:
             pickle.dump(data_cache, f)

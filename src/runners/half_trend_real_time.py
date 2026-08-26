@@ -258,6 +258,7 @@ def entry():
     # Affichage des résultats
     _update_alerts_ui_print_only(data_from_workers, configuration_setup)
 
+
 if __name__ == "__main__":
     freeze_support()
     entry()

@@ -110,7 +110,8 @@ import matplotlib.pyplot as plt
 from typing import Optional, Tuple
 import pickle
 import argparse
-from utils import get_filename_for_dataset, factory_load_data
+from utils import get_filename_for_dataset
+from fetchers.data_factory import factory_load_data
 import os
 import warnings
 import optuna

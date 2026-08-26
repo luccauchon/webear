@@ -50,7 +50,8 @@ import pandas as pd
 import yfinance as yf
 from scipy.signal import find_peaks  # kept for compatibility; confirmed pivot logic is used by default
 from datetime import datetime, timedelta
-from utils import get_next_step, factory_load_data
+from utils import get_next_step
+from fetchers.data_factory import factory_load_data
 import pickle
 import optuna  # Added Optuna import
 import random
