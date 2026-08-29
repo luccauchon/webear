@@ -23,6 +23,7 @@ except:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 from utils import get_filename_for_dataset, get_next_step
+from fetchers.data_factory import factory_load_data
 import pickle
 import os
 import argparse
@@ -426,7 +427,7 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col,
         return
 
     last_row = df_bt.iloc[-1]
-    last_date = df_bt.index[-1].strftime('%Y-%m-%d')
+    last_date = df_bt.index[-1].strftime('%Y-%m-%d_%H%M')
 
     vix_rank = _extract_scalar(last_row[vix_rank_col])
 
