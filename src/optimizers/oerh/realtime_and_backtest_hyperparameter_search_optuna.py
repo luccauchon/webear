@@ -408,7 +408,7 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
         print(f"\n🛠 Command Line: {command_line}")
         print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
         print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d_%H%M')}  ->  {df.index[-1].strftime('%Y%m%d_%H%M')} | Train Win Rate: {train_win_rate:.2%} "
-              f":: Test Win Rate: {val_win_rate:.2%}  @{test_signal_ratio:.2%} signal density")
+              f":: Test Win Rate: {val_win_rate:.2%} @{test_signal_ratio:.2%} signal density")
         if use_realtime_data: print(f"   Using realtime data (actual value is {df.iloc[-1][price_col]:.1f})")
 
     # Determine minimum history needed for indicators
