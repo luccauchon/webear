@@ -544,7 +544,6 @@ def optimization_mode(args):
             for n_trials in list_of_n_trials:
                 run_count += 1
 
-                # Suppress verbose outputs during optimization to keep console clean
                 a_config = Namespace(
                     ticker=args.ticker,
                     intraday_candle_space=candle_size,
@@ -563,7 +562,7 @@ def optimization_mode(args):
                     "call_win_rate": result["call_win_rate"],
                     "combined_win_rate": result["combined_win_rate"]
                 })
-                print(f"  -> Run {run_count}/{total_runs} completed (Candle: {candle_size}m, TW: {tightness_weight}, Trials: {n_trials})")
+                print(f"  -> Run {run_count}/{total_runs} completed (Candle: {candle_size}m, TW: {tightness_weight}, Trials: {n_trials}, Win Rate: {result['combined_win_rate']:.2%})")
 
     # ==========================================================================
     # NICE PRINTING OF RESULTS
