@@ -179,30 +179,31 @@ def main(args):
         hoverinfo='skip'
     ))
 
-    # Print the probability on the next day candle
-    # Positive probability (chance the future candle closes higher) shown ABOVE the candle with an up arrow
-    fig.add_trace(go.Scatter(
-        x=[next_date],
-        y=[last_close],
-        text=[next_pos_prob_text],
-        mode='text',
-        textposition='top center',
-        textfont=dict(size=16, color='green'),  # Increased font size (was 9)
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-
-    # Negative probability (chance the future candle closes lower) shown BELOW the candle with a down arrow
-    fig.add_trace(go.Scatter(
-        x=[next_date],
-        y=[last_close],
-        text=[next_neg_prob_text],
-        mode='text',
-        textposition='bottom center',
-        textfont=dict(size=16, color='red'),  # Increased font size (was 9)
-        showlegend=False,
-        hoverinfo='skip'
-    ))
+    # Print the probability on the next day candle : keep the sequence going by using the less probable candle
+    if next_pos_prob_text < next_neg_prob_text:
+        # Positive probability (chance the future candle closes higher) shown ABOVE the candle with an up arrow
+        fig.add_trace(go.Scatter(
+            x=[next_date],
+            y=[last_close],
+            text=[next_pos_prob_text],
+            mode='text',
+            textposition='top center',
+            textfont=dict(size=16, color='green'),  # Increased font size (was 9)
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    else:
+        # Negative probability (chance the future candle closes lower) shown BELOW the candle with a down arrow
+        fig.add_trace(go.Scatter(
+            x=[next_date],
+            y=[last_close],
+            text=[next_neg_prob_text],
+            mode='text',
+            textposition='bottom center',
+            textfont=dict(size=16, color='red'),  # Increased font size (was 9)
+            showlegend=False,
+            hoverinfo='skip'
+        ))
     now_str = ""
     if REALTIME:
         now_str = f" | {datetime.now().strftime('%Y-%m-%d %H:%M')}"

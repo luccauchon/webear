@@ -77,7 +77,7 @@ def mock_display_realtime(df_bt, vix_col, open_col, close_col, atr_col, high_col
         regime = 'Normal'
     captured_data['regime'] = regime
 
-    original_display_realtime(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, optimized_params, use_close_for_range, verbose)
+    return original_display_realtime(df_bt, vix_col, open_col, close_col, atr_col, high_col, low_col, ticker, optimized_params, use_close_for_range, verbose)
 
 
 def mock_display_dataset_info(train_info, test_info, ticker, dataset_id, atr_window):
@@ -123,7 +123,7 @@ class App(ctk.CTk):
 
         # Inputs
         self.create_input("Ticker Symbol", self.ticker_var, 1)
-        self.create_dropdown("Dataset Frequency", self.dataset_var, ["day", "week", "month", "quarter", "year"], 3)
+        self.create_dropdown("Dataset Frequency", self.dataset_var, ["intraday-15min", "day", "week", "month", "quarter", "year"], 3)
         ctk.CTkCheckBox(self.sidebar, text="Use Real-time Data", variable=self.realtime_var).grid(row=5, column=0, padx=20, pady=10, sticky="w")
         ctk.CTkCheckBox(self.sidebar, text="Use Close for Range", variable=self.close_range_var).grid(row=6, column=0, padx=20, pady=10, sticky="w")
         self.create_input("ATR Window", self.atr_var, 8)

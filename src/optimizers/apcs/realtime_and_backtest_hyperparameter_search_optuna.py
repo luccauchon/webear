@@ -81,6 +81,36 @@ def is_closed_bar(ts, dataset_id):
     return True
 
 
+def is_valid_candle_proximity(d1, d2, same_week, same_day):
+    """
+    Check if two candles meet the same-week or same-day proximity requirements.
+
+    This is used to filter out patterns where the confirmation and entry candles
+    are split across different calendar days or weeks (e.g., Friday and Monday).
+    """
+    if not same_week and not same_day:
+        return True
+
+    try:
+        if not isinstance(d1, pd.Timestamp):
+            d1 = pd.to_datetime(d1)
+        if not isinstance(d2, pd.Timestamp):
+            d2 = pd.to_datetime(d2)
+    except Exception:
+        return True
+
+    if same_day:
+        if d1.date() != d2.date():
+            return False
+
+    if same_week:
+        # Compare year and week number using isocalendar
+        if d1.isocalendar()[:2] != d2.isocalendar()[:2]:
+            return False
+
+    return True
+
+
 def calculate_rsi(prices: pd.Series, period: int) -> pd.Series:
     """
     Calculate the Relative Strength Index (RSI) using Wilder's smoothing method.
@@ -192,15 +222,15 @@ def detect_confirmed_turns(prices, dates, min_distance):
 
 
 def classify_pattern(
-    t1,
-    t2,
-    t3,
-    prices,
-    ema,
-    rsi,
-    trade_direction,
-    rsi_buy_max,
-    rsi_sell_min
+        t1,
+        t2,
+        t3,
+        prices,
+        ema,
+        rsi,
+        trade_direction,
+        rsi_buy_max,
+        rsi_sell_min
 ):
     """
     Classify a 3-turn pattern as BUY, SELL, or None.
@@ -236,14 +266,14 @@ def classify_pattern(
 
 
 def calculate_entry_details(
-    trade_type,
-    entry_idx,
-    neckline_price,
-    open_prices,
-    high_prices,
-    low_prices,
-    buy_offset,
-    sell_offset
+        trade_type,
+        entry_idx,
+        neckline_price,
+        open_prices,
+        high_prices,
+        low_prices,
+        buy_offset,
+        sell_offset
 ):
     """
     Calculate entry strike and execution type for a confirmed signal.
@@ -331,21 +361,23 @@ class EarlyStoppingThresholdCallback:
 
 
 def check_live_signal(
-    df,
-    close_col,
-    open_col,
-    low_col,
-    high_col,
-    min_distance,
-    ema_period,
-    rsi_period,
-    rsi_buy_max,
-    rsi_sell_min,
-    buy_offset,
-    sell_offset,
-    trade_direction="both",
-    cooldown_bar=0,
-    dataset_id=None
+        df,
+        close_col,
+        open_col,
+        low_col,
+        high_col,
+        min_distance,
+        ema_period,
+        rsi_period,
+        rsi_buy_max,
+        rsi_sell_min,
+        buy_offset,
+        sell_offset,
+        trade_direction="both",
+        cooldown_bar=0,
+        dataset_id=None,
+        same_week_candle=False,
+        same_day_candle=False
 ):
     """
     Evaluate the most recent bar in a real-time dataframe for a valid trading signal.
@@ -383,6 +415,8 @@ def check_live_signal(
         trade_direction (str): Whether to evaluate "buy", "sell", or "both".
         cooldown_bar (int): Minimum number of bars to wait between signals (cooldown period).
         dataset_id (str or None): Dataset identifier used by is_closed_bar().
+        same_week_candle (bool): If True, discards patterns where confirmation and entry candles are in different weeks.
+        same_day_candle (bool): If True, discards patterns where confirmation and entry candles are on different days.
 
     Returns:
         dict: A dictionary containing signal details if a valid entry condition is met
@@ -456,6 +490,10 @@ def check_live_signal(
         # The confirmation bar must be closed.
         # The entry bar may be the currently forming bar because its open is known.
         if not is_closed_bar(dates[confirmation_idx], dataset_id):
+            continue
+
+        # Check candle proximity constraints (same-week / same-day)
+        if not is_valid_candle_proximity(dates[confirmation_idx], dates[entry_idx], same_week_candle, same_day_candle):
             continue
 
         trade_type = classify_pattern(
@@ -547,6 +585,10 @@ def check_live_signal(
 
             # Historical confirmation bars should be closed.
             if not is_closed_bar(dates[c_confirmation_idx], dataset_id):
+                continue
+
+            # Check candle proximity constraints for historical cooldown tracking
+            if not is_valid_candle_proximity(dates[c_confirmation_idx], dates[c_entry_idx], same_week_candle, same_day_candle):
                 continue
 
             c_trade_type = classify_pattern(
@@ -714,13 +756,13 @@ def format_trade_samples(trades_df, first_n=5, last_n=5):
 
 
 def plot_test_trades(
-    df_test,
-    test_results,
-    close_col,
-    ticker,
-    dataset_id,
-    lookahead,
-    trade_direction
+        df_test,
+        test_results,
+        close_col,
+        ticker,
+        dataset_id,
+        lookahead,
+        trade_direction
 ):
     """
     Plot the TEST set after optimization and annotate closed trade outcomes.
@@ -837,10 +879,10 @@ def plot_test_trades(
                     trade_types = pd.Series("", index=closed_trades.index)
 
                 valid_mask = (
-                    entry_x.notna()
-                    & entry_prices.notna()
-                    & outcomes.notna()
-                    & trade_types.notna()
+                        entry_x.notna()
+                        & entry_prices.notna()
+                        & outcomes.notna()
+                        & trade_types.notna()
                 )
 
                 entry_x = entry_x[valid_mask]
@@ -861,19 +903,19 @@ def plot_test_trades(
 
     # Annotate each closed trade at the entry level.
     if (
-        entry_x is not None
-        and entry_prices is not None
-        and outcomes is not None
-        and trade_types is not None
-        and not entry_x.empty
+            entry_x is not None
+            and entry_prices is not None
+            and outcomes is not None
+            and trade_types is not None
+            and not entry_x.empty
     ):
         text_offset = 0.02 * y_range
 
         for x, entry_price, outcome, trade_type in zip(
-            entry_x,
-            entry_prices,
-            outcomes,
-            trade_types
+                entry_x,
+                entry_prices,
+                outcomes,
+                trade_types
         ):
             if outcome == "Win":
                 label = "W"
@@ -981,25 +1023,27 @@ def plot_test_trades(
 
 
 def backtest_asymmetric_strategy(
-    ticker,
-    df,
-    close_col,
-    open_col,
-    low_col,
-    high_col,
-    min_distance,
-    lookahead,
-    sell_offset,
-    buy_offset,
-    ema_period,
-    rsi_period,
-    rsi_buy_max,
-    rsi_sell_min,
-    trade_direction="both",
-    delta=0.0,
-    cooldown_bar=0,
-    record_start_idx=None,
-    record_end_idx=None
+        ticker,
+        df,
+        close_col,
+        open_col,
+        low_col,
+        high_col,
+        min_distance,
+        lookahead,
+        sell_offset,
+        buy_offset,
+        ema_period,
+        rsi_period,
+        rsi_buy_max,
+        rsi_sell_min,
+        trade_direction="both",
+        delta=0.0,
+        cooldown_bar=0,
+        record_start_idx=None,
+        record_end_idx=None,
+        same_week_candle=False,
+        same_day_candle=False
 ):
     """
     Perform a historical backtest of the Asymmetric Pivot Credit Strategy.
@@ -1042,6 +1086,8 @@ def backtest_asymmetric_strategy(
         cooldown_bar (int): Minimum number of bars to wait between signals (cooldown period).
         record_start_idx (int or None): If provided, only record entries at or after this row index.
         record_end_idx (int or None): If provided, only record entries at or before this row index.
+        same_week_candle (bool): If True, discards patterns where confirmation and entry candles are in different weeks.
+        same_day_candle (bool): If True, discards patterns where confirmation and entry candles are on different days.
 
     Returns:
         dict: A dictionary containing backtest results.
@@ -1126,10 +1172,15 @@ def backtest_asymmetric_strategy(
         # Option B:
         # A peak/valley at t3[1] is confirmed on bar t3[1] + 1.
         # Entry is taken at the open of bar t3[1] + 2.
+        confirmation_idx = t3[1] + 1
         entry_idx = t3[1] + 2
 
         # Prevent out-of-bounds for entry
         if entry_idx >= n_prices:
+            continue
+
+        # Check candle proximity constraints (same-week / same-day)
+        if not is_valid_candle_proximity(dates[confirmation_idx], dates[entry_idx], same_week_candle, same_day_candle):
             continue
 
         trade_type = classify_pattern(
@@ -1470,7 +1521,9 @@ def entry(args):
                 rsi_sell_min=model_params['rsi_sell_min'],
                 trade_direction=model_trade_direction,
                 cooldown_bar=cooldown_bar,
-                dataset_id=model_info['dataset_id']
+                dataset_id=model_info['dataset_id'],
+                same_week_candle=args.same_week_candle,
+                same_day_candle=args.same_day_candle
             )
 
             if not isinstance(live_result, dict):
@@ -1696,7 +1749,9 @@ def entry(args):
                 delta=delta,
                 cooldown_bar=cooldown_bar,
                 record_start_idx=val_start,
-                record_end_idx=evaluable_end
+                record_end_idx=evaluable_end,
+                same_week_candle=args.same_week_candle,
+                same_day_candle=args.same_day_candle
             )
             if isinstance(results_dict, str):
                 fold_scores.append(0.0)
@@ -1837,7 +1892,9 @@ def entry(args):
         delta=delta,
         cooldown_bar=cooldown_bar,
         record_start_idx=0,
-        record_end_idx=len(df_train_ticker) - 1
+        record_end_idx=len(df_train_ticker) - 1,
+        same_week_candle=args.same_week_candle,
+        same_day_candle=args.same_day_candle
     )
 
     # Enhancement:
@@ -1863,7 +1920,9 @@ def entry(args):
         delta=delta,
         cooldown_bar=cooldown_bar,
         record_start_idx=n,
-        record_end_idx=len(df_main) - 1
+        record_end_idx=len(df_main) - 1,
+        same_week_candle=args.same_week_candle,
+        same_day_candle=args.same_day_candle
     )
 
     def print_metrics(results_dict, set_name, df_used, verbose):
@@ -2049,8 +2108,8 @@ if __name__ == '__main__':
     parser.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to backtest (e.g., ^GSPC for S&P 500).")
     parser.add_argument("--dataset-id", type=str, default="day", help="Dataset ID used for fetching cached master data.")
     parser.add_argument("--use-realtime-data", action="store_true", default=False, help="Use FYahoo! to get realtime data.")
-    parser.add_argument("--sell-offset", type=float, default=1.0001, help="Multiplier for sell trade win condition (Call Credit Spread).")
-    parser.add_argument("--buy-offset", type=float, default=0.9999, help="Multiplier for buy trade win condition (Put Credit Spread).")
+    parser.add_argument("--sell-offset", type=float, default=1.00001, help="Multiplier for sell trade win condition (Call Credit Spread).")
+    parser.add_argument("--buy-offset", type=float, default=0.99999, help="Multiplier for buy trade win condition (Put Credit Spread).")
 
     # Backtest and Optimization parameters
     parser.add_argument("--lookahead", type=int, default=1, help="Number of bars to look ahead for determining trade outcome.")
@@ -2073,6 +2132,19 @@ if __name__ == '__main__':
     # Real-time mode parameters
     parser.add_argument("--realtime", action="store_true", default=False, help="Run in real-time mode to check for live signals using a saved model.")
     parser.add_argument("--model-file", type=str, default=None, help="Specific model filename to load in real-time mode. If not provided, loads the latest model.")
+
+    parser.add_argument(
+        '--same-week-candle',
+        action='store_true',
+        default=False,
+        help='If True, discards patterns where the two candles are split across different calendar weeks (e.g., Friday and Monday).'
+    )
+    parser.add_argument(
+        '--same-day-candle',
+        action='store_true',
+        default=False,
+        help='If True, discards patterns where the two candles are on different calendar days (useful for intraday data to ensure same-day patterns).'
+    )
 
     the_args = parser.parse_args()
 

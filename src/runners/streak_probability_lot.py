@@ -8,6 +8,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 from runners.streak_probability import main as streak_probability
+from fetchers.data_factory import factory_load_data
 from tqdm import tqdm
 from collections import defaultdict
 from utils import get_filename_for_dataset, str2bool
@@ -21,25 +22,16 @@ import time
 def main(args):
     direction = args.direction
     method = args.method
-    frequency = args.frequency
+    frequency = getattr(args, "dataset_id", args.frequency)
     ticker_name = args.ticker
     deltas = args.deltas
     display_only_nn = args.display_only_nn
     remove_last_element = args.remove_last_element
     verbose = args.verbose
-    one_dataset_filename = get_filename_for_dataset(frequency, older_dataset=None)
-    if verbose:
-        print(f"📁 Using dataset: {one_dataset_filename}")
-    with open(one_dataset_filename, 'rb') as f:
-        data_cache = pickle.load(f)
-
-    # Extract close_value early so it's available in the delta loop
-    df        = data_cache[ticker_name]
-    df        = df.sort_index()
-    if remove_last_element:
-        df = df.iloc[:-1]
-    df        = copy.deepcopy(df)
-    close_col = ('Close', ticker_name)
+    df = factory_load_data(_dataset_id=frequency, _ticker=ticker_name, _args={})
+    if remove_last_element: df = df.iloc[:-1]
+    df                 = copy.deepcopy(df)
+    close_col          = ('Close', ticker_name)
     close_value        = df[close_col].iloc[-1]
     before_close_value = df[close_col].iloc[-2]
     last_date          = df[close_col].index[-1]
@@ -75,7 +67,7 @@ def main(args):
     if verbose:
         print("\n" + "="*70)
         print(f"{emoji}  Streak Probability Analysis — {direction_label} Price Moves")
-        print(f"📊 Ticker: {ticker_name} | Last Close: {close_value:,.2f} | Last Date in {frequency} DF: {last_date.strftime("%Y-%m-%d")} | Now: {now.strftime('%Y-%m-%d')}")
+        print(f"📊 Ticker: {ticker_name} | Last Close: {close_value:,.2f} | Last Date in {frequency} DF: {last_date.strftime("%Y-%m-%d_%H%M")} | Now: {now.strftime('%Y-%m-%d_%H%M')}")
         print("="*70)
 
     for NN in sorted_NNs:
@@ -91,7 +83,7 @@ def main(args):
                 print(
                     f"    {prob:>7.2%} ({count:>4d} / {total_streaks:>4d}) → "
                     f"Close {cl_dir} {vl_dl:,.1f} "
-                    f"(Δ = {delta:>4.1f}%)"
+                    f"(Δ = {delta:>4.3f}%)"
                 )
     if verbose:
         print("\n✅ Done.\n")
@@ -114,6 +106,7 @@ if __name__ == "__main__":
         "--frequency", type=str, default="day",
         help="Data frequency (e.g., 'day', 'hour')"
     )
+    parser.add_argument("--dataset-id", type=str, default="day")
     parser.add_argument(
         "--ticker", type=str, default="^GSPC",
         help="Ticker symbol (e.g., '^GSPC' for S&P 500)"

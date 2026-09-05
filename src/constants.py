@@ -24,6 +24,7 @@ BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
 BASE_YFINANCE_DIR     = r"C:\Finance\data\yfinance"
 BASE_FORECAST_DIR     = r"C:\Finance\data\forecast"
+
 if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
     BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
@@ -53,7 +54,7 @@ FYAHOO__OUTPUTFILENAME_YEAR    = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_
 FYAHOO_TICKER__OUTPUTFILENAME  = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_ticker.pkl")
 FYAHOO_SPX500__OUTPUTFILENAME  = os.path.join(str(BASE_YFINANCE_DIR), "sp500_daily_data.parquet")
 FYAHOO_GITHUB_DIRECTORY        = os.path.join(str(BASE_YFINANCE_DIR), "yfdataset")
-
+MOOMOO__PROXY_SPX_FILENAME     = r"D:\Finance\data\moomoo\proxy_for_spx\2026.09.01\df_proxy_spx_moomoo.parquet"
 # Constants
 NB_WORKERS = os.cpu_count()
 
@@ -97,3 +98,12 @@ EMAIL_SENDER_WEBEAR = "luccauchon@gmail.com"
 PWD_GOOGLE_API = "thhy qvae fbsb zsbe"
 
 TITLE_WEBEAR = "WEBEAR 1.0"
+
+CLAUSE_NON_RESPONSABILITE = """
+Avertissement légal et clause de non-responsabilité (Canada)
+À des fins purement éducatives et informatives. Tout le contenu partagé dans ce courriel, incluant les analyses, graphiques, opinions et prédictions concernant le S&P 500 (SPX), des horizons hebdomadaires jusqu'aux stratégies à très court terme (0DTE), est fourni gratuitement et uniquement à titre indicatif et pédagogique.
+Absence de conseil en investissement. Les informations contenues dans ce message ne constituent pas, et ne doivent en aucun cas être interprétées comme un conseil en investissement, une recommandation financière personnalisée, ou une sollicitation d'achat ou de vente de titres ou de produits dérivés. L'auteur n'est pas inscrit auprès des autorités canadiennes en valeurs mobilières (telles que l'AMF ou l'OSC) à titre de conseiller en placement ou de gestionnaire de portefeuille.
+Risques de pertes importants. Le trading de produits dérivés et d'options à échéance immédiate (0DTE) comporte un niveau de risque extrêmement élevé et ne convient pas à tous les investisseurs. Vous pouvez perdre la totalité, voire plus, de votre capital initial. Les simulations et performances passées ne garantissent pas les résultats futurs.
+Utilisation exclusive sur comptes de démonstration (Paper Trading). Les analyses et scénarios présentés dans ce courriel sont conçus pour être appliqués et testés exclusivement sur des comptes de démonstration ou via des simulateurs de marché (Paper Trading). L'auteur encourage vivement ses lecteurs à ne pas engager de capital réel sur la base de ces informations. Tout passage à un environnement de trading réel se fait aux risques et périls de l'utilisateur.
+Exclusion totale de responsabilité. En lisant ce courriel, vous reconnaissez que vous êtes le seul responsable de vos décisions financières. L'auteur décline toute responsabilité quant à l'exactitude, l'exhaustivité ou la pertinence des prédictions fournies, et ne pourra être tenu responsable d'aucune perte financière, dommage direct ou indirect, découlant de l'utilisation des informations contenues dans ce message. Il est fortement recommandé de consulter un professionnel de la finance inscrit auprès des autorités réglementaires de votre province avant de prendre toute décision d'investissement.
+"""

@@ -24,6 +24,7 @@ def parse_args():
         description=""
     )
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     return parser.parse_args()
 
 
@@ -36,7 +37,7 @@ def entry(args_player):
     subject = f"[{signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')}] | Persistance conditionnelle de l'écart | "
     # Construction du corps du courriel
     email_body = f"{result}"
-
+    if args.verbose: print(email_body)
     send_html_email(destinataires=destinataires, sujet=subject, corps=email_body)
 
     return {'subject': subject, 'body': email_body}

@@ -1,5 +1,6 @@
 import os
 import re
+import types
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -13,8 +14,8 @@ import warnings
 from utils import get_and_clean_stub_dir
 from fetchers.data_factory import factory_load_data
 from datetime import timedelta, datetime
-from tqdm import tqdm
-
+import time
+import pickle
 warnings.filterwarnings("ignore")
 
 
@@ -25,73 +26,90 @@ def set_seed(seed=42):
         torch.cuda.manual_seed_all(seed)
 
 
-set_seed(42)
-
 # ==========================================
-# 1. Configuration
+# 1. PyTorch Dataset
 # ==========================================
-TICKER = "^GSPC"
+class MultiTaskSPXDataset(Dataset):
+    def __init__(self, X, y_reg, y_dir, y_slope):
+        self.X = torch.from_numpy(X).float()
+        self.y_reg = torch.from_numpy(y_reg).float()
+        self.y_dir = torch.from_numpy(y_dir).float()
+        self.y_slope = torch.from_numpy(y_slope).float()
 
-# Sequence configuration
-N_BARS = 20  # Input sequence length
-M_BARS = 15  # Prediction horizon length
+    def __len__(self):
+        return len(self.X)
 
-# Model configuration
-HIDDEN_SIZE = 64
-NUM_LAYERS = 8
-DROPOUT = 0.2
-BATCH_SIZE = 64 // 4
-EPOCHS = 250
-LEARNING_RATE = 4e-4
-WEIGHT_DECAY = 1e-3
-
-# Train/test split by trading day
-NUMBER_OF_DAYS_FOR_VALIDATION = 4
-BETWEEN_TIME = ("14:30", "16:00")
-NUMBER_DAYS_FOR_DATASET = 25
-NUMBER_OF_DAYS_FOR_TEST = 2
-
-# Multitask loss weights
-REG_LOSS_WEIGHT = 1.0
-CLS_LOSS_WEIGHT = 1.0
-SLOPE_LOSS_WEIGHT = 0.1
-
-# Indicator settings
-RSI_PERIOD = 14
-VOL_PERIOD = 14
-
-# Input features.
-FEATURE_COLS = [
-    "log_ret",
-    "rsi_14",
-    "macd",
-    "macd_signal",
-    "macd_hist",
-    "ret_vol_14",
-    "parkinson_vol_14",
-    "atr_pct_14",
-    "prev_day_close",
-    "vwap",
-    "vix",
-]
-
-# Warmup bars to avoid using early unstable indicator values.
-WARMUP_BARS = max(26, RSI_PERIOD, VOL_PERIOD) + 1
-
-# Dynamic input size
-INPUT_SIZE = len(FEATURE_COLS)
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-PATIENCE = 50  # Stop if val loss doesn't improve
-
-GENERATE_PLOT = True
+    def __getitem__(self, idx):
+        return self.X[idx], self.y_reg[idx], self.y_dir[idx], self.y_slope[idx]
 
 
 # ==========================================
-# 2. Data Fetching & Preprocessing
+# 2. Multitask LSTM Model
 # ==========================================
-def fetch_and_clean_data():
-    df_ticker, df_vix = factory_load_data(_dataset_id="intraday_1min", _ticker=TICKER, _args={"get_vix": True})
+class MultiTaskLSTM(nn.Module):
+    def __init__(self, config, bidirectional: bool = True):
+        super(MultiTaskLSTM, self).__init__()
+
+        self.hidden_size = config.HIDDEN_SIZE
+        self.num_layers = config.NUM_LAYERS
+        self.m_steps = config.M_BARS
+        self.bidirectional = bidirectional
+
+        lstm_output_size = config.HIDDEN_SIZE * 2 if bidirectional else config.HIDDEN_SIZE
+
+        self.lstm = nn.LSTM(
+            input_size=config.INPUT_SIZE,
+            hidden_size=config.HIDDEN_SIZE,
+            num_layers=config.NUM_LAYERS,
+            batch_first=True,
+            dropout=config.DROPOUT if config.NUM_LAYERS > 1 else 0.0,
+            bidirectional=bidirectional,
+        )
+
+        self.shared_head = nn.Sequential(
+            nn.Linear(lstm_output_size, config.HIDDEN_SIZE),
+            nn.GELU(),
+            nn.Dropout(config.DROPOUT),
+        )
+
+        self.regression_head = nn.Sequential(
+            nn.Linear(config.HIDDEN_SIZE, config.HIDDEN_SIZE),
+            nn.GELU(),
+            nn.Dropout(config.DROPOUT),
+            nn.Linear(config.HIDDEN_SIZE, config.M_BARS),
+        )
+
+        self.classification_head = nn.Sequential(
+            nn.Linear(config.HIDDEN_SIZE, config.HIDDEN_SIZE),
+            nn.GELU(),
+            nn.Dropout(config.DROPOUT),
+            nn.Linear(config.HIDDEN_SIZE, config.M_BARS),
+        )
+
+        self.slope_head = nn.Sequential(
+            nn.Linear(config.HIDDEN_SIZE, config.HIDDEN_SIZE // 2),
+            nn.GELU(),
+            nn.Dropout(config.DROPOUT),
+            nn.Linear(config.HIDDEN_SIZE // 2, 1),
+        )
+
+    def forward(self, x):
+        lstm_out, _ = self.lstm(x)
+        last_hidden = lstm_out[:, -1, :]
+        shared = self.shared_head(last_hidden)
+
+        reg_out = self.regression_head(shared)
+        cls_logits = self.classification_head(shared)
+        slope_logits = self.slope_head(shared)
+
+        return reg_out, cls_logits, slope_logits
+
+
+# ==========================================
+# 3. Data Fetching & Preprocessing
+# ==========================================
+def fetch_and_clean_data(config):
+    df_ticker, df_vix = factory_load_data(_dataset_id=config.DATASET_ID, _ticker=config.TICKER, _args={"get_vix": True, "realtime": config.USE_REALTIME_DATA})
     # df = yf.download(TICKER,period="5d",interval="1m",progress=False,prepost=False,auto_adjust=True, ignore_tz=True,)
 
     if df_ticker is None or len(df_ticker) == 0:
@@ -99,14 +117,13 @@ def fetch_and_clean_data():
 
     if isinstance(df_ticker.columns, pd.MultiIndex):
         df_ticker.columns = df_ticker.columns.get_level_values(0)
-        if df_vix is not None and isinstance(df_vix.columns, pd.MultiIndex):
-            df_vix.columns = df_vix.columns.get_level_values(0)
+        df_vix.columns    = df_vix.columns.get_level_values(0)
 
-    df_ticker = df_ticker.between_time(BETWEEN_TIME[0], BETWEEN_TIME[1])
+    # df_ticker = df_ticker.between_time(BETWEEN_TIME[0], BETWEEN_TIME[1])
 
     # --- VIX Integration ---
     if df_vix is not None and len(df_vix) > 0:
-        df_vix = df_vix.between_time(BETWEEN_TIME[0], BETWEEN_TIME[1])
+        # df_vix = df_vix.between_time(BETWEEN_TIME[0], BETWEEN_TIME[1])
         # Extract VIX close price and rename to 'vix'
         vix_series = df_vix["Close"].rename("vix")
         # Left join to keep all df_ticker rows, forward fill missing VIX values
@@ -130,9 +147,9 @@ def fetch_and_clean_data():
 
 
 # ==========================================
-# 3. Feature Engineering
+# 4. Feature Engineering
 # ==========================================
-def _add_day_features(day: pd.DataFrame) -> pd.DataFrame:
+def _add_day_features(day: pd.DataFrame, config) -> pd.DataFrame:
     g = day.copy()
 
     close = g["Close"].astype(float)
@@ -140,18 +157,16 @@ def _add_day_features(day: pd.DataFrame) -> pd.DataFrame:
     low = g["Low"].astype(float)
     volume = g["Volume"].astype(float)
 
-    # Log return
     prev_close = close.shift(1)
     log_ret = np.log(close / prev_close)
     log_ret = log_ret.replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
-    # RSI
     delta = close.diff()
     gain = delta.clip(lower=0.0).fillna(0.0)
     loss = (-delta.clip(upper=0.0)).fillna(0.0)
 
-    avg_gain = gain.ewm(alpha=1.0 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1.0 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False).mean()
+    avg_gain = gain.ewm(alpha=1.0 / config.RSI_PERIOD, min_periods=config.RSI_PERIOD, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / config.RSI_PERIOD, min_periods=config.RSI_PERIOD, adjust=False).mean()
 
     eps = 1e-12
     rs = avg_gain / (avg_loss + eps)
@@ -160,7 +175,6 @@ def _add_day_features(day: pd.DataFrame) -> pd.DataFrame:
     rsi[(avg_loss.abs() < eps) & (avg_gain.abs() < eps)] = 50.0
     rsi = rsi.fillna(50.0).clip(0.0, 100.0)
 
-    # MACD
     ema_fast = close.ewm(span=12, adjust=False).mean()
     ema_slow = close.ewm(span=26, adjust=False).mean()
     macd = ema_fast - ema_slow
@@ -171,28 +185,25 @@ def _add_day_features(day: pd.DataFrame) -> pd.DataFrame:
     macd_signal = macd_signal.fillna(0.0)
     macd_hist = macd_hist.fillna(0.0)
 
-    # Volatility metrics
-    ret_vol = log_ret.rolling(window=VOL_PERIOD, min_periods=2).std().fillna(0.0)
+    ret_vol = log_ret.rolling(window=config.VOL_PERIOD, min_periods=2).std().fillna(0.0)
 
     low_safe = low.replace(0.0, np.nan)
     hl = np.log(high / low_safe)
     hl = hl.replace([np.inf, -np.inf], 0.0).fillna(0.0)
     parkinson_var = (hl ** 2) / (4.0 * np.log(2.0))
-    parkinson_vol = parkinson_var.rolling(window=VOL_PERIOD, min_periods=1).mean().pow(0.5).fillna(0.0)
+    parkinson_vol = parkinson_var.rolling(window=config.VOL_PERIOD, min_periods=1).mean().pow(0.5).fillna(0.0)
 
     prev_close_tr = close.shift(1).fillna(close)
     tr = pd.concat([high - low, (high - prev_close_tr).abs(), (low - prev_close_tr).abs()], axis=1).max(axis=1)
-    atr = tr.rolling(window=VOL_PERIOD, min_periods=1).mean()
+    atr = tr.rolling(window=config.VOL_PERIOD, min_periods=1).mean()
     atr_pct = (atr / close).replace([np.inf, -np.inf], 0.0).fillna(0.0)
 
-    # VWAP (Volume Weighted Average Price)
     typical_price = (high + low + close) / 3.0
-    # Avoid division by zero if volume is 0
     safe_volume = volume.replace(0.0, np.nan)
     cum_tp_vol = (typical_price * safe_volume).cumsum()
     cum_vol = safe_volume.cumsum()
     vwap = cum_tp_vol / cum_vol
-    vwap = vwap.fillna(close)  # Fallback to close price if volume is missing/zero
+    vwap = vwap.fillna(close)
 
     g["log_ret"] = log_ret
     g["rsi_14"] = rsi
@@ -207,7 +218,7 @@ def _add_day_features(day: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, config) -> pd.DataFrame:
     daily_close = df.groupby('Date')['Close'].last()
     prev_day_close_map = daily_close.shift(1)
     df['prev_day_close'] = df['Date'].map(prev_day_close_map)
@@ -215,28 +226,28 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     first_day_close = df.groupby('Date')['Close'].first()
     df['prev_day_close'] = df['prev_day_close'].fillna(df['Date'].map(first_day_close))
 
-    df = df.groupby("Date", group_keys=False).apply(_add_day_features)
-    df[FEATURE_COLS] = df[FEATURE_COLS].replace([np.inf, -np.inf], 0.0)
+    df = df.groupby("Date", group_keys=False).apply(lambda x: _add_day_features(x, config))
+    df[config.FEATURE_COLS] = df[config.FEATURE_COLS].replace([np.inf, -np.inf], 0.0)
 
-    fill_values = {col: 0.0 for col in FEATURE_COLS}
+    fill_values = {col: 0.0 for col in config.FEATURE_COLS}
     fill_values["rsi_14"] = 50.0
     fill_values["prev_day_close"] = df["Close"].mean()
-    fill_values["vwap"] = df["Close"].mean()  # Fallback for VWAP
-    fill_values["vix"] = df["vix"].mean() if "vix" in df.columns else 15.0  # Fallback for VIX
+    fill_values["vwap"] = df["Close"].mean()
+    fill_values["vix"] = df["vix"].mean() if "vix" in df.columns else 15.0
 
-    df[FEATURE_COLS] = df[FEATURE_COLS].fillna(fill_values)
+    df[config.FEATURE_COLS] = df[config.FEATURE_COLS].fillna(fill_values)
 
     return df
 
 
 # ==========================================
-# 4. Sequence Generation
+# 5. Sequence Generation
 # ==========================================
-def create_intraday_sequences(df: pd.DataFrame, n: int, m: int):
+def create_intraday_sequences(df: pd.DataFrame, config):
     X = []
     y_logret = []
     y_dir = []
-    y_slope_dir = []  # NEW: Slope direction of the target
+    y_slope_dir = []
     y_future_close = []
     y_last_close = []
     y_future_times = []
@@ -244,32 +255,31 @@ def create_intraday_sequences(df: pd.DataFrame, n: int, m: int):
     for date, group in df.groupby("Date"):
         group = group.sort_index()
 
-        if len(group) < WARMUP_BARS + n + m:
+        if len(group) < config.WARMUP_BARS + config.N_BARS + config.M_BARS:
             continue
 
-        features = group[FEATURE_COLS].values.astype(np.float32)
+        features = group[config.FEATURE_COLS].values.astype(np.float32)
         close = group["Close"].values.astype(np.float64)
         times = group.index
 
-        max_start = len(features) - n - m
+        max_start = len(features) - config.N_BARS - config.M_BARS
 
-        for i in range(WARMUP_BARS, max_start + 1):
-            x_seq = features[i: i + n]
+        for i in range(config.WARMUP_BARS, max_start + 1):
+            x_seq = features[i: i + config.N_BARS]
 
-            last_close = close[i + n - 1]
-            future_close = close[i + n: i + n + m]
-            future_times = times[i + n: i + n + m]
+            last_close = close[i + config.N_BARS - 1]
+            future_close = close[i + config.N_BARS: i + config.N_BARS + config.M_BARS]
+            future_times = times[i + config.N_BARS: i + config.N_BARS + config.M_BARS]
 
             if last_close > 0:
                 with np.errstate(divide="ignore", invalid="ignore"):
                     future_logret = np.log(future_close / last_close)
             else:
-                future_logret = np.zeros(m, dtype=np.float64)
+                future_logret = np.zeros(config.M_BARS, dtype=np.float64)
 
             future_logret = np.where(np.isfinite(future_logret), future_logret, 0.0).astype(np.float32)
             direction = (future_logret > 0.0).astype(np.float32)
 
-            # NEW: Compute slope direction (1 if last point > first point, else 0)
             slope_dir = 1.0 if future_close[-1] > future_close[0] else 0.0
 
             X.append(x_seq)
@@ -282,11 +292,11 @@ def create_intraday_sequences(df: pd.DataFrame, n: int, m: int):
 
     if len(X) == 0:
         return (
-            np.empty((0, n, INPUT_SIZE), dtype=np.float32),
-            np.empty((0, m), dtype=np.float32),
-            np.empty((0, m), dtype=np.float32),
-            np.empty((0,), dtype=np.float32),  # y_slope_dir
-            np.empty((0, m), dtype=np.float64),
+            np.empty((0, config.N_BARS, config.INPUT_SIZE), dtype=np.float32),
+            np.empty((0, config.M_BARS), dtype=np.float32),
+            np.empty((0, config.M_BARS), dtype=np.float32),
+            np.empty((0,), dtype=np.float32),
+            np.empty((0, config.M_BARS), dtype=np.float64),
             np.empty((0,), dtype=np.float64),
             np.empty((0,), dtype=object),
         )
@@ -303,139 +313,65 @@ def create_intraday_sequences(df: pd.DataFrame, n: int, m: int):
 
 
 # ==========================================
-# 5. PyTorch Dataset
+# 6. Training Pipeline
 # ==========================================
-class MultiTaskSPXDataset(Dataset):
-    def __init__(self, X, y_reg, y_dir, y_slope):
-        self.X = torch.from_numpy(X).float()
-        self.y_reg = torch.from_numpy(y_reg).float()
-        self.y_dir = torch.from_numpy(y_dir).float()
-        self.y_slope = torch.from_numpy(y_slope).float()
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y_reg[idx], self.y_dir[idx], self.y_slope[idx]
-
-
-# ==========================================
-# 6. Multitask LSTM Model
-# ==========================================
-class MultiTaskLSTM(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int, num_layers: int, dropout: float, m_steps: int, bidirectional: bool = True):
-        super(MultiTaskLSTM, self).__init__()
-
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.m_steps = m_steps
-        self.bidirectional = bidirectional
-
-        # When bidirectional is True, the LSTM output hidden size is doubled
-        lstm_output_size = hidden_size * 2 if bidirectional else hidden_size
-
-        self.lstm = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0,
-            bidirectional=bidirectional,
-        )
-
-        self.shared_head = nn.Sequential(
-            nn.Linear(lstm_output_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(dropout),
-        )
-
-        self.regression_head = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size, m_steps),
-        )
-
-        self.classification_head = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size, m_steps),
-        )
-
-        self.slope_head = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_size // 2, 1),
-        )
-
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        last_hidden = lstm_out[:, -1, :]
-        shared = self.shared_head(last_hidden)
-
-        reg_out = self.regression_head(shared)
-        cls_logits = self.classification_head(shared)
-        slope_logits = self.slope_head(shared)  # Shape: (batch_size, 1)
-
-        return reg_out, cls_logits, slope_logits
-
-
-# ==========================================
-# 7. Training Pipeline
-# ==========================================
-def train_model():
-    df = fetch_and_clean_data()
-    df = add_features(df)
+def train_model(config):
+    df = fetch_and_clean_data(config)
+    df.to_parquet(f"df_lstm_{config.DATASET_ID}.parquet", index=True)
+    sys.exit(0)
+    df = add_features(df, config)
     print(f"Dataframe dates: {df.index[0].strftime('%Y-%m-%d_%H%M')} :: {df.index[-1].strftime('%Y-%m-%d_%H%M')}")
     unique_dates = sorted(df["Date"].unique())
     if len(unique_dates) < 2:
         raise RuntimeError("Need at least two trading days for train/test splitting.")
 
-    assert NUMBER_DAYS_FOR_DATASET > 0 and NUMBER_DAYS_FOR_DATASET < len(unique_dates)
-    unique_dates = unique_dates[-NUMBER_DAYS_FOR_DATASET:]
-    assert len(unique_dates) == NUMBER_DAYS_FOR_DATASET
+    assert config.NUMBER_DAYS_FOR_DATASET > 0 and config.NUMBER_DAYS_FOR_DATASET <= len(unique_dates), f"{unique_dates}"
+    unique_dates = unique_dates[-config.NUMBER_DAYS_FOR_DATASET:]
+    assert len(unique_dates) == config.NUMBER_DAYS_FOR_DATASET
 
-    assert NUMBER_OF_DAYS_FOR_VALIDATION > 0
-    split_idx = len(unique_dates) - (NUMBER_OF_DAYS_FOR_VALIDATION + NUMBER_OF_DAYS_FOR_TEST)
+    assert config.NUMBER_OF_DAYS_FOR_VALIDATION > 0
+    split_idx = len(unique_dates) - (config.NUMBER_OF_DAYS_FOR_VALIDATION + config.NUMBER_OF_DAYS_FOR_TEST)
     train_dates = unique_dates[:split_idx]
-    val_dates = unique_dates[split_idx:split_idx+NUMBER_OF_DAYS_FOR_VALIDATION]
-    assert len(val_dates) == NUMBER_OF_DAYS_FOR_VALIDATION
-    test_dates = unique_dates[split_idx+NUMBER_OF_DAYS_FOR_VALIDATION:]
-    assert len(test_dates) == NUMBER_OF_DAYS_FOR_TEST
+    val_dates = unique_dates[split_idx:split_idx + config.NUMBER_OF_DAYS_FOR_VALIDATION]
+    assert len(val_dates) == config.NUMBER_OF_DAYS_FOR_VALIDATION
+    test_dates = unique_dates[split_idx + config.NUMBER_OF_DAYS_FOR_VALIDATION:]
+    assert len(test_dates) == config.NUMBER_OF_DAYS_FOR_TEST
 
     df_train = df[df["Date"].isin(train_dates)]
-    df_val   = df[df["Date"].isin(val_dates)]
-    df_test  = df[df["Date"].isin(test_dates)]
+    df_train = df_train.between_time(config.BETWEEN_TIME_TRAIN[0], config.BETWEEN_TIME_TRAIN[1])
+    df_val = df[df["Date"].isin(val_dates)]
+    df_val = df_val.between_time(config.BETWEEN_TIME_VAL[0], config.BETWEEN_TIME_VAL[1])
+    df_test = df[df["Date"].isin(test_dates)]
+    df_test = df_test.between_time(config.BETWEEN_TIME_TEST[0], config.BETWEEN_TIME_TEST[1])
+
     print(f"Train days:{train_dates}\nVal days:{val_dates}\nTest days:{test_dates}")
     print(f"Train dates: {len(train_dates)} ({df_train.index[0].strftime('%Y-%m-%d_%H%M')} :: {df_train.index[-1].strftime('%Y-%m-%d_%H%M')}) | "
           f"Val dates: {len(val_dates)} ({df_val.index[0].strftime('%Y-%m-%d_%H%M')} :: {df_val.index[-1].strftime('%Y-%m-%d_%H%M')}) | "
           f"Test dates: {len(test_dates)} ({df_test.index[0].strftime('%Y-%m-%d_%H%M')} :: {df_test.index[-1].strftime('%Y-%m-%d_%H%M')})")
 
-    X_train, y_train_logret, y_train_dir, y_train_slope, _, _, _ = create_intraday_sequences(df_train, N_BARS, M_BARS)
+    X_train, y_train_logret, y_train_dir, y_train_slope, _, _, _ = create_intraday_sequences(df_train, config)
 
     (
         X_val, y_val_logret, y_val_dir, y_val_slope,
         y_val_future_close, y_val_last_close, y_val_future_times
-    ) = create_intraday_sequences(df_val, N_BARS, M_BARS)
+    ) = create_intraday_sequences(df_val, config)
 
     (
         X_test, y_test_logret, y_test_dir, y_test_slope,
         y_test_future_close, y_test_last_close, y_test_future_times
-    ) = create_intraday_sequences(df_test, N_BARS, M_BARS)
+    ) = create_intraday_sequences(df_test, config)
 
     print(f"Created {len(X_train)} train sequences.")
-    print(f"Created {len(X_val)} test sequences.")
-    print(f"Created {len(X_test)} test sequences.")
+    print(f"Created {len(X_val)} val sequences.")
+    print(f"Created {len(X_test)} test sequences. ({y_test_future_times[0][0]} to {y_test_future_times[-1][0]})")
 
     if len(X_train) == 0 or len(X_val) == 0 or len(X_test) == 0:
         raise RuntimeError("No sequences created. Reduce N_BARS/M_BARS/WARMUP_BARS or fetch more data.")
 
     input_scaler = StandardScaler()
-    X_train_scaled = input_scaler.fit_transform(X_train.reshape(-1, INPUT_SIZE)).reshape(X_train.shape)
-    X_val_scaled = input_scaler.transform(X_val.reshape(-1, INPUT_SIZE)).reshape(X_val.shape)
-    X_test_scaled = input_scaler.transform(X_test.reshape(-1, INPUT_SIZE)).reshape(X_test.shape)
+    X_train_scaled = input_scaler.fit_transform(X_train.reshape(-1, config.INPUT_SIZE)).reshape(X_train.shape)
+    X_val_scaled = input_scaler.transform(X_val.reshape(-1, config.INPUT_SIZE)).reshape(X_val.shape)
+    X_test_scaled = input_scaler.transform(X_test.reshape(-1, config.INPUT_SIZE)).reshape(X_test.shape)
 
     target_scaler = StandardScaler()
     y_train_reg_scaled = target_scaler.fit_transform(y_train_logret.reshape(-1, 1)).reshape(y_train_logret.shape)
@@ -446,43 +382,36 @@ def train_model():
     val_dataset = MultiTaskSPXDataset(X_val_scaled, y_val_reg_scaled, y_val_dir, y_val_slope)
     test_dataset = MultiTaskSPXDataset(X_test_scaled, y_test_reg_scaled, y_test_dir, y_test_slope)
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
 
-    model = MultiTaskLSTM(
-        input_size=INPUT_SIZE,
-        hidden_size=HIDDEN_SIZE,
-        num_layers=NUM_LAYERS,
-        dropout=DROPOUT,
-        m_steps=M_BARS,
-    ).to(DEVICE)
+    model = MultiTaskLSTM(config).to(config.DEVICE)
 
     param_count = sum(p.numel() for p in model.parameters())
-    print(f"Input size: {INPUT_SIZE} | Model parameters: {param_count:,}")
+    print(f"Input size: {config.INPUT_SIZE} | Model parameters: {param_count:,}")
 
     reg_criterion = nn.SmoothL1Loss()
     cls_criterion = nn.BCEWithLogitsLoss()
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.EPOCHS)
 
-    print(f"Training on {DEVICE}...")
+    print(f"Training on {config.DEVICE}...")
     epochs_no_improve = 0
-    # Track the best validation loss
-    best_val_loss = float('inf')
-    best_model = None
-    for epoch in range(EPOCHS):
+    best_val = None
+
+    for epoch in range(config.EPOCHS):
         model.train()
         train_total_loss, train_reg_loss, train_cls_loss, train_slope_loss = 0.0, 0.0, 0.0, 0.0
         train_dir_acc, train_slope_acc = 0.0, 0.0
 
-        train_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{EPOCHS}", leave=False)
+        train_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.EPOCHS}", leave=False)
         for X_batch, y_reg_batch, y_dir_batch, y_slope_batch in train_bar:
-            X_batch = X_batch.to(DEVICE)
-            y_reg_batch = y_reg_batch.to(DEVICE)
-            y_dir_batch = y_dir_batch.to(DEVICE)
-            y_slope_batch = y_slope_batch.to(DEVICE)
+            X_batch = X_batch.to(config.DEVICE)
+            y_reg_batch = y_reg_batch.to(config.DEVICE)
+            y_dir_batch = y_dir_batch.to(config.DEVICE)
+            y_slope_batch = y_slope_batch.to(config.DEVICE)
 
             optimizer.zero_grad()
             pred_reg, pred_cls, pred_slope = model(X_batch)
@@ -491,7 +420,7 @@ def train_model():
             loss_cls = cls_criterion(pred_cls, y_dir_batch)
             loss_slope = cls_criterion(pred_slope, y_slope_batch.unsqueeze(1))
 
-            loss = REG_LOSS_WEIGHT * loss_reg + CLS_LOSS_WEIGHT * loss_cls + SLOPE_LOSS_WEIGHT * loss_slope
+            loss = config.REG_LOSS_WEIGHT * loss_reg + config.CLS_LOSS_WEIGHT * loss_cls + config.SLOPE_LOSS_WEIGHT * loss_slope
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -516,10 +445,10 @@ def train_model():
 
         with torch.no_grad():
             for X_batch, y_reg_batch, y_dir_batch, y_slope_batch in val_loader:
-                X_batch = X_batch.to(DEVICE)
-                y_reg_batch = y_reg_batch.to(DEVICE)
-                y_dir_batch = y_dir_batch.to(DEVICE)
-                y_slope_batch = y_slope_batch.to(DEVICE)
+                X_batch = X_batch.to(config.DEVICE)
+                y_reg_batch = y_reg_batch.to(config.DEVICE)
+                y_dir_batch = y_dir_batch.to(config.DEVICE)
+                y_slope_batch = y_slope_batch.to(config.DEVICE)
 
                 pred_reg, pred_cls, pred_slope = model(X_batch)
 
@@ -527,7 +456,7 @@ def train_model():
                 loss_cls = cls_criterion(pred_cls, y_dir_batch)
                 loss_slope = cls_criterion(pred_slope, y_slope_batch.unsqueeze(1))
 
-                loss = REG_LOSS_WEIGHT * loss_reg + CLS_LOSS_WEIGHT * loss_cls + SLOPE_LOSS_WEIGHT * loss_slope
+                loss = config.REG_LOSS_WEIGHT * loss_reg + config.CLS_LOSS_WEIGHT * loss_cls + config.SLOPE_LOSS_WEIGHT * loss_slope
 
                 val_total_loss += loss.item()
                 val_reg_loss += loss_reg.item()
@@ -542,39 +471,46 @@ def train_model():
 
         n_val_batches = max(1, len(val_loader))
         current_val_loss = val_total_loss / n_val_batches
+        current_val_dir_acc = val_dir_acc / n_val_batches
+        current_val_slope_acc = val_slope_acc / n_val_batches
+
+        best_val_to_use = current_val_slope_acc
         print_info = False
-        # Save best model if validation loss improves
-        if current_val_loss < best_val_loss:
-            best_val_loss = current_val_loss
+
+        if best_val is None or best_val_to_use > best_val:
+            best_val = best_val_to_use
+            time.sleep(0.0125)
             torch.save(model, "best_model.pth")
-            print(f"  [Epoch {epoch + 1:03d} | Saved Best Model] Validation loss improved to {best_val_loss:.5f}")
+            print(f"  [Epoch {epoch + 1:03d} | Saved Best Model] Validation loss improved to {best_val_to_use:.8f}  (current_val_loss={current_val_loss:.8f})")
             print_info = True
+            epochs_no_improve = 0
         else:
             epochs_no_improve += 1
-            if epochs_no_improve >= PATIENCE:
-                print(f"\n  [Early Stopping] No improvement for {PATIENCE} epochs. Stopping training.")
+            if epochs_no_improve >= config.PATIENCE:
+                print(f"\n  [Early Stopping] No improvement for {config.PATIENCE} epochs. Stopping training.")
                 break
-        if epoch % 50 == 0 or epoch == EPOCHS - 1 or print_info:
+
+        if epoch % 50 == 0 or epoch == config.EPOCHS - 1 or print_info:
             print(
                 f"Epoch {epoch + 1:03d} | "
                 f"Train Loss: {train_total_loss / n_train_batches:.5f} "
                 f"(reg: {train_reg_loss / n_train_batches:.4f}, cls: {train_cls_loss / n_train_batches:.4f}, slope: {train_slope_loss / n_train_batches:.4f}) | "
                 f"Train Acc: Dir {train_dir_acc / n_train_batches:.4f} | Train Slope Acc {train_slope_acc / n_train_batches:.4f} | "
                 f"Val Loss: {current_val_loss:.5f} | "
-                f"Val Dir Acc: {val_dir_acc / n_val_batches:.4f} | Val Slope Acc: {val_slope_acc / n_val_batches:.4f}"
+                f"Val Dir Acc: {current_val_dir_acc:.4f} | Val Slope Acc: {current_val_slope_acc:.4f}"
             )
-    # Run best model on test data
+
     print(f"Loading best model...")
-    best_model = torch.load("best_model.pth", map_location=DEVICE, weights_only=False)
+    best_model = torch.load("best_model.pth", map_location=config.DEVICE, weights_only=False)
     best_model.eval()
     test_total_loss, test_reg_loss, test_cls_loss, test_slope_loss = 0.0, 0.0, 0.0, 0.0
     test_dir_acc, test_slope_acc = 0.0, 0.0
     with torch.no_grad():
         for X_batch, y_reg_batch, y_dir_batch, y_slope_batch in test_loader:
-            X_batch = X_batch.to(DEVICE)
-            y_reg_batch = y_reg_batch.to(DEVICE)
-            y_dir_batch = y_dir_batch.to(DEVICE)
-            y_slope_batch = y_slope_batch.to(DEVICE)
+            X_batch = X_batch.to(config.DEVICE)
+            y_reg_batch = y_reg_batch.to(config.DEVICE)
+            y_dir_batch = y_dir_batch.to(config.DEVICE)
+            y_slope_batch = y_slope_batch.to(config.DEVICE)
 
             pred_reg, pred_cls, pred_slope = best_model(X_batch)
 
@@ -582,7 +518,7 @@ def train_model():
             loss_cls = cls_criterion(pred_cls, y_dir_batch)
             loss_slope = cls_criterion(pred_slope, y_slope_batch.unsqueeze(1))
 
-            loss = REG_LOSS_WEIGHT * loss_reg + CLS_LOSS_WEIGHT * loss_cls + SLOPE_LOSS_WEIGHT * loss_slope
+            loss = config.REG_LOSS_WEIGHT * loss_reg + config.CLS_LOSS_WEIGHT * loss_cls + config.SLOPE_LOSS_WEIGHT * loss_slope
 
             test_total_loss += loss.item()
             test_reg_loss += loss_reg.item()
@@ -594,26 +530,29 @@ def train_model():
 
             pred_slope_dir = (torch.sigmoid(pred_slope) > 0.5).float().squeeze()
             test_slope_acc += (pred_slope_dir == y_slope_batch).float().mean().item()
+
     n_test_batches = max(1, len(test_loader))
+
     print(
         f"Test Loss: {test_total_loss / n_test_batches:.5f} "
         f"(reg: {test_reg_loss / n_test_batches:.4f}, cls: {test_cls_loss / n_test_batches:.4f}, slope: {test_slope_loss / n_test_batches:.4f}) | "
         f"Test Dir Acc: {test_dir_acc / n_test_batches:.4f} | Test Slope Acc: {test_slope_acc / n_test_batches:.4f} | "
     )
     return (
-        model, input_scaler, target_scaler, X_test_scaled,
+        best_model, input_scaler, target_scaler, X_test_scaled,
         y_test_logret, y_test_dir, y_test_slope,
         y_test_future_close, y_test_last_close, y_test_future_times,
     )
 
 
 # ==========================================
-# 8. Inference & Visualization
+# 7. Inference & Visualization
 # ==========================================
 def plot_predictions(
         model, target_scaler, X_abc,
         y_abc_logret_raw, y_abc_dir_raw, y_abc_slope_raw,
         y_abc_future_close, y_abc_last_close, y_abc_future_times,
+        config
 ):
     if len(X_abc) == 0:
         print("No test sequences available for plotting.")
@@ -625,15 +564,15 @@ def plot_predictions(
     model.eval()
 
     n_samples = len(X_abc)
-    batch_size = BATCH_SIZE
+    batch_size = config.BATCH_SIZE
 
     all_pred_logret = []
     all_pred_up_prob = []
-    all_pred_slope_prob = []  # NEW
+    all_pred_slope_prob = []
 
     for i in range(0, n_samples, batch_size):
         X_batch = X_abc[i:i + batch_size]
-        X_tensor = torch.from_numpy(X_batch).float().to(DEVICE)
+        X_tensor = torch.from_numpy(X_batch).float().to(config.DEVICE)
 
         with torch.no_grad():
             pred_reg_scaled, pred_cls_logits, pred_slope_logits = model(X_tensor)
@@ -666,7 +605,6 @@ def plot_predictions(
         actual_dir = y_abc_dir_raw[idx]
         pred_prob = all_pred_up_prob[idx]
 
-        # NEW: Extract slope targets and predictions
         actual_slope = y_abc_slope_raw[idx]
         pred_slope_prob = all_pred_slope_prob[idx][0]
         pred_slope_dir = 1 if pred_slope_prob >= 0.5 else 0
@@ -676,7 +614,7 @@ def plot_predictions(
         date_str = future_times[0].strftime('%Y-%m-%d')
         time_str = f"{date_str} | {start_time} to {end_time}"
 
-        plot_title = f"SPX {M_BARS}-Minute Multitask Prediction {time_str}"
+        plot_title = f"SPX {config.M_BARS}-Minute Multitask Prediction {time_str}"
         safe_filename = re.sub(r'[^A-Za-z0-9_.-]', '_', plot_title) + ".png"
         safe_filename = re.sub(r'_+', '_', safe_filename)
 
@@ -684,28 +622,22 @@ def plot_predictions(
 
         fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12, 9), sharex=True)
 
-        # Determine colors for slope visualization
         actual_slope_text = "UP" if actual_slope == 1 else "DOWN"
         pred_slope_text = "UP" if pred_slope_dir == 1 else "DOWN"
         actual_color = "green" if actual_slope == 1 else "red"
         pred_color = "green" if pred_slope_dir == 1 else "red"
 
-        # Price plot
         axes[0].plot(minutes, actual_close, label="Actual Close", marker="o", color="blue", markersize=4)
         axes[0].plot(minutes, pred_close, label="Predicted Close", marker="x", linestyle="--", color="orange", markersize=4)
 
-        # NEW: Visual integration of slope direction
-        # Draw actual slope line
         axes[0].plot([1, len(actual_close)], [actual_close[0], actual_close[-1]],
                      color=actual_color, linestyle="-", linewidth=2.5, alpha=0.6,
                      label=f"Actual Slope ({actual_slope_text})")
 
-        # Draw predicted slope line
         axes[0].plot([1, len(pred_close)], [pred_close[0], pred_close[-1]],
                      color=pred_color, linestyle="--", linewidth=2.5, alpha=0.8,
                      label=f"Pred Slope ({pred_slope_text}, {pred_slope_prob:.1%})")
 
-        # Add a clear text annotation box for the slope
         slope_match = (actual_slope == pred_slope_dir)
         box_color = "green" if slope_match else "orange"
         slope_info = f"Slope → Actual: {actual_slope_text} | Pred: {pred_slope_text} ({pred_slope_prob:.1%})"
@@ -714,12 +646,11 @@ def plot_predictions(
                      fontsize=10, fontweight='bold', verticalalignment='bottom',
                      bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.9, edgecolor=box_color, linewidth=1.5))
 
-        axes[0].set_title(f"SPX {M_BARS}-Minute Multitask Prediction\n{time_str}")
+        axes[0].set_title(f"SPX {config.M_BARS}-Minute Multitask Prediction\n{time_str}")
         axes[0].set_ylabel("Price")
         axes[0].legend(loc="upper left")
         axes[0].grid(True, alpha=0.3)
 
-        # Direction / probability plot
         axes[1].plot(minutes, actual_dir, drawstyle="steps-mid", label="Actual Direction (1=Up)", color="blue", alpha=0.7)
         axes[1].plot(minutes, pred_prob, marker="x", linestyle="--", label="Predicted Up Probability", color="red")
         axes[1].axhline(0.5, color="gray", linestyle=":", alpha=0.6)
@@ -744,15 +675,56 @@ def plot_predictions(
 
 
 # ==========================================
-# 9. Run
+# 8. Main Execution
 # ==========================================
-if __name__ == "__main__":
+def main():
+    # Initialize configuration namespace
+    config = types.SimpleNamespace(
+        TICKER="^GSPC",
+        N_BARS=20,
+        M_BARS=15,
+        HIDDEN_SIZE=128,
+        NUM_LAYERS=8,
+        DROPOUT=0.2,
+        BATCH_SIZE=32,
+        EPOCHS=99,
+        LEARNING_RATE=4e-5,
+        WEIGHT_DECAY=1e-3,
+        NUMBER_OF_DAYS_FOR_VALIDATION=15,
+        BETWEEN_TIME_TRAIN=("09:30", "16:00"),
+        BETWEEN_TIME_VAL=("13:00", "16:00"),
+        BETWEEN_TIME_TEST=("13:30", "16:00"),
+        NUMBER_DAYS_FOR_DATASET=155,
+        NUMBER_OF_DAYS_FOR_TEST=1,
+        REG_LOSS_WEIGHT=1.0,
+        CLS_LOSS_WEIGHT=1.0,
+        SLOPE_LOSS_WEIGHT=0.1,
+        RSI_PERIOD=14,
+        VOL_PERIOD=14,
+        FEATURE_COLS=[
+            "log_ret", "rsi_14", "macd", "macd_signal", "macd_hist",
+            "ret_vol_14", "parkinson_vol_14", "atr_pct_14", "prev_day_close", "vwap", "vix",
+        ],
+        DEVICE=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        PATIENCE=66,
+        GENERATE_PLOT=False,
+        USE_REALTIME_DATA=True,
+        DATASET_ID="intraday_15min"
+    )
+
+    # Derived configuration values
+    config.WARMUP_BARS = max(26, config.RSI_PERIOD, config.VOL_PERIOD) + 1
+    config.INPUT_SIZE = len(config.FEATURE_COLS)
+
+    set_seed(42)
+
     (
         model, input_scaler, target_scaler, X_test_scaled,
         y_test_logret, y_test_dir, y_test_slope,
         y_test_future_close, y_test_last_close, y_test_future_times,
-    ) = train_model()
-    if GENERATE_PLOT:
+    ) = train_model(config)
+
+    if config.GENERATE_PLOT:
         plot_predictions(
             model=model,
             target_scaler=target_scaler,
@@ -763,4 +735,9 @@ if __name__ == "__main__":
             y_abc_future_close=y_test_future_close,
             y_abc_last_close=y_test_last_close,
             y_abc_future_times=y_test_future_times,
+            config=config,
         )
+
+
+if __name__ == "__main__":
+    main()

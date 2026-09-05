@@ -20,7 +20,7 @@ if not defined HEURE goto SUIVANT
 :: 2. Vérification du Lundi
 if "%JOUR%"=="1" (
     if "!HEURE!"=="08:31" (        
-        start "BOUCLIER SPX" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\SPX_drop & python player.py --production-setup --update-dataset"
+        start "[BOUCLIER SPX]" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\SPX_drop & python player.py --production-setup --update-dataset"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )

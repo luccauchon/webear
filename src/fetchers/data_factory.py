@@ -1,5 +1,5 @@
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
-from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API
+from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, MOOMOO__PROXY_SPX_FILENAME
 from utils import DATASET_AVAILABLE, get_filename_for_dataset
 import numpy as np
 import os
@@ -95,86 +95,105 @@ def factory_load_data(_dataset_id, _ticker, _args):
     _overwrite_col = _args.get("overwrite_col", True)
     _realtime_data = _args.get("realtime", False)
     _get_vix = _args.get("get_vix", False)
+    _proxy_spx = _args.get("proxy_spx", False)
     _filter_per_day = _args.get("filter_per_day", [])
     _meta_info = ""
-    if _realtime_data:
-        if _dataset_id.startswith("intraday"):
-            assert _ticker in ["^GSPC"]
-            df_spx_main_local = get_1_minute_df(verbose=False, SPX=True)
-            df_vix_main_local = get_1_minute_df(verbose=False, VIX=True)
-            df_realtime = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=True, spy=False, spx=True, ndx=False)
-            df_spx_main_realtime = df_realtime['spx']
-            df_vix_main_realtime = df_realtime['vix']
-            # print(f"LOCAL     {df_spx_main_local.index[0]}::{df_spx_main_local.index[-1]}  {len(df_spx_main_local)}")
-            # print(f"REALTIME  {df_spx_main_realtime.index[0]}::{df_spx_main_realtime.index[-1]}  {len(df_spx_main_realtime)}")
-            def _combine_2df(df_a, df_b):
-                # 1. Fusionner les deux DataFrames (l'un en dessous de l'autre)
-                df_combined = pd.concat([df_a, df_b])
-
-                # 2. Supprimer les doublons basés sur l'index (la date/heure)
-                # 'keep="last"' conserve la donnée en temps réel la plus récente en cas de chevauchement
-                df_new = df_combined[~df_combined.index.duplicated(keep="last")]
-
-                # 3. Optionnel : Trier par ordre chronologique pour s'assurer que le flux reste linéaire
-                df_new = df_new.sort_index()
-                return df_new
-            df_main = _combine_2df(df_a=df_spx_main_local, df_b=df_spx_main_realtime)
-            # print("========================================================")
-            # print(f"FUSIONNED {df_main.index[0]}::{df_main.index[-1]}  {len(df_main)}")
-
-            df_vix = _combine_2df(df_a=df_vix_main_local, df_b=df_vix_main_realtime)
-
-            _n_minutes = _get_dataset_timeframe(_dataset_id)
+    if _proxy_spx:  # Préséance sur realtime
+        assert _ticker in ["^GSPC"]
+        assert _dataset_id.startswith("intraday")
+        df_all = pd.read_parquet(MOOMOO__PROXY_SPX_FILENAME)
+        _n_minutes = _get_dataset_timeframe(_dataset_id)
+        tuples = [("Adj Close", "^GSPC"),("Close", "^GSPC"),("High", "^GSPC"),("Low", "^GSPC"),("Open", "^GSPC"),("Volume", "^GSPC"),]
+        df_main = df_all[tuples].copy()
+        if _n_minutes > 1:
+            df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+        if _get_vix:
+            tuples = [("Adj Close", "^VIX"),("Close", "^VIX"),("High", "^VIX"),("Low", "^VIX"),("Open", "^VIX"),("Volume", "^VIX"),]
+            df_vix = df_all[tuples].copy()
             if _n_minutes > 1:
-                df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
-            if _get_vix:
-                if _n_minutes > 1:
-                    df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
-        else:
-            assert _ticker in ["^GSPC"]
-            assert _dataset_id in ["day", "week", "month", "quarter", "year"]
-            daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
-            the_vix = None
-            if _dataset_id == "day":
-                df_main = daily_data_cache[_ticker].sort_index().copy()
-                the_vix = daily_data_cache["^VIX"]
-            if _dataset_id == "week":
-                df_main = weekly_data_cache[_ticker].sort_index().copy()
-                the_vix = weekly_data_cache["^VIX_MEAN"]
-            if _dataset_id == "month":
-                df_main = monthly_data_cache[_ticker].sort_index().copy()
-                the_vix = monthly_data_cache["^VIX_MEAN"]
-            if _dataset_id == "quarter":
-                df_main = quaterly_data_cache[_ticker].sort_index().copy()
-                the_vix = quaterly_data_cache["^VIX"]
-            if _dataset_id == "year":
-                df_main = yearly_data_cache[_ticker].sort_index().copy()
-                the_vix = yearly_data_cache["^VIX"]
-            if _get_vix:
-                df_vix = the_vix.sort_index().copy()
+                df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
     else:
-        if _dataset_id.startswith("intraday"):
-            assert _ticker in ["^GSPC"]
-            _n_minutes = _get_dataset_timeframe(_dataset_id)
-            df_main = get_1_minute_df(verbose=False, SPX=True)
-            if _n_minutes > 1:
-                df_main = resample_candles(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
-            if _get_vix:
-                df_vix = get_1_minute_df(verbose=False, SPX=False, VIX=True)
+        def _resample_dataset(df, n_minutes, ticker):
+            df = resample_candles_enhanced(df=df, n_minutes=n_minutes, ticker=ticker)
+            return df
+        if _realtime_data:
+            if _dataset_id.startswith("intraday"):
+                assert _ticker in ["^GSPC"]
+                df_spx_main_local = get_1_minute_df(verbose=False, SPX=True)
+                df_vix_main_local = get_1_minute_df(verbose=False, SPX=False, VIX=True)
+                df_realtime = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=True, spy=False, spx=True, ndx=False)
+                df_spx_main_realtime = df_realtime['spx']
+                df_vix_main_realtime = df_realtime['vix']
+                # print(f"LOCAL     {df_spx_main_local.index[0]}::{df_spx_main_local.index[-1]}  {len(df_spx_main_local)}")
+                # print(f"REALTIME  {df_spx_main_realtime.index[0]}::{df_spx_main_realtime.index[-1]}  {len(df_spx_main_realtime)}")
+                def _combine_2df(df_a, df_b):
+                    # 1. Fusionner les deux DataFrames (l'un en dessous de l'autre)
+                    df_combined = pd.concat([df_a, df_b])
+
+                    # 2. Supprimer les doublons basés sur l'index (la date/heure)
+                    # 'keep="last"' conserve la donnée en temps réel la plus récente en cas de chevauchement
+                    df_new = df_combined[~df_combined.index.duplicated(keep="last")]
+
+                    # 3. Optionnel : Trier par ordre chronologique pour s'assurer que le flux reste linéaire
+                    df_new = df_new.sort_index()
+                    return df_new
+                df_main = _combine_2df(df_a=df_spx_main_local, df_b=df_spx_main_realtime)
+                # print("========================================================")
+                # print(f"FUSIONNED {df_main.index[0]}::{df_main.index[-1]}  {len(df_main)}")
+
+                df_vix = _combine_2df(df_a=df_vix_main_local, df_b=df_vix_main_realtime)
+
+                _n_minutes = _get_dataset_timeframe(_dataset_id)
                 if _n_minutes > 1:
-                    df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
+                    df_main = _resample_dataset(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+                if _get_vix:
+                    if _n_minutes > 1:
+                        df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
+            else:
+                assert _ticker in ["^GSPC"]
+                assert _dataset_id in ["day", "week", "month", "quarter", "year"]
+                daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
+                the_vix = None
+                if _dataset_id == "day":
+                    df_main = daily_data_cache[_ticker].sort_index().copy()
+                    the_vix = daily_data_cache["^VIX"]
+                if _dataset_id == "week":
+                    df_main = weekly_data_cache[_ticker].sort_index().copy()
+                    the_vix = weekly_data_cache["^VIX_MEAN"]
+                if _dataset_id == "month":
+                    df_main = monthly_data_cache[_ticker].sort_index().copy()
+                    the_vix = monthly_data_cache["^VIX_MEAN"]
+                if _dataset_id == "quarter":
+                    df_main = quaterly_data_cache[_ticker].sort_index().copy()
+                    the_vix = quaterly_data_cache["^VIX"]
+                if _dataset_id == "year":
+                    df_main = yearly_data_cache[_ticker].sort_index().copy()
+                    the_vix = yearly_data_cache["^VIX"]
+                if _get_vix:
+                    df_vix = the_vix.sort_index().copy()
         else:
-            if _dataset_id not in DATASET_AVAILABLE:
-                # Style: day_heikinashi or day_2B
-                # Extra information is already extracted
-                _dataset_id, _meta_info = _dataset_id.split("_")
-                assert _dataset_id in DATASET_AVAILABLE
-            with open(get_filename_for_dataset(_dataset_id, older_dataset=None), 'rb') as f:
-                _master_data_cache = pickle.load(f)
-            assert _master_data_cache is not None
-            df_main = _master_data_cache[_ticker].sort_index().copy()
-            if _get_vix:
-                df_vix = _master_data_cache["^VIX"].sort_index().copy()
+            if _dataset_id.startswith("intraday"):
+                assert _ticker in ["^GSPC", "SPY"]
+                _n_minutes = _get_dataset_timeframe(_dataset_id)
+                df_main = get_1_minute_df(verbose=False, SPX=_ticker in ["^GSPC"], SPY=_ticker in ["SPY"], NDX=False, VIX=False)
+                if _n_minutes > 1:
+                    df_main = _resample_dataset(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+                if _get_vix:
+                    df_vix = get_1_minute_df(verbose=False, SPX=False, SPY=False, VIX=True)
+                    if _n_minutes > 1:
+                        df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
+            else:
+                if _dataset_id not in DATASET_AVAILABLE:
+                    # Style: day_heikinashi or day_2B
+                    # Extra information is already extracted
+                    _dataset_id, _meta_info = _dataset_id.split("_")
+                    assert _dataset_id in DATASET_AVAILABLE
+                with open(get_filename_for_dataset(_dataset_id, older_dataset=None), 'rb') as f:
+                    _master_data_cache = pickle.load(f)
+                assert _master_data_cache is not None
+                df_main = _master_data_cache[_ticker].sort_index().copy()
+                if _get_vix:
+                    df_vix = _master_data_cache["^VIX"].sort_index().copy()
     assert df_main is not None
     if _convert_to_heikin_ashi:
         _tmp_n1 = len(df_main.dropna())
@@ -309,6 +328,180 @@ def resample_macro_candles(df, n, timeframe, ticker):
     return df_resampled.copy()
 
 
+def resample_candles_enhanced(
+    df,
+    n_minutes,
+    ticker,
+    session_start="09:30:00",
+    session_end="16:00:00",
+    label="left",
+    include_close=False,
+):
+    """
+    Resample 1-minute candles to n-minute candles on a per-day basis,
+    forcing the last candle of each day to end at session_end (default 16:00).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with a DatetimeIndex containing 1-minute candles.
+    n_minutes : int
+        Target candle size in minutes.
+    ticker : str
+        Ticker used to build the column names via _build_cols_dict().
+    session_start : str or pd.Timedelta, default "09:30:00"
+        Regular session start time.
+    session_end : str or pd.Timedelta, default "16:00:00"
+        Regular session end time.
+    label : {"left", "right"}, default "left"
+        - "left": the resulting index is the candle OPEN time.
+                  This matches your current behaviour:
+                  for 15m, the last candle is labelled 15:45 and closes at 16:00.
+        - "right": the resulting index is the candle CLOSE time.
+                  The last candle of each day will be labelled 16:00.
+    include_close : bool, default False
+        - False assumes your 1-minute bars are start-labelled and the last
+          regular bar is 15:59, so 16:00 is excluded.
+        - True includes a 16:00 timestamp in the last candle if present.
+
+    Returns
+    -------
+    pd.DataFrame
+        Resampled n-minute candles.
+    """
+
+    # Validate n_minutes
+    if n_minutes <= 0:
+        raise ValueError("n_minutes must be positive.")
+    if int(n_minutes) != n_minutes:
+        raise ValueError("n_minutes must be an integer number of minutes.")
+    n_minutes = int(n_minutes)
+
+    if label not in ("left", "right"):
+        raise ValueError("label must be either 'left' or 'right'.")
+
+    session_start = pd.Timedelta(session_start)
+    session_end = pd.Timedelta(session_end)
+
+    if session_start >= session_end:
+        raise ValueError("session_start must be before session_end.")
+
+    cols = _build_cols_dict(ticker)
+
+    if ticker == "^VIX":
+        agg_dict = {
+            cols["open_col"]: "first",
+            cols["high_col"]: "max",
+            cols["low_col"]: "min",
+            cols["close_col"]: "last",
+        }
+    else:
+        agg_dict = {
+            cols["open_col"]: "first",
+            cols["high_col"]: "max",
+            cols["low_col"]: "min",
+            cols["close_col"]: "last",
+            cols["volume_col"]: "sum",
+        }
+
+    if df.empty:
+        return pd.DataFrame(columns=list(agg_dict.keys())).rename_axis(df.index.name)
+
+    df = df.sort_index()
+    td = pd.Timedelta(minutes=n_minutes)
+
+    def _session_ts(day_ts, delta):
+        """
+        Build a wall-clock session timestamp for the given day.
+
+        This is useful if the index is timezone-aware, especially around DST.
+        For naive indexes, it simply returns midnight + delta.
+        """
+        naive = pd.Timestamp(day_ts.date()) + delta
+
+        tz = getattr(day_ts, "tz", None)
+        if tz is None:
+            tz = getattr(day_ts, "tzinfo", None)
+
+        if tz is None:
+            return naive
+
+        # Try to use a timezone name if available.
+        tz_name = getattr(tz, "zone", None) or getattr(tz, "key", None) or str(tz)
+
+        try:
+            return naive.tz_localize(tz_name)
+        except Exception:
+            # Fallback: absolute arithmetic. Good enough for fixed offsets / non-DST cases.
+            return day_ts + delta
+
+    parts = []
+
+    # Process each trading day independently.
+    for day, g in df.groupby(df.index.normalize()):
+
+        start_ts = _session_ts(day, session_start)
+        end_ts = _session_ts(day, session_end)
+
+        # Keep only regular session data.
+        if include_close:
+            g = g[(g.index >= start_ts) & (g.index <= end_ts)]
+        else:
+            g = g[(g.index >= start_ts) & (g.index < end_ts)]
+
+        if g.empty:
+            continue
+
+        # Build candle edges backwards from the session close.
+        # Example for n_minutes=13:
+        # edges = [..., 15:34, 15:47, 16:00]
+        edges = [end_ts]
+        while edges[-1] > start_ts:
+            edges.append(edges[-1] - td)
+
+        # Put edges in ascending order.
+        edges = list(reversed(edges))
+
+        # If the backward grid starts before the open, replace that edge by the open.
+        # This makes the first candle partial when n_minutes does not divide the session.
+        if edges[0] < start_ts:
+            edges[0] = start_ts
+
+        edges = pd.DatetimeIndex(edges).drop_duplicates().sort_values()
+
+        if len(edges) < 2:
+            continue
+
+        # Assign each 1-minute timestamp to its candle interval:
+        # interval i is [edges[i], edges[i+1])
+        pos = edges.searchsorted(g.index, side="right") - 1
+
+        # If include_close=True and there is a 16:00 timestamp,
+        # clip puts it into the last candle instead of creating a new one.
+        pos = np.clip(pos, 0, len(edges) - 2)
+
+        if label == "left":
+            # Candle index = open/start time of the candle.
+            group_labels = edges[pos]
+        else:
+            # Candle index = close/end time of the candle.
+            group_labels = edges[pos + 1]
+
+        part = g.groupby(group_labels).agg(agg_dict)
+        parts.append(part)
+
+    if not parts:
+        return pd.DataFrame(columns=list(agg_dict.keys())).rename_axis(df.index.name)
+
+    df_resampled = pd.concat(parts).sort_index()
+    df_resampled.index.name = df.index.name
+
+    # Remove empty candles, same idea as your original dropna().
+    df_resampled = df_resampled.dropna(subset=[cols["open_col"]])
+
+    return df_resampled.copy()
+
+
 def resample_candles(df, n_minutes, ticker):
     """
     Convertit un DataFrame de bougies 1-minute en bougies de n-minutes
@@ -332,12 +525,10 @@ def resample_candles(df, n_minutes, ticker):
 
     rule = f"{n_minutes}min"
 
-    # origin='start_day' aligne sur 00h00 du jour même
-    # offset='30min' décale le point de départ à 00h30, alignant parfaitement les blocs de 60min sur 09h30, 10h30, etc.
     df_resampled = df.resample(
         rule,
         origin='start_day',
-        offset='30min'
+        offset=pd.Timedelta(hours=9, minutes=30)
     ).agg(agg_dict)
 
     # Supprime les barres vides (ex: avant 9h30 ou après la fermeture)

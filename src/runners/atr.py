@@ -363,7 +363,7 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
         return
 
     last_row = df_bt.iloc[-1]
-    last_date = df_bt.index[-1].strftime('%Y-%m-%d')
+    last_date = df_bt.index[-1].strftime('%Y-%m-%d_%H%M')
 
     # Determine current VIX regime
     vix_rank = last_row['VIX_Rolling_Rank']
@@ -440,7 +440,7 @@ def entry(args=None):
     # --- DATA LOADING ---
     t0 = time.time()
     if args.dataframe is None:
-        df_ticker, df_vix = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": 0, "realtime": args.use_realtime_data, "get_vix": True})
+        df_ticker, df_vix = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": 0, "realtime": args.use_realtime_data, "get_vix": True, "proxy_spx": getattr(args, "proxy_spx", False)})
 
         timings['data_loading'] = time.time() - t0
 
@@ -459,7 +459,12 @@ def entry(args=None):
         # --- MERGE & SPLIT ---
         t0 = time.time()
         vix_col = next((col for col in df_vix.columns if isinstance(col, tuple) and 'Close' in col), None)
-        df_bt = df_ticker.join(df_vix[[vix_col]], how='inner').dropna().copy()
+        # ffill VIX because it is always late to be computed (for intraday data from fyahoo).
+        # Old code :  df_bt = df_ticker.join(df_vix[[vix_col]], how='inner').dropna().copy()
+        # New code :
+        df_bt = df_ticker.join(df_vix[[vix_col]], how='left')
+        df_bt[vix_col] = df_bt[vix_col].ffill().copy()
+        df_bt = df_bt.dropna().copy()
 
         # Before joining or calculating rolling rank, shift VIX by 1
         df_bt[vix_col] = df_bt[vix_col].shift(1)

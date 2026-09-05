@@ -1,7 +1,7 @@
 """
 🎯 RULE-BASED TECHNICAL FORECASTING SYSTEM (JIT-ACCELERATED)
 ====================================================================================================
-🔧 ENHANCED: Added "floor" target mode for put credit spread / defined-risk bullish strategies
+🔧 ENHANCED: Added "floor", "short_any", and "ceiling" target modes for defined-risk strategies
 
 📋 OVERVIEW
 -----------
@@ -45,11 +45,14 @@ generate actionable trading signals with configurable lookahead horizons.
 
 4️⃣ TARGET LABELING STRATEGIES (Forecast Ground Truth)
    ├─ Purpose: Define what constitutes a "successful" prediction
-   ├─ Four Modes:
+   ├─ Six Modes:
    │  • "exact"      : Price must exceed threshold EXACTLY at t + lookahead_bars
    │  • "any"        : Price must exceed threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "any_half_B" : Price must exceed threshold in SECOND HALF of window [t+B//2+1, t+B]
+   │  • "any_half_B_fpr_sell" : Price must drop below threshold in SECOND HALF of window [t+B//2+1, t+B]
    │  • "floor" 🆕   : Price must NEVER fall below threshold in [t+1, t+lookahead_bars]
+   │  • "short_any" 🆕: Price must drop below threshold ANYWHERE in [t+1, t+lookahead_bars]
+   │  • "ceiling" 🆕  : Price must NEVER rise above threshold in [t+1, t+lookahead_bars]
    ├─ Parameters:
    │  • lookahead_bars : Forecast horizon in bars (default: 5)
    │  • threshold_pct  : Minimum price move to trigger positive label (default: 0.01 = 1%)
@@ -70,7 +73,7 @@ A trading signal is generated when ALL of the following conditions align:
 🔴 SHORT SIGNAL (Signal = -1):
    ✓ Price < One-Euro Filter (downtrend confirmation)
    ✓ RSI condition (mode-dependent):
-       - momentum: RSI < oversold AND falling vs. previous bar
+       - momentum: RSI < 50 (bearish territory) AND falling vs. previous bar (relaxed for better short signal generation)
        - reversion: RSI > overbought AND falling vs. previous bar
    ✓ MACD Histogram < 0 AND decreasing vs. previous bar (bearish momentum)
 
@@ -118,6 +121,7 @@ import optuna
 from sklearn.model_selection import TimeSeriesSplit
 import datetime
 import sys
+
 # Suppress Optuna & pandas_ta debug logs
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
@@ -253,7 +257,7 @@ def _generate_candidates_numba(
         # RSI condition based on mode
         if rsi_mode_momentum:
             long_rsi = (rsi[i] > rsi_overbought) and (rsi[i] > rsi_prev)
-            short_rsi = (rsi[i] < rsi_oversold) and (rsi[i] < rsi_prev)
+            short_rsi = (rsi[i] < 50.0) and (rsi[i] < rsi_prev)  # Relaxed short momentum: bearish territory and falling
         else:  # reversion mode
             long_rsi = (rsi[i] < rsi_oversold) and (rsi[i] > rsi_prev)
             short_rsi = (rsi[i] > rsi_overbought) and (rsi[i] < rsi_prev)
@@ -329,9 +333,9 @@ def load_model(model_path: str) -> dict:
 def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, signal_density, command_line):
     """Save the best model parameters and metadata to a pickle file."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    if args.optimize_target == "buy":
+    if args.optimize_target == "put_credit":
         metric = "long_accuracy"
-    elif args.optimize_target == "sell":
+    elif args.optimize_target == "call_credit":
         metric = "short_accuracy"
     else:
         metric = "accuracy"
@@ -403,8 +407,9 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
     if verbose:
         print(f"\n🛠 Command Line: {command_line}")
         print(f"\n📊 Dataset Loaded: {ticker} | {dataset_id} | Lookahead {lookahead_bars} bars | {metric_used} @ {threshold_pct:.4%}")
-        print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d')}  ->  {df.index[-1].strftime('%Y%m%d')} | Train Win Rate: {train_win_rate:.2%} "
+        print(f"   Bars: {len(df):,} | Range: {df.index[0].strftime('%Y%m%d_%H%M')}  ->  {df.index[-1].strftime('%Y%m%d_%H%M')} | Train Win Rate: {train_win_rate:.2%} "
               f":: Test Win Rate: {val_win_rate:.2%}  @{test_signal_ratio:.2%} signal density")
+        if use_realtime_data: print(f"   Using realtime data (actual value is {df.iloc[-1][price_col]:.1f})")
 
     # Determine minimum history needed for indicators
     assert 'rsi_period' in params and 'macd_slow' in params
@@ -455,7 +460,7 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
         signal = signal.values[0]
     signal = int(signal)
 
-    if signal == 1 and the_metric in ['long_accuracy', 'accuracy']:  # Buy signal
+    if signal == 1 and the_metric in ['long_accuracy', 'accuracy']:
         signal = 1
     elif signal == -1 and the_metric in ['short_accuracy', 'accuracy']:  # Sell signal
         signal = -1
@@ -463,7 +468,7 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
         signal = 0
 
     # Calculate target price and date
-    if signal == 1:  # Buy signal
+    if signal == 1:
         target_price = current_price * (1 + threshold_pct)
         direction = "BuySignal"
         operator = ">"
@@ -497,8 +502,14 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
                     target_mode_desc = f"any point in window [t+1, t+{lookahead_bars}]"
                 elif target_type == "any_half_B":
                     target_mode_desc = f"any point in second half [t+{lookahead_bars // 2 + 1}, t+{lookahead_bars}]"
+                elif target_type == "any_half_B_for_sell":
+                    target_mode_desc = f"any point in second half [t+{lookahead_bars // 2 + 1}, t+{lookahead_bars}]"
                 elif target_type == "floor":
                     target_mode_desc = f"NEVER falls below floor [t+1, t+{lookahead_bars}] 🛡️"
+                elif target_type == "short_any":
+                    target_mode_desc = f"price drops below threshold ANYWHERE in window [t+1, t+{lookahead_bars}] 📉"
+                elif target_type == "ceiling":
+                    target_mode_desc = f"NEVER rises above ceiling [t+1, t+{lookahead_bars}] 🧢"
                 else:
                     target_mode_desc = "exact future point"
                 print(f"\n🎯 Real-Time Signal Detected:")
@@ -579,6 +590,46 @@ def create_target_any_at_half_B(close: pd.Series, lookahead_bars: int, threshold
     return labels
 
 
+def create_target_any_at_half_B_for_sell(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    Any at half B: Checks if price EXCEEDS threshold at ANY point from t+B//2+1 to t+B.
+    (i.e., the second half of the lookahead window, excluding the midpoint itself)
+    Uses a forward-looking rolling maximum for efficient vectorized computation.
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series
+    lookahead_bars : int
+        Number of bars to look ahead (B)
+    threshold_pct : float, optional
+        Percentage threshold for target (default: 0.0)
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if threshold exceeded in window, 0 otherwise), with NaN for incomplete windows
+    """
+    half_B = lookahead_bars // 2
+    window_size = lookahead_bars - half_B  # Size of window from t+half_B+1 to t+B inclusive
+
+    # Handle edge case where window would be empty
+    if window_size <= 0:
+        return pd.Series(np.nan, index=close.index, dtype=float)
+
+    # Get max over the window [t+half_B+1, t+B] for each t
+    # Reverse series, apply rolling max, reverse back, then shift to align window
+    future_max = close.iloc[::-1].rolling(window=window_size, min_periods=window_size).max().iloc[::-1].shift(-(half_B + 1))
+
+    # True if max in window > threshold
+    labels = (future_max < close * (1 + threshold_pct)).astype(float)
+
+    # Mask out last lookahead_bars where future data is incomplete
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
 def create_target_floor(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """
     🆕 FLOOR MODE: Label = 1 only if price NEVER falls below threshold
@@ -622,6 +673,32 @@ def create_target_floor(close: pd.Series, lookahead_bars: int, threshold_pct: fl
     return labels
 
 
+def create_target_short_any(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    🆕 SHORT ANY MODE: Checks if price DROPS below threshold at ANY point from t+1 to t+lookahead_bars.
+    A win (1) means the price successfully dropped by threshold_pct.
+    Symmetrical to "any" mode but for short targets.
+    """
+    future_min = close.iloc[::-1].rolling(window=lookahead_bars, min_periods=lookahead_bars).min().iloc[::-1].shift(-1)
+    # For shorts, we want the minimum to be LOWER than (1 + threshold_pct)
+    labels = (future_min < close * (1 + threshold_pct)).astype(float)
+    labels.iloc[-lookahead_bars:] = np.nan
+    return labels
+
+
+def create_target_ceiling(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    🆕 CEILING MODE: Label = 1 only if price NEVER rises above the ceiling.
+    Ideal for call credit spreads / defined-risk bearish strategies.
+    Symmetrical to "floor" mode but for short targets.
+    """
+    future_max = close.iloc[::-1].rolling(window=lookahead_bars, min_periods=lookahead_bars).max().iloc[::-1].shift(-1)
+    # Label = 1 if maximum stays BELOW ceiling level
+    labels = (future_max < close * (1 + threshold_pct)).astype(float)
+    labels.iloc[-lookahead_bars:] = np.nan
+    return labels
+
+
 # ============================================
 # 5. RULE-BASED FORECASTING SYSTEM
 # ============================================
@@ -644,7 +721,7 @@ class ForecastSystem:
         self.lookahead_bars = lookahead_bars
         self.threshold_pct = threshold_pct
         self.rsi_mode = rsi_mode
-        self.target_type = target_type  # 'exact', 'any', 'any_half_B', or 'floor'
+        self.target_type = target_type
         self.use_jit_signals = use_jit_signals  # Enable JIT for signal generation
         self.cooldown_bars = cooldown_bars
         self.precomputed_labels = precomputed_labels
@@ -661,16 +738,22 @@ class ForecastSystem:
         df['MACD_Signal'] = macd_df['Signal']
         df['Histogram'] = macd_df['Histogram']
 
-        # ✅ DYNAMIC TARGET SELECTION (now includes "floor" mode)
+        # ✅ DYNAMIC TARGET SELECTION
         if self.precomputed_labels is not None:
             # Inject precomputed labels to save compute time during optimization
             df['FutureLabel'] = self.precomputed_labels.reindex(df.index)
         elif self.target_type == "floor":
             df['FutureLabel'] = create_target_floor(close, self.lookahead_bars, self.threshold_pct)
+        elif self.target_type == "short_any":
+            df['FutureLabel'] = create_target_short_any(close, self.lookahead_bars, self.threshold_pct)
+        elif self.target_type == "ceiling":
+            df['FutureLabel'] = create_target_ceiling(close, self.lookahead_bars, self.threshold_pct)
         elif self.target_type == "any":
             df['FutureLabel'] = create_target_any(close, self.lookahead_bars, self.threshold_pct)
         elif self.target_type == "any_half_B":
             df['FutureLabel'] = create_target_any_at_half_B(close, self.lookahead_bars, self.threshold_pct)
+        elif self.target_type == "any_half_B_for_cell":
+            df['FutureLabel'] = create_target_any_at_half_B_for_sell(close, self.lookahead_bars, self.threshold_pct)
         else:  # "exact"
             df['FutureLabel'] = create_target_exact(close, self.lookahead_bars, self.threshold_pct)
 
@@ -701,7 +784,7 @@ class ForecastSystem:
                 short_rsi_cond = df['RSI'] > self.rsi_overbought
             else:  # momentum
                 long_rsi_cond = df['RSI'] > self.rsi_overbought
-                short_rsi_cond = df['RSI'] < self.rsi_oversold
+                short_rsi_cond = df['RSI'] < 50.0  # Relaxed short momentum: bearish territory
 
             long_cond = ((close > df['OneEuro']) & long_rsi_cond & (df['RSI'] > rsi_shift) &
                          (df['Histogram'] > 0) & (df['Histogram'] > hist_shift))
@@ -738,15 +821,22 @@ class ForecastSystem:
         valid = valid[valid['Signal'] != 0].copy()
         if len(valid) == 0: return {'total_signals': 0}
 
-        valid['PredUp'] = (valid['Signal'] == 1).astype(int)
-        valid['ActualUp'] = valid['FutureLabel'].astype(int)
-        total = len(valid)
-        correct = (valid['PredUp'] == valid['ActualUp']).sum()
+        is_short_target = self.target_type in ["short_any", "ceiling"]
+
         long_signals = valid[valid['Signal'] == 1]
         short_signals = valid[valid['Signal'] == -1]
 
-        long_correct = (long_signals['ActualUp'] == 1).sum() if len(long_signals) > 0 else 0
-        short_correct = (short_signals['ActualUp'] == 0).sum() if len(short_signals) > 0 else 0
+        # For standard targets (bullish), FutureLabel == 1 is a win for Long, and FutureLabel == 0 is a win for Short.
+        # For short targets (bearish), FutureLabel == 1 is a win for Short, and FutureLabel == 0 is a win for Long.
+        if is_short_target:
+            long_correct = (long_signals['FutureLabel'] == 0).sum() if len(long_signals) > 0 else 0
+            short_correct = (short_signals['FutureLabel'] == 1).sum() if len(short_signals) > 0 else 0
+        else:
+            long_correct = (long_signals['FutureLabel'] == 1).sum() if len(long_signals) > 0 else 0
+            short_correct = (short_signals['FutureLabel'] == 0).sum() if len(short_signals) > 0 else 0
+
+        total = len(valid)
+        correct = long_correct + short_correct
 
         return {
             'total_signals': total,
@@ -872,7 +962,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
 # 7. PLOTTING HELPER (Unchanged)
 # ============================================
 def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: int = 200, start_idx: int = -1,
-                          highlight_signals: bool = True, zoom_region: Optional[Tuple[int, int]] = None, test_win_rate: float = 0.0):
+                          highlight_signals: bool = True, zoom_region: Optional[Tuple[int, int]] = None, test_win_rate: float = 0.0, target_type: str = "any"):
     if start_idx == -1:
         start_idx = max(0, len(df) - sample)
     plot_df = df.iloc[start_idx:start_idx + sample].copy()
@@ -880,18 +970,25 @@ def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: 
     fig, axes = plt.subplots(3, 1, figsize=(14, 10), gridspec_kw={'height_ratios': [3, 1, 1]}, sharex=True)
     ax1, ax2, ax3 = axes
 
+    is_short_target = target_type in ["short_any", "ceiling"]
+
     ax1.plot(plot_df.index, plot_df[price_col], label='Close', alpha=0.7, linewidth=1, color='black')
     ax1.plot(plot_df.index, plot_df['OneEuro'], label='One-Euro Filter', color='blue', linewidth=2)
 
     longs = plot_df[(plot_df['Signal'] == 1) & plot_df['FutureLabel'].notna()]
     shorts = plot_df[(plot_df['Signal'] == -1) & plot_df['FutureLabel'].notna()]
 
-    if optimize_target in ["buy", "both"]:
+    if optimize_target in ["put_credit", "both"]:
         ax1.scatter(longs.index, longs[price_col], marker='^', color='green', s=100, label='Long Signal', zorder=6, edgecolors='darkgreen', linewidth=1.5)
 
         # Add bold W for winning trades and L for losing trades (Longs)
-        long_wins = longs[longs['FutureLabel'] == 1]
-        long_losses = longs[longs['FutureLabel'] == 0]
+        if is_short_target:
+            long_wins = longs[longs['FutureLabel'] == 0]
+            long_losses = longs[longs['FutureLabel'] == 1]
+        else:
+            long_wins = longs[longs['FutureLabel'] == 1]
+            long_losses = longs[longs['FutureLabel'] == 0]
+
         for idx, row in long_wins.iterrows():
             ax1.annotate('W', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
                          color='darkgreen', fontweight='bold', fontsize=12, ha='center', va='bottom')
@@ -899,13 +996,18 @@ def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: 
             ax1.annotate('L', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
                          color='darkred', fontweight='bold', fontsize=12, ha='center', va='bottom')
 
-    if optimize_target in ["sell", "both"]:
+    if optimize_target in ["call_credit", "both"]:
         ax1.scatter(shorts.index, shorts[price_col], marker='v', color='red', s=100, label='Short Signal', zorder=6, edgecolors='darkred', linewidth=1.5)
 
         # Add bold W for winning trades and L for losing trades (Shorts)
-        # Note: For short signals, winning means price did NOT exceed threshold (FutureLabel == 0)
-        short_wins = shorts[shorts['FutureLabel'] == 0]
-        short_losses = shorts[shorts['FutureLabel'] == 1]
+        if is_short_target:
+            short_wins = shorts[shorts['FutureLabel'] == 1]
+            short_losses = shorts[shorts['FutureLabel'] == 0]
+        else:
+            # Note: For standard short signals, winning means price did NOT exceed threshold (FutureLabel == 0)
+            short_wins = shorts[shorts['FutureLabel'] == 0]
+            short_losses = shorts[shorts['FutureLabel'] == 1]
+
         for idx, row in short_wins.iterrows():
             ax1.annotate('W', xy=(idx, row[price_col]), xytext=(0, 10), textcoords='offset points',
                          color='darkgreen', fontweight='bold', fontsize=12, ha='center', va='bottom')
@@ -966,15 +1068,29 @@ def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: 
             ax1_inset.scatter(zoom_longs.index, zoom_longs[price_col], marker='^', color='green', s=50, zorder=5)
             ax1_inset.scatter(zoom_shorts.index, zoom_shorts[price_col], marker='v', color='red', s=50, zorder=5)
 
-            if optimize_target in ["buy", "both"]:
-                for idx, row in zoom_longs[zoom_longs['FutureLabel'] == 1].iterrows():
+            if optimize_target in ["put_credit", "both"]:
+                if is_short_target:
+                    zoom_long_wins = zoom_longs[zoom_longs['FutureLabel'] == 0]
+                    zoom_long_losses = zoom_longs[zoom_longs['FutureLabel'] == 1]
+                else:
+                    zoom_long_wins = zoom_longs[zoom_longs['FutureLabel'] == 1]
+                    zoom_long_losses = zoom_longs[zoom_longs['FutureLabel'] == 0]
+
+                for idx, row in zoom_long_wins.iterrows():
                     ax1_inset.annotate('W', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkgreen', fontweight='bold', fontsize=10, ha='center', va='bottom')
-                for idx, row in zoom_longs[zoom_longs['FutureLabel'] == 0].iterrows():
+                for idx, row in zoom_long_losses.iterrows():
                     ax1_inset.annotate('L', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkred', fontweight='bold', fontsize=10, ha='center', va='bottom')
-            if optimize_target in ["sell", "both"]:
-                for idx, row in zoom_shorts[zoom_shorts['FutureLabel'] == 0].iterrows():
+            if optimize_target in ["call_credit", "both"]:
+                if is_short_target:
+                    zoom_short_wins = zoom_shorts[zoom_shorts['FutureLabel'] == 1]
+                    zoom_short_losses = zoom_shorts[zoom_shorts['FutureLabel'] == 0]
+                else:
+                    zoom_short_wins = zoom_shorts[zoom_shorts['FutureLabel'] == 0]
+                    zoom_short_losses = zoom_shorts[zoom_shorts['FutureLabel'] == 1]
+
+                for idx, row in zoom_short_wins.iterrows():
                     ax1_inset.annotate('W', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkgreen', fontweight='bold', fontsize=10, ha='center', va='bottom')
-                for idx, row in zoom_shorts[zoom_shorts['FutureLabel'] == 1].iterrows():
+                for idx, row in zoom_short_losses.iterrows():
                     ax1_inset.annotate('L', xy=(idx, row[price_col]), xytext=(0, 8), textcoords='offset points', color='darkred', fontweight='bold', fontsize=10, ha='center', va='bottom')
 
             ax1_inset.set_xticks([]);
@@ -1003,7 +1119,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     )
 
     data_grp = parser.add_argument_group("Data & Environment")
-    data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier", choices=DATASET_AVAILABLE)
+    data_grp.add_argument("--dataset-id", type=str, default="day", help="Dataset identifier")
     data_grp.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol to analyze")
     data_grp.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     data_grp.add_argument("--disable-print", action="store_true", help="Skip prints")
@@ -1040,17 +1156,17 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument(
         "--optimize-target",
         type=str,
-        choices=["buy", "sell", "both"],
-        default="both",
-        help="Target to optimize during Optuna search: 'buy' (long only), 'sell' (short only), or 'both' (combined)"
+        choices=["put_credit", "call_credit"],
+        default="put_credit",
+        help="Target to optimize during Optuna search: 'put_credit', 'call_credit'"
     )
-    # Target labeling mode - UPDATED to include "floor"
+    # Target labeling mode - UPDATED to include "short_any" and "ceiling"
     algo_grp.add_argument(
         "--target-type",
         type=str,
-        choices=["exact", "any", "any_half_B", "floor"],  # ← Added "floor"
+        choices=["exact", "any", "any_half_B", "any_half_B_for_sell", "floor", "short_any", "ceiling"],
         default="any_half_B",
-        help="Target labeling method: 'exact' (price at t+lookahead), 'any' (price > threshold anywhere), 'any_half_B' (second half), or 'floor' 🆕 (price NEVER < threshold - ideal for put credit spreads)"
+        help="Target labeling method: 'exact', 'any', 'any_half_B', 'any_half_B_for_sell', 'floor' 🆕, 'short_any' 🆕, or 'ceiling' 🆕"
     )
 
     viz_grp = parser.add_argument_group("Visualization")
@@ -1108,7 +1224,7 @@ def entry(args):
     price_col = f'Close_{args.ticker}'
 
     if 1 == args.lookahead_bars:
-        assert args.target_type in ["exact", "any", "floor"]
+        assert args.target_type in ["exact", "any", "floor", "short_any", "ceiling"]
 
     # ✅ OPTIMIZATION & TRAIN/VALIDATION SPLIT LOGIC
     min_history = max(args.rsi_period, args.macd_slow, 100) + args.lookahead_bars + 10
@@ -1126,7 +1242,7 @@ def entry(args):
     if args.verbose:
         str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
         str_te = f"({df_val.index[0].strftime('%Y-%m-%d_%H%M')}::{df_val.index[-1].strftime('%Y-%m-%d_%H%M')})"
-        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Val={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
+        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Test={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
         print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: optimized [0, 12]")
 
     # ✅ PRE-COMPUTE LABELS ONCE (Before Optuna)
@@ -1135,12 +1251,25 @@ def entry(args):
     precomputed_labels = None
     close_train = df_train[price_col]
     if args.target_type == "floor":
+        assert args.optimize_target in ['put_credit']
         precomputed_labels = create_target_floor(close_train, args.lookahead_bars, args.threshold_pct)
+    elif args.target_type == "short_any":
+        assert args.optimize_target in ['call_credit']
+        precomputed_labels = create_target_short_any(close_train, args.lookahead_bars, args.threshold_pct)
+    elif args.target_type == "ceiling":
+        assert args.optimize_target in ['call_credit']
+        precomputed_labels = create_target_ceiling(close_train, args.lookahead_bars, args.threshold_pct)
     elif args.target_type == "any":
+        assert args.optimize_target in ['put_credit']
         precomputed_labels = create_target_any(close_train, args.lookahead_bars, args.threshold_pct)
     elif args.target_type == "any_half_B":
+        assert args.optimize_target in ['put_credit']
         precomputed_labels = create_target_any_at_half_B(close_train, args.lookahead_bars, args.threshold_pct)
+    elif args.target_type == "any_half_B_for_cell":
+        assert args.optimize_target in ['call_credit']
+        precomputed_labels = create_target_any_at_half_B_for_sell(close_train, args.lookahead_bars, args.threshold_pct)
     else:
+        assert args.optimize_target in ['put_credit']
         precomputed_labels = create_target_exact(close_train, args.lookahead_bars, args.threshold_pct)
 
     if args.verbose:
@@ -1195,9 +1324,9 @@ def entry(args):
             fold_total_valid_bars = len(val_df)
 
             # Filter validation dataframe based on optimization target
-            if args.optimize_target == "buy":
+            if args.optimize_target == "put_credit":
                 val_df_filtered = val_df[val_df['Signal'] == 1].copy()  # Only long signals
-            elif args.optimize_target == "sell":
+            elif args.optimize_target == "call_credit":
                 val_df_filtered = val_df[val_df['Signal'] == -1].copy()  # Only short signals
             else:
                 val_df_filtered = val_df[val_df['Signal'] != 0].copy()  # Both long and short signals
@@ -1209,17 +1338,21 @@ def entry(args):
                 fold_scores.append(0.0)
                 continue
 
-            val_df_filtered['ActualUp'] = val_df_filtered['FutureLabel'].astype(int)
+            is_short_target = args.target_type in ["short_any", "ceiling"]
+
+            if is_short_target:
+                val_df_filtered['ActualUp'] = (1 - val_df_filtered['FutureLabel'].astype(int))
+                val_df_filtered['ActualDown'] = val_df_filtered['FutureLabel'].astype(int)
+            else:
+                val_df_filtered['ActualUp'] = val_df_filtered['FutureLabel'].astype(int)
+                val_df_filtered['ActualDown'] = (1 - val_df_filtered['FutureLabel'].astype(int))
 
             # Calculate accuracy strictly based on the chosen optimization target
-            if args.optimize_target == "buy":
-                # For buy: accuracy is the % of long signals where price actually went up (ActualUp == 1)
+            if args.optimize_target == "put_credit":
                 acc = val_df_filtered['ActualUp'].mean()
-            elif args.optimize_target == "sell":
-                # For sell: accuracy is the % of short signals where price did NOT go up (ActualUp == 0)
-                acc = (val_df_filtered['ActualUp'] == 0).mean()
+            elif args.optimize_target == "call_credit":
+                acc = val_df_filtered['ActualDown'].mean()
             else:
-                # For both: use the original unified logic
                 val_df_filtered['PredUp'] = (val_df_filtered['Signal'] == 1).astype(int)
                 acc = (val_df_filtered['PredUp'] == val_df_filtered['ActualUp']).mean()
 
@@ -1323,28 +1456,28 @@ def entry(args):
         )
         if not args.disable_print:
             print(f"\n📊 {label} Evaluation")
-            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].date()} to {df_subset.index[-1].date()}")
+            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].strftime('%Y-%m-%d_%H%M')} to {df_subset.index[-1].strftime('%Y-%m-%d_%H%M')}")
             print(f"   Total Signals: {metrics.get('total_signals', 0)}")
             print(f"   Density: {metrics.get('total_signals', 0) / len(df_subset):.2%}")
             if args.optimize_target in ["both"]:
                 print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
-            if args.optimize_target in ["buy", "both"]:
+            if args.optimize_target in ["put_credit", "both"]:
                 print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
-            if args.optimize_target in ["sell", "both"]:
+            if args.optimize_target in ["call_credit", "both"]:
                 print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
             print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
             print(f"   Target Mode: '{args.target_type}'")
             print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
         if plot_results and not args.disable_plot_sample:
             # Determine test win rate based on optimization target
-            if args.optimize_target == "buy":
+            if args.optimize_target == "put_credit":
                 wr = metrics.get('long_accuracy', 0.0)
-            elif args.optimize_target == "sell":
+            elif args.optimize_target == "call_credit":
                 wr = metrics.get('short_accuracy', 0.0)
             else:
                 wr = metrics.get('accuracy', 0.0)
 
-            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample, optimize_target=optimize_target, test_win_rate=wr)
+            plot_forecast_results(df=df_results, price_col=price_col, sample=args.plot_sample, optimize_target=optimize_target, test_win_rate=wr, target_type=args.target_type)
         return df_results, metrics
 
     # Run on training set (backtest)
@@ -1356,16 +1489,16 @@ def entry(args):
     # Print comparison summary
     if not args.disable_print and metrics_train and metrics_val:
         print("\n" + "=" * 60)
-        print("📈 TRAIN vs VALIDATION COMPARISON")
+        print("📈 TRAIN vs TEST COMPARISON")
         print("=" * 60)
-        print(f"{'Metric':<25} {'Train':>12} {'Val':>12} {'Δ':>10}")
+        print(f"{'Metric':<24} {'Train':>10} {'Test':>12} {'Δ':>10}")
         print("-" * 60)
         for key in ['accuracy', 'long_accuracy', 'short_accuracy']:
-            if key == 'accuracy' and args.optimize_target in ["buy", "sell"]:
+            if key == 'accuracy' and args.optimize_target in ["put_credit", "call_credit"]:
                 continue
-            if key == 'long_accuracy' and args.optimize_target in ["both", "sell"]:
+            if key == 'long_accuracy' and args.optimize_target in ["both", "call_credit"]:
                 continue
-            if key == 'short_accuracy' and args.optimize_target in ["both", "buy"]:
+            if key == 'short_accuracy' and args.optimize_target in ["both", "put_credit"]:
                 continue
             train_val = metrics_train.get(key, 0) * 100
             val_val = metrics_val.get(key, 0) * 100

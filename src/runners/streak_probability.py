@@ -20,6 +20,61 @@ from tqdm import tqdm
 import time
 
 
+def add_streak_columns(df, col_name, ticker, is_return=False, epsilon=0.0):
+    """
+    Adds 'streak_number' and 'streak_direction' columns to a DataFrame.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Input dataframe.
+    col_name : str or tuple
+        Column name for price or returns.
+    is_return : bool
+        If True, assumes `col_name` contains returns. If False, calculates returns via pct_change().
+    epsilon : float
+        Threshold for neutral returns. Returns between -epsilon and epsilon are considered neutral
+        and will break/reset the streak.
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with 'streak_number' and 'streak_direction' added.
+    """
+    df = df.copy()
+
+    # 1. Compute or extract returns
+    returns = df[col_name] if is_return else df[col_name].pct_change()
+
+    # 2. Determine state: 1 (pos), -1 (neg), 0 (neutral)
+    state = pd.Series(0, index=df.index, dtype=int)
+    state[returns >= epsilon] = 1
+    state[returns <= -epsilon] = -1
+
+    # 3. Identify streak continuations
+    # A streak continues if the current state matches the previous state AND is not neutral (0)
+    is_continuation = (state == state.shift(1)) & (state != 0)
+
+    # 4. Create groups for each new streak
+    groups = (~is_continuation).cumsum()
+
+    # 5. Calculate streak number within each group
+    streak_num = state.groupby(groups).cumcount() + 1
+
+    # If the state is neutral (0) or NaN, the streak number should be 0
+    streak_num = streak_num.where(state != 0, 0)
+
+    # 6. Map state to direction labels
+    direction_map = {1: 'pos', -1: 'neg', 0: 'neutral'}
+    streak_dir = state.map(direction_map)
+
+    # 7. Assign to dataframe
+    df[('streak_number', ticker)] = streak_num
+    df[('streak_direction', ticker)] = streak_dir
+
+    return {'df': df, 'col_streak_number': ('streak_number', ticker), 'col_streak_direction': ('streak_direction', ticker)}
+
+
 def add_sequence_columns(df, col_name, ticker_name, epsilon=0.0):
     """
     Add POS_SEQ and NEG_SEQ columns to dataframe representing
@@ -380,7 +435,7 @@ def get_label(data_frequency):
 def new_main(args, bring_my_own_df=None):
     ticker = args.ticker
     close_col = ('Close', ticker)
-    data_frequency = args.frequency
+    data_frequency = args.frequency if hasattr(args, 'frequency') else None
     if hasattr(args, 'dataset_id') and args.dataset_id is not None:
         data_frequency = args.dataset_id
     direction = args.direction
@@ -390,7 +445,7 @@ def new_main(args, bring_my_own_df=None):
     verbose = args.verbose
     debug_speeding = args.debug_verify_speeding
     forward_steps = args.forward_steps
-
+    print_condition_probability = getattr(args, 'print_condition_probability', True)
     if bring_my_own_df is None:
         _spx500 = factory_load_data(_dataset_id=data_frequency, _ticker=ticker, _args={})
     else:
@@ -468,7 +523,7 @@ def new_main(args, bring_my_own_df=None):
             print("-" * 50)
             tmpstr = '' if delta == 0 else f'with a delta of {delta * 100:.1f}%'
             print(f"Probability of occurence of {step_str} {direction_label} {time_label} is {pct * 100:6.2f}% ({stats['count']}/{stats['total']}) {tmpstr}")
-            if stats['count'] > 0:
+            if stats['count'] > 0 and print_condition_probability:
                 for cond_delta in [0, 0.0025, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.040, 0.045, 0.05, 0.06]:
                     if direction == 'neg':
                         cond_delta = -cond_delta
@@ -574,6 +629,11 @@ if __name__ == "__main__":
         default=0.00005,
         help="Threshold for neutral returns (|return| < epsilon breaks streaks). Default=0.00005 (0.005%%)"
     )
-
+    parser.add_argument(
+        '--print-condition-probability',
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Print conditional probabilities (use --no-print-condition-probability to disable)"
+    )
     args = parser.parse_args()
     new_main(args)

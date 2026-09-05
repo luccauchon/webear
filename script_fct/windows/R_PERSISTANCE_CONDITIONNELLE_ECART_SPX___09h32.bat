@@ -1,5 +1,5 @@
 @echo off
-title [WATCHER] ATR PROBABILITY ZONE
+title [WATCHER] PERSISTANCE CONDITIONNELLE ECART SPX
 chcp 65001 > nul
 setlocal enabledelayedexpansion
 
@@ -18,19 +18,10 @@ if not defined HEURE goto SUIVANT
 :: Le caractère | doit être échappé avec ^ en batch
 :: echo [%DATE% %TIME%] Debug - Jour: !JOUR! ^| Heure: !HEURE!
 
-:: 2. Vérification du Lundi au Vendredi à 09:31
+:: 2. Vérification du Lundi au Vendredi à 09:32
 if !JOUR! geq 1 if !JOUR! leq 5 (
-    if "!HEURE!"=="09:31" (        
-        start "[ATR PZ DAY]" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_DAY.bat"
-        :: Attendre la minute suivante pour éviter les doublons
-        timeout /t 60 /nobreak > nul
-    )
-)
-
-:: 3. Vérification du Lundi (1 = Lundi) à 09:39
-if "!JOUR!"=="1" (
-    if "!HEURE!"=="09:39" (        
-        start "[ATR PZ WEEK]" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\C_ATR_PROBABILITY_ZONE_WEEK.bat"
+    if "!HEURE!"=="09:32" (        
+        start "[PERSISTANCE CONDITIONNELLE ECART SPX]" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\gap & python player.py --production-setup"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )

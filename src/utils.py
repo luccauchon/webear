@@ -1836,3 +1836,32 @@ def ansi_to_html(text):
     text = re.sub(r'\x1b\[1m|\[1m', '<b>', text)
     html_output = f"<pre style='font-family: monospace; font-size: 14px;'>{text}</pre>"
     return html_output
+
+
+def calculate_rsi(df, ticker, close_col, period=14):
+    """
+    Calcule le RSI pour un ticker spécifique dans un DataFrame multi-index.
+    """
+    # 1. Calcul des variations de prix d'une bougie à l'autre
+    delta = df[close_col].diff()
+
+    # 2. Séparation des gains (positifs) et des pertes (négatives)
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    # 3. Calcul de la moyenne mobile exponentielle lissée (Wilder's MMA)
+    # Note : alpha = 1 / period correspond exactement à la méthode de l'inventeur J. Welles Wilder
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+    # 4. Calcul du Relative Strength (RS)
+    rs = avg_gain / avg_loss
+
+    # 5. Calcul du RSI normalisé entre 0 et 100
+    rsi = 100 - (100 / (1 + rs))
+
+    # Optionnel : Gestion des divisions par zéro si avg_loss est égal à 0
+    rsi = rsi.replace([np.inf, -np.inf], 100)
+    new_col=(f'RSI_{period}', ticker)
+    df[new_col] = rsi
+    return df, new_col

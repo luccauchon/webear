@@ -193,12 +193,26 @@ def setup_argparse() -> argparse.ArgumentParser:
     strat_group = parser.add_argument_group('Strategy & P&L Parameters')
     strat_group.add_argument('--lookahead-bars', type=int, default=1, dest='lookahead_bars', help='Forward-looking window')
     strat_group.add_argument('--method', type=str, default='final_close', choices=['touched', 'final_close'], help='Strike evaluation method')
-    strat_group.add_argument('--min-signal-density', type=float, default=0.01, help='Min signal frequency threshold')
-    strat_group.add_argument('--put-strike-pct', type=float, default=0.9999, help='Base put strike multiplier')
-    strat_group.add_argument('--call-strike-pct', type=float, default=1.0001, help='Base call strike multiplier')
+    strat_group.add_argument('--min-signal-density', type=float, default=0.025, help='Min signal frequency threshold')
+    strat_group.add_argument('--put-strike-pct', type=float, default=0.99999, help='Base put strike multiplier')
+    strat_group.add_argument('--call-strike-pct', type=float, default=1.00001, help='Base call strike multiplier')
     strat_group.add_argument('--wr-weight', type=float, default=0.9, help='Weight for Win-Rate')
     strat_group.add_argument('--td-weight', type=float, default=0.1, help='Weight for Trade-Density')
     strat_group.add_argument('--signal-type', type=str, default='buy', choices=['both', 'buy', 'sell'], help='Filter signals for optimization. Post-hoc breakdown always evaluates both.')
+
+    # 🆕 NEW ARGUMENTS FOR CANDLE SPLIT FILTERING
+    strat_group.add_argument(
+        '--same-week-candle',
+        action='store_true',
+        default=False,
+        help='If True, discards patterns where the two candles are split across different calendar weeks (e.g., Friday and Monday).'
+    )
+    strat_group.add_argument(
+        '--same-day-candle',
+        action='store_true',
+        default=False,
+        help='If True, discards patterns where the two candles are on different calendar days (useful for intraday data to ensure same-day patterns).'
+    )
 
     opt_group = parser.add_argument_group('Optimization & Execution')
     opt_group.add_argument('--n-trials', type=int, default=240, help='Optuna trials')
@@ -226,7 +240,8 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 def dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_col, ticker,
                              st_multipler=2, st_length=7, sup_wick_null_coef=0.1, inf_wick_null_coef=0.1, rsi_length=2,
-                             buy_rsi_threshold=80, sell_rsi_threshold=20, cooldown_bars=0):
+                             buy_rsi_threshold=80, sell_rsi_threshold=20, cooldown_bars=0,
+                             same_week_candle=False, same_day_candle=False):
     """Vectorized implementation of the Sniper strategy."""
     rsi_col = ('RSI', ticker)
     df[rsi_col] = ta.rsi(df[close_col], length=rsi_length)
@@ -263,6 +278,21 @@ def dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_
             (H < H_prev) & (L < L_prev) & (C < L_prev) &
             ((C - L) <= body2 * inf_wick_null_coef)
     ).fillna(False)
+
+    # 🆕 APPLY SPLIT FILTERS
+    if same_week_candle:
+        iso = df.index.isocalendar()
+        # Shift the Series positionally, avoiding DatetimeIndex.shift()
+        same_week_mask = (iso['year'] == iso['year'].shift(1)) & (iso['week'] == iso['week'].shift(1))
+        is_double_green = is_double_green & same_week_mask
+        is_double_red = is_double_red & same_week_mask
+
+    if same_day_candle:
+        # Wrap in Series to allow positional shift without requiring index freq
+        dates = pd.Series(df.index.date, index=df.index)
+        same_day_mask = (dates == dates.shift(1))
+        is_double_green = is_double_green & same_day_mask
+        is_double_red = is_double_red & same_day_mask
 
     buy_mask = (
             (C > df[vwap_col]) & (df[st_direction_col] == 1) &
@@ -382,7 +412,8 @@ def compute_optimization_score(win_rate, trade_density, min_trade_density, wr_we
 
 
 def objective(trial, df_full, df_train, close_col, volume_col, open_col, high_col, low_col, ticker,
-              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits):
+              B, method, min_trade_density, wr_weight, td_weight, put_base, call_base, signal_type, n_splits,
+              same_week_candle=False, same_day_candle=False):
     # 1. Suggest Parameters
     put__strike_pct = trial.suggest_float("put__strike_pct", put_base, put_base)
     call__strike_pct = trial.suggest_float("call__strike_pct", call_base, call_base)
@@ -439,6 +470,21 @@ def objective(trial, df_full, df_train, close_col, volume_col, open_col, high_co
     # ==========================================
     is_double_green = base_green_cond & (upper_wick <= body2 * sup_wick_null_coef)
     is_double_red = base_red_cond & (lower_wick <= body2 * inf_wick_null_coef)
+
+    # 🆕 APPLY SPLIT FILTERS IN OPTIMIZATION
+    if same_week_candle:
+        iso = df_full.index.isocalendar()
+        # Shift the Series positionally, avoiding DatetimeIndex.shift()
+        same_week_mask = (iso['year'] == iso['year'].shift(1)) & (iso['week'] == iso['week'].shift(1))
+        is_double_green = is_double_green & same_week_mask
+        is_double_red = is_double_red & same_week_mask
+
+    if same_day_candle:
+        # Wrap in Series to allow positional shift without requiring index freq
+        dates = pd.Series(df_full.index.date, index=df_full.index)
+        same_day_mask = (dates == dates.shift(1))
+        is_double_green = is_double_green & same_day_mask
+        is_double_red = is_double_red & same_day_mask
 
     buy_mask = (
             (C > vwap_series) & (st_direction_series == 1) &
@@ -576,6 +622,11 @@ def run_real_time_mode(model_path, clip_n, verbose):
     assert 'signal_type' in config
     signal_type = config.get('signal_type', 'both')
     cooldown_bars = best_params.get('cooldown_bars', config.get('cooldown_bars', 0))
+
+    # 🆕 EXTRACT SPLIT FILTERS FROM CONFIG
+    same_week_candle = config.get('same_week_candle', False)
+    same_day_candle = config.get('same_day_candle', False)
+
     if verbose: print(f"📡 Real-time signal filter: {signal_type.upper()} (loaded from model config)")
     ticker = model_data['config']['ticker']
     dataset_id = model_data['config']['dataset_id']
@@ -605,6 +656,8 @@ def run_real_time_mode(model_path, clip_n, verbose):
 
     signals = dgdr_strategy_vectorized(df, close_col, volume_col, open_col, high_col, low_col, ticker,
                                        cooldown_bars=cooldown_bars,
+                                       same_week_candle=same_week_candle,
+                                       same_day_candle=same_day_candle,
                                        **{k: best_params[k] for k in ['st_multipler', 'st_length', 'rsi_length', 'sup_wick_null_coef', 'inf_wick_null_coef', 'buy_rsi_threshold', 'sell_rsi_threshold']})
 
     latest_idx = df.index[-1]
@@ -806,7 +859,8 @@ def entry(args):
         lambda trial: objective(trial=trial, df_full=df.copy(), df_train=df_train.copy(), close_col=close_col, volume_col=volume_col,
                                 open_col=open_col, high_col=high_col, low_col=low_col, ticker=ticker,
                                 B=B, method=method, min_trade_density=min_density, wr_weight=wr_w, td_weight=td_w, put_base=put_base, call_base=call_base,
-                                signal_type=args.signal_type, n_splits=args.n_splits),
+                                signal_type=args.signal_type, n_splits=args.n_splits,
+                                same_week_candle=args.same_week_candle, same_day_candle=args.same_day_candle),
         n_trials=args.n_trials,
         timeout=args.timeout,
         show_progress_bar=args.verbose_study_progress_bar,
@@ -828,7 +882,9 @@ def entry(args):
                                                st_multipler=best['st_multipler'], st_length=best['st_length'],
                                                sup_wick_null_coef=best['sup_wick_null_coef'], inf_wick_null_coef=best['inf_wick_null_coef'],
                                                buy_rsi_threshold=best['buy_rsi_threshold'], sell_rsi_threshold=best['sell_rsi_threshold'],
-                                               cooldown_bars=best['cooldown_bars'])
+                                               cooldown_bars=best['cooldown_bars'],
+                                               same_week_candle=args.same_week_candle,
+                                               same_day_candle=args.same_day_candle)
 
     # Filter signals to only those that occurred during the test period
     test_indices_set = set(df_test.index)
@@ -896,7 +952,9 @@ def entry(args):
         inf_wick_null_coef=best['inf_wick_null_coef'],
         buy_rsi_threshold=best['buy_rsi_threshold'],
         sell_rsi_threshold=best['sell_rsi_threshold'],
-        cooldown_bars=best['cooldown_bars']
+        cooldown_bars=best['cooldown_bars'],
+        same_week_candle=args.same_week_candle,
+        same_day_candle=args.same_day_candle
     )
 
     train_indices_set = set(df_train.index)
@@ -974,7 +1032,9 @@ def entry(args):
               'train_range': f"({df_train.index[0].strftime('%Y-%m-%d')}::{df_train.index[-1].strftime('%Y-%m-%d')})",
               'val_range': f"({df_test.index[0].strftime('%Y-%m-%d')}::{df_test.index[-1].strftime('%Y-%m-%d')})",
               'min_signal_density': min_density, 'wr_weight': wr_w, 'td_weight': td_w, 'signal_type': args.signal_type,
-              'cooldown_bars': best.get('cooldown_bars', 0)}
+              'cooldown_bars': best.get('cooldown_bars', 0),
+              'same_week_candle': args.same_week_candle,
+              'same_day_candle': args.same_day_candle}
     save_optimized_model(study=study, config=config, output_dir=args.output_dir, ticker=ticker, dataset_id=dataset_id, train_metrics=train_metrics, test_metrics=test_metrics, command_line=command_line)
 
 
