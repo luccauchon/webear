@@ -22,11 +22,10 @@ from runners.streak_probability import add_streak_columns
 import numpy as np
 from datetime import datetime, time, timedelta
 from tqdm import tqdm
-from utils import calculate_rsi
 import math
-import json
 import argparse
 import pickle
+from collections import defaultdict  # Added for grouping results
 
 
 # ==============================================================================
@@ -211,67 +210,24 @@ def setup_argparse() -> argparse.ArgumentParser:
         description="Volatility Decay & Regression Analysis for SPX Credit Spreads",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
-    # --- General & Data Parameters ---
-    parser.add_argument(
-        '--ticker', type=str, default='^GSPC',
-        help='Ticker symbol to analyze (e.g., ^GSPC for S&P 500).'
-    )
-    parser.add_argument(
-        '--back-n-days', type=int, default=100,
-        help='Number of historical trading days to simulate during backtesting.'
-    )
-    parser.add_argument(
-        '--intraday-candle-space', type=int, default=15,
-        help='Timeframe in minutes for the execution candle (e.g., 15 means evaluating the 15:45 candle).'
-    )
-
-    # --- Strategy & Model Parameters ---
-    parser.add_argument(
-        '--n-trials', type=int, default=5,
-        help='Number of simulation trials used for the ATR and streak probability models.'
-    )
-    parser.add_argument(
-        '--tightness-weight', type=float, default=0.33,
-        help='Weighting factor for ATR tightness. Controls how wide/narrow the credit spread strikes are placed.'
-    )
-    parser.add_argument(
-        "--n-split", type=float, default=0.9,
-        help='Data split ratio (0.0 to 1.0) used for training/testing the internal probability models.'
-    )
-
-    # --- Execution Modes ---
-    parser.add_argument(
-        '--execution-mode', type=str, default='backtesting',
-        choices=['backtesting', 'realtime', 'optimization'],
-        help='Operational mode. "backtesting" runs historical data, "realtime" runs for today only, "optimization" is for parameter tuning.'
-    )
-
-    # --- Output & Verbosity Flags ---
-    # Using BooleanOptionalAction allows users to pass --flag or --no-flag
-    parser.add_argument(
-        '--save-ml-dataset', action=argparse.BooleanOptionalAction, default=False,
-        help='Save the generated features and targets to a pickle file for future Machine Learning analysis.'
-    )
-    parser.add_argument(
-        '--verbose-print-progress-bar', action=argparse.BooleanOptionalAction, default=False,
-        help='Display a tqdm progress bar during the backtesting loop.'
-    )
-    parser.add_argument(
-        '--verbose-print-continously-trade', action=argparse.BooleanOptionalAction, default=False,
-        help='Print detailed trade metrics to the console continuously for every single day.'
-    )
-    parser.add_argument(
-        '--verbose-print-continously-only-losing-trade', action=argparse.BooleanOptionalAction, default=False,
-        help='Print detailed trade metrics to the console ONLY for days where the trade resulted in a loss.'
-    )
-    parser.add_argument(
-        '--verbose-print-results', action=argparse.BooleanOptionalAction, default=True,
-        help='Print the final summary report and performance metrics at the end of the run.'
-    )
-
+    parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol to analyze.')
+    parser.add_argument('--back-n-days', type=int, default=100, help='Number of historical trading days to simulate.')
+    parser.add_argument('--intraday-candle-space', type=int, default=15, help='Timeframe in minutes for the execution candle.')
+    parser.add_argument('--n-trials', type=int, default=5, help='Number of simulation trials.')
+    parser.add_argument('--tightness-weight', type=float, default=0.33, help='Weighting factor for ATR tightness.')
+    parser.add_argument("--n-split", type=float, default=0.9, help='Data split ratio for probability models.')
+    parser.add_argument('--execution-mode', type=str, default='backtest', choices=['backtest', 'realtime', 'optimize'], help='Operational mode.')
+    parser.add_argument('--save-ml-dataset', action=argparse.BooleanOptionalAction, default=False, help='Save ML dataset.')
+    parser.add_argument('--verbose-print-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Display tqdm progress bar.')
+    parser.add_argument('--verbose-print-continously-trade', action=argparse.BooleanOptionalAction, default=False, help='Print detailed trade metrics continuously.')
+    parser.add_argument('--verbose-print-continously-only-losing-trade', action=argparse.BooleanOptionalAction, default=False, help='Print metrics ONLY for losing trades.')
+    parser.add_argument('--verbose-print-results', action=argparse.BooleanOptionalAction, default=True, help='Print final summary report.')
     return parser
 
+
+# ==============================================================================
+# BACKTESTING & REALTIME ENGINE
+# ==============================================================================
 
 def realtime_and_backtesting_mode(args):
     ###########################################################################
@@ -299,25 +255,23 @@ def realtime_and_backtesting_mode(args):
 
     # Initial console output
     realtime_str_tmp = '' if realtime else f"| Roll back: {args.back_n_days} days"
-    if args.verbose_print_results:
+    if getattr(args, 'verbose_print_results', False):
         print(f"[{args.ticker}] | ATR: Tightness-weight={args.tightness_weight} , n-trials={args.n_trials} , n-split={args.n_split} | Candle: {args.intraday_candle_space}min {realtime_str_tmp} ")
-    if args.verbose_print_results and realtime:
+    if getattr(args, 'verbose_print_results', False) and realtime:
         print(f"Realtime mode activated")
 
     ###########################################################################
     # 2. Load 1-minute Historical/Realtime Data
     ###########################################################################
     df_ticker_1min_data, df_vix_1min_data = factory_load_data(
-        _dataset_id="intraday-1min",
-        _ticker=args.ticker,
-        _args={"get_vix": True, "realtime": realtime}
+        _dataset_id="intraday-1min", _ticker=args.ticker, _args={"get_vix": True, "realtime": realtime}
     )
 
     ###########################################################################
     # 3. Main Backtesting / Realtime Loop
     ###########################################################################
     # Iterate through the specified number of historical days
-    loop_iter = tqdm(range(0, args.back_n_days), desc="Backtesting") if args.verbose_print_progress_bar else range(0, args.back_n_days)
+    loop_iter = tqdm(range(0, args.back_n_days), desc="Backtesting") if getattr(args, 'verbose_print_progress_bar', False) else range(0, args.back_n_days)
 
     for n_days in loop_iter:
         # --- ATR & Streak Probability Calculations ---
@@ -487,8 +441,8 @@ def realtime_and_backtesting_mode(args):
         str_resulting += str_tmp + "\n"
 
         # Handle continuous console printing based on verbosity flags
-        if args.verbose_print_continously_trade or args.verbose_print_continously_only_losing_trade:
-            if args.verbose_print_continously_only_losing_trade:
+        if getattr(args, 'verbose_print_continously_trade', False) or getattr(args, 'verbose_print_continously_only_losing_trade', False):
+            if getattr(args, 'verbose_print_continously_only_losing_trade', False):
                 if not put_success or not call_success: print(str_tmp)
             else:
                 print(str_tmp)
@@ -537,7 +491,7 @@ def realtime_and_backtesting_mode(args):
     ###########################################################################
     # 4. Final Reporting & Output
     ###########################################################################
-    if args.verbose_print_results:
+    if getattr(args, 'verbose_print_results', False):
         print(f"{'$' * 80}")
         print(str_resulting)
 
@@ -554,7 +508,7 @@ def realtime_and_backtesting_mode(args):
     call_status = "🟢" if call_win_rate >= 0.70 else "⚠️"
 
     if not realtime:
-        if args.verbose_print_results:
+        if getattr(args, 'verbose_print_results', False):
             print("\n" + "=" * 45)
             print(f"📊   RAPPORT DE PERFORMANCE {'REALTIME' if realtime else 'BACKTESTING'} SPX500   📊")
             print("=" * 45)
@@ -567,15 +521,96 @@ def realtime_and_backtesting_mode(args):
 
     # Save ML dataset if requested
     if not realtime:
-        if args.save_ml_dataset:
-            if args.verbose_print_results: print(f"Saving results for ML analysis in {ml_file_path}")
+        if getattr(args, 'save_ml_dataset', False):
+            if getattr(args, 'verbose_print_results', False): print(f"Saving results for ML analysis in {ml_file_path}")
             with open(ml_file_path, "wb") as f:
                 pickle.dump(ml_dataset, f)
 
-    return {"put_win_rate": put_win_rate, "call_win_rate": call_win_rate}
+    return {"put_win_rate": put_win_rate, "call_win_rate": call_win_rate, "combined_win_rate": (put_win_rate+call_win_rate)/2,}
 
 
 def optimization_mode(args):
+    list_of_candle_sizes     = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120]
+    list_of_tightness_weight = [0, 0.11, 0.33, 0.99]
+    list_of_n_trials         = [1, 5, 50, 500, 999]
+    all_results              = []
+    back_n_days              = 100
+    total_runs = len(list_of_candle_sizes) * len(list_of_tightness_weight) * len(list_of_n_trials)
+    print(f"🚀 Starting Optimization: {total_runs} total runs...")
+
+    run_count = 0
+    for candle_size in list_of_candle_sizes:
+        for tightness_weight in list_of_tightness_weight:
+            for n_trials in list_of_n_trials:
+                run_count += 1
+
+                # Suppress verbose outputs during optimization to keep console clean
+                a_config = Namespace(
+                    ticker=args.ticker,
+                    intraday_candle_space=candle_size,
+                    execution_mode="backtest",
+                    tightness_weight=tightness_weight,
+                    n_trials=n_trials,
+                    n_split=args.n_split,
+                    back_n_days=back_n_days,
+                )
+                result = realtime_and_backtesting_mode(args=a_config)
+                all_results.append({
+                    "candle_size": candle_size,
+                    "tightness_weight": tightness_weight,
+                    "n_trials": n_trials,
+                    "put_win_rate": result["put_win_rate"],
+                    "call_win_rate": result["call_win_rate"],
+                    "combined_win_rate": result["combined_win_rate"]
+                })
+                print(f"  -> Run {run_count}/{total_runs} completed (Candle: {candle_size}m, TW: {tightness_weight}, Trials: {n_trials})")
+
+    # ==========================================================================
+    # NICE PRINTING OF RESULTS
+    # ==========================================================================
+    print("\n" + "=" * 90)
+    print("🏆 OPTIMIZATION RESULTS SUMMARY 🏆")
+    print("=" * 90)
+
+    # Sort all results by combined win rate descending
+    all_results.sort(key=lambda x: x["combined_win_rate"], reverse=True)
+    n_best = 100
+    # 1. Overall Top n_best Best Runs
+    print(f"\n🌟 TOP {n_best} OVERALL BEST RUNS (Sorted by Combined Win Rate) 🌟")
+    print("-" * 90)
+    print(f"{'Rank':<5} | {'Candle':<7} | {'Tightness':<10} | {'Trials':<7} | {'Put WR':<8} | {'Call WR':<8} | {'Combined WR':<11}")
+    print("-" * 90)
+
+    for i, res in enumerate(all_results[:n_best]):
+        print(f"{i + 1:<5} | {res['candle_size']:<7} | {res['tightness_weight']:<10.2f} | {res['n_trials']:<7} | {res['put_win_rate']:<8.1%} | {res['call_win_rate']:<8.1%} | {res['combined_win_rate']:<11.1%}")
+
+    # 2. Best Run for Each Candle Size
+    print("\n📊 BEST RUN FOR EACH CANDLE SIZE 📊")
+    print("-" * 90)
+    print(f"{'Candle':<7} | {'Tightness':<10} | {'Trials':<7} | {'Put WR':<8} | {'Call WR':<8} | {'Combined WR':<11}")
+    print("-" * 90)
+
+    by_candle = defaultdict(list)
+    for res in all_results:
+        by_candle[res['candle_size']].append(res)
+
+    for candle in sorted(by_candle.keys()):
+        # Find the best combined win rate for this specific candle size
+        best_for_candle = max(by_candle[candle], key=lambda x: x['combined_win_rate'])
+        print(f"{best_for_candle['candle_size']:<7} | {best_for_candle['tightness_weight']:<10.2f} | {best_for_candle['n_trials']:<7} | {best_for_candle['put_win_rate']:<8.1%} | {best_for_candle['call_win_rate']:<8.1%} | {best_for_candle['combined_win_rate']:<11.1%}")
+
+    # 3. Absolute Best Run Details
+    best = all_results[0]
+    print("\n" + "=" * 90)
+    print(f"🥇 ABSOLUTE BEST PERFORMING RUN 🥇")
+    print(f"Candle Size      : {best['candle_size']} min")
+    print(f"Tightness Weight : {best['tightness_weight']}")
+    print(f"N Trials         : {best['n_trials']}")
+    print(f"Put Win Rate     : {best['put_win_rate']:.1%}")
+    print(f"Call Win Rate    : {best['call_win_rate']:.1%}")
+    print(f"Combined Win Rate: {best['combined_win_rate']:.1%}")
+    print("=" * 90 + "\n")
+
     return None
 
 
@@ -583,9 +618,9 @@ def optimization_mode(args):
 # MAIN EXECUTION LOGIC
 # ==============================================================================
 def entry(args):
-    if args.execution_mode in ["realtime", "backtesting"]:
-        return  realtime_and_backtesting_mode(args=args)
-    elif args.execution_mode in ["optimization"]:
+    if args.execution_mode in ["realtime", "backtest"]:
+        return realtime_and_backtesting_mode(args=args)
+    elif args.execution_mode in ["optimize"]:
         return optimization_mode(args=args)
     return None
 
