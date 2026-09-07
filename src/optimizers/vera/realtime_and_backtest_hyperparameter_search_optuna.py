@@ -13,7 +13,7 @@ except ImportError:
     parent_dir = current_dir.parent.parent.parent
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
-
+from multiprocessing import freeze_support, Lock, Process, Queue, Value
 from argparse import Namespace
 from runners.atr import entry as atr
 from fetchers.data_factory import factory_load_data
@@ -25,6 +25,7 @@ from tqdm import tqdm
 import math
 import argparse
 import pickle
+import os
 from collections import defaultdict  # Added for grouping results
 
 
@@ -297,10 +298,16 @@ def realtime_and_backtesting_mode(args):
         # Determine current and inverse streak probabilities based on previous direction
         streak_proba, inv_streak_proba = None, None
         if previous_candle_streak_dir == 'pos':
-            streak_proba = pos_direction[this_candle_streak_number]['prob']
+            try:
+                streak_proba = pos_direction[this_candle_streak_number]['prob']
+            except:
+                streak_proba = 0.001 # this_candle_streak_number is to high! so fix a dump value of 0.1%
             inv_streak_proba = neg_direction[0]['prob']
         else:
-            streak_proba = neg_direction[this_candle_streak_number]['prob']
+            try:
+                streak_proba = neg_direction[this_candle_streak_number]['prob']
+            except:
+                streak_proba = 0.001 # this_candle_streak_number is to high! so fix a dump value of 0.1%
             inv_streak_proba = pos_direction[0]['prob']
 
         # --- Extract Regime Metrics & Expected Bounds ---
@@ -529,40 +536,79 @@ def realtime_and_backtesting_mode(args):
     return {"put_win_rate": put_win_rate, "call_win_rate": call_win_rate, "combined_win_rate": (put_win_rate+call_win_rate)/2,}
 
 
+def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
+    # Attendre le Go du master
+    while True:
+        with master_cmd__shared.get_lock():
+            if 0 != master_cmd__shared.value:
+                break
+        time.sleep(0.333)
+
+    # Traitement des requêtes
+    all_results_computed, run_count = [], 0
+    while True:
+        use_case_batch = []
+        try:
+            item = use_cases__shared.get(timeout=0.1)
+            use_case_batch.append(item)
+        except:
+            break  # Queue is empty or no more items within timeout
+        if 0 == len(use_case_batch):
+            break
+        assert 1 == len(use_case_batch)
+        a_config, total_runs = use_case_batch[0]
+        result = realtime_and_backtesting_mode(args=a_config)
+        all_results_computed.append({
+            "candle_size": a_config.intraday_candle_space,
+            "tightness_weight": a_config.tightness_weight,
+            "n_trials": a_config.n_trials,
+            "put_win_rate": result["put_win_rate"],
+            "call_win_rate": result["call_win_rate"],
+            "combined_win_rate": result["combined_win_rate"]
+        })
+        run_count +=1
+        print(f"[{os.getpid()}]  -> Run {run_count}/~{total_runs} completed (Candle: {a_config.intraday_candle_space}m, TW: {a_config.tightness_weight}, Trials: {a_config.n_trials}, "
+              f"Win Rate: {result['combined_win_rate']:.2%})")
+
+    out__shared.put(all_results_computed)
+
+
 def optimization_mode(args):
-    list_of_candle_sizes     = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120]
+    list_of_candle_sizes     = [15, 20, 25, 30, 45, 60, 75, 90, 120]
     list_of_tightness_weight = [0, 0.11, 0.33, 0.99]
     list_of_n_trials         = [1, 5, 50, 500, 999]
-    all_results              = []
     back_n_days              = 100
+    nb_worker                = 12
+
     total_runs = len(list_of_candle_sizes) * len(list_of_tightness_weight) * len(list_of_n_trials)
     print(f"🚀 Starting Optimization: {total_runs} total runs...")
 
-    run_count = 0
+    # Construction des cas à traiter
+    use_cases = []
     for candle_size in list_of_candle_sizes:
         for tightness_weight in list_of_tightness_weight:
             for n_trials in list_of_n_trials:
-                run_count += 1
-
-                a_config = Namespace(
-                    ticker=args.ticker,
-                    intraday_candle_space=candle_size,
-                    execution_mode="backtest",
-                    tightness_weight=tightness_weight,
-                    n_trials=n_trials,
-                    n_split=args.n_split,
-                    back_n_days=back_n_days,
-                )
-                result = realtime_and_backtesting_mode(args=a_config)
-                all_results.append({
-                    "candle_size": candle_size,
-                    "tightness_weight": tightness_weight,
-                    "n_trials": n_trials,
-                    "put_win_rate": result["put_win_rate"],
-                    "call_win_rate": result["call_win_rate"],
-                    "combined_win_rate": result["combined_win_rate"]
-                })
-                print(f"  -> Run {run_count}/{total_runs} completed (Candle: {candle_size}m, TW: {tightness_weight}, Trials: {n_trials}, Win Rate: {result['combined_win_rate']:.2%})")
+                a_config = Namespace(ticker=args.ticker,intraday_candle_space=candle_size,execution_mode="backtest",tightness_weight=tightness_weight,
+                                     n_trials=n_trials,n_split=args.n_split,back_n_days=back_n_days,)
+                use_cases.append((a_config, total_runs//nb_worker))
+    data_from_workers = []
+    # Variables partagées
+    use_cases__shared, master_cmd__shared = Queue(256000), Value("i", 0)
+    out__shared = [Queue(1) for k in range(0, nb_worker)]
+    # Lancement des workers
+    for k in range(0, nb_worker):
+        p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k],))
+        p.start()
+    # Envoie les informations aux workers pour traitement
+    # Préparation des lots de travail
+    for use_case in use_cases:
+        use_cases__shared.put(use_case)
+    # Autoriser les workers à traiter
+    with master_cmd__shared.get_lock():
+        master_cmd__shared.value = 1
+    # Récupération des résultats
+    for k in range(0, nb_worker):
+        data_from_workers.extend(out__shared[k].get())
 
     # ==========================================================================
     # NICE PRINTING OF RESULTS
@@ -570,7 +616,7 @@ def optimization_mode(args):
     print("\n" + "=" * 90)
     print("🏆 OPTIMIZATION RESULTS SUMMARY 🏆")
     print("=" * 90)
-
+    all_results = data_from_workers
     # Sort all results by combined win rate descending
     all_results.sort(key=lambda x: x["combined_win_rate"], reverse=True)
     n_best = 100
@@ -617,6 +663,7 @@ def optimization_mode(args):
 # MAIN EXECUTION LOGIC
 # ==============================================================================
 def entry(args):
+    freeze_support()
     if args.execution_mode in ["realtime", "backtest"]:
         return realtime_and_backtesting_mode(args=args)
     elif args.execution_mode in ["optimize"]:

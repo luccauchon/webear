@@ -1,5 +1,4 @@
 import argparse
-
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -19,6 +18,8 @@ from fetchers.data_factory import factory_load_data
 from runners.streak_probability import new_main as streak_probability
 from argparse import Namespace
 from datetime import datetime
+import time
+import traceback
 
 
 def main(args):
@@ -240,7 +241,15 @@ def main(args):
     if GENERATE_IMAGE:
         output_dir = get_and_clean_stub_dir(local_dir="plotly_close_oriented")
         output_filename = os.path.join(output_dir, f"{TICKER}_plot_{datetime.now().strftime('%Y%m%d_%H%M')}.png")
-        fig.write_image(output_filename, width=1600, height=1000)
+        try:
+            fig.write_image(output_filename, width=1600, height=1000)
+        except:
+            time.sleep(5)
+            try:
+                fig.write_image(output_filename, width=1600, height=1000)
+            except Exception as eee:
+                print(eee)
+                traceback.print_exc()
     if GENERATE_HTML:
         fig.show()
     return {"output_filename": output_filename, "target_date": next_date}

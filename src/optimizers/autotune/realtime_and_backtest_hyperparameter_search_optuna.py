@@ -59,6 +59,13 @@ using `--win-threshold` (`wt`) as the boundary/reference value:
     NOTE: With negative wt, this becomes MORE aggressive (e.g., wt=-0.04 requires
     price to stay above 104% of entry - maintaining a minimum 4% gain).
 
+  • hold_floor_half_B (Long-Focused)
+    Measures the % of LONG signals where price NEVER drops below `1-wt` at any
+    point during the SECOND HALF of the lookahead window (t + lookahead//2 to t + lookahead).
+    Focus: Downside protection & stop-loss integrity during the latter half of the trade.
+    NOTE: With negative wt, this becomes MORE aggressive (e.g., wt=-0.04 requires
+    price to stay above 104% of entry in the second half - maintaining a minimum 4% gain).
+
   • hold_ceiling (Short-Focused)
     Measures the % of SHORT signals where price NEVER rises above `1+wt` during
     the lookahead window.
@@ -89,8 +96,8 @@ Key Distinctions:
     values, with semantics adjusted as noted above.
 
 Usage Example:
-    python autotune.py --dataset-id day --ticker ^GSPC --optimize hold_floor \\
-                       --lookahead-bars 10 --win-threshold -0.04 --n-trials 500 \\
+    python autotune.py --dataset-id day --ticker ^GSPC --optimize hold_floor \
+                       --lookahead-bars 10 --win-threshold -0.04 --n-trials 500 \
                        --storage sqlite:///optuna.db
 """
 try:
@@ -128,6 +135,7 @@ METRIC_MAP = {
     'profit_target': {'col': 'forward_return_{}b', 'calc': lambda s, wt: (s > wt).mean()},
     'range_bound': {'col': 'stay_in_band_{}b', 'calc': lambda s, wt: s.mean()},
     'hold_floor': {'col': 'stay_above_lower_{}b', 'calc': lambda s, wt: s.mean()},
+    'hold_floor_half_B': {'col': 'stay_above_lower_half_{}b', 'calc': lambda s, wt: s.mean()},
     'hold_ceiling': {'col': 'stay_below_upper_{}b', 'calc': lambda s, wt: s.mean()},
     'finish_above': {'col': 'above_upper_last_{}b', 'calc': lambda s, wt: s.mean()},
     'finish_below': {'col': 'below_lower_last_{}b', 'calc': lambda s, wt: s.mean()},
@@ -244,6 +252,7 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
     within_upper = np.zeros(n)
     above_upper_last = np.zeros(n)
     below_lower_last = np.zeros(n)
+    within_lower_half = np.zeros(n)
 
     for i in range(n):
         if signals[i] != 0.0:
@@ -284,7 +293,12 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
             above_upper_last[i] = 1.0 if prices[last_idx] > prices[i] * (1.0 + win_threshold) else 0.0
             below_lower_last[i] = 1.0 if prices[last_idx] < prices[i] * (1.0 - win_threshold) else 0.0
 
-    return signals, None, None, forward_returns, within_bound, within_lower, within_upper, bp, roc, above_upper_last, below_lower_last
+            min_p_half = prices[i + lookahead_bars // 2]
+            for j in range(i + lookahead_bars // 2 + 1, end):
+                if prices[j] < min_p_half: min_p_half = prices[j]
+            within_lower_half[i] = 1.0 if min_p_half >= prices[i] * (1.0 - win_threshold) else 0.0
+
+    return signals, None, None, forward_returns, within_bound, within_lower, within_upper, bp, roc, above_upper_last, below_lower_last, within_lower_half
 
 
 # =============================================================================
@@ -306,7 +320,7 @@ class AutoTuneStrategy:
     def generate_signals(self, prices) -> pd.DataFrame:
         prices = np.asarray(prices, dtype=np.float64)
         dc_series, min_corr_series, hp = _auto_tune(data=prices, window=self.window)
-        sig, _, _, fwd, wr2, wr3, wr4, bp, roc, wr5, wr6 = _run_backtest(
+        sig, _, _, fwd, wr2, wr3, wr4, bp, roc, wr5, wr6, wr7 = _run_backtest(
             prices=prices, dc_series=dc_series, min_corr_series=min_corr_series, hp=hp,
             window=self.window, bandwidth=self.bandwidth, threshold=self.threshold,
             win_threshold=self.win_threshold, lookahead_bars=self.lookahead_bars,
@@ -322,7 +336,8 @@ class AutoTuneStrategy:
             f'stay_above_lower_{LA}b': wr3,
             f'stay_below_upper_{LA}b': wr4,
             f'above_upper_last_{LA}b': wr5,
-            f'below_lower_last_{LA}b': wr6
+            f'below_lower_last_{LA}b': wr6,
+            f'stay_above_lower_half_{LA}b': wr7
         })
 
     def evaluate(self, results: pd.DataFrame) -> Dict:
@@ -334,6 +349,7 @@ class AutoTuneStrategy:
         wr4_col = f'stay_below_upper_{LA}b'
         wr5_col = f'above_upper_last_{LA}b'
         wr6_col = f'below_lower_last_{LA}b'
+        wr7_col = f'stay_above_lower_half_{LA}b'
 
         signals = df[df['signal'] != 0].copy()
         label = 'long' if self.signal_type == 1 else ('short' if self.signal_type == -1 else 'both')
@@ -348,6 +364,7 @@ class AutoTuneStrategy:
         hold_ceiling = signals[wr4_col].values.mean()
         finish_above = signals[wr5_col].values.mean()
         finish_below = signals[wr6_col].values.mean()
+        hold_floor_half_B = signals[wr7_col].values.mean()
 
         return {
             'total_signals': total_signals,
@@ -358,6 +375,7 @@ class AutoTuneStrategy:
             f'hold_ceiling_{label}_{LA}b': f"{hold_ceiling * 100:.1f}%",
             f'finish_above_{label}_{LA}b': f"{finish_above * 100:.1f}%",
             f'finish_below_{label}_{LA}b': f"{finish_below * 100:.1f}%",
+            f'hold_floor_half_B_{label}_{LA}b': f"{hold_floor_half_B * 100:.1f}%",
             f'expectancy_{label}_{LA}b': f"{signals[fwd_col].mean() * 100:.3f}%",
         }
 
@@ -486,6 +504,10 @@ def entry(args):
                 if last_signal == 1. and rt_signal_type in ('long', 'both'):
                     target_price = last_price * (1 - rt_win_threshold)
                     if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY ABOVE {target_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+            elif saved_model['optimize_metric'] == 'hold_floor_half_B':
+                if last_signal == 1. and rt_signal_type in ('long', 'both'):
+                    target_price = last_price * (1 - rt_win_threshold)
+                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY ABOVE {target_price:.0f} in the second half until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
             elif saved_model['optimize_metric'] == 'hold_ceiling':
                 if last_signal == -1. and rt_signal_type in ('short', 'both'):
                     target_price = last_price * (1 + rt_win_threshold)
@@ -506,6 +528,11 @@ def entry(args):
                     pass  # Ok
                 else:
                     last_signal = 0.
+            elif saved_model['optimize_metric'] == 'hold_floor_half_B':
+                if last_signal == 1. and rt_signal_type in ('long', 'both'):
+                    pass  # Ok
+                else:
+                    last_signal = 0.
             elif saved_model['optimize_metric'] == 'hold_ceiling':
                 if last_signal == -1. and rt_signal_type in ('short', 'both'):
                     pass  # Ok
@@ -522,7 +549,7 @@ def entry(args):
                 else:
                     last_signal = 0.
         # Normalize the returned information
-        assert saved_model['optimize_metric'] in ["hold_ceiling", "hold_floor", "finish_above", "finish_below"]
+        assert saved_model['optimize_metric'] in ["hold_ceiling", "hold_floor", "finish_above", "finish_below", "hold_floor_half_B"]
         optimization_metric, method = "buy_wr", "final_close"
         if saved_model['optimize_metric'] in ["hold_ceiling", "finish_below"]:
             optimization_metric = "sell_wr"
@@ -567,7 +594,7 @@ def entry(args):
     required_signal_density = args.min_signal_density
 
     METRIC_TO_SIGNAL_TYPE = {
-        'hold_floor': 1, 'finish_above': 1,
+        'hold_floor': 1, 'finish_above': 1, 'hold_floor_half_B': 1,
         'hold_ceiling': -1, 'finish_below': -1,
         'profit_target': 0, 'range_bound': 0
     }

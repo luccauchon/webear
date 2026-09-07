@@ -97,6 +97,7 @@ def factory_load_data(_dataset_id, _ticker, _args):
     _get_vix = _args.get("get_vix", False)
     _proxy_spx = _args.get("proxy_spx", False)
     _filter_per_day = _args.get("filter_per_day", [])
+    _replace_last_candle = _args.get("new_values_for_last_candles", {})
     _meta_info = ""
     if _proxy_spx:  # Préséance sur realtime
         assert _ticker in ["^GSPC"]
@@ -200,6 +201,8 @@ def factory_load_data(_dataset_id, _ticker, _args):
         df_main = convert_to_heikin_ashi(df=df_main, ticker=_ticker, overwrite=True)
         assert _tmp_n1 == len(df_main.dropna())
     if _clip_n > 0:
+        if _realtime_data:
+            print(f"\033[1m[WARNING] <<_realtime_data>> is ON but <<clip_n>> is also set to {_clip_n} : Realtime data might have been discarded.\033[0m")
         df_main = df_main.iloc[:-_clip_n]
     if _reduce_n > 0:
         df_main = df_main.iloc[_reduce_n:]
@@ -214,7 +217,17 @@ def factory_load_data(_dataset_id, _ticker, _args):
         df_main = resample_macro_candles(df=df_main, n=n_bars, timeframe=_dataset_id, ticker=_ticker)
         if _get_vix:
             df_vix = resample_macro_candles(df=df_main, n=n_bars, timeframe=_dataset_id, ticker="^VIX")
+    if len(_replace_last_candle) > 0:
+        # # Cibler la dernière ligne (-1) pour chaque colonne spécifique
+        # df.loc[df.index[-1], ("Open", ticker)] = new_open
+        # df.loc[df.index[-1], ("High", ticker)] = new_high
+        # df.loc[df.index[-1], ("Low", ticker)] = new_low
+        # df.loc[df.index[-1], ("Close", ticker)] = new_close
+        # df.loc[df.index[-1], ("Volume", ticker)] = new_volume
+        pass
+    ###########################################################################
     # Retour des valeurs
+    ###########################################################################
     if _get_vix:
         return df_main.copy(), df_vix.copy()
     return df_main.copy()

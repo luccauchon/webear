@@ -371,7 +371,7 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
     print(f"\n💾 Best model saved as: {model_filename}")
 
 
-def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int, use_realtime_data):
+def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int, use_realtime_data, return_values_as_dict):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)
@@ -518,8 +518,21 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
             else:
                 print(f"\n⏸️  No signal on {current_date.strftime('%Y-%m-%d_%H%M')}: {ticker_display} at {current_price:.2f}")
                 print(f"   (Threshold: {threshold_pct * 100:.4f}%, Lookahead: {lookahead_bars} bars, Target Mode: '{target_type}', Metric: {the_metric})\n")
-
-    return signal, current_price, current_date.strftime('%Y-%m-%d'), target_price, target_date, train_win_rate, val_win_rate, threshold_pct, f"{metric_used}::{target_type}", dataset_id, ticker, lookahead_bars
+    if return_values_as_dict:
+        return {"signal": signal,
+                "current_price": current_price,
+                "current_date": current_date.strftime("%Y-%m-%d"),
+                "target_price": target_price,
+                "target_date": target_date,
+                "train_win_rate": train_win_rate,
+                "val_win_rate": val_win_rate,
+                "threshold_pct": threshold_pct,
+                "metric_target_type": f"{metric_used}::{target_type}",
+                "dataset_id": dataset_id,
+                "ticker": ticker,
+                "lookahead_bars": lookahead_bars,}
+    else:
+        return signal, current_price, current_date.strftime('%Y-%m-%d'), target_price, target_date, train_win_rate, val_win_rate, threshold_pct, f"{metric_used}::{target_type}", dataset_id, ticker, lookahead_bars
 
 
 # ============================================
@@ -1197,7 +1210,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 def entry(args):
     command_line = "python " + " ".join(sys.argv)
     # ✅ JIT VALIDATION (optional, disabled by default)
-    if args.validate_jit:
+    if getattr(args, 'validate_jit', False):
         if not _validate_jit_consistency(verbose=args.verbose):
             print("⚠️  JIT validation failed. Proceeding anyway (results may be inconsistent).")
             return None
@@ -1208,7 +1221,8 @@ def entry(args):
     if args.realtime:
         if not args.model_path:
             raise ValueError("--model-path is required when using --real-time")
-        return run_realtime(output_signal_only=args.output_signal_only, model_path=args.model_path, verbose=args.verbose, clip_n=args.clip_n, use_realtime_data=args.use_realtime_data)
+        return run_realtime(output_signal_only=getattr(args, 'output_signal_only', False), model_path=args.model_path, return_values_as_dict=getattr(args, 'return_values_as_dict', False),
+                            verbose=getattr(args, 'verbose', False), clip_n=getattr(args, 'clip_n', 0), use_realtime_data=getattr(args, 'use_realtime_data', True))
 
     if args.verbose:
         print("✅ __doc__ length:", len(__doc__ or ""))
