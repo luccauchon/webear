@@ -215,7 +215,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol to analyze.')
     parser.add_argument('--back-n-days', type=int, default=100, help='Number of historical trading days to simulate.')
     parser.add_argument('--intraday-candle-space', type=int, default=15, help='Timeframe in minutes for the execution candle.')
-    parser.add_argument('--n-trials', type=int, default=5, help='Number of simulation trials.')
+    parser.add_argument('--n-trials', type=int, default=50, help='Number of simulation trials.')
     parser.add_argument('--tightness-weight', type=float, default=0.33, help='Weighting factor for ATR tightness.')
     parser.add_argument("--n-split", type=float, default=0.9, help='Data split ratio for probability models.')
     parser.add_argument('--execution-mode', type=str, default='backtest', choices=['backtest', 'realtime', 'optimize'], help='Operational mode.')
