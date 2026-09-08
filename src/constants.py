@@ -85,7 +85,10 @@ os.makedirs(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, exist_ok=True)
 # Optional: Load FRED_API_KEY from environment for security
 # import os
 # FRED_API_KEY = os.getenv('FRED_API_KEY')
-FRED_API_KEY = '213742dc08592772cb9502214cdc4397'
+try:
+    FRED_API_KEY = open(r"C:\pwd\fredapikey.txt", "r", encoding="utf-8").read().strip()
+except:
+    FRED_API_KEY = None
 
 #
 def GET_EMAILS(dev=False):
@@ -96,7 +99,10 @@ def GET_EMAILS(dev=False):
     return destinataires
 
 EMAIL_SENDER_WEBEAR = "luccauchon@gmail.com"
-PWD_GOOGLE_API = "thhy qvae fbsb zsbe"
+try:
+    PWD_GOOGLE_API = open(r"C:\pwd\googlepwd.txt", "r", encoding="utf-8").read().strip()
+except:
+    PWD_GOOGLE_API = None
 
 TITLE_WEBEAR = "WEBEAR 1.0"
 
