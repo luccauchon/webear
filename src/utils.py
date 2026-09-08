@@ -1868,7 +1868,32 @@ def calculate_rsi(df, ticker, close_col, period=14):
 
 
 def get_taurus_v1_models():
-    return {"oerh": {"mom": {"name": "mom", "version": 1, "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245.pkl")},},}
+    # (PY312_HT) PS D:\PyCharmProjects\webear\src\optimizers\oerh> python .\player_with_backtesting.py --n-back 10000 --models-dir D:\Finance\compiled_models\taurus\v1\2026.08.20\optimizers\oerh\models
+    #
+    # 🌍 STATS GLOBALES :
+    #   • Dataset     : day
+    #   • Ticker      : ^GSPC
+    #   • Dates       : 2026-09-04_0000 :: 1986-12-24_0000
+    # Clips: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 10000/10000 [11:49<00:00, 14.09it/s]
+    #
+    # ==================================================
+    # ====== STATISTIQUES FINALES DE COMPILATION =======
+    # ==================================================
+    #
+    # 📊 STATS PAR MODÈLE :
+    #   • oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245 -> Total: 944  | Density: 9.44% | WR: 96.61%
+    #   • oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9192__sd0.1230__dsday__cdb2__^GSPC__20260821_091918 -> Total: 1093 | Density: 10.93% | WR: 93.41%
+    #   • oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9394__sd0.0849__dsday__cdb5__^GSPC__20260820_113002 -> Total: 752  | Density: 7.52% | WR: 92.69%
+    return {"oerh": {"mom": {"name": "mom", "version": 1,
+                             "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245.pkl"),
+                             },
+                     "rip": {"name": "rip", "version": 1,
+                             "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9192__sd0.1230__dsday__cdb2__^GSPC__20260821_091918.pkl"),
+                             },
+                     "fox": {"name": "fox", "version": 1,
+                             "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9394__sd0.0849__dsday__cdb5__^GSPC__20260820_113002.pkl"),
+                             },
+                     },}
 
 
 def round_price_for_put_credit_spread(price):
