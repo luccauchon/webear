@@ -27,6 +27,7 @@ import argparse
 import pickle
 import os
 from collections import defaultdict  # Added for grouping results
+from time import sleep # Added to prevent conflict with datetime.time
 
 
 # ==============================================================================
@@ -542,7 +543,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
         with master_cmd__shared.get_lock():
             if 0 != master_cmd__shared.value:
                 break
-        time.sleep(0.333)
+        sleep(0.333)
 
     # Traitement des requêtes
     all_results_computed, run_count = [], 0
@@ -629,20 +630,21 @@ def optimization_mode(args):
     for i, res in enumerate(all_results[:n_best]):
         print(f"{i + 1:<5} | {res['candle_size']:<7} | {res['tightness_weight']:<10.2f} | {res['n_trials']:<7} | {res['put_win_rate']:<8.1%} | {res['call_win_rate']:<8.1%} | {res['combined_win_rate']:<11.1%}")
 
-    # 2. Best Run for Each Candle Size
-    print("\n📊 BEST RUN FOR EACH CANDLE SIZE 📊")
+    # 2. Best Run for Each Candle Size & Tightness
+    print("\n📊 BEST RUN FOR EACH CANDLE SIZE & TIGHTNESS 📊")
     print("-" * 90)
     print(f"{'Candle':<7} | {'Tightness':<10} | {'Trials':<7} | {'Put WR':<8} | {'Call WR':<8} | {'Combined WR':<11}")
     print("-" * 90)
 
-    by_candle = defaultdict(list)
+    by_candle_tightness = defaultdict(list)
     for res in all_results:
-        by_candle[res['candle_size']].append(res)
+        group_key = (res['candle_size'], res['tightness_weight'])
+        by_candle_tightness[group_key].append(res)
 
-    for candle in sorted(by_candle.keys()):
-        # Find the best combined win rate for this specific candle size
-        best_for_candle = max(by_candle[candle], key=lambda x: x['combined_win_rate'])
-        print(f"{best_for_candle['candle_size']:<7} | {best_for_candle['tightness_weight']:<10.2f} | {best_for_candle['n_trials']:<7} | {best_for_candle['put_win_rate']:<8.1%} | {best_for_candle['call_win_rate']:<8.1%} | {best_for_candle['combined_win_rate']:<11.1%}")
+    for group_key in sorted(by_candle_tightness.keys()):
+        # Find the best combined win rate for this specific candle size and tightness
+        best_for_group = max(by_candle_tightness[group_key], key=lambda x: x['combined_win_rate'])
+        print(f"{best_for_group['candle_size']:<7} | {best_for_group['tightness_weight']:<10.2f} | {best_for_group['n_trials']:<7} | {best_for_group['put_win_rate']:<8.1%} | {best_for_group['call_win_rate']:<8.1%} | {best_for_group['combined_win_rate']:<11.1%}")
 
     # 3. Absolute Best Run Details
     best = all_results[0]
