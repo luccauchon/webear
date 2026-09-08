@@ -575,8 +575,8 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
 def optimization_mode(args):
     list_of_candle_sizes     = [15, 20, 25, 30, 45, 60, 75, 90, 120]
-    list_of_tightness_weight = [0, 0.11, 0.33, 0.99]
-    list_of_n_trials         = [1, 5, 50, 500, 999]
+    list_of_tightness_weight = [0, 0.11, 0.33, 0.99, 4.]
+    list_of_n_trials         = [1, 5, 10, 25, 50, 100, 250, 500, 999]
     back_n_days              = 100
     nb_worker                = 12
 
