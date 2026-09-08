@@ -371,7 +371,7 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
     print(f"\n💾 Best model saved as: {model_filename}")
 
 
-def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int, use_realtime_data, return_values_as_dict):
+def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int, use_realtime_data: bool, return_values_as_dict: bool):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
     model_data = load_model(model_path)

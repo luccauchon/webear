@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import platform
 import os
 import yfinance as yf
-#from hurst import compute_Hc
+import math
 import pandas as pd
 import warnings
 import glob
@@ -1868,4 +1868,12 @@ def calculate_rsi(df, ticker, close_col, period=14):
 
 
 def get_taurus_v1_models():
-    return {"oerh": [os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245.pkl")]}
+    return {"oerh": {"mom": {"name": "mom", "version": 1, "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245.pkl")},},}
+
+
+def round_price_for_put_credit_spread(price):
+    return math.floor(price / 5) * 5  # Put section: round down to nearest 5
+
+
+def round_price_for_call_credit_spread(price):
+    return math.ceil(price / 5) * 5  # Call section: round up to nearest 5
