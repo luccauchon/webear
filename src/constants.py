@@ -20,10 +20,11 @@ try:
         IS_RUNNING_MAC = True
 except:
     IS_RUNNING_MAC = False
+BASE_FINANCE_COMPILED_MODELS             = r"D:\Finance\compiled_models"
 BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
-BASE_YFINANCE_DIR     = r"C:\Finance\data\yfinance"
-BASE_FORECAST_DIR     = r"C:\Finance\data\forecast"
+BASE_YFINANCE_DIR                        = r"C:\Finance\data\yfinance"
+BASE_FORECAST_DIR                        = r"C:\Finance\data\forecast"
 
 if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
@@ -43,7 +44,7 @@ if IS_RUNNING_MAC:
     BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"/Users/luccauchon/WORK/data/daily_30minutes"
 # Ensure the directory exists (optional, but helpful if you're writing later)
 os.makedirs(str(BASE_YFINANCE_DIR), exist_ok=True)
-
+TAURUS_V1_BASE_DIRECTORY                = os.path.join(BASE_FINANCE_COMPILED_MODELS, "V1")
 # Define output filenames using the base directory
 FYAHOO__OUTPUTFILENAME         = os.path.join(str(BASE_YFINANCE_DIR), "snapshot.pkl")
 FYAHOO__OUTPUTFILENAME_DAY     = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_day.pkl")
