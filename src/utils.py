@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
-from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API
+from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY
 import sys
 import re
 from types import SimpleNamespace
@@ -1865,3 +1865,7 @@ def calculate_rsi(df, ticker, close_col, period=14):
     new_col=(f'RSI_{period}', ticker)
     df[new_col] = rsi
     return df, new_col
+
+
+def get_taurus_v1_models():
+    return {"oerh": [os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245.pkl")]}
