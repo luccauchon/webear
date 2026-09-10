@@ -512,6 +512,7 @@ def entry(args):
             print(f"Datapoint used: {last_date_str} | Signal computed: {last_signal} {signal_str}")
 
         target_price = 0.0
+        abs_wt = abs(rt_win_threshold)
 
         # Calcul du prix cible (strike) selon la métrique
         if signal == 1:
@@ -519,11 +520,19 @@ def entry(args):
                 target_price = last_price * (1.0 - rt_win_threshold)
             elif opt_metric == 'finish_above':
                 target_price = last_price * (1.0 + rt_win_threshold)
+            elif opt_metric == 'profit_target':
+                target_price = last_price * (1.0 + abs_wt)
+            elif opt_metric == 'range_bound':
+                target_price = last_price * (1.0 + abs_wt) # Borne supérieure par défaut pour l'affichage
         elif signal == -1:
             if opt_metric == 'hold_ceiling':
                 target_price = last_price * (1.0 + rt_win_threshold)
             elif opt_metric == 'finish_below':
                 target_price = last_price * (1.0 - rt_win_threshold)
+            elif opt_metric == 'profit_target':
+                target_price = last_price * (1.0 - abs_wt)
+            elif opt_metric == 'range_bound':
+                target_price = last_price * (1.0 - abs_wt) # Borne inférieure par défaut pour l'affichage
 
         # Invalidation du signal si la logique ne correspond pas à la métrique d'optimisation
         if last_signal != 0:
@@ -533,6 +542,9 @@ def entry(args):
                     is_valid = True
             elif opt_metric in ['hold_ceiling', 'finish_below']:
                 if signal == -1 and rt_signal_type_code in (-1, 0):
+                    is_valid = True
+            elif opt_metric in ['profit_target', 'range_bound']:
+                if rt_signal_type_code == 0 or (signal == 1 and rt_signal_type_code == 1) or (signal == -1 and rt_signal_type_code == -1):
                     is_valid = True
 
             if not is_valid:
@@ -552,21 +564,27 @@ def entry(args):
 
             # Définition précise de l'objectif selon la métrique d'optimisation
             if opt_metric == 'hold_floor':
-                action = "maintenir le prix au-dessus du seuil (strike)"
+                action = f"maintenir le prix au-dessus du seuil de {target_price:.2f}"
             elif opt_metric == 'hold_floor_half_B':
-                action = "maintenir le prix au-dessus du seuil (strike) durant la seconde moitié de la période"
+                action = f"maintenir le prix au-dessus du seuil de {target_price:.2f} durant la seconde moitié de la période"
             elif opt_metric == 'hold_ceiling':
-                action = "maintenir le prix en dessous du seuil (strike)"
+                action = f"maintenir le prix en dessous du seuil de {target_price:.2f}"
             elif opt_metric == 'finish_above':
-                action = "clôturer au-dessus du seuil (strike)"
+                action = f"clôturer au-dessus du seuil de {target_price:.2f}"
             elif opt_metric == 'finish_below':
-                action = "clôturer en dessous du seuil (strike)"
+                action = f"clôturer en dessous du seuil de {target_price:.2f}"
+            elif opt_metric == 'profit_target':
+                action = f"atteindre un rendement maximum supérieur au seuil (cible indicative: {target_price:.2f})"
+            elif opt_metric == 'range_bound':
+                band_low = last_price * (1.0 - abs_wt)
+                band_high = last_price * (1.0 + abs_wt)
+                action = f"maintenir le prix strictement à l'intérieur de la bande [{band_low:.2f}, {band_high:.2f}]"
             else:
-                action = "atteindre l'objectif défini par"
+                action = f"atteindre l'objectif défini par (cible: {target_price:.2f})"
 
             status_message = (
                 f"{emoji} THREAD {direction} ACTIF : "
-                f"Objectif de {action} de {target_price:.2f} "
+                f"Objectif de {action} "
                 f"d'ici l'expiration prévue le {la_date} "
                 f"({la_bars} barres). "
                 f"Probabilité de succès estimée (backtest) : {validation_score:.2%}."
@@ -576,8 +594,17 @@ def entry(args):
         optimization_metric, method = "buy_wr", "final_close"
         if opt_metric in ["hold_ceiling", "finish_below"]:
             optimization_metric = "sell_wr"
+        elif opt_metric == "profit_target":
+            optimization_metric = "buy_wr" if signal == 1 else "sell_wr"
+        elif opt_metric == "range_bound":
+            optimization_metric = "range_wr"
 
-        threshold_multiplier = (1.0 - rt_win_threshold) if optimization_metric == "buy_wr" else (1.0 + rt_win_threshold)
+        if optimization_metric == "buy_wr":
+            threshold_multiplier = 1.0 - rt_win_threshold
+        elif optimization_metric == "sell_wr":
+            threshold_multiplier = 1.0 + rt_win_threshold
+        else:
+            threshold_multiplier = 1.0 # Neutre
 
         # =====================================================================
         # RETOUR DU DICTIONNAIRE ENRICHI
@@ -824,7 +851,7 @@ def entry(args):
         final_metrics = strat_best.evaluate(results_valid)
         plot_strategy_results(
             results=results_valid, params=best_params, metrics=final_metrics,
-            ticker=ticker, dataset_id=dataset_id, output_dir=output_dir,
+            ticker=ticker, dataset_id=dataset_id, output_dir=args.output_dir,
             verbose=verbose, signal_type=signal_label, optimize_metric=optimize,
             win_threshold=win_threshold, test_win_rate=validation_win_rate,
         )
