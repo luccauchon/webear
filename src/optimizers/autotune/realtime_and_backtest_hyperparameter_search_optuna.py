@@ -445,110 +445,164 @@ def entry(args):
         model_path = getattr(args, "modelpath", getattr(args, "model_path", None))
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Specified model not found: {model_path}")
-        if verbose and not verbose_short: print(f"📥 Loading specified real-time model: {model_path}")
+        if verbose and not verbose_short:
+            print(f"📥 Loading specified real-time model: {model_path}")
+
         with open(model_path, 'rb') as f:
             saved_model = pickle.load(f)
-        command_line = saved_model["command_line"] if "command_line" in saved_model else ""
-        if verbose: print(f"Command line used: {command_line}")
+
+        command_line = saved_model.get("command_line", "")
+        if verbose:
+            print(f"Command line used: {command_line}")
+
         rt_params = saved_model['params']
-        assert 'win_threshold' in saved_model
         rt_win_threshold = saved_model['win_threshold']
-        assert 'signal_type' in saved_model
-        rt_signal_type = saved_model.get('signal_type', 0)
-        strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
+
+        # Utiliser le code entier (1, -1, 0) pour la logique, pas le label texte
+        rt_signal_type_code = saved_model.get('signal_type_code', 0)
+        rt_signal_type_label = saved_model.get('signal_type', 'both')
+
+        strat_rt = AutoTuneStrategy(
+            **rt_params,
+            win_threshold=rt_win_threshold,
+            signal_type=rt_signal_type_code  # Passe l'entier attendu par _run_backtest
+        )
+
         dataset_id = saved_model['dataset_id']
-        ticker     = saved_model['ticker']
+        ticker = saved_model['ticker']
         spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n, "realtime": True})
+
         if verbose:
             first_date = spx.index[0]
             last_date = spx.index[-1]
             num_bars = len(spx)
             print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
             print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d_%H%M')}  ->  {last_date.strftime('%Y%m%d_%H%M')}\n")
+
         close_col = ('Close', ticker)
         closes = spx[close_col].squeeze().dropna().copy()
         results_rt = strat_rt.generate_signals(closes)
         last_row = results_rt.iloc[-1]
         last_signal = last_row['signal']
+
         if 'ticker' in saved_model and ticker != saved_model['ticker']:
             raise ValueError(f"Ticker mismatch: CLI={ticker}, Model={saved_model['ticker']}")
-        total_rt_signals = (results_rt['signal'] != 0).sum()
-        long_rt = (results_rt['signal'] == 1.0).sum()
-        short_rt = (results_rt['signal'] == -1.0).sum()
-        signal_density = total_rt_signals / len(closes)
+
         last_price = last_row['price']
-        last_date = closes.index[-1].strftime('%Y-%m-%d')
+        last_date_str = closes.index[-1].strftime('%Y-%m-%d')
         la_date = get_next_step(the_date=closes.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
-        signal = 1 if (last_signal == 1.0 and rt_signal_type in ('long', 'both')) else (-1 if (last_signal == -1.0 and rt_signal_type in ('short', 'both')) else 0)
-        signal_str = "🟢 LONG" if signal == 1.0 else ("🔴 SHORT" if last_signal == -1.0 else "⚪ NONE")
+        opt_metric = saved_model['optimize_metric']
+        validation_score = saved_model['val_score']
+        la_bars = saved_model['params']['lookahead_bars']
+
+        # Évaluation du signal basée sur les entiers (1, -1, 0)
+        signal = 0
+        if last_signal == 1.0 and rt_signal_type_code in (1, 0):
+            signal = 1
+        elif last_signal == -1.0 and rt_signal_type_code in (-1, 0):
+            signal = -1
+
+        signal_str = "🟢 LONG" if signal == 1 else ("🔴 SHORT" if signal == -1 else "⚪ NONE")
+
         if verbose:
-            print(f"Dataset: {dataset_id} | Look Ahead: {rt_params['lookahead_bars']} bars")
-            print(f"Training score: {saved_model['train_score']:.6%} | Test score: {saved_model['val_score']:.6%}")
+            print(f"Dataset: {dataset_id} | Look Ahead: {la_bars} bars")
+            print(f"Training score: {saved_model['train_score']:.6%} | Test score: {validation_score:.6%}")
             print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Test win rate: {saved_model['validation_win_rate']:.6%}")
-            print(f"Optimization metric: {saved_model['optimize_metric']} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type}")
-            print(f"Datapoint used: {last_date} | Signal computed: {last_signal} {signal_str}")
+            print(f"Optimization metric: {opt_metric} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type_label}")
+            print(f"Datapoint used: {last_date_str} | Signal computed: {last_signal} {signal_str}")
 
-        target_price = 0.
-        if last_signal != 0:
-            training_score, validation_score = saved_model['train_score'], saved_model['val_score']
-            if saved_model['optimize_metric'] == 'hold_floor':
-                if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    target_price = last_price * (1 - rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY ABOVE {target_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
-            elif saved_model['optimize_metric'] == 'hold_floor_half_B':
-                if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    target_price = last_price * (1 - rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY ABOVE {target_price:.0f} in the second half until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
-            elif saved_model['optimize_metric'] == 'hold_ceiling':
-                if last_signal == -1. and rt_signal_type in ('short', 'both'):
-                    target_price = last_price * (1 + rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price STAY BELOW {target_price:.0f} until {la_date} ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
-            elif saved_model['optimize_metric'] == 'finish_above':
-                if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    target_price = last_price * (1 + rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price CLOSES > {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
-            elif saved_model['optimize_metric'] == 'finish_below':
-                if last_signal == -1. and rt_signal_type in ('short', 'both'):
-                    target_price = last_price * (1 - rt_win_threshold)
-                    if verbose: print(f"Last data point is {last_date} @{last_price:.0f}, {validation_score:.2%} chance that price CLOSES < {target_price:.0f} at last lookahead bar ({saved_model['params']['lookahead_bars']}B , {rt_win_threshold:.2%})")
+        target_price = 0.0
 
-        # Invalidate the signal if iw was not optimized for.
+        # Calcul du prix cible (strike) selon la métrique
+        if signal == 1:
+            if opt_metric in ['hold_floor', 'hold_floor_half_B']:
+                target_price = last_price * (1.0 - rt_win_threshold)
+            elif opt_metric == 'finish_above':
+                target_price = last_price * (1.0 + rt_win_threshold)
+        elif signal == -1:
+            if opt_metric == 'hold_ceiling':
+                target_price = last_price * (1.0 + rt_win_threshold)
+            elif opt_metric == 'finish_below':
+                target_price = last_price * (1.0 - rt_win_threshold)
+
+        # Invalidation du signal si la logique ne correspond pas à la métrique d'optimisation
         if last_signal != 0:
-            if saved_model['optimize_metric'] == 'hold_floor':
-                if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    pass  # Ok
-                else:
-                    last_signal = 0.
-            elif saved_model['optimize_metric'] == 'hold_floor_half_B':
-                if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    pass  # Ok
-                else:
-                    last_signal = 0.
-            elif saved_model['optimize_metric'] == 'hold_ceiling':
-                if last_signal == -1. and rt_signal_type in ('short', 'both'):
-                    pass  # Ok
-                else:
-                    last_signal = 0.
-            elif saved_model['optimize_metric'] == 'finish_above':
-                if last_signal == 1. and rt_signal_type in ('long', 'both'):
-                    pass  # Ok
-                else:
-                    last_signal = 0.
-            elif saved_model['optimize_metric'] == 'finish_below':
-                if last_signal == -1. and rt_signal_type in ('short', 'both'):
-                    pass  # Ok
-                else:
-                    last_signal = 0.
-        # Normalize the returned information
-        assert saved_model['optimize_metric'] in ["hold_ceiling", "hold_floor", "finish_above", "finish_below", "hold_floor_half_B"]
+            is_valid = False
+            if opt_metric in ['hold_floor', 'finish_above', 'hold_floor_half_B']:
+                if signal == 1 and rt_signal_type_code in (1, 0):
+                    is_valid = True
+            elif opt_metric in ['hold_ceiling', 'finish_below']:
+                if signal == -1 and rt_signal_type_code in (-1, 0):
+                    is_valid = True
+
+            if not is_valid:
+                last_signal = 0.0
+                signal = 0
+                signal_str = "⚪ NONE (Invalidated)"
+                target_price = 0.0
+
+        # =====================================================================
+        # 🆕 GÉNÉRATION DU MESSAGE EXPLICATIF (STATUS MESSAGE)
+        # =====================================================================
+        if signal == 0:
+            status_message = "⚪ NEUTRE : Aucun thread actif. En attente d'une configuration de marché valide."
+        else:
+            direction = "LONGUE (ACHAT)" if signal == 1 else "COURTE (VENTE)"
+            emoji = "🟢" if signal == 1 else "🔴"
+
+            # Définition précise de l'objectif selon la métrique d'optimisation
+            if opt_metric == 'hold_floor':
+                action = "maintenir le prix au-dessus du seuil (strike)"
+            elif opt_metric == 'hold_floor_half_B':
+                action = "maintenir le prix au-dessus du seuil (strike) durant la seconde moitié de la période"
+            elif opt_metric == 'hold_ceiling':
+                action = "maintenir le prix en dessous du seuil (strike)"
+            elif opt_metric == 'finish_above':
+                action = "clôturer au-dessus du seuil (strike)"
+            elif opt_metric == 'finish_below':
+                action = "clôturer en dessous du seuil (strike)"
+            else:
+                action = "atteindre l'objectif défini par"
+
+            status_message = (
+                f"{emoji} THREAD {direction} ACTIF : "
+                f"Objectif de {action} de {target_price:.2f} "
+                f"d'ici l'expiration prévue le {la_date} "
+                f"({la_bars} barres). "
+                f"Probabilité de succès estimée (backtest) : {validation_score:.2%}."
+            )
+
+        # Calcul du multiplicateur pour compatibilité descendante
         optimization_metric, method = "buy_wr", "final_close"
-        if saved_model['optimize_metric'] in ["hold_ceiling", "finish_below"]:
+        if opt_metric in ["hold_ceiling", "finish_below"]:
             optimization_metric = "sell_wr"
-        rt_win_threshold = 1 - rt_win_threshold if optimization_metric == "buy_wr" else 1 + rt_win_threshold
-        return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
-                'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': optimization_metric,
-                'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'], 'method': method, 'command_line':command_line,
-                'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
+
+        threshold_multiplier = (1.0 - rt_win_threshold) if optimization_metric == "buy_wr" else (1.0 + rt_win_threshold)
+
+        # =====================================================================
+        # RETOUR DU DICTIONNAIRE ENRICHI
+        # =====================================================================
+        return {
+            'current_price': last_price,
+            'current_date': last_date_str,
+            'train_score': saved_model['train_score'],
+            'val_score': validation_score,
+            'threshold': threshold_multiplier,
+            'raw_win_threshold': rt_win_threshold,
+            'signal_type': rt_signal_type_label,
+            'signal_type_code': rt_signal_type_code,
+            'dataset_id': dataset_id,
+            'ticker': ticker,
+            'optimization_metric': optimization_metric,
+            'train_win_rate': saved_model['train_win_rate'],
+            'val_win_rate': saved_model['validation_win_rate'],
+            'method': method,
+            'target_date': la_date,
+            'signal': signal,
+            'target_price': target_price,
+            'lookahead': la_bars,
+            'status_message': status_message  # 🆕 NOUVEAU : Chaîne explicative prête à l'emploi
+        }
 
     optimize = args.optimize
     os.makedirs(args.output_dir, exist_ok=True)
