@@ -433,19 +433,15 @@ def perfect_score_callback(study, trial):
 # =============================================================================
 def entry(args):
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    os.makedirs(args.output_dir, exist_ok=True)
     verbose = args.verbose
-    verbose_short = args.verbose_short
+    verbose_short = getattr(args, "verbose_short", False)
     real_time = getattr(args, "realtime", getattr(args, "real_time", None))
-    output_dir = args.output_dir
-    optimize = args.optimize
     np.random.seed(42)
 
     # =============================================================================
     # 🔄 REAL-TIME MODE
     # =============================================================================
     if real_time:
-        os.makedirs(output_dir, exist_ok=True)
         model_path = getattr(args, "modelpath", getattr(args, "model_path", None))
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Specified model not found: {model_path}")
@@ -551,8 +547,11 @@ def entry(args):
         rt_win_threshold = 1 - rt_win_threshold if optimization_metric == "buy_wr" else 1 + rt_win_threshold
         return {'current_price': last_price, 'current_date': last_date, 'train_score': saved_model['train_score'], 'val_score': saved_model['val_score'],
                 'threshold': rt_win_threshold, 'signal_type': rt_signal_type, 'dataset_id': dataset_id, 'ticker': ticker, 'optimization_metric': optimization_metric,
-                'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'], 'method': method,
+                'train_win_rate': saved_model['train_win_rate'], 'val_win_rate': saved_model['validation_win_rate'], 'method': method, 'command_line':command_line,
                 'target_date': la_date, 'signal': last_signal, 'target_price': target_price, 'lookahead': saved_model['params']['lookahead_bars']}
+
+    optimize = args.optimize
+    os.makedirs(args.output_dir, exist_ok=True)
     command_line = "python " + " ".join(sys.argv)
     dataset_id, ticker = args.dataset_id, args.ticker
     spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n})
@@ -750,10 +749,10 @@ def entry(args):
             print("   🎯 Win Rate: N/A (0 signals generated)")
 
     # 💾 SAVE MODEL
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
     w, bw, th, la, op = best_params['window'], best_params['bandwidth'], best_params['threshold'], best_params['lookahead_bars'], optimize
     model_name = f"autotune__la{la}__op{op}__wth{win_threshold}__trainsc{score_of_best_trial:.4f}__trainwr{train_win_rate:.4f}__twr{validation_win_rate:.4f}.pkl"
-    model_path = os.path.join(output_dir, model_name)
+    model_path = os.path.join(args.output_dir, model_name)
 
     model_data = {
         'params': best_params, 'win_threshold': win_threshold, 'signal_type': signal_label,
