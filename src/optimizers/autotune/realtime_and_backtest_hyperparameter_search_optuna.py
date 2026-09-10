@@ -412,7 +412,9 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False)
+    flag_group.add_argument('--realtime', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--model-path', type=str, default=None)
+    flag_group.add_argument('--modelpath', type=str, default=None)
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--verbose-short', action=argparse.BooleanOptionalAction, default=False)
     flag_group.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
@@ -434,7 +436,7 @@ def entry(args):
     os.makedirs(args.output_dir, exist_ok=True)
     verbose = args.verbose
     verbose_short = args.verbose_short
-    real_time = args.real_time
+    real_time = getattr(args, "realtime", getattr(args, "real_time", None))
     output_dir = args.output_dir
     optimize = args.optimize
     np.random.seed(42)
@@ -444,17 +446,10 @@ def entry(args):
     # =============================================================================
     if real_time:
         os.makedirs(output_dir, exist_ok=True)
-        if args.model_path:
-            if not os.path.exists(args.model_path):
-                raise FileNotFoundError(f"Specified model not found: {args.model_path}")
-            model_path = args.model_path
-            if verbose and not verbose_short: print(f"📥 Loading specified real-time model: {model_path}")
-        else:
-            model_files = glob.glob(os.path.join(output_dir, "autotune_model_*.pkl"))
-            if not model_files:
-                raise FileNotFoundError(f"No model files found in '{output_dir}'. Run with --no-real-time first.")
-            model_path = max(model_files, key=os.path.getmtime)
-            if verbose and not verbose_short: print(f"📥 Loading most recent real-time model: {model_path}")
+        model_path = getattr(args, "modelpath", getattr(args, "model_path", None))
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Specified model not found: {model_path}")
+        if verbose and not verbose_short: print(f"📥 Loading specified real-time model: {model_path}")
         with open(model_path, 'rb') as f:
             saved_model = pickle.load(f)
         command_line = saved_model["command_line"] if "command_line" in saved_model else ""
@@ -467,13 +462,13 @@ def entry(args):
         strat_rt = AutoTuneStrategy(**rt_params, win_threshold=rt_win_threshold, signal_type=rt_signal_type)
         dataset_id = saved_model['dataset_id']
         ticker     = saved_model['ticker']
-        spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n})
+        spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n, "realtime": True})
         if verbose:
             first_date = spx.index[0]
             last_date = spx.index[-1]
             num_bars = len(spx)
             print(f"\n📊 Dataset Loaded: {ticker} ({dataset_id})")
-            print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d')}  ->  {last_date.strftime('%Y%m%d')}\n")
+            print(f"   Bars: {num_bars:,} | Range: {first_date.strftime('%Y%m%d_%H%M')}  ->  {last_date.strftime('%Y%m%d_%H%M')}\n")
         close_col = ('Close', ticker)
         closes = spx[close_col].squeeze().dropna().copy()
         results_rt = strat_rt.generate_signals(closes)
