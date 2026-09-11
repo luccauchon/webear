@@ -48,23 +48,29 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 def entry(args):
     verbose = False
+    def dual_print(message, buffer_str):
+        print(message)
+        return buffer_str + message
+
     ###########################################################################
+    msg_str = ""
+
     # AUTOTUNE
     ###########################################################################
-    print(f"Models AutoTune")
+    msg_str += dual_print(f"Models AutoTune", msg_str)
     autotune_models = get_taurus_v1_models()["autotune"]
     for model_name, model_info in autotune_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
         result_autotune = autotune_entry_point(args=config)
         if 0 != result_autotune["signal"]:
-            print(result_autotune)
+            msg_str += dual_print(result_autotune["status_message"], msg_str)
 
 
     ###########################################################################
     # OERH
     ###########################################################################
-    print(f"Models OERH")
+    msg_str += dual_print(f"Models OERH", msg_str)
     oerh_models = get_taurus_v1_models()["oerh"]
     for model_name, model_info in oerh_models.items():
         model_path = model_info["filepath"]
@@ -79,9 +85,9 @@ def entry(args):
             now = datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
             target_price = (1+result_oerh["threshold_pct"]) * entry_price
             test_win_rate = result_oerh["val_win_rate"]
-            print(f"Today @{now} , buy a Put Credit Spread located at {round_price_for_put_credit_spread(entry_price):.0f} , and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
+            msg_str += dual_print(f"Today @{now} , buy a Put Credit Spread located at {round_price_for_put_credit_spread(entry_price):.0f} , and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
                   f"targetting that price shall be above {target_price:.0f} at that point on, grabbing time decay.\n\t"
-                  f"Model has a {test_win_rate:.1%} Test Win Rate")
+                  f"Model has a {test_win_rate:.1%} Test Win Rate", msg_str)
         else:
             if verbose: print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal")
 

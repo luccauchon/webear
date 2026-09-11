@@ -125,7 +125,7 @@ from numba import njit
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.model_selection import TimeSeriesSplit
-from utils import get_next_step
+from utils import get_next_step, round_price_for_call_credit_spread, round_price_for_put_credit_spread
 from fetchers.data_factory import factory_load_data
 
 # =============================================================================
@@ -559,20 +559,20 @@ def entry(args):
         if signal == 0:
             status_message = "⚪ NEUTRE : Aucun thread actif. En attente d'une configuration de marché valide."
         else:
-            direction = "LONGUE (ACHAT)" if signal == 1 else "COURTE (VENTE)"
+            direction = "ACHAT" if signal == 1 else "VENTE"
             emoji = "🟢" if signal == 1 else "🔴"
 
             # Définition précise de l'objectif selon la métrique d'optimisation
             if opt_metric == 'hold_floor':
-                action = f"maintenir le prix au-dessus du seuil de {target_price:.2f}"
+                action = f"maintenir le prix au-dessus du seuil de {round_price_for_put_credit_spread(target_price):.0f}"
             elif opt_metric == 'hold_floor_half_B':
-                action = f"maintenir le prix au-dessus du seuil de {target_price:.2f} durant la seconde moitié de la période"
+                action = f"maintenir le prix au-dessus du seuil de {round_price_for_put_credit_spread(target_price):.0f} durant la seconde moitié de la période"
             elif opt_metric == 'hold_ceiling':
-                action = f"maintenir le prix en dessous du seuil de {target_price:.2f}"
+                action = f"maintenir le prix en dessous du seuil de {round_price_for_call_credit_spread(target_price):.0f}"
             elif opt_metric == 'finish_above':
-                action = f"clôturer au-dessus du seuil de {target_price:.2f}"
+                action = f"clôturer au-dessus du seuil de {round_price_for_put_credit_spread(target_price):.0f}"
             elif opt_metric == 'finish_below':
-                action = f"clôturer en dessous du seuil de {target_price:.2f}"
+                action = f"clôturer en dessous du seuil de {round_price_for_call_credit_spread(target_price):.0f}"
             elif opt_metric == 'profit_target':
                 action = f"atteindre un rendement maximum supérieur au seuil (cible indicative: {target_price:.2f})"
             elif opt_metric == 'range_bound':
@@ -584,10 +584,10 @@ def entry(args):
 
             status_message = (
                 f"{emoji} THREAD {direction} ACTIF : "
-                f"Objectif de {action} "
+                f"Objectif de {action} ({abs_wt:.2%}) "
                 f"d'ici l'expiration prévue le {la_date} "
                 f"({la_bars} barres). "
-                f"Probabilité de succès estimée (backtest) : {validation_score:.2%}."
+                f"Test Win Rate : {validation_score:.2%}."
             )
 
         # Calcul du multiplicateur pour compatibilité descendante
