@@ -14,7 +14,7 @@ from argparse import Namespace
 import os
 from datetime import datetime
 from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import entry as apcs_entry_point
-from utils import get_next_step
+from utils import get_next_step, round_price_for_put_credit_spread, round_price_for_call_credit_spread
 from fetchers.data_factory import factory_load_data
 class NoMoreDataException(Exception):
     """Exception pour interrompre instantanément toutes les boucles imbriquées."""
@@ -45,11 +45,12 @@ def entry():
     # --- File Logging Setup ---
     log_filename = f"player_with_backtesting__compilation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
-    def dual_print(message=""):
+    def dual_print(message="", output_to_file=False):
         """Prints a message to both the console and the log file."""
         print(message)
-        with open(log_filename, "a", encoding="utf-8") as f:
-            f.write(str(message) + "\n")
+        if output_to_file:
+            with open(log_filename, "a", encoding="utf-8") as f:
+                f.write(str(message) + "\n")
 
     # Structure enrichie pour stocker les statistiques globales et par modèle
     compilation = {
@@ -58,7 +59,9 @@ def entry():
     }
     dataset_id = "day"
     ticker = "^GSPC"
-
+    extr = 5.
+    if extr != 0:
+        print(f"*** Applying an extra {extr} space to spread ***")
     df_not_clipped = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": 0})
     # 1. Statistiques Globales
     t1 = df_not_clipped.index[-1]
@@ -82,35 +85,31 @@ def entry():
                         assert live_result['Signal'] in ["BUY", "SELL"]
                         test_wr = live_result['model_info']['test_wr']
                         close_col = live_result['close_col']
+                        high_col = live_result['high_col']
                         open_col = live_result['open_col']
                         lookahead = live_result['model_info']['lookahead']
                         dataset_id = live_result['model_info']['dataset_id']
                         df_realtime = live_result['df_realtime']
                         df_realtime_not_clipped = live_result['df_realtime_not_clipped']
+                        assert df_realtime.index[-1] <= df_realtime_not_clipped.index[-1]
                         density = live_result['model_info']['test_den']
                         bar_on_which_signal_was_triggered = df_realtime.index[-1]
                         bar_on_which_credit_spread_expired = get_next_step(the_date=bar_on_which_signal_was_triggered, dataset_id=dataset_id, nn=lookahead)
-                        bar_on_which_entry_is_made = get_next_step(the_date=bar_on_which_signal_was_triggered, dataset_id=dataset_id, nn=1)
                         while True:
                             try:
                                 values_of_bar_on_which_credit_spread_expired = df_realtime_not_clipped.loc[bar_on_which_credit_spread_expired]
                                 break
                             except KeyError:
                                 bar_on_which_credit_spread_expired = get_next_step(the_date=bar_on_which_credit_spread_expired, dataset_id=dataset_id, nn=lookahead)
-                        while True:
-                            try:
-                                values_of_bar_on_which_entry_is_made = df_realtime_not_clipped.loc[bar_on_which_entry_is_made]
-                                break
-                            except KeyError:
-                                values_of_bar_on_which_entry_is_made = None
-                                break
                         assert live_result['Entry_Execution'] == 'NextOpen'
-                        if values_of_bar_on_which_entry_is_made is None:
-                            continue
-                        entry_price = values_of_bar_on_which_entry_is_made[open_col]*live_result['model_info']['buy_offset'] if live_result['Signal']=="BUY" else values_of_bar_on_which_entry_is_made[open_col]*live_result['model_info']['sell_offset']
-                        entry_date = values_of_bar_on_which_entry_is_made.name
+                        # We enter like at 1545
+                        entry_price = df_realtime.iloc[-1][close_col]*live_result['model_info']['buy_offset'] if live_result['Signal']=="BUY" else df_realtime.iloc[-1][close_col]*live_result['model_info']['sell_offset']
+                        entry_price = round_price_for_put_credit_spread(entry_price) - extr if live_result['Signal']=="BUY" else round_price_for_call_credit_spread(entry_price) + extr
+                        entry_date = df_realtime.index[-1]
+                        # We exit next day when price is high
                         exit_price = values_of_bar_on_which_credit_spread_expired[close_col]
                         exit_date = values_of_bar_on_which_credit_spread_expired.name
+                        assert exit_date > entry_date
                         is_success = entry_price < exit_price if live_result['Signal'] == "BUY" else entry_price > exit_price
 
                         # Initialisation des stats pour ce modèle spécifique si premier passage
@@ -127,10 +126,11 @@ def entry():
                         if args.verbose_per_study:
                             assert live_result['Date'] == bar_on_which_signal_was_triggered
                             assert exit_date == bar_on_which_credit_spread_expired
-                            dual_print(f"[{Path(file).stem}] | {live_result['Signal']} ({live_result['type_option']}) | Triggered: {live_result['Date'].strftime('%Y-%m-%d_%H%M')} | Entry: {entry_price:.2f} ({entry_date.strftime('%Y-%m-%d_%H%M')}) "
-                                  f"| Exit: {exit_price:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d_%H%M')}) "
-                                  f"| {'Success' if is_success else 'Failure'} "
-                                  f"| twr: {test_wr:.2%} | Density: {density:.2%}")
+                            dual_print(f"[{Path(file).stem}] | {live_result['Signal']} ({live_result['type_option']}) | Triggered: {live_result['Date'].strftime('%Y-%m-%d_%H%M')} "
+                                       f"| \n\tEntry: {entry_price:.2f} ({entry_date.strftime('%Y-%m-%d_%H%M')}) "
+                                       f"| \n\tExit: {exit_price:.2f} ({bar_on_which_credit_spread_expired.strftime('%Y-%m-%d_%H%M')}) "
+                                       f"| {'Success' if is_success else 'Failure'} "
+                                       f"| twr: {test_wr:.2%} | Density: {density:.2%}")
                     elif 'no more data' in live_result['reason']:
                         raise NoMoreDataException()
     except NoMoreDataException:

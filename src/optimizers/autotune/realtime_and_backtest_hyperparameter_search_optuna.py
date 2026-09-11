@@ -470,7 +470,7 @@ def entry(args):
 
         dataset_id = saved_model['dataset_id']
         ticker = saved_model['ticker']
-        spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n, "realtime": True})
+        spx = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={"clip_n": args.clip_n, "realtime": getattr(args, "use_realtime_data", True)})
 
         if verbose:
             first_date = spx.index[0]

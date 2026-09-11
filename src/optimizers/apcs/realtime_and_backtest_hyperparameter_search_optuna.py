@@ -1522,8 +1522,8 @@ def entry(args):
                 trade_direction=model_trade_direction,
                 cooldown_bar=cooldown_bar,
                 dataset_id=model_info['dataset_id'],
-                same_week_candle=args.same_week_candle,
-                same_day_candle=args.same_day_candle
+                same_week_candle=getattr(args,"same_week_candle",False),
+                same_day_candle=getattr(args,"same_day_candle",False),
             )
 
             if not isinstance(live_result, dict):
