@@ -1884,7 +1884,8 @@ def get_taurus_v1_models():
     #   • oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245 -> Total: 944  | Density: 9.44% | WR: 96.61%
     #   • oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9192__sd0.1230__dsday__cdb2__^GSPC__20260821_091918 -> Total: 1093 | Density: 10.93% | WR: 93.41%
     #   • oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9394__sd0.0849__dsday__cdb5__^GSPC__20260820_113002 -> Total: 752  | Density: 7.52% | WR: 92.69%
-    return {"oerh": {"mom": {"name": "mom", "version": 1,
+    #
+    result= {"oerh": {"mom": {"name": "mom", "version": 1,
                              "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la12__th-0.02000__ttany_half_B__twr0.9529__sd0.2469__dsday__cdb1__^GSPC__20260905_183245.pkl"),
                              },
                      "rip": {"name": "rip", "version": 1,
@@ -1893,7 +1894,14 @@ def get_taurus_v1_models():
                      "fox": {"name": "fox", "version": 1,
                              "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\oerh\models", "oerh__mlong_accuracy__la5__th-0.01000__ttany_half_B__twr0.9394__sd0.0849__dsday__cdb5__^GSPC__20260820_113002.pkl"),
                              },
-                     },}
+                     },
+            "autotune": {"rainbow": {"name": 'rainbow', "version": 1, "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\autotune\models", "autotune__la10__opfinish_above__wth-0.0__trainsc0.5694__trainwr0.5996__twr0.6211.pkl"),},
+                         }
+            }
+    for a_file in os.listdir(os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\autotune\models")):
+        model_name = Path(a_file).stem
+        result['autotune'][model_name] = {"name": model_name, "version": 1, "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\autotune\models", a_file),}
+    return result
 
 
 def round_price_for_put_credit_spread(price):

@@ -114,9 +114,6 @@ def factory_load_data(_dataset_id, _ticker, _args):
             if _n_minutes > 1:
                 df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
     else:
-        def _resample_dataset(df, n_minutes, ticker):
-            df = resample_candles_enhanced(df=df, n_minutes=n_minutes, ticker=ticker)
-            return df
         if _realtime_data:
             if _dataset_id.startswith("intraday"):
                 assert _ticker in ["^GSPC"]
@@ -146,7 +143,7 @@ def factory_load_data(_dataset_id, _ticker, _args):
 
                 _n_minutes = _get_dataset_timeframe(_dataset_id)
                 if _n_minutes > 1:
-                    df_main = _resample_dataset(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+                    df_main = resample_candles_enhanced(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
                 if _get_vix:
                     if _n_minutes > 1:
                         df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
@@ -178,7 +175,7 @@ def factory_load_data(_dataset_id, _ticker, _args):
                 _n_minutes = _get_dataset_timeframe(_dataset_id)
                 df_main = get_1_minute_df(verbose=False, SPX=_ticker in ["^GSPC"], SPY=_ticker in ["SPY"], NDX=False, VIX=False)
                 if _n_minutes > 1:
-                    df_main = _resample_dataset(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+                    df_main = resample_candles_enhanced(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
                 if _get_vix:
                     df_vix = get_1_minute_df(verbose=False, SPX=False, SPY=False, VIX=True)
                     if _n_minutes > 1:

@@ -30,8 +30,10 @@ import optuna
 from sklearn.model_selection import TimeSeriesSplit
 from datetime import datetime
 import sys
+from tqdm import tqdm
 from argparse import Namespace
 from optimizers.oerh.realtime_and_backtest_hyperparameter_search_optuna import entry as oerh_entry_point
+from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune_entry_point
 from utils import get_taurus_v1_models, get_next_step, round_price_for_put_credit_spread
 
 
@@ -45,13 +47,28 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 
 def entry(args):
+    verbose = False
+    ###########################################################################
+    # AUTOTUNE
+    ###########################################################################
+    print(f"Models AutoTune")
+    autotune_models = get_taurus_v1_models()["autotune"]
+    for model_name, model_info in autotune_models.items():
+        model_path = model_info["filepath"]
+        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
+        result_autotune = autotune_entry_point(args=config)
+        if 0 != result_autotune["signal"]:
+            print(result_autotune)
+
+
     ###########################################################################
     # OERH
     ###########################################################################
+    print(f"Models OERH")
     oerh_models = get_taurus_v1_models()["oerh"]
     for model_name, model_info in oerh_models.items():
         model_path = model_info["filepath"]
-        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=False, return_values_as_dict=True, clip_n=0)
+        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
         result_oerh = oerh_entry_point(args=config)
         if 1 == result_oerh["signal"]:
             assert 'long_accuracy::any_half_B' == result_oerh['metric_target_type']
@@ -66,8 +83,12 @@ def entry(args):
                   f"targetting that price shall be above {target_price:.0f} at that point on, grabbing time decay.\n\t"
                   f"Model has a {test_win_rate:.1%} Test Win Rate")
         else:
-            print(f"Model {model_name} ({Path(model_path).stem}) has not triggered a signal")
+            if verbose: print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal")
 
+
+    ###########################################################################
+    # DGDR
+    ###########################################################################
 
 if __name__ == "__main__":
     parser = setup_argparse()
