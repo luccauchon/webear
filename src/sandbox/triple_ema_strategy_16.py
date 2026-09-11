@@ -17,7 +17,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from fetchers.data_factory import factory_load_data
 from utils import round_price_for_call_credit_spread, round_price_for_put_credit_spread, get_next_step
-
+from multiprocessing import freeze_support
 
 def calculate_channel_indicators(
         df: pd.DataFrame,
@@ -32,20 +32,17 @@ def calculate_channel_indicators(
         envelope_pct_low: float = 0.015,
 ) -> pd.DataFrame:
     df = df.copy()
-
     df['EMA_Center'] = df['Close'].ewm(span=period, adjust=False).mean()
-
-    high_low = df['High'] - df['Low']
-    high_close = np.abs(df['High'] - df['Close'].shift())
-    low_close = np.abs(df['Low'] - df['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    df['ATR'] = true_range.ewm(span=atr_period, adjust=False).mean()
-
     if channel_type == 'original':
         df['EMA_Upper'] = df['High'].ewm(span=period_high, adjust=False).mean()
         df['EMA_Lower'] = df['Low'].ewm(span=period_low, adjust=False).mean()
     elif channel_type == 'keltner':
+        high_low = df['High'] - df['Low']
+        high_close = np.abs(df['High'] - df['Close'].shift())
+        low_close = np.abs(df['Low'] - df['Close'].shift())
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = np.max(ranges, axis=1)
+        df['ATR'] = true_range.ewm(span=atr_period, adjust=False).mean()
         df['EMA_Upper'] = df['EMA_Center'] + (atr_multiplier_high * df['ATR'])
         df['EMA_Lower'] = df['EMA_Center'] - (atr_multiplier_low * df['ATR'])
     elif channel_type == 'envelope':
@@ -152,7 +149,7 @@ def backtest_triple_ema_strategy_for_credit_spread(df: pd.DataFrame, lookahead_b
                 'type': 'PUT_CREDIT_SPREAD',
                 'signal_date': row[date_col],
                 'exit_date': last_future_row[date_col],
-                'exit_date_slice': f"{pd.Timestamp(future_slice[date_col].values.min()).strftime('%Y-%m-%d')}::{pd.Timestamp(future_slice[date_col].values.max()).strftime('%Y-%m-%d')}",
+               'exit_date_slice': f"{pd.Timestamp(future_slice[date_col].values.min()).strftime('%Y-%m-%d')}::{pd.Timestamp(future_slice[date_col].values.max()).strftime('%Y-%m-%d')}",
                 'entry_price': strike_price,
                 'strike_price': strike_price,
                 'exit_price': last_future_row['Close'],
@@ -217,24 +214,28 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
 
     def objective(trial):
         # Suggestion des paramètres à optimiser
-        channel_type = trial.suggest_categorical('channel_type', ['original']) # ['original', 'keltner', 'envelope']
-        atr_mult = trial.suggest_float('atr_mult', 0.5, 4.0)
-        env_pct = trial.suggest_float('env_pct', 0.005, 0.05)
-        strict_patterns = trial.suggest_categorical('strict_patterns', [False]) # , [False, True])
-        # p_center = trial.suggest_int('p_center', 5, 50)
-        # p_high = trial.suggest_int('p_high', 5, 50)
-        # p_low = trial.suggest_int('p_low', 5, 50)
-        p_center = trial.suggest_int('p_center', 20, 20)
-        p_high = trial.suggest_int('p_high', 20, 20)
-        p_low = trial.suggest_int('p_low', 20, 20)
+        channel_type = trial.suggest_categorical('channel_type', ['original', 'keltner', 'envelope']) # ['original', 'keltner', 'envelope']
+        strict_patterns = trial.suggest_categorical('strict_patterns', [False])  # , [False, True])
+        p_center = trial.suggest_int('p_center', 15, 25)
+
+        atr_mult_low = atr_mult_high = env_pct_high = env_pct_low = p_high = p_low = 0
+        if channel_type == 'keltner':
+            atr_mult_low = trial.suggest_float('atr_mult_low', 0.5, 4.0, step=0.1)
+            atr_mult_high = trial.suggest_float('atr_mult_high', 0.5, 4.0, step=0.1)
+        if channel_type == 'envelope':
+            env_pct_high = trial.suggest_float('env_pct_high', 0.005, 0.05)
+            env_pct_low = trial.suggest_float('env_pct_low', 0.005, 0.05)
+        if channel_type == 'original':
+            p_high = trial.suggest_int('p_high', 15, 25)
+            p_low = trial.suggest_int('p_low', 15, 25)
 
         # Calcul des indicateurs avec les paramètres du trial (L'algo est causal, pas de fuite de données)
         df_temp = calculate_channel_indicators(
             df=df_data,
             period=p_center, period_low=p_low, period_high=p_high,
             channel_type=channel_type,
-            atr_multiplier_high=atr_mult, atr_multiplier_low=atr_mult,
-            envelope_pct_high=env_pct, envelope_pct_low=env_pct,
+            atr_multiplier_high=atr_mult_high, atr_multiplier_low=atr_mult_low,
+            envelope_pct_high=env_pct_high, envelope_pct_low=env_pct_low,
         )
 
         df_temp = detect_candlestick_patterns(df_temp, strict_patterns=strict_patterns)
@@ -302,7 +303,7 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
 
         # Retourne la moyenne des scores sur tous les folds (Walk-Forward),
         # ajustée par l'écart-type (pour pénaliser l'instabilité) et la densité.
-        alpha = 0.5
+        alpha = 0.80
         final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores)) - density_penalty
         return final_score
 
@@ -310,19 +311,20 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
 
 
 if __name__ == "__main__":
+    freeze_support()
     ticker = "^GSPC"
     df_mom = factory_load_data(_dataset_id="day", _ticker=ticker, _args={})
 
-    lookahead_bar_1 = 5
+    lookahead_bar_1 = 6
     lookahead_bar_2 = 10
-    n_splits = 5
-    train_ratio = 0.9
+    n_splits = 12
+    train_ratio = 0.95
 
     # --- CONFIGURATION DE L'OPTIMISATION ---
     optimize_metric = 'total_win_rate'  # Choisir entre 'total_win_rate', 'put_win_rate', 'call_win_rate'
     n_trials = 99999  # Nombre d'essais pour Optuna
-    timeout = 3600
-    target_signal_density = 0.1  # Cible de densité des signaux
+    timeout = int(86400 *2.5)
+    target_signal_density = 0.101575  # Cible de densité des signaux
     # ---------------------------------------
 
     if isinstance(df_mom.columns, pd.MultiIndex):
@@ -360,6 +362,12 @@ if __name__ == "__main__":
     print(f"🚀 Lancement de l'optimisation Optuna pour maximiser : {optimize_metric}")
     print(f"🎯 Cible de densité de signaux : {target_signal_density * 100}%")
     print(f"🔧 Nombre d'essais (trials) : {n_trials}\n")
+    train_start_date = df_test.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[0])
+    train_end_date = df_test.index[-1].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[-1])
+    print(f"📊 Train Set ({len(df_train_and_val)} bars) - {train_start_date}::{train_end_date}\n")
+    test_start_date = df_test.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[0])
+    test_end_date = df_test.index[-1].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[-1])
+    print(f"📊 Test Set ({len(df_test)} bars) - Données jamais vues par Optuna - {test_start_date}::{test_end_date}\n")
 
     # Création et lancement de l'étude Optuna
     study = optuna.create_study(direction='maximize')
@@ -390,14 +398,14 @@ if __name__ == "__main__":
     # ==========================================================
     df_train_and_val = calculate_channel_indicators(
         df=df_train_and_val,
-        period=best_params['p_center'],
-        period_low=best_params['p_low'],
-        period_high=best_params['p_high'],
+        period=best_params["p_center"],
+        period_low=best_params.get("p_low", 0),
+        period_high=best_params.get("p_high", 0),
         channel_type=best_params['channel_type'],
-        atr_multiplier_high=best_params['atr_mult'],
-        atr_multiplier_low=best_params['atr_mult'],
-        envelope_pct_high=best_params['env_pct'],
-        envelope_pct_low=best_params['env_pct'],
+        atr_multiplier_high=best_params.get("atr_mult_high", 0),
+        atr_multiplier_low=best_params.get("atr_mult_low", 0),
+        envelope_pct_high=best_params.get("env_pct_high", 0),
+        envelope_pct_low=best_params.get("env_pct_low", 0),
     )
 
     df_train_and_val = detect_candlestick_patterns(df_train_and_val, strict_patterns=best_params['strict_patterns'])
@@ -450,20 +458,18 @@ if __name__ == "__main__":
     print(f"\n{'=' * 25} ÉVALUATION SUR LE JEU DE TEST (OUT-OF-SAMPLE) {'=' * 25}")
 
     # Gestion de l'affichage des dates pour le set de test
-    test_start_date = df_test.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[0])
-    test_end_date = df_test.index[-1].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[-1])
-    print(f"📊 Test Set ({len(df_test)} bars) - Données jamais vues par Optuna - {test_start_date}::{test_end_date}\n")
+
 
     df_test = calculate_channel_indicators(
         df=df_test,
         period=best_params['p_center'],
-        period_low=best_params['p_low'],
-        period_high=best_params['p_high'],
+        period_low=best_params.get("p_low", 0),
+        period_high=best_params.get("p_high", 0),
         channel_type=best_params['channel_type'],
-        atr_multiplier_high=best_params['atr_mult'],
-        atr_multiplier_low=best_params['atr_mult'],
-        envelope_pct_high=best_params['env_pct'],
-        envelope_pct_low=best_params['env_pct'],
+        atr_multiplier_high=best_params.get("atr_mult_high", 0),
+        atr_multiplier_low=best_params.get("atr_mult_low", 0),
+        envelope_pct_high=best_params.get("env_pct_high", 0),
+        envelope_pct_low=best_params.get("env_pct_low", 0),
     )
 
     df_test = detect_candlestick_patterns(df_test, strict_patterns=best_params['strict_patterns'])
