@@ -215,7 +215,7 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
     def objective(trial):
         # Suggestion des paramètres à optimiser
         channel_type = trial.suggest_categorical('channel_type', ['original', 'keltner', 'envelope']) # ['original', 'keltner', 'envelope']
-        strict_patterns = trial.suggest_categorical('strict_patterns', [False])  # , [False, True])
+        strict_patterns = trial.suggest_categorical('strict_patterns', [False, True])  # , [False, True])
         p_center = trial.suggest_int('p_center', 15, 25)
 
         atr_mult_low = atr_mult_high = env_pct_high = env_pct_low = p_high = p_low = 0

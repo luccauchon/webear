@@ -89,7 +89,7 @@ def entry(args):
                   f"targetting that price shall be above {target_price:.0f} at that point on, grabbing time decay.\n\t"
                   f"Model has a {test_win_rate:.1%} Test Win Rate", msg_str)
         else:
-            if verbose: print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal")
+            if verbose: msg_str += dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)
 
 
     ###########################################################################
