@@ -440,7 +440,10 @@ def entry(args=None):
     # --- DATA LOADING ---
     t0 = time.time()
     if args.dataframe is None:
-        df_ticker, df_vix = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": 0, "realtime": args.use_realtime_data, "get_vix": True, "proxy_spx": getattr(args, "proxy_spx", False)})
+        df_ticker, df_vix = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"clip_n": 0, "clip_n_before": getattr(args, "clip_n_before", False),
+                                                                                                       "realtime": args.use_realtime_data,
+                                                                                                       "get_vix": True,
+                                                                                                       "proxy_spx": getattr(args, "proxy_spx", False)})
 
         timings['data_loading'] = time.time() - t0
 
@@ -474,7 +477,7 @@ def entry(args=None):
     else:
         df_bt, vix_col, atr_col = args.dataframe
 
-    if args.clip_n > 0:
+    if getattr(args, "clip_n", False) > 0:
         df_bt = df_bt.iloc[:-args.clip_n].copy()
     if args.verbose: print(f"WORKING DATASET : {df_bt.index[0].strftime('%Y-%m-%d_%H%M')}::{df_bt.index[-1].strftime('%Y-%m-%d_%H%M')}")
     _n = int(args.n_split * len(df_bt))

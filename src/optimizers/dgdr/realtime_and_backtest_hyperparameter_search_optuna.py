@@ -229,6 +229,7 @@ def setup_argparse() -> argparse.ArgumentParser:
 
     flag_group = parser.add_argument_group('Execution Flags')
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
+    flag_group.add_argument('--realtime', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
     flag_group.add_argument('--model-path', type=str, default=None, help='Specific .pkl model path')
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
     flag_group.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
@@ -742,7 +743,7 @@ def run_real_time_mode(model_path, clip_n, verbose):
         'dataset_id': dataset_id, 'ticker': ticker, 'lookahead': lookahead,
         'method': method, 'df_realtime': df,
         'buy_signal_detected': buy_signal_detected, 'sell_signal_detected': sell_signal_detected,
-        'put_strike_pct': put_pct, 'call_strike_pct': call_pct
+        'put_strike_pct': put_pct, 'call_strike_pct': call_pct, 'signal': 1 if buy_signal_detected or sell_signal_detected else 0,
     }
     return result
 
@@ -778,9 +779,9 @@ def entry(args):
         print("    • Backtests credit-spread outcomes over lookahead window (B)")
         print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
         print("═" * 62 + "\n")
-    np.random.seed(args.seed)
+    np.random.seed(getattr(args, "seed", 123))
 
-    if args.real_time:
+    if getattr(args, "real_time", getattr(args, "realtime", False)):
         return run_real_time_mode(model_path=args.model_path, clip_n=args.clip_n, verbose=args.verbose)
 
     ticker = args.ticker

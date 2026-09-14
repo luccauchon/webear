@@ -62,12 +62,74 @@ def _get_dataset_timeframe(_dataset_id):
             except:
                 _n_minutes = int(_dataset_id.split("-")[1][:-3])
                 return _n_minutes
+        elif _dataset_id.startswith("extraday"):
+            try:
+                _n_days = int(re.search(r'\d+', _dataset_id.split("_")[1]).group())
+                return _n_days
+            except:
+                _n_days = int(re.search(r'\d+', _dataset_id.split("-")[1]).group())
+                return _n_days
         return None
     except:
         return None
 
 
-def factory_load_data(_dataset_id, _ticker, _args):
+def resample_custom_p_days(df, ticker, p):
+    """Regroupe un DataFrame MultiIndex en chandelles de P jours en partant de la fin.
+
+    La dernière chandelle (la plus récente) contiendra le reste (de 1 à P jours).
+    """
+    # 1. Récupération des colonnes spécifiques au ticker
+    cols = _build_cols_dict(ticker)
+    open_c = cols["open_col"]
+    high_c = cols["high_col"]
+    low_c = cols["low_col"]
+    close_c = cols["close_col"]
+    vol_c = cols.get("volume_col", None)
+    # Vérifier si l'index a une fréquence journalière définie
+    if df.index.inferred_freq not in ['D', 'B']:
+        # Optionnel : Forcer la vérification par calcul d'écart si inferred_freq est None
+        deltas = df.index.get_level_values(-1).to_series().diff() if isinstance(df.index, pd.MultiIndex) else df.index.to_series().diff()
+        if deltas.median() > pd.Timedelta(days=1):
+            raise ValueError("Le DataFrame n'est pas au format journalier (daily).")
+
+    last_row = df.iloc[-1].copy()
+    df = df.iloc[:-1].copy()
+    # 2. Inverser le DataFrame pour partir de la fin (la plus récente en premier)
+    df_reversed = df.iloc[::-1].copy()
+
+    # 3. Créer un groupe ID : les P premières lignes auront l'ID 0, les P suivantes l'ID 1, etc.
+    group_ids = np.arange(len(df_reversed)) // p
+
+    # 4. Définir les règles d'agrégation financières pour le MultiIndex
+    agg_rules = {
+        open_c: "last",  # Le plus ancien du bloc inversé = le premier chronologiquement
+        high_c: "max",  # Le plus haut historique du bloc
+        low_c: "min",  # Le plus bas historique du bloc
+        close_c: "first",  # Le plus récent du bloc inversé = le dernier chronologiquement
+    }
+    if vol_c and vol_c in df.columns:
+        agg_rules[vol_c] = "sum"  # Somme des volumes sur la période
+
+    # 5. Grouper et appliquer l'agrégation
+    # On prend la date la plus récente de chaque bloc pour l'index final
+    df_resampled = df_reversed.groupby(group_ids).agg(agg_rules)
+
+    # Associer la date maximale (la plus récente chronologiquement) à chaque bloc
+    df_resampled.index = df_reversed.groupby(group_ids).apply(
+        lambda x: x.index.max()
+    )
+
+    # 6. Ré-inverser pour remettre le DataFrame dans l'ordre chronologique
+    df_resampled = df_resampled.sort_index()
+
+    # Ajouter la dernière ligne via son index de date
+    df_resampled.loc[last_row.name] = last_row
+
+    return df_resampled.copy()
+
+
+def factory_load_data(_dataset_id, _ticker, _args={}):
     """
        Charge, rééchantillonne et transforme les données financières d'un ticker.
 
@@ -91,6 +153,9 @@ def factory_load_data(_dataset_id, _ticker, _args):
     """
     _reduce_n = _args.get("reduce_n", 0)
     _clip_n = _args.get("clip_n", 0)
+    _clip_n_before = _args.get("clip_n_before", 0)
+    if _clip_n > 0: assert 0 == _clip_n_before
+    if _clip_n_before > 0: assert 0 == _clip_n
     _convert_to_heikin_ashi = _is_dataset_heikin_ashi(_dataset_id)
     _overwrite_col = _args.get("overwrite_col", True)
     _realtime_data = _args.get("realtime", False)
@@ -149,26 +214,45 @@ def factory_load_data(_dataset_id, _ticker, _args):
                         df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
             else:
                 assert _ticker in ["^GSPC"]
-                assert _dataset_id in ["day", "week", "month", "quarter", "year"]
+                if _dataset_id not in DATASET_AVAILABLE:
+                    # Style: day_heikinashi or day_2B or extraday-...
+                    _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
+                    assert _dataset_id in [DATASET_AVAILABLE, "extraday"]
                 daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
                 the_vix = None
-                if _dataset_id == "day":
+                if _dataset_id in ["day", "extraday"]:
                     df_main = daily_data_cache[_ticker].sort_index().copy()
                     the_vix = daily_data_cache["^VIX"]
-                if _dataset_id == "week":
+                elif _dataset_id == "week":
                     df_main = weekly_data_cache[_ticker].sort_index().copy()
                     the_vix = weekly_data_cache["^VIX_MEAN"]
-                if _dataset_id == "month":
+                elif _dataset_id == "month":
                     df_main = monthly_data_cache[_ticker].sort_index().copy()
                     the_vix = monthly_data_cache["^VIX_MEAN"]
-                if _dataset_id == "quarter":
+                elif _dataset_id == "quarter":
                     df_main = quaterly_data_cache[_ticker].sort_index().copy()
                     the_vix = quaterly_data_cache["^VIX"]
-                if _dataset_id == "year":
+                elif _dataset_id == "year":
                     df_main = yearly_data_cache[_ticker].sort_index().copy()
                     the_vix = yearly_data_cache["^VIX"]
                 if _get_vix:
                     df_vix = the_vix.sort_index().copy()
+                assert _clip_n_before == 0
+                if _dataset_id.startswith("extraday"):
+                    assert _ticker in ["^GSPC"]
+                    _n_days = _get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
+                    assert _n_days > 0
+                    if _get_vix:
+                        # Trouver les dates communes aux deux DataFrames
+                        common_dates = df_main.index.intersection(df_vix.index)
+                        # Filtrer les DataFrames sur ces dates communes
+                        df_main = df_main.loc[common_dates]
+                        df_vix  = df_vix.loc[common_dates]
+                        # Maintenant, vous pouvez rééchantillonner en toute sécurité
+                        df_main = resample_custom_p_days(df_main, _ticker, p=_n_days)
+                        df_vix  = resample_custom_p_days(df_vix, "^VIX", p=_n_days)
+                    else:
+                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days)
         else:
             if _dataset_id.startswith("intraday"):
                 assert _ticker in ["^GSPC", "SPY"]
@@ -182,16 +266,34 @@ def factory_load_data(_dataset_id, _ticker, _args):
                         df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")
             else:
                 if _dataset_id not in DATASET_AVAILABLE:
-                    # Style: day_heikinashi or day_2B
-                    # Extra information is already extracted
-                    _dataset_id, _meta_info = _dataset_id.split("_")
-                    assert _dataset_id in DATASET_AVAILABLE
-                with open(get_filename_for_dataset(_dataset_id, older_dataset=None), 'rb') as f:
+                    # Style: day_heikinashi or day_2B or extraday-...
+                    _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
+                    assert _dataset_id in [DATASET_AVAILABLE, "extraday"]
+                with open(get_filename_for_dataset(_dataset_id if _dataset_id in [DATASET_AVAILABLE] else "day", older_dataset=None), 'rb') as f:
                     _master_data_cache = pickle.load(f)
                 assert _master_data_cache is not None
                 df_main = _master_data_cache[_ticker].sort_index().copy()
+                if _clip_n_before > 0:
+                    df_main = df_main.iloc[:-_clip_n_before].copy()
                 if _get_vix:
                     df_vix = _master_data_cache["^VIX"].sort_index().copy()
+                    if _clip_n_before > 0:
+                        df_vix = df_vix.iloc[:-_clip_n_before].copy()
+                if _dataset_id.startswith("extraday"):
+                    assert _ticker in ["^GSPC"]
+                    _n_days = _get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
+                    assert _n_days > 0
+                    if _get_vix:
+                        # Trouver les dates communes aux deux DataFrames
+                        common_dates = df_main.index.intersection(df_vix.index)
+                        # Filtrer les DataFrames sur ces dates communes
+                        df_main = df_main.loc[common_dates]
+                        df_vix  = df_vix.loc[common_dates]
+                        # Maintenant, vous pouvez rééchantillonner en toute sécurité
+                        df_main = resample_custom_p_days(df_main, _ticker, p=_n_days)
+                        df_vix  = resample_custom_p_days(df_vix, "^VIX", p=_n_days)
+                    else:
+                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days)
     assert df_main is not None
     if _convert_to_heikin_ashi:
         _tmp_n1 = len(df_main.dropna())

@@ -1346,7 +1346,7 @@ def entry(args):
     realtime = args.realtime
     use_realtime_dataset = args.use_realtime_data
     clip_n = args.clip_n
-    model_file = args.model_file
+    model_file = getattr(args, "model_file", getattr(args, "model_path", None))
     verbose = args.verbose
     command_line = "python " + " ".join(sys.argv)
 
@@ -2132,6 +2132,7 @@ if __name__ == '__main__':
     # Real-time mode parameters
     parser.add_argument("--realtime", action="store_true", default=False, help="Run in real-time mode to check for live signals using a saved model.")
     parser.add_argument("--model-file", type=str, default=None, help="Specific model filename to load in real-time mode. If not provided, loads the latest model.")
+    parser.add_argument("--model-path", type=str, default=None, help="Specific model filename to load in real-time mode. If not provided, loads the latest model.")
 
     parser.add_argument(
         '--same-week-candle',

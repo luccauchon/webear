@@ -33,7 +33,9 @@ import sys
 from tqdm import tqdm
 from argparse import Namespace
 from optimizers.oerh.realtime_and_backtest_hyperparameter_search_optuna import entry as oerh_entry_point
+from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import entry as apcs_entry_point
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune_entry_point
+from optimizers.dgdr.realtime_and_backtest_hyperparameter_search_optuna import entry as dgdr_entry_point
 from utils import get_taurus_v1_models, get_next_step, round_price_for_put_credit_spread
 
 
@@ -52,9 +54,35 @@ def entry(args):
         print(message)
         return buffer_str + message
 
-    ###########################################################################
     msg_str = ""
 
+    ###########################################################################
+    # APCS
+    ###########################################################################
+    msg_str += dual_print(f"Models APCS", msg_str)
+    apcs_models = get_taurus_v1_models()["apcs"]
+    for model_name, model_info in apcs_models.items():
+        model_path = model_info["filepath"]
+        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
+        result_apcs = apcs_entry_point(args=config)
+        if 1 == result_apcs['signal']:
+            print(result_apcs)
+
+
+    ###########################################################################
+    # DGDR
+    ###########################################################################
+    msg_str += dual_print(f"Models DGDR", msg_str)
+    dgdr_models = get_taurus_v1_models()["dgdr"]
+    for model_name, model_info in dgdr_models.items():
+        model_path = model_info["filepath"]
+        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
+        result_apcs = dgdr_entry_point(args=config)
+        if 1 == result_apcs['signal']:
+            print(result_apcs)
+
+
+    ###########################################################################
     # AUTOTUNE
     ###########################################################################
     msg_str += dual_print(f"Models AutoTune", msg_str)
@@ -91,10 +119,6 @@ def entry(args):
         else:
             if verbose: msg_str += dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)
 
-
-    ###########################################################################
-    # DGDR
-    ###########################################################################
 
 if __name__ == "__main__":
     parser = setup_argparse()
