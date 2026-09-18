@@ -6,6 +6,11 @@ Améliorations v6 :
 - Ajout d'un comparatif Train vs Test pour détecter automatiquement le sur-apprentissage (overfitting).
 - Ajout d'une contrainte de densité de signaux (cible par défaut 10%) avec une pénalité forte dans l'objectif.
 - Utilisation de Walk-Forward Validation (TimeSeriesSplit) pour garantir la robustesse des paramètres sur plusieurs régimes de marché.
+
+Améliorations Anti-Overfitting (v6.1) :
+- Restriction de l'espace de recherche (bornes minimales augmentées) pour éviter le "curve-fitting" sur le bruit.
+- Ajout d'une "Pénalité de Complexité" dans l'objectif pour favoriser les canaux plus larges (moins de faux signaux).
+- Modification de la fonction objectif pour pénaliser l'instabilité (Maximin) : on pénalise le "pire" fold de marché.
 """
 import optuna
 import pandas as pd
@@ -18,6 +23,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 from fetchers.data_factory import factory_load_data
 from utils import round_price_for_call_credit_spread, round_price_for_put_credit_spread, get_next_step
 from multiprocessing import freeze_support
+
 
 def calculate_channel_indicators(
         df: pd.DataFrame,
@@ -149,7 +155,7 @@ def backtest_triple_ema_strategy_for_credit_spread(df: pd.DataFrame, lookahead_b
                 'type': 'PUT_CREDIT_SPREAD',
                 'signal_date': row[date_col],
                 'exit_date': last_future_row[date_col],
-               'exit_date_slice': f"{pd.Timestamp(future_slice[date_col].values.min()).strftime('%Y-%m-%d')}::{pd.Timestamp(future_slice[date_col].values.max()).strftime('%Y-%m-%d')}",
+                'exit_date_slice': f"{pd.Timestamp(future_slice[date_col].values.min()).strftime('%Y-%m-%d')}::{pd.Timestamp(future_slice[date_col].values.max()).strftime('%Y-%m-%d')}",
                 'entry_price': strike_price,
                 'strike_price': strike_price,
                 'exit_price': last_future_row['Close'],
@@ -209,25 +215,31 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
     Crée la fonction objectif pour Optuna.
     Intègre une Walk-Forward Validation (TimeSeriesSplit) pour garantir la robustesse.
     Ajoute une contrainte de densité de signaux avec une pénalité forte.
+
+    [ANTI-OVERFITTING] :
+    - Pénalise la complexité (canaux trop serrés).
+    - Pénalise l'instabilité entre les folds (Maximin).
     """
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
     def objective(trial):
         # Suggestion des paramètres à optimiser
-        channel_type = trial.suggest_categorical('channel_type', ['original', 'keltner', 'envelope']) # ['original', 'keltner', 'envelope']
+        channel_type = trial.suggest_categorical('channel_type', ['original', 'keltner', 'envelope'])  # ['original', 'keltner', 'envelope']
         strict_patterns = trial.suggest_categorical('strict_patterns', [False, True])  # , [False, True])
-        p_center = trial.suggest_int('p_center', 15, 25)
+        p_center = trial.suggest_int('p_center', 15, 30)  # Augmenté à 30 pour lisser davantage
 
         atr_mult_low = atr_mult_high = env_pct_high = env_pct_low = p_high = p_low = 0
+
+        # [ANTI-OVERFITTING] Restriction des bornes minimales pour éviter le bruit
         if channel_type == 'keltner':
-            atr_mult_low = trial.suggest_float('atr_mult_low', 0.5, 4.0, step=0.1)
-            atr_mult_high = trial.suggest_float('atr_mult_high', 0.5, 4.0, step=0.1)
+            atr_mult_low = trial.suggest_float('atr_mult_low', 1.0, 4.0, step=0.1)  # Min 1.0 au lieu de 0.5
+            atr_mult_high = trial.suggest_float('atr_mult_high', 1.0, 4.0, step=0.1)
         if channel_type == 'envelope':
-            env_pct_high = trial.suggest_float('env_pct_high', 0.005, 0.05)
-            env_pct_low = trial.suggest_float('env_pct_low', 0.005, 0.05)
+            env_pct_high = trial.suggest_float('env_pct_high', 0.01, 0.05)  # Min 1% au lieu de 0.5%
+            env_pct_low = trial.suggest_float('env_pct_low', 0.01, 0.05)
         if channel_type == 'original':
-            p_high = trial.suggest_int('p_high', 15, 25)
-            p_low = trial.suggest_int('p_low', 15, 25)
+            p_high = trial.suggest_int('p_high', 15, 30)
+            p_low = trial.suggest_int('p_low', 15, 30)
 
         # Calcul des indicateurs avec les paramètres du trial (L'algo est causal, pas de fuite de données)
         df_temp = calculate_channel_indicators(
@@ -259,6 +271,17 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
         density_penalty = abs(current_density - target_density) * 250.0
         # ---------------------------------------
 
+        # --- [ANTI-OVERFITTING] PÉNALITÉ DE COMPLEXITÉ ---
+        # Pénalise les modèles qui utilisent des canaux trop serrés (signe de fitting sur le bruit)
+        complexity_penalty = 0.0
+        if channel_type == 'keltner':
+            complexity_penalty += max(0, 1.5 - atr_mult_low) * 10.0
+            complexity_penalty += max(0, 1.5 - atr_mult_high) * 10.0
+        elif channel_type == 'envelope':
+            complexity_penalty += max(0, 0.015 - env_pct_low) * 500.0
+            complexity_penalty += max(0, 0.015 - env_pct_high) * 500.0
+        # -------------------------------------------------
+
         # Génération de tous les trades sur l'ensemble du dataset d'entraînement
         trades_df = backtest_triple_ema_strategy_for_credit_spread(
             df_temp,
@@ -269,29 +292,21 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
         # Pénalité globale si pas assez de trades
         total_stats = calculate_credit_spread_win_rates(trades_df)
         if total_stats['total_trades'] < 10:
-            return 0.0
+            return -100.0  # Retourner une valeur très négative au lieu de 0 pour bien pénaliser
 
         if metric == 'put_win_rate' and total_stats['put_trades'] < 5:
-            return 0.0
+            return -100.0
         if metric == 'call_win_rate' and total_stats['call_trades'] < 5:
-            return 0.0
+            return -100.0
 
         # ==========================================================
         # WALK-FORWARD VALIDATION (TimeSeriesSplit)
         # ==========================================================
-        # Au lieu d'évaluer sur tout le bloc d'un coup (ce qui pourrait favoriser
-        # un seul régime de marché), on évalue uniquement sur les parties "TEST"
-        # de chaque fold. Cela force la stratégie à être robuste dans le temps.
         fold_scores = []
         for fold, (train_index, test_index) in enumerate(tscv.split(df_data)):
-            # On filtre les trades générés pour ne garder que ceux de la période de test du fold
-            # Note: orig_idx correspond bien aux index générés par tscv.split car df_data
-            # a été découpé avec iloc et orig_idx a été créé avec np.arange.
             fold_trades = trades_df[trades_df['orig_idx'].isin(test_index)]
-
             stats = calculate_credit_spread_win_rates(fold_trades)
 
-            # Pénalité si pas assez de trades dans ce fold spécifique
             if metric == 'put_win_rate' and stats['put_trades'] < 1:
                 fold_scores.append(0.0)
             elif metric == 'call_win_rate' and stats['call_trades'] < 1:
@@ -301,31 +316,87 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
             else:
                 fold_scores.append(stats[metric])
 
-        # Retourne la moyenne des scores sur tous les folds (Walk-Forward),
-        # ajustée par l'écart-type (pour pénaliser l'instabilité) et la densité.
-        alpha = 0.80
-        final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores)) - density_penalty
+        # ==========================================================
+        # [ANTI-OVERFITTING] CALCUL DU SCORE FINAL ROBUSTE
+        # ==========================================================
+        # Au lieu de juste la moyenne, on utilise une approche "Maximin" :
+        # On veut que le modèle soit bon partout, pas juste excellent sur 1 régime de marché.
+        mean_score = np.mean(fold_scores)
+        min_score = np.min(fold_scores)
+        max_score = np.max(fold_scores)
+
+        # 1. Pénalité d'instabilité (écart entre le meilleur et le pire fold)
+        instability_penalty = 0.6 * (max_score - min_score)
+
+        # 2. Pénalité du "pire scénario" (si le pire fold est < 45%, on pénalise lourdement)
+        worst_case_penalty = max(0, 45.0 - min_score) * 0.5
+
+        # Score final = Moyenne - Instabilité - Pire Cas - Densité - Complexité
+        final_score = mean_score - instability_penalty - worst_case_penalty - density_penalty - complexity_penalty
+
         return final_score
 
     return objective
 
 
+import argparse
+
+
+# --- CONFIGURATION DU PARSER D'ARGUMENTS ---
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Configuration de l'optimisation du modèle.")
+
+    parser.add_argument(
+        '--optimize_metric',
+        type=str,
+        default='total_win_rate',
+        choices=['total_win_rate', 'put_win_rate', 'call_win_rate'],
+        help="Métrique à optimiser (par défaut : 'total_win_rate')"
+    )
+
+    parser.add_argument(
+        '--n_trials',
+        type=int,
+        default=999999,
+        help="Nombre d'essais pour Optuna (par défaut : 99999)"
+    )
+
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=int(86400 * 4),
+        help="Temps limite en secondes pour l'optimisation (par défaut : 86400 * 4 , soit 4 jours)"
+    )
+
+    parser.add_argument(
+        '--target_signal_density',
+        type=float,
+        default=0.101575,
+        help="Cible de densité des signaux (par défaut : 0.101575)"
+    )
+
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     freeze_support()
+    # Important : Récupérer les arguments dès le départ
+    args = parse_arguments()
+
     ticker = "^GSPC"
     df_mom = factory_load_data(_dataset_id="day", _ticker=ticker, _args={})
 
     lookahead_bar_1 = 6
     lookahead_bar_2 = 10
-    n_splits = 12
+    n_splits = 24
     train_ratio = 0.95
 
-    # --- CONFIGURATION DE L'OPTIMISATION ---
-    optimize_metric = 'total_win_rate'  # Choisir entre 'total_win_rate', 'put_win_rate', 'call_win_rate'
-    n_trials = 99999  # Nombre d'essais pour Optuna
-    timeout = int(86400 *2.5)
-    target_signal_density = 0.101575  # Cible de densité des signaux
-    # ---------------------------------------
+    # --- CONFIGURATION DE L'OPTIMISATION (via argparse) ---
+    optimize_metric = args.optimize_metric
+    n_trials = args.n_trials
+    timeout = args.timeout
+    target_signal_density = args.target_signal_density
+    # -------------------------------------------------------
 
     if isinstance(df_mom.columns, pd.MultiIndex):
         df_mom.columns = df_mom.columns.get_level_values(0)
@@ -362,8 +433,8 @@ if __name__ == "__main__":
     print(f"🚀 Lancement de l'optimisation Optuna pour maximiser : {optimize_metric}")
     print(f"🎯 Cible de densité de signaux : {target_signal_density * 100}%")
     print(f"🔧 Nombre d'essais (trials) : {n_trials}\n")
-    train_start_date = df_test.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[0])
-    train_end_date = df_test.index[-1].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[-1])
+    train_start_date = df_train_and_val.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_train_and_val.index[0])
+    train_end_date = df_train_and_val.index[-1].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_train_and_val.index[-1])
     print(f"📊 Train Set ({len(df_train_and_val)} bars) - {train_start_date}::{train_end_date}\n")
     test_start_date = df_test.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[0])
     test_end_date = df_test.index[-1].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_test.index[-1])
@@ -389,7 +460,7 @@ if __name__ == "__main__":
     best_value = study.best_value
 
     print(f"\n✅ Optimisation terminée !")
-    print(f"🏆 Meilleur {optimize_metric} (moyenne des folds Walk-Forward ajustée) : {best_value:.2f}%")
+    print(f"🏆 Meilleur score robuste (moyenne des folds Walk-Forward ajustée) : {best_value:.2f}")
     print(f"🔧 Meilleurs paramètres trouvés : {best_params}\n")
     print(f"🚀 Lancement du backtest final de validation avec les meilleurs paramètres...\n")
 
@@ -458,7 +529,6 @@ if __name__ == "__main__":
     print(f"\n{'=' * 25} ÉVALUATION SUR LE JEU DE TEST (OUT-OF-SAMPLE) {'=' * 25}")
 
     # Gestion de l'affichage des dates pour le set de test
-
 
     df_test = calculate_channel_indicators(
         df=df_test,
