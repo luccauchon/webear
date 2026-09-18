@@ -367,8 +367,8 @@ def parse_arguments():
     parser.add_argument(
         '--target_signal_density',
         type=float,
-        default=0.101575,
-        help="Cible de densité des signaux (par défaut : 0.101575)"
+        default=0.05,
+        help="Cible de densité des signaux (par défaut : 0.05)"
     )
 
     return parser.parse_args()
