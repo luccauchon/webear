@@ -30,8 +30,9 @@ if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
     BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
 if IS_RUNNING_ON_CASIR:
-    BASE_YFINANCE_DIR = r"/gpfs/groups/gc014b/cj3272/experiences/yfinance"
-    BASE_FORECAST_DIR = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
+    BASE_YFINANCE_DIR                       = "/gpfs/groups/gc014b/cj3272/experiences/yfinance"
+    BASE_FORECAST_DIR                       = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
+    BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR = "/gpfs/groups/gc014b/cj3272/experiences/daily"
 if IS_RUNNING_ON_LINUX_VMWARE:
     BASE_YFINANCE_DIR = "/home/luccauchon/REALTIME/data/yfinance"
     BASE_FORECAST_DIR = "/home/luccauchon/REALTIME/data/forecast"
