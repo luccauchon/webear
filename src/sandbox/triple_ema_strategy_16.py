@@ -16,7 +16,7 @@ import optuna
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import TimeSeriesSplit
-
+import argparse
 # Réduit le verbosity d'Optuna pour ne pas polluer la console
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -337,10 +337,6 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density=0.1):
         return final_score
 
     return objective
-
-
-import argparse
-
 
 # --- CONFIGURATION DU PARSER D'ARGUMENTS ---
 def parse_arguments():
