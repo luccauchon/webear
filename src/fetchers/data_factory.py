@@ -208,7 +208,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
 
                 _n_minutes = _get_dataset_timeframe(_dataset_id)
                 if _n_minutes > 1:
-                    df_main = resample_candles_enhanced(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
+                    df_main = resample_candles_enhanced(df=df_main, n_minutes=int(_n_minutes), ticker=_ticker)
                 if _get_vix:
                     if _n_minutes > 1:
                         df_vix = resample_candles(df=df_vix, n_minutes=_n_minutes, ticker="^VIX")

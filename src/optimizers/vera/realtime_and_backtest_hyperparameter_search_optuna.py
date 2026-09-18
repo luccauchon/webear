@@ -219,6 +219,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     parser.add_argument('--tightness-weight', type=float, default=0.33, help='Weighting factor for ATR tightness.')
     parser.add_argument("--n-split", type=float, default=0.9, help='Data split ratio for probability models.')
     parser.add_argument('--execution-mode', type=str, default='backtest', choices=['backtest', 'realtime', 'optimize'], help='Operational mode.')
+    parser.add_argument('--realtime', action=argparse.BooleanOptionalAction, default=False, help='Set execution mode to realtime.')
     parser.add_argument('--save-ml-dataset', action=argparse.BooleanOptionalAction, default=False, help='Save ML dataset.')
     parser.add_argument('--verbose-print-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Display tqdm progress bar.')
     parser.add_argument('--verbose-print-continously-trade', action=argparse.BooleanOptionalAction, default=False, help='Print detailed trade metrics continuously.')
@@ -668,6 +669,7 @@ def optimization_mode(args):
 # ==============================================================================
 def entry(args):
     freeze_support()
+    args.execution_mode = 'realtime' if getattr(args, 'realtime', False) else args.execution_mode
     if args.execution_mode in ["realtime", "backtest"]:
         return realtime_and_backtesting_mode(args=args)
     elif args.execution_mode in ["optimize"]:
