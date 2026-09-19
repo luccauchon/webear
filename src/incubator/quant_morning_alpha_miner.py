@@ -89,7 +89,7 @@ def entry():
     # ---------------------------------------------------------
     # 1. Chargement et préparation des données
     # ---------------------------------------------------------
-    nb_worker = os.environ.get("Q__N_CORE", 12)
+    nb_worker = int(os.environ.get("Q__N_CORE", 12))
     ticker = "^GSPC"
     df = factory_load_data(_dataset_id="intraday_1min", _ticker=ticker, _args={})
 
@@ -108,10 +108,13 @@ def entry():
 
     t_target = os.environ.get("Q__TARGET", "Morning_Open")
     print(f"Target is: {t_target}")
-
+    ema_9  = int(os.environ.get("Q__EMA9", 9))
+    ema_21 = int(os.environ.get("Q__EMA21", 21))
+    rsi_14 = int(os.environ.get("Q__RSI14", 14))
+    macd_5 = int(os.environ.get("Q__MACD5", 5))
     fenetre_analysee = (time_debut, time_fin)
     seuil_pos = float(os.environ.get("Q__SEUIL_POS", 1.))
-    experience_str_desc = f"{seuil_pos}"+f"__{t_target}__" + f"__{fenetre_analysee}".replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_')
+    experience_str_desc = f"{seuil_pos}"+f"__{t_target}__"+f"__{ema_9}{ema_21}{rsi_14}{macd_5}__" + f"__{fenetre_analysee}".replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_')
     print(f"{fenetre_analysee=} | {seuil_pos=} | {experience_str_desc=}")
 
     # ---------------------------------------------------------
@@ -145,11 +148,11 @@ def entry():
         return 100 - (100 / (1 + rs))
 
 
-    df_morning['ema_9'] = morning_groups['Close'].transform(lambda x: x.ewm(span=9, adjust=False).mean())
-    df_morning['ema_21'] = morning_groups['Close'].transform(lambda x: x.ewm(span=21, adjust=False).mean())
-    df_morning['rsi_14'] = morning_groups['Close'].transform(lambda x: calc_rsi(x, period=14))
+    df_morning['ema_9'] = morning_groups['Close'].transform(lambda x: x.ewm(span=ema_9, adjust=False).mean())
+    df_morning['ema_21'] = morning_groups['Close'].transform(lambda x: x.ewm(span=ema_21, adjust=False).mean())
+    df_morning['rsi_14'] = morning_groups['Close'].transform(lambda x: calc_rsi(x, period=rsi_14))
     df_morning['macd_line'] = df_morning['ema_9'] - df_morning['ema_21']
-    df_morning['macd_signal'] = morning_groups['macd_line'].transform(lambda x: x.ewm(span=5, adjust=False).mean())
+    df_morning['macd_signal'] = morning_groups['macd_line'].transform(lambda x: x.ewm(span=macd_5, adjust=False).mean())
     df_morning['macd_hist'] = df_morning['macd_line'] - df_morning['macd_signal']
     df_morning['ema_diff'] = df_morning['ema_9'] - df_morning['ema_21']
 
@@ -268,13 +271,13 @@ def entry():
     # Variables partagées
     use_cases__shared, master_cmd__shared = Queue(2 * zzz), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, nb_worker)]
-    print(f"Lancement des évaluations en CV | Queue de dimension {2*zzz}")
+    print(f"Lancement des evaluations en CV | Queue de dimension {2*zzz}")
     # Lancement des workers
     for k in range(0, nb_worker):
         p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k], k,))
         p.start()
     # Envoie les informations aux workers pour traitement
-    print(f"Évaluation CV de {len(combo_to_be_processed)} combinaisons sur {len(get_models())} modèles avec {nb_worker} workers...")
+    print(f"Evaluation CV de {len(combo_to_be_processed)} combinaisons sur {len(get_models())} modeles avec {nb_worker} workers...")
     pbar = tqdm(combo_to_be_processed, desc="Submitting training with CV")
     uuu = 0
     for combo_list in pbar:
