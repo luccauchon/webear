@@ -225,8 +225,9 @@ def entry():
                     'vwap_distance_pct', 'vwap_crossings',
                     'rsi_last', 'rsi_delta', 'close_ema9_dist_pct', 'ema_cross_direction',
                     'macd_hist_last', 'macd_hist_delta',
-                    'gap_pct', 'prev_day_return_t1', 'prev_day_return_t2', 'prev_day_return_t3', 'prev_day_return_t4',
-                    'Morning_Open', 'Morning_Close',
+                    'gap_pct', 'prev_day_return_t1', 'prev_day_return_t2',
+                    # 'prev_day_return_t3', 'prev_day_return_t4',
+                    # 'Morning_Open', 'Morning_Close',
     ]
 
     X = daily_df[feature_cols].copy()
@@ -265,8 +266,8 @@ def entry():
     required_set = set(required_set)
     for r in range(1, len(feature_cols) + 1):
         for combo in combinations(feature_cols, r):
-            if required_set.issubset(combo):
-                combo_to_be_processed.append(list(combo))
+            #if required_set.issubset(combo):
+            combo_to_be_processed.append(list(combo))
     zzz = len(combo_to_be_processed) * len(get_models())
     # Variables partagées
     use_cases__shared, master_cmd__shared = Queue(2 * zzz), Value("i", 0)
