@@ -1,6 +1,7 @@
 import time
-
+import matplotlib.pyplot as plt
 from fetchers.data_factory import factory_load_data
+import seaborn as sns
 import os
 import pandas as pd
 import numpy as np
@@ -88,7 +89,7 @@ def entry():
     # ---------------------------------------------------------
     # 1. Chargement et préparation des données
     # ---------------------------------------------------------
-    nb_worker = 12
+    nb_worker = os.environ.get("Q__N_CORE", 12)
     ticker = "^GSPC"
     df = factory_load_data(_dataset_id="intraday_1min", _ticker=ticker, _args={})
 
@@ -99,17 +100,17 @@ def entry():
     daily_close_1600 = df.groupby(df.index.date)['Close'].last()
 
     # Récupérer les variables du shell
-    heure_debut_str = os.environ.get("HEURE_DEBUT", "09:30")
-    heure_fin_str = os.environ.get("HEURE_FIN", "10:30")
+    heure_debut_str = os.environ.get("Q__HEURE_DEBUT", "09:30")
+    heure_fin_str = os.environ.get("Q__HEURE_FIN", "10:30")
 
     time_debut = datetime.strptime(heure_debut_str, "%H:%M").time()
     time_fin = datetime.strptime(heure_fin_str, "%H:%M").time()
 
-    t_target = os.environ.get("T_TARGET", "Morning_Open")
+    t_target = os.environ.get("Q__TARGET", "Morning_Open")
     print(f"Target is: {t_target}")
 
     fenetre_analysee = (time_debut, time_fin)
-    seuil_pos = float(os.environ.get("SEUIL_POS", 1.))
+    seuil_pos = float(os.environ.get("Q__SEUIL_POS", 1.))
     experience_str_desc = f"{seuil_pos}"+f"__{t_target}__" + f"__{fenetre_analysee}".replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_')
     print(f"{fenetre_analysee=} | {seuil_pos=} | {experience_str_desc=}")
 
