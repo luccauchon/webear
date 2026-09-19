@@ -205,9 +205,11 @@ def entry():
         'prev_day_return_t1': ((daily_morning_close - prev_daily_morning_close) / prev_daily_morning_close) * 100,
         'prev_day_return_t2': ((daily_morning_close - prev_daily_morning_close.shift(1)) / prev_daily_morning_close.shift(1)) * 100,
         'prev_day_return_t3': ((daily_morning_close - prev_daily_morning_close.shift(2)) / prev_daily_morning_close.shift(2)) * 100,
+        'prev_day_return_t4': ((daily_morning_close - prev_daily_morning_close.shift(3)) / prev_daily_morning_close.shift(3)) * 100,
     })
     # TODO essayer de predire > Morning_Close ?
-    daily_df['target'] = (daily_close_1600.reindex(daily_df.index) > daily_df['Morning_Open'] * seuil_pos).astype(int)
+    t_target = os.environ.get("T_TARGET", "Morning_Open")
+    daily_df['target'] = (daily_close_1600.reindex(daily_df.index) > daily_df[t_target] * seuil_pos).astype(int)
     daily_df = daily_df.dropna()
 
     # ---------------------------------------------------------
@@ -219,7 +221,8 @@ def entry():
         'vwap_distance_pct', 'vwap_crossings',
         'rsi_last', 'rsi_delta', 'close_ema9_dist_pct', 'ema_cross_direction',
         'macd_hist_last', 'macd_hist_delta',
-        'gap_pct', 'prev_day_return_t1', 'prev_day_return_t2', 'prev_day_return_t3'
+        'gap_pct', 'prev_day_return_t1', 'prev_day_return_t2', 'prev_day_return_t3', 'prev_day_return_t4',
+        'Morning_Open', 'Morning_Close',
     ]
 
     X = daily_df[feature_cols].copy()
@@ -254,10 +257,11 @@ def entry():
     # ---------------------------------------------------------
     data_from_workers = []
     # Construction des cas à traiter
-    # TODO Ajouter Open et Close  ???
     combo_to_be_processed = []
     for r in range(1, len(feature_cols) + 1):
         for combo in combinations(feature_cols, r):
+            if len(combo) < 9:
+                continue
             combo_to_be_processed.append(list(combo))
     zzz = len(combo_to_be_processed) * len(get_models())
     # Variables partagées
