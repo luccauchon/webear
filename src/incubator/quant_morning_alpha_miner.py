@@ -207,8 +207,8 @@ def entry():
         'prev_day_return_t3': ((daily_morning_close - prev_daily_morning_close.shift(2)) / prev_daily_morning_close.shift(2)) * 100,
         'prev_day_return_t4': ((daily_morning_close - prev_daily_morning_close.shift(3)) / prev_daily_morning_close.shift(3)) * 100,
     })
-    # TODO essayer de predire > Morning_Close ?
     t_target = os.environ.get("T_TARGET", "Morning_Open")
+    print(f"Target is: {t_target}")
     daily_df['target'] = (daily_close_1600.reindex(daily_df.index) > daily_df[t_target] * seuil_pos).astype(int)
     daily_df = daily_df.dropna()
 
