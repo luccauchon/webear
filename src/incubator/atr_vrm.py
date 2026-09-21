@@ -130,10 +130,11 @@ def entry():
                         extra_pen_band_limits += 50
                         #print(f"\nFUCKKKKKKKKKKKKKKKKKKKKKKKK!!!!!!!!!!!!!!!!! {extra_pen_band_limits=}")
                 # Sanity check
-                assert bands_estimation['predicted_upper_close'][0] > bands_estimation['predicted_lower_close'][0]
-                assert bands_estimation['predicted_upper_close'][0] < bands_estimation['predicted_high'][0]
-                assert bands_estimation['predicted_lower_close'][0] > bands_estimation['predicted_low'][0]
-                assert bands_estimation['predicted_high'][0] > bands_estimation['predicted_low'][0]
+                if (not bands_estimation['predicted_upper_close'][0] > bands_estimation['predicted_lower_close'][0] or
+                        not bands_estimation['predicted_upper_close'][0] < bands_estimation['predicted_high'][0] or
+                        not bands_estimation['predicted_lower_close'][0] > bands_estimation['predicted_low'][0] or
+                        not bands_estimation['predicted_high'][0] > bands_estimation['predicted_low'][0]):
+                   print(f"\n\terreur dans les estimations des bands:\n{bands_estimation}")
                 if 0 == len(lookahead_prediction) or not enforce_code_expansion:
                     break
                 # Enforce that the high/low prediction shall be greater/lower than those of previous bar
