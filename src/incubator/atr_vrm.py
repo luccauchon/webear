@@ -21,13 +21,13 @@ def entry():
     g_realtime = False
     g_dataset_id = "day"
 
-    back_in_time_n_bars_ranges = list(range(1,3999))  # Backtesting ranges
+    back_in_time_n_bars_ranges = list(range(1,1975))  # Backtesting ranges
     lookahead_ranges = [1, 2, 3, 4, 5]  # Number of days that we go into the future
     strategy_3_conf = {'up_bias': 1.01, 'down_bias': 0.99}
     n_split_for_atr = 0.8
     starting_n_trials_for_atr = 50
     tightness_weight_for_atr = 0.33
-    enforce_code_expansion = True   # Ensure that high/low are monotonic accross all predictions
+    enforce_code_expansion = False   # Ensure that high/low are monotonic accross all predictions
     # TODO use back_in_time_n_bars=0 and g_realtime=True for realtime
 
     ###########################################################################
@@ -56,10 +56,10 @@ def entry():
             the_date_in_the_future = None
             extra_pen_cone_expansion = 0  # Penalty for not respecting cone expansion
             extra_tw_cone_expansion = 0  # Some slack for not respecting cone expansion
-            for max_retry in range(0, 5):
+            for max_retry in range(0, 9):
                 extra_pen_band_limits = 0  # Penalty for not respecting band limits
                 # Estimation of bands for lookahead
-                while True:
+                for max_retry_2 in range(0, 19):
                     bands_estimation = {}
                     for use_close_for_range in [True, False]:
                         tw = tightness_weight - extra_tw_cone_expansion if tightness_weight - extra_tw_cone_expansion > 0 else 0
@@ -102,9 +102,9 @@ def entry():
                         if the_date_of_projection_is_made is None:
                             the_date_of_projection_is_made = actual_day_of_the_prediction
                         else:
-                            if the_date_of_projection_is_made != actual_day_of_the_prediction:
-                                print(f"\nFUCK!!  {the_date_of_projection_is_made} == {actual_day_of_the_prediction}   {back_in_time_n_bars=}TODO FIXME")
-                            # assert the_date_of_projection_is_made == actual_day_of_the_prediction, f"{the_date_of_projection_is_made} == {actual_day_of_the_prediction}"
+                            # if the_date_of_projection_is_made != actual_day_of_the_prediction:
+                            #     print(f"\nFUCK!!  {the_date_of_projection_is_made} == {actual_day_of_the_prediction}   {back_in_time_n_bars=}TODO FIXME")
+                            assert the_date_of_projection_is_made == actual_day_of_the_prediction, f"{the_date_of_projection_is_made} == {actual_day_of_the_prediction}"
                         day_predicted_in_the_future = get_next_step(actual_day_of_the_prediction, "day", lookahead)
                         assert the_date_of_projection_is_made < day_predicted_in_the_future
                         if the_date_in_the_future is None:
@@ -127,7 +127,7 @@ def entry():
                             bands_estimation['predicted_high'][0] > bands_estimation['predicted_low'][0]):
                         break
                     else:
-                        extra_pen_band_limits += 25
+                        extra_pen_band_limits += 50
                         #print(f"\nFUCKKKKKKKKKKKKKKKKKKKKKKKK!!!!!!!!!!!!!!!!! {extra_pen_band_limits=}")
                 # Sanity check
                 assert bands_estimation['predicted_upper_close'][0] > bands_estimation['predicted_lower_close'][0]
