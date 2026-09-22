@@ -21,7 +21,7 @@ def entry():
     g_realtime = False
     g_dataset_id = "day"
 
-    back_in_time_n_bars_ranges = list(range(1,1975))  # Backtesting ranges
+    back_in_time_n_bars_ranges = list(range(1,5000))  # Backtesting ranges
     lookahead_ranges = [1, 2, 3, 4, 5]  # Number of days that we go into the future
     strategy_3_conf = {'up_bias': 1.01, 'down_bias': 0.99}
     n_split_for_atr = 0.8
@@ -134,7 +134,7 @@ def entry():
                         not bands_estimation['predicted_upper_close'][0] < bands_estimation['predicted_high'][0] or
                         not bands_estimation['predicted_lower_close'][0] > bands_estimation['predicted_low'][0] or
                         not bands_estimation['predicted_high'][0] > bands_estimation['predicted_low'][0]):
-                   print(f"\n\terreur dans les estimations des bands:\n{bands_estimation}")
+                   pass # print(f"\n\terreur dans les estimations des bands:\n{bands_estimation}")
                 if 0 == len(lookahead_prediction) or not enforce_code_expansion:
                     break
                 # Enforce that the high/low prediction shall be greater/lower than those of previous bar
