@@ -22,12 +22,13 @@ import matplotlib.pyplot as plt
 from typing import Optional, Tuple
 import pickle
 import argparse
-from utils import get_filename_for_dataset
+from utils import get_filename_for_dataset, send_html_email
 from fetchers.data_factory import factory_load_data
 import os
 import warnings
 import optuna
 from sklearn.model_selection import TimeSeriesSplit
+from constants import GET_EMAILS, TITLE_WEBEAR, CLAUSE_NON_RESPONSABILITE, GET_SUBJECT
 from datetime import datetime
 import sys
 from tqdm import tqdm
@@ -44,7 +45,7 @@ def setup_argparse() -> argparse.ArgumentParser:
         description="",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
+    parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
     return parser
 
 
@@ -52,53 +53,53 @@ def entry(args):
     verbose = False
     def dual_print(message, buffer_str):
         print(message)
-        return buffer_str + message
-
+        return buffer_str + "\n" + message
+    trade_detected = False
     msg_str = ""
 
     ###########################################################################
     # APCS
     ###########################################################################
-    msg_str += dual_print(f"Models APCS", msg_str)
+    msg_str = dual_print(f"Models APCS", msg_str)
     apcs_models = get_taurus_v1_models()["apcs"]
     for model_name, model_info in apcs_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
         result_apcs = apcs_entry_point(args=config)
         if 1 == result_apcs['signal']:
-            print(result_apcs)
-
+            msg_str = dual_print(result_apcs, msg_str)
+            trade_detected = True
 
     ###########################################################################
     # DGDR
     ###########################################################################
-    msg_str += dual_print(f"Models DGDR", msg_str)
+    msg_str = dual_print(f"Models DGDR", msg_str)
     dgdr_models = get_taurus_v1_models()["dgdr"]
     for model_name, model_info in dgdr_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
-        result_apcs = dgdr_entry_point(args=config)
-        if 1 == result_apcs['signal']:
-            print(result_apcs)
-
+        result_dgdr = dgdr_entry_point(args=config)
+        if 1 == result_dgdr['signal']:
+            msg_str = dual_print(result_dgdr, msg_str)
+            trade_detected = True
 
     ###########################################################################
     # AUTOTUNE
     ###########################################################################
-    msg_str += dual_print(f"Models AutoTune", msg_str)
+    msg_str = dual_print(f"Models AutoTune", msg_str)
     autotune_models = get_taurus_v1_models()["autotune"]
     for model_name, model_info in autotune_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
         result_autotune = autotune_entry_point(args=config)
         if 0 != result_autotune["signal"]:
-            msg_str += dual_print(result_autotune["status_message"], msg_str)
-
+            msg_str = dual_print("\t"+result_autotune["status_message"], msg_str)
+            trade_detected = True
 
     ###########################################################################
     # OERH
     ###########################################################################
-    msg_str += dual_print(f"Models OERH", msg_str)
+    msg_str = dual_print(f"Models OERH", msg_str)
     oerh_models = get_taurus_v1_models()["oerh"]
     for model_name, model_info in oerh_models.items():
         model_path = model_info["filepath"]
@@ -113,11 +114,16 @@ def entry(args):
             now = datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
             target_price = (1+result_oerh["threshold_pct"]) * entry_price
             test_win_rate = result_oerh["val_win_rate"]
-            msg_str += dual_print(f"Today @{now} , buy a Put Credit Spread located at {round_price_for_put_credit_spread(entry_price):.0f} , and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
+            msg_str = dual_print(f"Today @{now} , buy a Put Credit Spread located at {round_price_for_put_credit_spread(entry_price):.0f} , and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
                   f"targetting that price shall be above {target_price:.0f} at that point on, grabbing time decay.\n\t"
                   f"Model has a {test_win_rate:.1%} Test Win Rate", msg_str)
+            trade_detected = True
         else:
-            if verbose: msg_str += dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)
+            if verbose: msg_str = dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)
+
+    if trade_detected:
+        destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
+        send_html_email(destinataires=destinataires, sujet=GET_SUBJECT("YAMAHA", args.production_setup), corps=msg_str)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import platform
 try:
@@ -104,6 +105,12 @@ try:
     PWD_GOOGLE_API = open(r"C:\pwd\googlepwd.txt", "r", encoding="utf-8").read().strip()
 except:
     PWD_GOOGLE_API = None
+
+
+def GET_SUBJECT(app_name, production_setup=False):
+    signature_for_prod = TITLE_WEBEAR if production_setup else "DEV"
+    return f"{app_name.upper()} | {signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")} | "
+
 
 TITLE_WEBEAR = "WEBEAR 1.0"
 

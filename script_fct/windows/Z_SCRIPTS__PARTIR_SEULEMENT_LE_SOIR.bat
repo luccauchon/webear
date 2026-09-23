@@ -36,3 +36,6 @@ start "[BOUCLIER SPX]" cmd /k "call R_BOUCLIER_SPX___08h31_LUNDI.bat"
 :: Script 10 :
 start "[PERSISTANCE CONDITIONNELLE ECART SPX]" cmd /k "call R_PERSISTANCE_CONDITIONNELLE_ECART_SPX___09h32.bat"
 
+:: Script 11 :
+start "[YAMAHA SPX]" cmd /k "call R_YAMAHA___15h32.bat"
+

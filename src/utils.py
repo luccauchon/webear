@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
-from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY
+from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY, CLAUSE_NON_RESPONSABILITE
 import sys
 import re
 from types import SimpleNamespace
@@ -1268,7 +1268,7 @@ def get_next_step(the_date, dataset_id, nn):
     return _next_
 
 
-def send_html_email(destinataires, sujet, corps, cc=None, cci=None, pieces_jointes=None):
+def send_html_email(destinataires, sujet, corps, cc=None, cci=None, pieces_jointes=None, add_clause_non_responsabilite=True):
     # Assurer que les arguments sont des listes
     dest_list = [destinataires] if isinstance(destinataires, str) else (destinataires or [])
     cc_list = [cc] if isinstance(cc, str) else (cc or [])
@@ -1281,7 +1281,7 @@ def send_html_email(destinataires, sujet, corps, cc=None, cci=None, pieces_joint
         cc=cc_list,
         cci=cci_list,
         sujet=sujet,
-        corps=ansi_to_html(corps),
+        corps=ansi_to_html(f"{corps}\n\n\n{CLAUSE_NON_RESPONSABILITE}") if add_clause_non_responsabilite else ansi_to_html(corps),
         mot_de_passe_app=mot_de_passe_app,
         subtype='html',
         pieces_jointes=pieces_jointes
