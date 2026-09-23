@@ -31,8 +31,8 @@ import os
 import sys
 import time
 from runners.atr import entry as atr_entry
-from utils import WEBEARStyle, send_html_email, get_and_clean_stub_dir
-from constants import GET_EMAILS, TITLE_WEBEAR
+from utils import send_html_email, get_and_clean_stub_dir
+from constants import GET_EMAILS, TITLE_WEBEAR, WEBEARStyle
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
@@ -275,9 +275,10 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             probability_predicted_high = result['regime_metrics'][vix_regime]['Borne Haute Respectée']
             probability_predicted_low = result['regime_metrics'][vix_regime]['Borne Basse Respectée']
             actual_high, actual_low, actual_close, actual_open = result['realtime']['actual_high'], result['realtime']['actual_low'], result['realtime']['actual_close'], result['realtime']['actual_open']
+            previous_close = result['realtime']['previous_close']
             atr_config.dataframe=None
             all_results_computed.append({'actual_high': actual_high, 'actual_low': actual_low, 'actual_close': actual_close, 'actual_open': actual_open,
-                                         'predicted_high': predicted_high, 'predicted_low': predicted_low, 'vix_regime': vix_regime,
+                                         'predicted_high': predicted_high, 'predicted_low': predicted_low, 'vix_regime': vix_regime, 'previous_close': previous_close,
                                          'probability_predicted_high': probability_predicted_high, 'probability_predicted_low': probability_predicted_low,
                                          'atr_config': atr_config, 'dataset_configuration': result['dataset_configuration']})
     out__shared.put(all_results_computed)
@@ -360,9 +361,9 @@ def entry(args):
             # On garde l'élément s'il est unique par rapport au précédent
             filtered_probabilities.append(current)
         if 'low' in col_for_sort:
-            string_generated += (f"\t::  {WEBEARStyle.BOLD}Low   Open   / Close   @P    BE$   {WEBEARStyle.END}")+ "\n"
+            string_generated += (f"\t::  {WEBEARStyle.BOLD}Low   Open   / Actual   / Close_t-1   @P    BE$   {WEBEARStyle.END}")+ "\n"
         elif 'high' in col_for_sort:
-            string_generated += (f"\t::  {' ':<16}{WEBEARStyle.BOLD}High  Open  / Close   @P    BE${WEBEARStyle.END}")+ "\n"
+            string_generated += (f"\t::  {' ':<16}{WEBEARStyle.BOLD}High  Open  / Actual   / Close_t-1   @P    BE${WEBEARStyle.END}")+ "\n"
         for sorted_probability in filtered_probabilities:
             predicted_low, predicted_high = int(sorted_probability['predicted_low']), int(sorted_probability['predicted_high'])
             probability_predicted_low, probability_predicted_high = int(sorted_probability['probability_predicted_low']), int(sorted_probability['probability_predicted_high'])
@@ -373,6 +374,7 @@ def entry(args):
         for sorted_probability in filtered_probabilities:
             predicted_low, predicted_high = int(sorted_probability['predicted_low']), int(sorted_probability['predicted_high'])
             probability_predicted_low, probability_predicted_high = int(sorted_probability['probability_predicted_low']), int(sorted_probability['probability_predicted_high'])
+            previous_close = sorted_probability['previous_close']
             assert actual_high == sorted_probability['actual_high']
             assert actual_low == sorted_probability['actual_low']
             assert actual_close == sorted_probability['actual_close']
@@ -381,16 +383,18 @@ def entry(args):
             breakeven_high = int((1.0 - probability_predicted_high/100.) * spread_width)
             breakeven_low = int((1.0 - probability_predicted_low/100.) * spread_width)
             if 'low' in col_for_sort:
-                distance_from_open = float((predicted_low - actual_open) / actual_open)
-                distance_from_current_value = float((predicted_low - actual_close) / actual_close)
+                distance_from_open           = float((predicted_low - actual_open) / actual_open)
+                distance_from_current_value  = float((predicted_low - actual_close) / actual_close)
+                distance_from_previous_close = float((predicted_low - previous_close) / previous_close)
                 string_generated += (f"\t"                      
-                      f"{' ':<4}{predicted_low:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}) @{probability_predicted_low:02d}% {breakeven_low:03d}$")+ "\n"
+                      f"{' ':<4}{predicted_low:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}   / {distance_from_previous_close:.2%})     @{probability_predicted_low:02d}%  {breakeven_low:03d}$")+ "\n"
                 vlow_text = (predicted_low, probability_predicted_low,breakeven_low) if vlow_text is None else vlow_text
             elif 'high' in col_for_sort:
-                distance_from_open = float((predicted_high - actual_open) / actual_open)
-                distance_from_current_value = float((predicted_high - actual_close) / actual_close)
+                distance_from_open           = float((predicted_high - actual_open) / actual_open)
+                distance_from_current_value  = float((predicted_high - actual_close) / actual_close)
+                distance_from_previous_close = float((predicted_high - previous_close) / previous_close)
                 string_generated += (f"\t"                      
-                      f"{' ':<20}{predicted_high:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}) @{probability_predicted_high:02d}% {breakeven_high:03d}$")+ "\n"
+                      f"{' ':<20}{predicted_high:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}    / {distance_from_previous_close:.2%})      @{probability_predicted_high:02d}%  {breakeven_high:03d}$")+ "\n"
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
             if dataset_configuration is None:
                 dataset_configuration = sorted_probability['dataset_configuration']

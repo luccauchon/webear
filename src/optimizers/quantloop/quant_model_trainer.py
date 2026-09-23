@@ -42,7 +42,8 @@ from sklearn.metrics import (classification_report, confusion_matrix,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
 from tqdm import tqdm
-from utils import get_next_step, WEBEARStyle
+from utils import get_next_step
+from constants import WEBEARStyle
 
 
 def parse_arguments():

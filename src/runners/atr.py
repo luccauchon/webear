@@ -362,9 +362,9 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
         print("\n⚠️  No data available for real-time prediction.")
         return
 
-    last_row = df_bt.iloc[-1]
-    last_date = df_bt.index[-1].strftime('%Y-%m-%d_%H%M')
-
+    last_row     = df_bt.iloc[-1]
+    last_date    = df_bt.index[-1].strftime('%Y-%m-%d_%H%M')
+    previous_row = df_bt.iloc[-2]
     # Determine current VIX regime
     vix_rank = last_row['VIX_Rolling_Rank']
     assert 1 == len(vix_rank)
@@ -385,10 +385,10 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
     predicted_low = current_open - (current_atr * k_down)
 
     # Actual values (may be NaN if bar is incomplete / real-time)
-    actual_high = last_row[high_col]
-    actual_low = last_row[low_col]
-    actual_close = last_row[close_col]
-
+    actual_high    = last_row[high_col]
+    actual_low     = last_row[low_col]
+    actual_close   = last_row[close_col]
+    previous_close = previous_row[close_col]
     if use_close_for_range:
         high_status = "✅" if pd.notna(actual_close) and actual_close <= predicted_high else ("❌" if pd.notna(actual_close) else "⏳")
         low_status = "✅" if pd.notna(actual_close) and actual_close >= predicted_low else ("❌" if pd.notna(actual_close) else "⏳")
@@ -419,7 +419,7 @@ def display_realtime_prediction(df_bt, vix_col, open_col, close_col, atr_col, hi
     return {'realtime': {'predicted_high': predicted_high, 'predicted_low': predicted_low,
                          'actual_high': actual_close if use_close_for_range else actual_high,
                          'actual_low': actual_close if use_close_for_range else actual_low,
-                         'actual_close': actual_close, 'actual_open': current_open,
+                         'actual_close': actual_close, 'actual_open': current_open, 'previous_close': previous_close,
                          'vix_regime': regime, 'vix_rank': vix_rank, 'ticker': ticker, 'last_date': last_date}}
 
 
