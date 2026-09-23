@@ -16,7 +16,10 @@ Améliorations v6.2 :
 - Sauvegarde automatique des résultats train/test dans un fichier JSON.
 - Nom de fichier extrêmement explicite, contenant les informations de l'expérience :
   lookahead, train_ratio, target_density, deadbands, splits, meilleur canal, etc.
+- [NOUVEAU] Tous les paramètres de configuration (ticker, lookahead, deadbands, opt_kwargs, etc.)
+  sont maintenant gérés via argparse pour une flexibilité totale en ligne de commande.
 """
+
 import sys
 import json
 import optuna
@@ -24,11 +27,11 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import TimeSeriesSplit
 import argparse
-import json
 from datetime import datetime
 from pathlib import Path
 from multiprocessing import freeze_support
 from pprint import pprint
+
 # Réduit le verbosity d'Optuna pour ne pas polluer la console
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -38,6 +41,7 @@ from utils import (
     round_price_for_put_credit_spread,
     get_next_step,
 )
+
 
 def calculate_channel_indicators(
         df: pd.DataFrame,
@@ -557,6 +561,69 @@ def create_objective(df_data, lb1, lb2, metric, n_splits, target_density, put_de
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Configuration de l'optimisation du modèle.")
 
+    # ==========================================
+    # PARAMÈTRES DE BASE (TICKER & DATASET)
+    # ==========================================
+    parser.add_argument(
+        '--ticker',
+        type=str,
+        default="^GSPC",
+        help="Ticker du marché à analyser (par défaut : '^GSPC')"
+    )
+    parser.add_argument(
+        '--dataset_id',
+        type=str,
+        default="day",
+        help="Identifiant du dataset / timeframe (par défaut : 'day')"
+    )
+
+    # ==========================================
+    # PARAMÈTRES DE BACKTEST & WALK-FORWARD
+    # ==========================================
+    parser.add_argument(
+        '--lookahead_bar_1',
+        type=int,
+        default=16,
+        help="Borne inférieure du lookahead en nombre de bars (par défaut : 16)"
+    )
+    parser.add_argument(
+        '--lookahead_bar_2',
+        type=int,
+        default=20,
+        help="Borne supérieure du lookahead en nombre de bars (par défaut : 20)"
+    )
+    parser.add_argument(
+        '--n_splits',
+        type=int,
+        default=12,
+        help="Nombre de splits pour la Walk-Forward Validation (TimeSeriesSplit) (par défaut : 12)"
+    )
+    parser.add_argument(
+        '--train_ratio',
+        type=float,
+        default=0.80,
+        help="Ratio de données alloué à l'entraînement (Train/Test split) (par défaut : 0.80)"
+    )
+
+    # ==========================================
+    # PARAMÈTRES DE DEAD BAND (OPTIONS)
+    # ==========================================
+    parser.add_argument(
+        '--put_dead_band',
+        type=float,
+        default=0.03,
+        help="Dead band pour les Put Credit Spreads, ex: 0.03 pour 3%% (par défaut : 0.03)"
+    )
+    parser.add_argument(
+        '--call_dead_band',
+        type=float,
+        default=0.03,
+        help="Dead band pour les Call Credit Spreads, ex: 0.03 pour 3%% (par défaut : 0.03)"
+    )
+
+    # ==========================================
+    # PARAMÈTRES D'OPTIMISATION (OPTUNA)
+    # ==========================================
     parser.add_argument(
         '--optimize_metric',
         type=str,
@@ -564,21 +631,18 @@ def parse_arguments():
         choices=['total_win_rate', 'put_win_rate', 'call_win_rate'],
         help="Métrique à optimiser (par défaut : 'total_win_rate')"
     )
-
     parser.add_argument(
         '--n_trials',
         type=int,
         default=999999,
-        help="Nombre d'essais pour Optuna (par défaut : 999999)"
+        help="Nombre d'essais maximum pour Optuna (par défaut : 999999)"
     )
-
     parser.add_argument(
         '--timeout',
         type=int,
         default=int(86400 * 4),
-        help="Temps limite en secondes pour l'optimisation (par défaut : 86400 * 4, soit 4 jours)"
+        help="Temps limite en secondes pour l'optimisation (par défaut : 345600, soit 4 jours)"
     )
-
     parser.add_argument(
         '--target_signal_density',
         type=float,
@@ -586,13 +650,35 @@ def parse_arguments():
         help="Cible de densité des signaux (par défaut : 0.05)"
     )
 
+    # opt_kwargs est un dictionnaire complexe, on le passe via une chaîne JSON
+    default_opt_kwargs = {
+        "channel_type": ["keltner"],
+        "strict_patterns": [False],
+        "p_center": [5, 45],
+        "p_high": [5, 45],
+        "p_low": [5, 45],
+        "atr_mult_low": [1.0, 4.0],
+        "atr_mult_high": [1.0, 4.0],
+        "env_pct_high": [0.01, 0.05],
+        "env_pct_low": [0.01, 0.05],
+    }
+    parser.add_argument(
+        '--opt_kwargs',
+        type=json.loads,
+        default=json.dumps(default_opt_kwargs),
+        help="Dictionnaire des espaces de recherche Optuna au format JSON. "
+             "Ex: '{\"channel_type\": [\"keltner\"], \"p_center\": [5, 45], ...}'"
+    )
+
+    # ==========================================
+    # FICHIERS & EXPÉRIENCES
+    # ==========================================
     parser.add_argument(
         '--results_dir',
         type=str,
         default="results",
         help="Dossier où sauvegarder les résultats (par défaut : results)"
     )
-
     parser.add_argument(
         '--experiment_name',
         type=str,
@@ -606,29 +692,35 @@ def parse_arguments():
 if __name__ == "__main__":
     freeze_support()
 
-    # Important : Récupérer les arguments dès le départ
+    # Récupération de tous les arguments via argparse
     args = parse_arguments()
     command_line = "python " + " ".join(sys.argv)
 
-    ticker = "^GSPC"
-    dataset_id = "day"
+    # ==========================================
+    # EXTRACTION DES VARIABLES DEPUIS ARGS
+    # ==========================================
+    ticker = args.ticker
+    dataset_id = args.dataset_id
 
-    lookahead_bar_1 = 16
-    lookahead_bar_2 = 20
-    n_splits = 12
-    train_ratio = 0.80
-    put_dead_band, call_dead_band = 0.03, 0.03
+    lookahead_bar_1 = args.lookahead_bar_1
+    lookahead_bar_2 = args.lookahead_bar_2
+    n_splits = args.n_splits
+    train_ratio = args.train_ratio
+    put_dead_band = args.put_dead_band
+    call_dead_band = args.call_dead_band
 
+    # Conversion des listes JSON en tuples pour opt_kwargs (car JSON ne supporte pas nativement les tuples)
+    opt_kwargs_raw = args.opt_kwargs
     opt_kwargs = {
-        "channel_type": ['keltner'],          # ['original', 'keltner', 'envelope']
-        "strict_patterns": [False],            # [False, True]
-        "p_center": (5, 45),
-        "p_high": (5, 45),                     # original
-        "p_low": (5, 45),                      # original
-        "atr_mult_low": (1.0, 4.0),            # keltner
-        "atr_mult_high": (1.0, 4.0),           # keltner
-        "env_pct_high": (0.01, 0.05),          # envelope
-        "env_pct_low": (0.01, 0.05),           # envelope
+        "channel_type": opt_kwargs_raw.get("channel_type", ["keltner"]),
+        "strict_patterns": opt_kwargs_raw.get("strict_patterns", [False]),
+        "p_center": tuple(opt_kwargs_raw.get("p_center", [5, 45])),
+        "p_high": tuple(opt_kwargs_raw.get("p_high", [5, 45])),
+        "p_low": tuple(opt_kwargs_raw.get("p_low", [5, 45])),
+        "atr_mult_low": tuple(opt_kwargs_raw.get("atr_mult_low", [1.0, 4.0])),
+        "atr_mult_high": tuple(opt_kwargs_raw.get("atr_mult_high", [1.0, 4.0])),
+        "env_pct_high": tuple(opt_kwargs_raw.get("env_pct_high", [0.01, 0.05])),
+        "env_pct_low": tuple(opt_kwargs_raw.get("env_pct_low", [0.01, 0.05])),
     }
 
     # --- CONFIGURATION DE L'OPTIMISATION (via argparse) ---
