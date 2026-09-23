@@ -613,8 +613,6 @@ if __name__ == "__main__":
     ticker = "^GSPC"
     dataset_id = "day"
 
-    df_mom = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
-
     lookahead_bar_1 = 16
     lookahead_bar_2 = 20
     n_splits = 12
@@ -642,6 +640,7 @@ if __name__ == "__main__":
     experiment_name = args.experiment_name
     # -------------------------------------------------------
 
+    df_mom = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={})
     if isinstance(df_mom.columns, pd.MultiIndex):
         df_mom.columns = df_mom.columns.get_level_values(0)
 
