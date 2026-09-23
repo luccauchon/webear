@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
-from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY, CLAUSE_NON_RESPONSABILITE
+from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY, CLAUSE_NON_RESPONSABILITE, IS_RUNNING_HOME_SWEET_HOME
 import sys
 import re
 from types import SimpleNamespace
@@ -35,13 +35,6 @@ from email import encoders
 from pathlib import Path
 import shutil
 os_name = platform.system()
-IS_RUNNING_ON_WINDOWS = True
-IS_RUNNING_ON_CASIR   = False
-
-
-class WEBEARStyle:
-    BOLD = '\033[1m'
-    END = '\033[0m'
 
 
 # Function to check if two dictionaries are equal, considering NumPy arrays
@@ -1301,6 +1294,8 @@ def _send_email(
         subtype='plain',
         pieces_jointes=None
 ):
+    if not IS_RUNNING_HOME_SWEET_HOME:
+        return
     # Construire le message
     msg = MIMEMultipart()
     msg['From'] = expediteur

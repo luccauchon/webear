@@ -26,7 +26,7 @@ BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
 BASE_YFINANCE_DIR                        = r"C:\Finance\data\yfinance"
 BASE_FORECAST_DIR                        = r"C:\Finance\data\forecast"
-
+IS_RUNNING_HOME_SWEET_HOME               = True if os.path.exists(r"C:\WEBEAR_HOME_SWEET_HOME") else False
 if os.path.exists('D:') and os.path.isdir('D:'):
     BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
     BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
@@ -122,3 +122,8 @@ Risques de pertes importants. Le trading de produits dérivés et d'options à �
 Utilisation exclusive sur comptes de démonstration (Paper Trading). Les analyses et scénarios présentés dans ce courriel sont conçus pour être appliqués et testés exclusivement sur des comptes de démonstration ou via des simulateurs de marché (Paper Trading). L'auteur encourage vivement ses lecteurs à ne pas engager de capital réel sur la base de ces informations. Tout passage à un environnement de trading réel se fait aux risques et périls de l'utilisateur.
 Exclusion totale de responsabilité. En lisant ce courriel, vous reconnaissez que vous êtes le seul responsable de vos décisions financières. L'auteur décline toute responsabilité quant à l'exactitude, l'exhaustivité ou la pertinence des prédictions fournies, et ne pourra être tenu responsable d'aucune perte financière, dommage direct ou indirect, découlant de l'utilisation des informations contenues dans ce message. Il est fortement recommandé de consulter un professionnel de la finance inscrit auprès des autorités réglementaires de votre province avant de prendre toute décision d'investissement.
 """
+
+
+class WEBEARStyle:
+    BOLD = '\033[1m'
+    END = '\033[0m'
