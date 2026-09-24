@@ -328,9 +328,9 @@ def entry(args):
     low_levels_for_graphics, high_levels_for_graphics = [], []
     ref_range = "Plage maintenue à la clôture (close)" if args.use_close_for_range else "Plage maintenue max/min (High/Low) en cours de séance"
     if args.use_close_for_range:
-        subject = f"[{signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")}] | {ref_range} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} , Actuelle:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
+        subject = f"{ref_range} | {signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} , Actuelle:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
     else:
-        subject = f"[{signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")}] | {ref_range} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
+        subject = f"{ref_range} | {signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
     string_generated, vlow_text, vhigh_text, dataset_configuration = subject + "\n", None, None, None
     for col_for_sort in ["predicted_low", "in_between", "predicted_high"]:
         if col_for_sort == "in_between":

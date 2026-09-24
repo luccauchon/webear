@@ -34,7 +34,7 @@ def entry(args_player):
 
     result = entry_conditional_gap_persistence(args=Namespace(dataset_id="day",ticker="^GSPC",epsilon=0,use_realtime_data=True,display_all=False))
     result = result['string_generated']
-    subject = f"[{signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')}] | Persistance conditionnelle de l'écart | "
+    subject = f"Persistance conditionnelle de l'écart | {signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')} | "
     # Construction du corps du courriel
     email_body = f"{result}"
     if args.verbose: print(email_body)
