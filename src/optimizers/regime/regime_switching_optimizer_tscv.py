@@ -41,9 +41,6 @@ import warnings
 from pathlib import Path
 from datetime import datetime
 import shutil
-# Technical analysis
-import pandas_ta as ta
-from pandas_ta import macd
 from utils import DATASET_AVAILABLE, next_weekday, next_week, next_month
 # Machine Learning
 from sklearn.cluster import KMeans, AgglomerativeClustering

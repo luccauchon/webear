@@ -91,7 +91,7 @@ Cordialement,
 Le système
 """
 
-    subject = f"[{signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')}] | Le Bouclier SPX | {synthese_globale}"
+    subject = f"Le Bouclier SPX | {signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')} | {synthese_globale}"
 
     print("\n" + "="*60)
     print("APERÇU DU COURRIEL GÉNÉRÉ :")

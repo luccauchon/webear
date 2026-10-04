@@ -179,9 +179,10 @@ def main(args):
         showlegend=False,
         hoverinfo='skip'
     ))
-
+    information_returned = {}
     # Print the probability on the next day candle : keep the sequence going by using the less probable candle
     if next_pos_prob_text < next_neg_prob_text:
+        information_returned.update({"direction": "positive", "probability_text": next_pos_prob_text})
         # Positive probability (chance the future candle closes higher) shown ABOVE the candle with an up arrow
         fig.add_trace(go.Scatter(
             x=[next_date],
@@ -194,6 +195,7 @@ def main(args):
             hoverinfo='skip'
         ))
     else:
+        information_returned.update({"direction": "negative", "probability_text": next_neg_prob_text})
         # Negative probability (chance the future candle closes lower) shown BELOW the candle with a down arrow
         fig.add_trace(go.Scatter(
             x=[next_date],
@@ -252,7 +254,7 @@ def main(args):
                 traceback.print_exc()
     if GENERATE_HTML:
         fig.show()
-    return {"output_filename": output_filename, "target_date": next_date}
+    return {"output_filename": output_filename, "target_date": next_date, "information_returned": information_returned}
 
 
 if __name__ == "__main__":

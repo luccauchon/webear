@@ -33,8 +33,9 @@ def entry(args):
     result = plotly_close_oriented(configuration)
     output_file = Path(result['output_filename'])
     target_date = result['target_date']
+    information_returned = result["information_returned"]
     destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
-    subject=f"Analyse statistique des séries | {TITLE_WEBEAR} | {args.ticker} | {args.dataset_id} | {target_date.strftime('%Y-%m-%d %H:%M')}"
+    subject=f"STREAKER | {TITLE_WEBEAR} | {information_returned['probability_text']} | {args.dataset_id} | {args.ticker} | {target_date.strftime('%Y-%m-%d')}"
     string_generated = "Bonjour,\n"
     tt1 = "jours" if args.dataset_id in ["day"] else ("semaines"if args.dataset_id in ["week"] else ("mois" if args.dataset_id in ["month"] else "?"))
     string_generated += (f"Quand le prix d'une action baisse (ou monte) plusieurs {tt1} de suite, "
