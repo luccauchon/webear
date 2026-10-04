@@ -571,7 +571,7 @@ def parse_arguments():
         help="Ticker du marché à analyser (par défaut : '^GSPC')"
     )
     parser.add_argument(
-        '--dataset_id',
+        '--dataset-id',
         type=str,
         default="day",
         help="Identifiant du dataset / timeframe (par défaut : 'day')"
@@ -581,41 +581,41 @@ def parse_arguments():
     # PARAMÈTRES DE BACKTEST & WALK-FORWARD
     # ==========================================
     parser.add_argument(
-        '--lookahead_bar_1',
+        '--lookahead-bar-1',
         type=int,
         default=16,
         help="Borne inférieure du lookahead en nombre de bars (par défaut : 16)"
     )
     parser.add_argument(
-        '--lookahead_bar_2',
+        '--lookahead-bar-2',
         type=int,
         default=20,
         help="Borne supérieure du lookahead en nombre de bars (par défaut : 20)"
     )
     parser.add_argument(
-        '--n_splits',
+        '--n-splits',
         type=int,
         default=12,
         help="Nombre de splits pour la Walk-Forward Validation (TimeSeriesSplit) (par défaut : 12)"
     )
     parser.add_argument(
-        '--train_ratio',
+        '--train-ratio',
         type=float,
-        default=0.80,
-        help="Ratio de données alloué à l'entraînement (Train/Test split) (par défaut : 0.80)"
+        default=0.90,
+        help="Ratio de données alloué à l'entraînement (Train/Test split) (par défaut : 0.90)"
     )
 
     # ==========================================
     # PARAMÈTRES DE DEAD BAND (OPTIONS)
     # ==========================================
     parser.add_argument(
-        '--put_dead_band',
+        '--put-dead-band',
         type=float,
         default=0.03,
         help="Dead band pour les Put Credit Spreads, ex: 0.03 pour 3%% (par défaut : 0.03)"
     )
     parser.add_argument(
-        '--call_dead_band',
+        '--call-dead-band',
         type=float,
         default=0.03,
         help="Dead band pour les Call Credit Spreads, ex: 0.03 pour 3%% (par défaut : 0.03)"
@@ -625,14 +625,14 @@ def parse_arguments():
     # PARAMÈTRES D'OPTIMISATION (OPTUNA)
     # ==========================================
     parser.add_argument(
-        '--optimize_metric',
+        '--optimize-metric',
         type=str,
         default='total_win_rate',
         choices=['total_win_rate', 'put_win_rate', 'call_win_rate'],
         help="Métrique à optimiser (par défaut : 'total_win_rate')"
     )
     parser.add_argument(
-        '--n_trials',
+        '--n-trials',
         type=int,
         default=999999,
         help="Nombre d'essais maximum pour Optuna (par défaut : 999999)"
@@ -644,16 +644,16 @@ def parse_arguments():
         help="Temps limite en secondes pour l'optimisation (par défaut : 345600, soit 4 jours)"
     )
     parser.add_argument(
-        '--target_signal_density',
+        '--target-signal-density',
         type=float,
-        default=0.05,
-        help="Cible de densité des signaux (par défaut : 0.05)"
+        default=0.03,
+        help="Cible de densité des signaux (par défaut : 0.03)"
     )
 
     # opt_kwargs est un dictionnaire complexe, on le passe via une chaîne JSON
     default_opt_kwargs = {
-        "channel_type": ["keltner"],
-        "strict_patterns": [False],
+        "channel_type": ["keltner", "envelope", "original"],
+        "strict_patterns": [False, True],
         "p_center": [5, 45],
         "p_high": [5, 45],
         "p_low": [5, 45],
@@ -663,7 +663,7 @@ def parse_arguments():
         "env_pct_low": [0.01, 0.05],
     }
     parser.add_argument(
-        '--opt_kwargs',
+        '--opt-kwargs',
         type=json.loads,
         default=json.dumps(default_opt_kwargs),
         help="Dictionnaire des espaces de recherche Optuna au format JSON. "
@@ -674,13 +674,13 @@ def parse_arguments():
     # FICHIERS & EXPÉRIENCES
     # ==========================================
     parser.add_argument(
-        '--results_dir',
+        '--results-dir',
         type=str,
         default="results",
         help="Dossier où sauvegarder les résultats (par défaut : results)"
     )
     parser.add_argument(
-        '--experiment_name',
+        '--experiment-name',
         type=str,
         default=None,
         help="Nom optionnel de l'expérience, ajouté dans le nom du fichier de résultats"
@@ -768,7 +768,9 @@ if __name__ == "__main__":
     print(f"🚀 Lancement de l'optimisation Optuna pour maximiser : {optimize_metric}")
     print(f"🎯 Cible de densité de signaux : {target_signal_density * 100}%   Range du lookahead: {lookahead_bar_1}::{lookahead_bar_2}")
     print(f"🔧 Nombre d'essais (trials) : {n_trials}")
-    print(f"🔧 Put Dead Band: {put_dead_band:.2%}   Call Dead Band: {call_dead_band:.2%}")
+    if optimize_metric == "total_win_rate": print(f"🔧 Put Dead Band: {put_dead_band:.2%}   Call Dead Band: {call_dead_band:.2%}")
+    elif optimize_metric == "put_win_rate": print(f"🔧 Put Dead Band: {put_dead_band:.2%}")
+    elif optimize_metric == "call_win_rate": print(f"🔧 Call Dead Band: {call_dead_band:.2%}")
     pprint(opt_kwargs, width=1, sort_dicts=True)
 
     train_start_date = df_train_and_val.index[0].strftime("%Y%m%d_%H%M") if is_datetime_index else str(df_train_and_val.index[0])
