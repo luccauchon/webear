@@ -74,10 +74,12 @@ def _get_dataset_timeframe(_dataset_id):
         return None
 
 
-def resample_custom_p_days(df, ticker, p):
-    """Regroupe un DataFrame MultiIndex en chandelles de P jours en partant de la fin.
+def resample_custom_p_days(df, ticker, p, incomplete_at_start=False):
+    """Regroupe un DataFrame MultiIndex en chandelles de P jours.
 
-    La dernière chandelle (la plus récente) contiendra le reste (de 1 à P jours).
+    Si incomplete_at_start=True, la première chandelle (la plus vieille)
+    contiendra le reste (incomplète). Si False, c'est la dernière chandelle (la
+    plus récente) qui contiendra le reste.
     """
     # 1. Récupération des colonnes spécifiques au ticker
     cols = _build_cols_dict(ticker)
@@ -86,45 +88,69 @@ def resample_custom_p_days(df, ticker, p):
     low_c = cols["low_col"]
     close_c = cols["close_col"]
     vol_c = cols.get("volume_col", None)
+
     # Vérifier si l'index a une fréquence journalière définie
-    if df.index.inferred_freq not in ['D', 'B']:
-        # Optionnel : Forcer la vérification par calcul d'écart si inferred_freq est None
-        deltas = df.index.get_level_values(-1).to_series().diff() if isinstance(df.index, pd.MultiIndex) else df.index.to_series().diff()
+    if df.index.inferred_freq not in ["D", "B"]:
+        deltas = (
+            df.index.get_level_values(-1).to_series().diff()
+            if isinstance(df.index, pd.MultiIndex)
+            else df.index.to_series().diff()
+        )
         if deltas.median() > pd.Timedelta(days=1):
-            raise ValueError("Le DataFrame n'est pas au format journalier (daily).")
+            raise ValueError(
+                "Le DataFrame n'est pas au format journalier (daily)."
+            )
 
-    last_row = df.iloc[-1].copy()
-    df = df.iloc[:-1].copy()
-    # 2. Inverser le DataFrame pour partir de la fin (la plus récente en premier)
-    df_reversed = df.iloc[::-1].copy()
+    # --- NOUVELLE LOGIQUE DE GROUPEMENT ---
+    n = len(df)
 
-    # 3. Créer un groupe ID : les P premières lignes auront l'ID 0, les P suivantes l'ID 1, etc.
-    group_ids = np.arange(len(df_reversed)) // p
+    if incomplete_at_start:
+        # Ordre chronologique standard : le reste (le début) aura un décalage
+        remainder = n % p
+        # Les 'remainder' premières lignes auront des IDs uniques ou partagés,
+        # puis le reste sera groupé par blocs complets de P.
+        group_ids = np.where(
+            np.arange(n) < remainder, 0, (np.arange(n) - remainder) // p + 1
+        )
 
-    # 4. Définir les règles d'agrégation financières pour le MultiIndex
-    agg_rules = {
-        open_c: "last",  # Le plus ancien du bloc inversé = le premier chronologiquement
-        high_c: "max",  # Le plus haut historique du bloc
-        low_c: "min",  # Le plus bas historique du bloc
-        close_c: "first",  # Le plus récent du bloc inversé = le dernier chronologiquement
-    }
-    if vol_c and vol_c in df.columns:
-        agg_rules[vol_c] = "sum"  # Somme des volumes sur la période
+        # Règles d'agrégation standard (chronologique)
+        agg_rules = {
+            open_c: "first",
+            high_c: "max",
+            low_c: "min",
+            close_c: "last",
+        }
+        if vol_c and vol_c in df.columns:
+            agg_rules[vol_c] = "sum"
 
-    # 5. Grouper et appliquer l'agrégation
-    # On prend la date la plus récente de chaque bloc pour l'index final
-    df_resampled = df_reversed.groupby(group_ids).agg(agg_rules)
+        # Application du groupe direct
+        df_resampled = df.groupby(group_ids).agg(agg_rules)
+        # On associe la date la plus récente du bloc comme index
+        df_resampled.index = df.groupby(group_ids).apply(lambda x: x.index.max())
 
-    # Associer la date maximale (la plus récente chronologiquement) à chaque bloc
-    df_resampled.index = df_reversed.groupby(group_ids).apply(
-        lambda x: x.index.max()
-    )
+    else:
+        # ANCIENNE LOGIQUE (Incomplète à la fin)
+        last_row = df.iloc[-1].copy()
+        df_reduced = df.iloc[:-1].copy()
+        df_reversed = df_reduced.iloc[::-1].copy()
 
-    # 6. Ré-inverser pour remettre le DataFrame dans l'ordre chronologique
-    df_resampled = df_resampled.sort_index()
+        group_ids = np.arange(len(df_reversed)) // p
 
-    # Ajouter la dernière ligne via son index de date
-    df_resampled.loc[last_row.name] = last_row
+        agg_rules = {
+            open_c: "last",
+            high_c: "max",
+            low_c: "min",
+            close_c: "first",
+        }
+        if vol_c and vol_c in df_reduced.columns:
+            agg_rules[vol_c] = "sum"
+
+        df_resampled = df_reversed.groupby(group_ids).agg(agg_rules)
+        df_resampled.index = df_reversed.groupby(group_ids).apply(
+            lambda x: x.index.max()
+        )
+        df_resampled = df_resampled.sort_index()
+        df_resampled.loc[last_row.name] = last_row
 
     return df_resampled.copy()
 
@@ -242,6 +268,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                     assert _ticker in ["^GSPC"]
                     _n_days = _get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
                     assert _n_days > 0
+                    incomplete_at_start = _args.get("incomplete_at_start", False)
                     if _get_vix:
                         # Trouver les dates communes aux deux DataFrames
                         common_dates = df_main.index.intersection(df_vix.index)
@@ -249,10 +276,10 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                         df_main = df_main.loc[common_dates]
                         df_vix  = df_vix.loc[common_dates]
                         # Maintenant, vous pouvez rééchantillonner en toute sécurité
-                        df_main = resample_custom_p_days(df_main, _ticker, p=_n_days)
-                        df_vix  = resample_custom_p_days(df_vix, "^VIX", p=_n_days)
+                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days, incomplete_at_start=incomplete_at_start)
+                        df_vix  = resample_custom_p_days(df=df_vix, ticker="^VIX", p=_n_days, incomplete_at_start=incomplete_at_start)
                     else:
-                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days)
+                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days, incomplete_at_start=incomplete_at_start)
         else:
             if _dataset_id.startswith("intraday"):
                 assert _ticker in ["^GSPC", "SPY"]
@@ -283,6 +310,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                     assert _ticker in ["^GSPC"]
                     _n_days = _get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
                     assert _n_days > 0
+                    incomplete_at_start = _args.get("incomplete_at_start", False)
                     if _get_vix:
                         # Trouver les dates communes aux deux DataFrames
                         common_dates = df_main.index.intersection(df_vix.index)
@@ -290,10 +318,10 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                         df_main = df_main.loc[common_dates]
                         df_vix  = df_vix.loc[common_dates]
                         # Maintenant, vous pouvez rééchantillonner en toute sécurité
-                        df_main = resample_custom_p_days(df_main, _ticker, p=_n_days)
-                        df_vix  = resample_custom_p_days(df_vix, "^VIX", p=_n_days)
+                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days, incomplete_at_start=incomplete_at_start)
+                        df_vix  = resample_custom_p_days(df=df_vix, ticker="^VIX", p=_n_days, incomplete_at_start=incomplete_at_start)
                     else:
-                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days)
+                        df_main = resample_custom_p_days(df=df_main, ticker=_ticker, p=_n_days, incomplete_at_start=incomplete_at_start)
     assert df_main is not None
     if _convert_to_heikin_ashi:
         _tmp_n1 = len(df_main.dropna())
