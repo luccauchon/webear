@@ -292,9 +292,8 @@ def entry(args):
     spread_width = 500.0
 
     # Obtention du dataframe en realtime (pour éviter que les workers aient à le faire)
-    atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=None, verbose=False, n_trials=9, use_realtime_data=True, atr_window=14,
-                           n_split=0.9, tightness_weight=0., use_close_for_range=args.use_close_for_range, clip_n=0, timeout=9999)
-    result = atr_entry(args=atr_config)
+    result = atr_entry(args=Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=None, verbose=False, n_trials=9, use_realtime_data=True, atr_window=14,
+                                      n_split=0.9, tightness_weight=0., use_close_for_range=args.use_close_for_range, clip_n=0, timeout=9999))
     dataframe = result['dataframe_and_cols']
 
     # Données des workers
@@ -326,15 +325,12 @@ def entry(args):
         data_from_workers.extend(out__shared[k].get())
     actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
     low_levels_for_graphics, high_levels_for_graphics = [], []
-    ref_range = "Plage maintenue à la clôture (close)" if args.use_close_for_range else "Plage maintenue max/min (High/Low) en cours de séance"
-    if args.use_close_for_range:
-        subject = f"{ref_range} | {signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} , Actuelle:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
-    else:
-        subject = f"{ref_range} | {signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")} | {args.ticker}:{args.dataset_id} | VIX Regime is {vix_regime} | O:{actual_open:.0f} H:{actual_high:.0f} L:{actual_low:.0f} C:{actual_close:.0f} | [BREAK EVEN ON 5-POINT WIDE SPREAD]"
-    string_generated, vlow_text, vhigh_text, dataset_configuration = subject + "\n", None, None, None
+    name_of_application = "ATR-CL" if args.use_close_for_range else "ATR-HL"
+    subject = f"{name_of_application} | {str(args.dataset_id).upper()} | {args.ticker} | {datetime.now().strftime("%Y-%m-%d")} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} , Actuelle:{actual_close:.0f} | {signature_for_prod}"
+    string_generated, vlow_text, vhigh_text, dataset_configuration = subject + f" | [BREAK EVEN ON 5-POINT WIDE SPREAD]" + "\n", None, None, None
     for col_for_sort in ["predicted_low", "in_between", "predicted_high"]:
         if col_for_sort == "in_between":
-            string_generated += f"    {':' * 20} OUVERTURE à {actual_open:.0f} {':' * 20}\n"
+            string_generated += f"    {':' * 8} OUVERTURE à {actual_open:.0f} {':' * 8}\n"
             continue
         # 1. Tri du plus GRAND au plus PETIT
         liste_triee = sorted(data_from_workers, key=lambda x: x[f"probability_{col_for_sort}"], reverse=True)
@@ -361,9 +357,9 @@ def entry(args):
             # On garde l'élément s'il est unique par rapport au précédent
             filtered_probabilities.append(current)
         if 'low' in col_for_sort:
-            string_generated += (f"\t::  {WEBEARStyle.BOLD}Low   Open   / Actual   / Close_t-1   @P    BE$   {WEBEARStyle.END}")+ "\n"
+            string_generated += (f"\t::  {WEBEARStyle.BOLD}Low     @P   BE$    RR   {WEBEARStyle.END}")+ "\n"
         elif 'high' in col_for_sort:
-            string_generated += (f"\t::  {' ':<16}{WEBEARStyle.BOLD}High  Open  / Actual   / Close_t-1   @P    BE${WEBEARStyle.END}")+ "\n"
+            string_generated += (f"\t::  {WEBEARStyle.BOLD}High    @P   BE$    RR   {WEBEARStyle.END}")+ "\n"
         for sorted_probability in filtered_probabilities:
             predicted_low, predicted_high = int(sorted_probability['predicted_low']), int(sorted_probability['predicted_high'])
             probability_predicted_low, probability_predicted_high = int(sorted_probability['probability_predicted_low']), int(sorted_probability['probability_predicted_high'])
@@ -371,7 +367,7 @@ def entry(args):
             breakeven_low = int((1.0 - probability_predicted_low / 100.) * spread_width)
             low_levels_for_graphics.append((predicted_low, probability_predicted_low, breakeven_low))
             high_levels_for_graphics.append((predicted_high, probability_predicted_high, breakeven_high))
-        for sorted_probability in filtered_probabilities:
+        for sorted_probability in reversed(filtered_probabilities) if 'high' in col_for_sort else filtered_probabilities:
             predicted_low, predicted_high = int(sorted_probability['predicted_low']), int(sorted_probability['predicted_high'])
             probability_predicted_low, probability_predicted_high = int(sorted_probability['probability_predicted_low']), int(sorted_probability['probability_predicted_high'])
             previous_close = sorted_probability['previous_close']
@@ -386,15 +382,17 @@ def entry(args):
                 distance_from_open           = float((predicted_low - actual_open) / actual_open)
                 distance_from_current_value  = float((predicted_low - actual_close) / actual_close)
                 distance_from_previous_close = float((predicted_low - previous_close) / previous_close)
+                risk_reward                  = (spread_width - breakeven_low) / breakeven_low
                 string_generated += (f"\t"                      
-                      f"{' ':<4}{predicted_low:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}   / {distance_from_previous_close:.2%})     @{probability_predicted_low:02d}%  {breakeven_low:03d}$")+ "\n"
+                      f"{' ':<4}{predicted_low:04d}    {probability_predicted_low:02d}%  {breakeven_low:03d}$   {risk_reward:04.1f}")+ "\n"
                 vlow_text = (predicted_low, probability_predicted_low,breakeven_low) if vlow_text is None else vlow_text
             elif 'high' in col_for_sort:
                 distance_from_open           = float((predicted_high - actual_open) / actual_open)
                 distance_from_current_value  = float((predicted_high - actual_close) / actual_close)
                 distance_from_previous_close = float((predicted_high - previous_close) / previous_close)
+                risk_reward                  = (spread_width - breakeven_high) / breakeven_high
                 string_generated += (f"\t"                      
-                      f"{' ':<20}{predicted_high:04d} ({distance_from_open:.2%} / {distance_from_current_value:.2%}    / {distance_from_previous_close:.2%})      @{probability_predicted_high:02d}%  {breakeven_high:03d}$")+ "\n"
+                      f"{' ':<4}{predicted_high:04d}    {probability_predicted_high:02d}%  {breakeven_high:03d}$   {risk_reward:04.1f}")+ "\n"
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
             if dataset_configuration is None:
                 dataset_configuration = sorted_probability['dataset_configuration']
@@ -406,7 +404,7 @@ def entry(args):
         string_explicative = "VIX élevé (Haut)\n\tStress / incertitude\n\tMouvements de prix plus amples et plus violents\n\tL'ATR a tendance à augmenter\n\tVous avez généralement besoin d'écarts (ranges) plus larges"
     string_explicative += "\n\n"
     string_explicative += (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles)\n"
-                          f"Test du {dataset_configuration['test_info']['start_date']} au {dataset_configuration['test_info']['end_date']} ({dataset_configuration['test_info']['bars']} chandelles)")
+                           f"Test         du {dataset_configuration['test_info']['start_date']} au {dataset_configuration['test_info']['end_date']} ({dataset_configuration['test_info']['bars']} chandelles)")
     string_generated += ("\n\n"+string_explicative)
     string_generated += ("\n\nBonjour,\n"
                          f"Voici les zones de probabilités pour la valeur de clôture du {args.ticker}. "
@@ -416,7 +414,7 @@ def entry(args):
                          f"Idéalement, assurez-vous de percevoir une prime qui correspond au seuil de rentabilité (Break-Even) spécifié ci-dessus. "
                          f"Par exemple, lors de la vente d'un Put Credit Spread 0DTE de 5 points de large (vendre le PUT {vlow_text[0]} et acheter le PUT {vlow_text[0]-5}), "
                          f"la prime minimale à recevoir devrait être de {vlow_text[2]}$. "
-                         f"Cela représente un risque maximal de {500-vlow_text[2]}$ si le {args.ticker} clôture en dessous de {vlow_text[0]-5}.")
+                         f"Cela représente un risque maximal de {spread_width-vlow_text[2]}$ et un Risk-Reward de {(spread_width-vlow_text[2])/vlow_text[2]:.2f}")
     print(string_generated)
     output_file = os.path.join(get_and_clean_stub_dir("atr_make_graphics"), f"{args.ticker}_{args.dataset_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png")
     make_plot(current_price=actual_close, low_levels=low_levels_for_graphics, high_levels=high_levels_for_graphics, display_plot=False, output_file=output_file, use_plotly=False)
