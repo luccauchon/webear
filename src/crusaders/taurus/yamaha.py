@@ -112,10 +112,9 @@ def entry(args):
             assert math.isclose(entry_price, result_oerh['target_price'], abs_tol=0.1)
             date_future_t_half_lookahead = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars//2)
             now = datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
-            target_price = (1+result_oerh["threshold_pct"]) * entry_price
             test_win_rate = result_oerh["val_win_rate"]
             msg_str = dual_print(f"Today @{now} , buy a Put Credit Spread located at {round_price_for_put_credit_spread(entry_price):.0f} , and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
-                  f"targetting that price shall be above {target_price:.0f} at that point on, grabbing time decay.\n\t"
+                  f"targetting that price shall be above {entry_price:.0f} at that point on, grabbing time decay.\n\t"
                   f"Model has a {test_win_rate:.1%} Test Win Rate", msg_str)
             trade_detected = True
         else:
