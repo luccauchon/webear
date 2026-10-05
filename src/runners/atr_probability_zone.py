@@ -306,7 +306,6 @@ def entry(args):
         atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=dataframe, verbose=False, n_trials=args.n_trials, use_realtime_data=True, atr_window=14,
                                n_split=0.9, tightness_weight=tightness_weight, use_close_for_range=args.use_close_for_range, clip_n=0, timeout=9999)
         use_cases.append(atr_config)
-
     use_cases__shared, master_cmd__shared = Queue(256000), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, nb_worker)]
     # Lancement des workers
