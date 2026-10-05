@@ -327,7 +327,7 @@ def entry(args):
     low_levels_for_graphics, high_levels_for_graphics = [], []
     name_of_application = "ATR-CL" if args.use_close_for_range else "ATR-HL"
     days_to_expiration = f"0DTE" if get_dataset_timeframe(args.dataset_id) in [0, None] else f"{int(get_dataset_timeframe(args.dataset_id))-1}DTE"
-    subject = f"{name_of_application} | {str(args.dataset_id).upper()} | {args.ticker} | {days_to_expiration} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} | {signature_for_prod} | {datetime.now().strftime("%Y-%m-%d")}"
+    subject = f"{name_of_application} | {args.ticker} | {days_to_expiration} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} | {signature_for_prod} | {datetime.now().strftime("%Y-%m-%d")}"
     string_generated, vlow_text, vhigh_text, dataset_configuration = subject + f" | [BREAK EVEN ON 5-POINT WIDE SPREAD]" + "\n", None, None, None
     for col_for_sort in ["predicted_low", "in_between", "predicted_high"]:
         if col_for_sort == "in_between":
