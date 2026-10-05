@@ -181,7 +181,7 @@ def main(args):
     ))
     information_returned = {}
     # Print the probability on the next day candle : keep the sequence going by using the less probable candle
-    if next_pos_prob_text < next_neg_prob_text:
+    if pos_prob < neg_prob:  # We are on a positive streak
         information_returned.update({"direction": "positive", "probability_text": next_pos_prob_text})
         # Positive probability (chance the future candle closes higher) shown ABOVE the candle with an up arrow
         fig.add_trace(go.Scatter(
@@ -194,7 +194,7 @@ def main(args):
             showlegend=False,
             hoverinfo='skip'
         ))
-    else:
+    else:  # We are on a negative streak
         information_returned.update({"direction": "negative", "probability_text": next_neg_prob_text})
         # Negative probability (chance the future candle closes lower) shown BELOW the candle with a down arrow
         fig.add_trace(go.Scatter(
