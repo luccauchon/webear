@@ -53,7 +53,7 @@ def _is_dataset_heikin_ashi(_dataset_id):
         return False
 
 
-def _get_dataset_timeframe(_dataset_id):
+def get_dataset_timeframe(_dataset_id):
     try:
         if _dataset_id.startswith("intraday"):
             try:
@@ -194,7 +194,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
         assert _ticker in ["^GSPC"]
         assert _dataset_id.startswith("intraday")
         df_all = pd.read_parquet(MOOMOO__PROXY_SPX_FILENAME)
-        _n_minutes = _get_dataset_timeframe(_dataset_id)
+        _n_minutes = get_dataset_timeframe(_dataset_id)
         tuples = [("Adj Close", "^GSPC"),("Close", "^GSPC"),("High", "^GSPC"),("Low", "^GSPC"),("Open", "^GSPC"),("Volume", "^GSPC"),]
         df_main = df_all[tuples].copy()
         if _n_minutes > 1:
@@ -232,7 +232,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
 
                 df_vix = _combine_2df(df_a=df_vix_main_local, df_b=df_vix_main_realtime)
 
-                _n_minutes = _get_dataset_timeframe(_dataset_id)
+                _n_minutes = get_dataset_timeframe(_dataset_id)
                 if _n_minutes > 1:
                     df_main = resample_candles_enhanced(df=df_main, n_minutes=int(_n_minutes), ticker=_ticker)
                 if _get_vix:
@@ -241,7 +241,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
             else:
                 assert _ticker in ["^GSPC"]
                 if _dataset_id not in DATASET_AVAILABLE:
-                    # Style: day_heikinashi or day_2B or extraday-...
+                    # Style: day_heikinashi or day_2B or extraday-12days
                     _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
                     assert _dataset_id in [DATASET_AVAILABLE, "extraday"]
                 daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
@@ -266,7 +266,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                 assert _clip_n_before == 0
                 if _dataset_id.startswith("extraday"):
                     assert _ticker in ["^GSPC"]
-                    _n_days = _get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
+                    _n_days = get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
                     assert _n_days > 0
                     incomplete_at_start = _args.get("incomplete_at_start", False)
                     if _get_vix:
@@ -283,7 +283,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
         else:
             if _dataset_id.startswith("intraday"):
                 assert _ticker in ["^GSPC", "SPY"]
-                _n_minutes = _get_dataset_timeframe(_dataset_id)
+                _n_minutes = get_dataset_timeframe(_dataset_id)
                 df_main = get_1_minute_df(verbose=False, SPX=_ticker in ["^GSPC"], SPY=_ticker in ["SPY"], NDX=False, VIX=False)
                 if _n_minutes > 1:
                     df_main = resample_candles_enhanced(df=df_main, n_minutes=_n_minutes, ticker=_ticker)
@@ -308,7 +308,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                         df_vix = df_vix.iloc[:-_clip_n_before].copy()
                 if _dataset_id.startswith("extraday"):
                     assert _ticker in ["^GSPC"]
-                    _n_days = _get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
+                    _n_days = get_dataset_timeframe(_dataset_id=f"extraday-{_meta_info}")
                     assert _n_days > 0
                     incomplete_at_start = _args.get("incomplete_at_start", False)
                     if _get_vix:
