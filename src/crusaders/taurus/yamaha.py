@@ -37,7 +37,7 @@ from optimizers.oerh.realtime_and_backtest_hyperparameter_search_optuna import e
 from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import entry as apcs_entry_point
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune_entry_point
 from optimizers.dgdr.realtime_and_backtest_hyperparameter_search_optuna import entry as dgdr_entry_point
-from utils import get_taurus_v1_models, get_next_step, round_price_for_put_credit_spread
+from utils import get_taurus_v1_models, get_next_step, round_price_for_put_credit_spread, compute_break_even_credit
 
 
 def setup_argparse() -> argparse.ArgumentParser:
@@ -56,6 +56,7 @@ def entry(args):
         return buffer_str + "\n" + message
     trade_detected = False
     msg_str = ""
+    spread_width = 500
 
     ###########################################################################
     # APCS
@@ -113,9 +114,14 @@ def entry(args):
             date_future_t_half_lookahead = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars//2)
             now = datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
             test_win_rate = result_oerh["val_win_rate"]
-            msg_str = dual_print(f"Today @{now} , buy a Put Credit Spread located at {round_price_for_put_credit_spread(entry_price):.0f} , and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
-                  f"targetting that price shall be above {entry_price:.0f} at that point on, grabbing time decay.\n\t"
-                  f"Model has a {test_win_rate:.1%} Test Win Rate", msg_str)
+            str_strike_price = f"{round_price_for_put_credit_spread(entry_price):.0f}"
+            assert datetime.strptime(result_oerh['current_date'], "%Y-%m-%d").strftime("%Y%m%d") == datetime.now().strftime("%Y%m%d")
+            days_to_expiration = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars).strftime("%Y%m%d")
+            break_even = compute_break_even_credit(test_win_rate,spread_width)
+            msg_str = dual_print(f"Today @{now} , buy a Put Credit Spread located at {str_strike_price} expiring on {days_to_expiration}, "
+                                 f"and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
+                                 f"targetting that price shall be above {str_strike_price} at that point on, grabbing time decay.\n\t"
+                                 f"Model has a {test_win_rate:.1%} Test Win Rate. Break Even is {break_even:.0f}$ for {spread_width:.0f}$ Credit Spread", msg_str)
             trade_detected = True
         else:
             if verbose: msg_str = dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)

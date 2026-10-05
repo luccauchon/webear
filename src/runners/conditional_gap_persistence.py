@@ -16,13 +16,7 @@ import pandas as pd
 import argparse
 import pickle
 from fetchers.data_factory import factory_load_data
-
-
-def compute_break_even_credit(win_rate, spread_width):
-    # Core Math
-    loss_rate = 1.0 - win_rate
-    breakeven_credit = loss_rate * spread_width
-    return breakeven_credit
+from utils import compute_break_even_credit
 
 
 def get_parser():

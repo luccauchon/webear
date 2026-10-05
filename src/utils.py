@@ -1436,3 +1436,10 @@ def round_price_for_put_credit_spread(price):
 
 def round_price_for_call_credit_spread(price):
     return math.ceil(price / 5) * 5  # Call section: round up to nearest 5
+
+
+def compute_break_even_credit(win_rate, spread_width):
+    # Core Math
+    loss_rate = 1.0 - win_rate
+    breakeven_credit = loss_rate * spread_width
+    return breakeven_credit
