@@ -1470,7 +1470,7 @@ def entry(args):
         )
         if not args.disable_print:
             print(f"\n📊 {label} Evaluation")
-            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].strftime('%Y-%m-%d_%H%M')} to {df_subset.index[-1].strftime('%Y-%m-%d_%H%M')}")
+            print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].strftime('%Y-%m-%d_%H%M')} to {df_subset.index[-1].strftime('%Y-%m-%d_%H%M')} ({len(df_subset)} bars)")
             print(f"   Total Signals: {metrics.get('total_signals', 0)}")
             print(f"   Density: {metrics.get('total_signals', 0) / len(df_subset):.2%}")
             if args.optimize_target in ["both"]:
