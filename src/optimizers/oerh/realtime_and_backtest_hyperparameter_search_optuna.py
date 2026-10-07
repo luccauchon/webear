@@ -1287,7 +1287,7 @@ def entry(args):
         precomputed_labels = create_target_exact(close_train, args.lookahead_bars, args.threshold_pct)
 
     if args.verbose:
-        print(f"\n🚀 Starting Optuna Optimization with TimeSeriesSplit(n_splits=20) for {args.n_trials} trials...")
+        print(f"\n🚀 Starting Optuna Optimization with TimeSeriesSplit(n_splits=10) for {args.n_trials} trials...")
         print(f"🎯 Optimization Target: {args.optimize_target.upper()} signals only")
 
     def objective(trial):
@@ -1302,7 +1302,7 @@ def entry(args):
         one_euro_factor = trial.suggest_float("one_euro_factor", 0.01, 1.0)
         cooldown_bars = trial.suggest_int("cooldown_bars", 0, 12)
 
-        tscv = TimeSeriesSplit(n_splits=20)
+        tscv = TimeSeriesSplit(n_splits=10)
         fold_scores = []
         fold_densities = []
         n_samples = len(df_train)
@@ -1373,12 +1373,16 @@ def entry(args):
             fold_scores.append(acc)
 
         mean_score = np.mean(fold_scores)
+        assert 0 <= mean_score <= 1
         std_score = np.std(fold_scores)
+
         mean_density = np.mean(fold_densities)
+        density_penalty = abs(mean_density - args.density_target) if mean_density < args.density_target else 0.
+        assert 0 <= density_penalty <= 1
 
         # Alpha controls how much we punish inconsistency across different time periods
-        alpha = 0.80
-        density_penalty = abs(mean_density - args.density_target) if mean_density < args.density_target else 0.
+        alpha = 1.
+
         final_score = mean_score - (alpha * std_score) - density_penalty
         return final_score
 
