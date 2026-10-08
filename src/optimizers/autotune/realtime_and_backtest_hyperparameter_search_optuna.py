@@ -125,7 +125,7 @@ from numba import njit
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.model_selection import TimeSeriesSplit
-from utils import get_next_step, round_price_for_call_credit_spread, round_price_for_put_credit_spread
+from utils import get_next_step, round_price_for_call_credit_spread, round_price_for_put_credit_spread, compute_break_even_credit
 from fetchers.data_factory import factory_load_data
 
 # =============================================================================
@@ -492,7 +492,7 @@ def entry(args):
         last_date_str = closes.index[-1].strftime('%Y-%m-%d')
         la_date = get_next_step(the_date=closes.index[-1], dataset_id=saved_model['dataset_id'], nn=saved_model['params']['lookahead_bars']).strftime('%Y-%m-%d')
         opt_metric = saved_model['optimize_metric']
-        validation_score = saved_model['val_score']
+        test_win_rate = saved_model['val_score']
         la_bars = saved_model['params']['lookahead_bars']
 
         # Évaluation du signal basée sur les entiers (1, -1, 0)
@@ -506,7 +506,7 @@ def entry(args):
 
         if verbose:
             print(f"Dataset: {dataset_id} | Look Ahead: {la_bars} bars")
-            print(f"Training score: {saved_model['train_score']:.6%} | Test score: {validation_score:.6%}")
+            print(f"Training score: {saved_model['train_score']:.6%} | Test score: {test_win_rate:.6%}")
             print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Test win rate: {saved_model['validation_win_rate']:.6%}")
             print(f"Optimization metric: {opt_metric} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type_label}")
             print(f"Datapoint used: {last_date_str} | Signal computed: {last_signal} {signal_str}")
@@ -581,13 +581,14 @@ def entry(args):
                 action = f"maintenir le prix strictement à l'intérieur de la bande [{band_low:.2f}, {band_high:.2f}]"
             else:
                 action = f"atteindre l'objectif défini par (cible: {target_price:.2f})"
-
+            break_even = compute_break_even_credit(test_win_rate, 500)
             status_message = (
-                f"{emoji} THREAD {direction} ACTIF : "
+                f"{emoji} {direction} : "
                 f"Objectif de {action} ({abs_wt:.2%}) "
                 f"d'ici l'expiration prévue le {la_date} "
                 f"({la_bars} barres). "
-                f"Test Win Rate : {validation_score:.2%}."
+                f"Test Win Rate : {test_win_rate:.2%}. "
+                f"Break Even : {break_even:.2f}$"
             )
 
         # Calcul du multiplicateur pour compatibilité descendante
@@ -613,7 +614,7 @@ def entry(args):
             'current_price': last_price,
             'current_date': last_date_str,
             'train_score': saved_model['train_score'],
-            'val_score': validation_score,
+            'val_score': test_win_rate,
             'threshold': threshold_multiplier,
             'raw_win_threshold': rt_win_threshold,
             'signal_type': rt_signal_type_label,
