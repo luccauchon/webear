@@ -231,6 +231,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     flag_group.add_argument('--real-time', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
     flag_group.add_argument('--realtime', action=argparse.BooleanOptionalAction, default=False, help='Real-time mode')
     flag_group.add_argument('--model-path', type=str, default=None, help='Specific .pkl model path')
+    flag_group.add_argument('--modelpath', type=str, default=None, help='Specific .pkl model path')
     flag_group.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=True, help='Verbose output')
     flag_group.add_argument('--verbose-study-progress-bar', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     flag_group.add_argument('--seed', type=int, default=123, help='Random seed')
@@ -780,9 +781,10 @@ def entry(args):
         print("    • Supports 'touched' (price touch) or 'final_close' (close) strikes")
         print("═" * 62 + "\n")
     np.random.seed(getattr(args, "seed", 123))
-
-    if getattr(args, "real_time", getattr(args, "realtime", False)):
-        return run_real_time_mode(model_path=args.model_path, clip_n=args.clip_n, verbose=args.verbose)
+    realtime = (vars(args).get("real_time") or vars(args).get("realtime"))
+    if realtime:
+        model_path = (vars(args).get("model_path") or vars(args).get("modelpath"))
+        return run_real_time_mode(model_path=model_path, clip_n=args.clip_n, verbose=args.verbose)
 
     ticker = args.ticker
     dataset_id = args.dataset_id
