@@ -243,7 +243,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                 if _dataset_id not in DATASET_AVAILABLE:
                     # Style: day_heikinashi or day_2B or extraday-12days
                     _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
-                    assert _dataset_id in [DATASET_AVAILABLE, "extraday"]
+                    assert _dataset_id in DATASET_AVAILABLE + ["extraday"]
                 daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
                 the_vix = None
                 if _dataset_id in ["day", "extraday"]:
@@ -295,7 +295,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                 if _dataset_id not in DATASET_AVAILABLE:
                     # Style: day_heikinashi or day_2B or extraday-...
                     _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
-                    assert _dataset_id in [DATASET_AVAILABLE, "extraday"]
+                    assert _dataset_id in DATASET_AVAILABLE + ["extraday"]
                 with open(get_filename_for_dataset(_dataset_id if _dataset_id in [DATASET_AVAILABLE] else "day", older_dataset=None), 'rb') as f:
                     _master_data_cache = pickle.load(f)
                 assert _master_data_cache is not None
