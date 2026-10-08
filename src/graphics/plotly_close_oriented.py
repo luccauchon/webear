@@ -121,8 +121,8 @@ def main(args):
     # Probability texts for the next (future) candle:
     # - Up arrow (↑) on the positive probability: positive means a higher close
     # - Down arrow (↓) on the negative probability: negative means a lower close
-    next_pos_prob_text = f"{pos_prob:.1%}↑"
-    next_neg_prob_text = f"{neg_prob:.1%}↓"
+    next_pos_prob_text = f"{pos_prob:.1%}↑ (B{pos_idx+1})"
+    next_neg_prob_text = f"{neg_prob:.1%}↓ (B{neg_idx+1})"
 
     # Create figure
     fig = go.Figure()
