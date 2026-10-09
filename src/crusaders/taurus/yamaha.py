@@ -106,6 +106,7 @@ def entry(args):
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
         result_oerh = oerh_entry_point(args=config)
+        emoji = "🟢" if result_oerh["signal"] == 1 else "🔴"
         if 1 == result_oerh["signal"]:
             assert 'long_accuracy::any_half_B' == result_oerh['metric_target_type']
             lookahead_bars = result_oerh['lookahead_bars']
@@ -118,7 +119,7 @@ def entry(args):
             assert datetime.strptime(result_oerh['current_date'], "%Y-%m-%d").strftime("%Y%m%d") == datetime.now().strftime("%Y%m%d")
             days_to_expiration = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars).strftime("%Y%m%d")
             break_even = compute_break_even_credit(test_win_rate,spread_width)
-            msg_str = dual_print(f"Today @{now} , buy a Put Credit Spread located at {str_strike_price} expiring on {days_to_expiration}, "
+            msg_str = dual_print(f"\t{emoji}Today @{now} , buy a Put Credit Spread located at {str_strike_price} expiring on {days_to_expiration}, "
                                  f"and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
                                  f"targetting that price shall be above {str_strike_price} at that point on, grabbing time decay.\n\t"
                                  f"Model has a {test_win_rate:.1%} Test Win Rate. Break Even is {break_even:.0f}$ for {spread_width:.0f}$ Credit Spread", msg_str)
