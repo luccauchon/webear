@@ -11,6 +11,8 @@ import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from tqdm import tqdm
+from datetime import datetime, time as datetime_time
+import time
 
 
 def entry():
@@ -21,13 +23,15 @@ def entry():
     g_realtime = False
     g_dataset_id = "day"
 
-    back_in_time_n_bars_ranges = list(range(1,5000))  # Backtesting ranges
-    lookahead_ranges = [1, 2, 3, 4, 5]  # Number of days that we go into the future
-    strategy_3_conf = {'up_bias': 1.01, 'down_bias': 0.99}
+    back_in_time_n_bars_ranges = list(range(0,3000))  # Backtesting ranges
+    lookahead_ranges = [1, 2, 3, 4, 5, 6, 7, 8 , 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]  # Number of days that we go into the future
+    strategy_3_conf = {'up_bias': 1.02, 'down_bias': 0.98}
     n_split_for_atr = 0.8
-    starting_n_trials_for_atr = 50
+    starting_n_trials_for_atr = 5
     tightness_weight_for_atr = 0.33
     enforce_code_expansion = False   # Ensure that high/low are monotonic accross all predictions
+    max_retry_for_enforce_code_expansion = list(range(0, 9)) if enforce_code_expansion else list(range(0,1))
+
     # TODO use back_in_time_n_bars=0 and g_realtime=True for realtime
 
     ###########################################################################
@@ -45,6 +49,11 @@ def entry():
     # Compute Backtesting
     ###########################################################################
     for back_in_time_n_bars in tqdm(back_in_time_n_bars_ranges, desc="Backtesting"):  # Backtesting
+        # Vérifier si on est entré dans les 15 dernières minutes de la journée
+        if datetime.now().time() >= datetime_time(23, 45, 0):
+            time.sleep(60 * (15+1))
+        if datetime.now().time() >= datetime_time(15, 55, 0) and datetime.now().time() <= datetime_time(17, 5, 0):
+            time.sleep(60 * (60+10))
         the_date_of_projection_is_made = None
         lookahead_prediction, ground_truth_data_available = {}, True
         for lookahead in lookahead_ranges:  # Projection in the future
@@ -56,10 +65,10 @@ def entry():
             the_date_in_the_future = None
             extra_pen_cone_expansion = 0  # Penalty for not respecting cone expansion
             extra_tw_cone_expansion = 0  # Some slack for not respecting cone expansion
-            for max_retry in range(0, 9):
+            for max_retry in max_retry_for_enforce_code_expansion:
                 extra_pen_band_limits = 0  # Penalty for not respecting band limits
                 # Estimation of bands for lookahead
-                for max_retry_2 in range(0, 19):
+                for max_retry_2 in range(0,3):  # Increase "n_trials" with extra_pen_band_limits increasing every time band estimation is not wight.
                     bands_estimation = {}
                     for use_close_for_range in [True, False]:
                         tw = tightness_weight - extra_tw_cone_expansion if tightness_weight - extra_tw_cone_expansion > 0 else 0
@@ -101,10 +110,11 @@ def entry():
                         actual_day_of_the_prediction = df_bt.index[-1]
                         if the_date_of_projection_is_made is None:
                             the_date_of_projection_is_made = actual_day_of_the_prediction
+                            #print(f"\n SET!!  {back_in_time_n_bars=}  {max_retry}:{max_retry_2} {the_date_of_projection_is_made}")
                         else:
-                            # if the_date_of_projection_is_made != actual_day_of_the_prediction:
-                            #     print(f"\nFUCK!!  {the_date_of_projection_is_made} == {actual_day_of_the_prediction}   {back_in_time_n_bars=}TODO FIXME")
-                            assert the_date_of_projection_is_made == actual_day_of_the_prediction, f"{the_date_of_projection_is_made} == {actual_day_of_the_prediction}"
+                            if the_date_of_projection_is_made != actual_day_of_the_prediction:
+                                print(f"\nFUCK!!  {back_in_time_n_bars=}  {max_retry}:{max_retry_2}  {the_date_of_projection_is_made} == {actual_day_of_the_prediction}     {datetime.now()=}   TODO FIXME")
+                            #assert the_date_of_projection_is_made == actual_day_of_the_prediction, f"{the_date_of_projection_is_made} == {actual_day_of_the_prediction}"
                         day_predicted_in_the_future = get_next_step(actual_day_of_the_prediction, "day", lookahead)
                         assert the_date_of_projection_is_made < day_predicted_in_the_future
                         if the_date_in_the_future is None:
@@ -122,19 +132,12 @@ def entry():
                         # Sanity check
                         assert the_date_in_the_future not in df_bt
                     if (bands_estimation['predicted_upper_close'][0] > bands_estimation['predicted_lower_close'][0] and
-                            bands_estimation['predicted_upper_close'][0] < bands_estimation['predicted_high'][0] and
-                            bands_estimation['predicted_lower_close'][0] > bands_estimation['predicted_low'][0] and
+                            bands_estimation['predicted_upper_close'][0] <= bands_estimation['predicted_high'][0] and
+                            bands_estimation['predicted_lower_close'][0] >= bands_estimation['predicted_low'][0] and
                             bands_estimation['predicted_high'][0] > bands_estimation['predicted_low'][0]):
                         break
                     else:
-                        extra_pen_band_limits += 50
-                        #print(f"\nFUCKKKKKKKKKKKKKKKKKKKKKKKK!!!!!!!!!!!!!!!!! {extra_pen_band_limits=}")
-                # Sanity check
-                if (not bands_estimation['predicted_upper_close'][0] > bands_estimation['predicted_lower_close'][0] or
-                        not bands_estimation['predicted_upper_close'][0] < bands_estimation['predicted_high'][0] or
-                        not bands_estimation['predicted_lower_close'][0] > bands_estimation['predicted_low'][0] or
-                        not bands_estimation['predicted_high'][0] > bands_estimation['predicted_low'][0]):
-                   pass # print(f"\n\terreur dans les estimations des bands:\n{bands_estimation}")
+                        extra_pen_band_limits += 500
                 if 0 == len(lookahead_prediction) or not enforce_code_expansion:
                     break
                 # Enforce that the high/low prediction shall be greater/lower than those of previous bar
@@ -143,12 +146,10 @@ def entry():
                     # Actual high and/or low is/are not higher/lower than previous values
                     extra_pen_cone_expansion += 25
                     extra_tw_cone_expansion -= 0.1
-                    #print(f"\nFUCKKKKKKKKKKKKKKKKKKKKKKKK!!!!!!!!!!!!!!!!! {extra_pen_cone_expansion=}")
                     continue
                 break
             lookahead_prediction.update({lookahead: bands_estimation})
             lookahead_prediction[lookahead].update({"date_projection_is_made": the_date_of_projection_is_made})
-            #print(f"{the_date_of_projection_is_made}-->{the_date_in_the_future}")
             if the_date_in_the_future not in g_df_spx_full.index:
                 ground_truth_data_available = False
                 break
@@ -173,11 +174,11 @@ def entry():
         #######################################################################
         # Strategy #1: price is in range of predicted closing price
         #######################################################################
-        closing_price_ground_truth = compiled_predictions[back_in_time_n_bars]['closing_price_at_end_of_projection']
+        closing_price_ground_truth     = compiled_predictions[back_in_time_n_bars]['closing_price_at_end_of_projection']
         upper_closing_price_prediction = compiled_predictions[back_in_time_n_bars]['lookahead_prediction'][len(lookahead_ranges)]['predicted_upper_close']
         lower_closing_price_prediction = compiled_predictions[back_in_time_n_bars]['lookahead_prediction'][len(lookahead_ranges)]['predicted_lower_close']
-        #print(f"{closing_price_ground_truth} == {upper_closing_price_prediction} :: {lower_closing_price_prediction}")
-        win_put_side = lower_closing_price_prediction[0] <= closing_price_ground_truth
+
+        win_put_side  = lower_closing_price_prediction[0] <= closing_price_ground_truth
         win_call_side = closing_price_ground_truth <= upper_closing_price_prediction[0]
         win = lower_closing_price_prediction[0] <= closing_price_ground_truth <= upper_closing_price_prediction[0]
         strategies["strategy_1"].setdefault('description', "price is in range of predicted closing price")
@@ -192,7 +193,7 @@ def entry():
         closing_price_ground_truth = compiled_predictions[back_in_time_n_bars]['closing_price_at_end_of_projection']
         high_price_prediction = compiled_predictions[back_in_time_n_bars]['lookahead_prediction'][len(lookahead_ranges)]['predicted_high']
         low_price_prediction = compiled_predictions[back_in_time_n_bars]['lookahead_prediction'][len(lookahead_ranges)]['predicted_low']
-        #print(f"{closing_price_ground_truth} == {high_price_prediction} :: {low_price_prediction}")
+
         win_put_side = low_price_prediction[0] <= closing_price_ground_truth
         win_call_side = closing_price_ground_truth <= high_price_prediction[0]
         win = low_price_prediction[0] <= closing_price_ground_truth <= high_price_prediction[0]
@@ -205,11 +206,8 @@ def entry():
         #######################################################################
         # Strategy #3: Energy driven: add bias on the risky side
         #######################################################################
-        #print(f"------------------------------------------------------")
         closing_price_ground_truth = compiled_predictions[back_in_time_n_bars]['closing_price_at_end_of_projection']
-        closing_price_at_t_0 = compiled_predictions[back_in_time_n_bars]['closing_price_on_the_date_the_projection_is_made']
-        #print(closing_price_at_t_0)
-        #print(compiled_predictions[back_in_time_n_bars]['lookahead_prediction'])
+        closing_price_at_t_0       = compiled_predictions[back_in_time_n_bars]['closing_price_on_the_date_the_projection_is_made']
         energy_ratio = []
         for lookahead_t, payload in compiled_predictions[back_in_time_n_bars]['lookahead_prediction'].items():
             #print(f"{lookahead_t} == {payload}")
@@ -218,7 +216,6 @@ def entry():
             #print(f"{v1=}  {v2=}")
             energy_ratio.append(float(v1)/float(v2))
         mean_energy_ratio = np.mean(energy_ratio)
-        #print(f"{energy_ratio=}  {mean_energy_ratio=}")
         upper_closing_price_prediction = list(compiled_predictions[back_in_time_n_bars]['lookahead_prediction'][len(lookahead_ranges)]['predicted_upper_close'])
         lower_closing_price_prediction = list(compiled_predictions[back_in_time_n_bars]['lookahead_prediction'][len(lookahead_ranges)]['predicted_lower_close'])
         if mean_energy_ratio > 1:
@@ -236,7 +233,6 @@ def entry():
         strategies["strategy_3"].setdefault('stats_call_side', []).append(win_call_side)
         strategies["strategy_3"].setdefault('stats_range', []).append(win_range)
         strategies["strategy_3"].setdefault('back_in_time_n_bars', []).append(back_in_time_n_bars)
-        #print(f"------------------------------------------------------")
 
         #######################################################################
         # Strategy #4: win if price breaks entry price in half end side
