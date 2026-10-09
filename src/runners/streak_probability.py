@@ -522,7 +522,7 @@ def new_main(args, bring_my_own_df=None):
             print(f"\n▶ After {NN:2d} Consecutive {direction_label} {time_label}")
             print("-" * 50)
             tmpstr = '' if delta == 0 else f'with a delta of {delta * 100:.1f}%'
-            print(f"Probability of occurence of {step_str} {direction_label} {time_label} is {pct * 100:6.2f}% ({stats['count']}/{stats['total']}) {tmpstr}")
+            print(f"Probability of occurence of {step_str} {direction_label} {time_label} (B{NN+1}) is {pct * 100:6.2f}% ({stats['count']}/{stats['total']}) {tmpstr}")
             if stats['count'] > 0 and print_condition_probability:
                 for cond_delta in [0, 0.0025, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.040, 0.045, 0.05, 0.06]:
                     if direction == 'neg':
