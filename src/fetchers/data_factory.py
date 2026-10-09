@@ -1,6 +1,6 @@
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
 from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, MOOMOO__PROXY_SPX_FILENAME
-from utils import DATASET_AVAILABLE, get_filename_for_dataset
+from utils import DATASET_AVAILABLE, get_filename_for_dataset, get_dataset_timeframe
 import numpy as np
 import os
 import pandas as pd
@@ -51,27 +51,6 @@ def _is_dataset_heikin_ashi(_dataset_id):
         except:
             pass
         return False
-
-
-def get_dataset_timeframe(_dataset_id):
-    try:
-        if _dataset_id.startswith("intraday"):
-            try:
-                _n_minutes = int(_dataset_id.split("_")[1][:-3])
-                return _n_minutes
-            except:
-                _n_minutes = int(_dataset_id.split("-")[1][:-3])
-                return _n_minutes
-        elif _dataset_id.startswith("extraday"):
-            try:
-                _n_days = int(re.search(r'\d+', _dataset_id.split("_")[1]).group())
-                return _n_days
-            except:
-                _n_days = int(re.search(r'\d+', _dataset_id.split("-")[1]).group())
-                return _n_days
-        return None
-    except:
-        return None
 
 
 def resample_custom_p_days(df, ticker, p, incomplete_at_start=False):

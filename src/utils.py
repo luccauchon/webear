@@ -1256,9 +1256,33 @@ def get_next_step(the_date, dataset_id, nn):
         assert tick_minutes is not None
         # Ajoute le nombre de minutes multiplié par l'étape nn
         _next_ = the_date + timedelta(minutes=tick_minutes * nn)
+    elif dataset_id.startswith('extraday'):
+        n_days = get_dataset_timeframe(_dataset_id=dataset_id)
+        _next_ = next_weekday(the_date, n_days)
     else:
         assert False, f"Implement for {dataset_id}"
     return _next_
+
+
+def get_dataset_timeframe(_dataset_id):
+    try:
+        if _dataset_id.startswith("intraday"):
+            try:
+                _n_minutes = int(_dataset_id.split("_")[1][:-3])
+                return _n_minutes
+            except:
+                _n_minutes = int(_dataset_id.split("-")[1][:-3])
+                return _n_minutes
+        elif _dataset_id.startswith("extraday"):
+            try:
+                _n_days = int(re.search(r'\d+', _dataset_id.split("_")[1]).group())
+                return _n_days
+            except:
+                _n_days = int(re.search(r'\d+', _dataset_id.split("-")[1]).group())
+                return _n_days
+        return None
+    except:
+        return None
 
 
 def send_html_email(destinataires, sujet, corps, cc=None, cci=None, pieces_jointes=None, add_clause_non_responsabilite=True):
