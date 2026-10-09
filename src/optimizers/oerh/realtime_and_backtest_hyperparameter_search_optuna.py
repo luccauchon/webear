@@ -49,7 +49,7 @@ generate actionable trading signals with configurable lookahead horizons.
    │  • "exact"      : Price must exceed threshold EXACTLY at t + lookahead_bars
    │  • "any"        : Price must exceed threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "any_half_B" : Price must exceed threshold in SECOND HALF of window [t+B//2+1, t+B]
-   │  • "any_half_B_fpr_sell" : Price must drop below threshold in SECOND HALF of window [t+B//2+1, t+B]
+   │  • "any_half_B_for_sell" : Price must drop below threshold in SECOND HALF of window [t+B//2+1, t+B]
    │  • "floor" 🆕   : Price must NEVER fall below threshold in [t+1, t+lookahead_bars]
    │  • "short_any" 🆕: Price must drop below threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "ceiling" 🆕  : Price must NEVER rise above threshold in [t+1, t+lookahead_bars]
@@ -1382,8 +1382,8 @@ def entry(args):
 
         # Alpha controls how much we punish inconsistency across different time periods
         alpha = 1.
-
-        final_score = mean_score - (alpha * std_score) - density_penalty
+        beta  = 4.
+        final_score = mean_score - (alpha * std_score) - (beta * density_penalty)
         return final_score
 
     sampler = optuna.samplers.TPESampler(seed=args.seed, n_startup_trials=99, )
@@ -1475,13 +1475,15 @@ def entry(args):
         if not args.disable_print:
             print(f"\n📊 {label} Evaluation")
             print(f"   Ticker: {args.ticker} | Data range: {df_subset.index[0].strftime('%Y-%m-%d_%H%M')} to {df_subset.index[-1].strftime('%Y-%m-%d_%H%M')} ({len(df_subset)} bars)")
-            print(f"   Total Signals: {metrics.get('total_signals', 0)}")
-            print(f"   Density: {metrics.get('total_signals', 0) / len(df_subset):.2%}")
             if args.optimize_target in ["both"]:
+                print(f"   Total Signals: {metrics.get('total_signals', 0)}")
+                print(f"   Density: {metrics.get('total_signals', 0) / len(df_subset):.2%}")
                 print(f"   Overall Accuracy: {metrics.get('accuracy', 0) * 100:.2f}%")
-            if args.optimize_target in ["put_credit", "both"]:
+            if args.optimize_target in ["put_credit"]:
+                print(f"   Density: {metrics.get('long_signals', 0) / len(df_subset):.2%}")
                 print(f"   Long Signals: {metrics.get('long_signals', 0)} | Accuracy: {metrics.get('long_accuracy', 0) * 100:.2f}%")
-            if args.optimize_target in ["call_credit", "both"]:
+            if args.optimize_target in ["call_credit"]:
+                print(f"   Density: {metrics.get('short_signals', 0) / len(df_subset):.2%}")
                 print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
             print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
             print(f"   Target Mode: '{args.target_type}'")
@@ -1527,7 +1529,10 @@ def entry(args):
     # 💾 Save best model at the end of optimization
     total_bars_val = metrics_val.get('total_bars', len(df_val))
     signal_density = metrics_val.get('total_signals', 0) / total_bars_val if total_bars_val > 0 else 0.0
-
+    if args.optimize_target == "put_credit":
+        signal_density = metrics_val.get('long_signals', 0) / total_bars_val if total_bars_val > 0 else 0.0
+    elif args.optimize_target == "call_credit":
+        signal_density = metrics_val.get('short_signals', 0) / total_bars_val if total_bars_val > 0 else 0.0
     save_best_model(
         output_dir=args.output_dir,
         best_params=best_params,
