@@ -302,8 +302,8 @@ def entry(args):
 
     # Construction des cas à traiter
     use_cases = []
-    tightness_weights = np.linspace(0, 1, 30).tolist()
-    for tightness_weight in tightness_weights + [2., 4., 8., 16.]:
+    tightness_weights = getattr(args, 'tightness_weights', np.linspace(0, 1, 30).tolist() + [2., 4., 8., 16.])
+    for tightness_weight in tightness_weights:
         atr_config = Namespace(ticker=args.ticker, dataset_id=args.dataset_id, dataframe=dataframe, verbose=False, n_trials=args.n_trials, use_realtime_data=True, atr_window=14,
                                n_split=0.9, tightness_weight=tightness_weight, use_close_for_range=args.use_close_for_range, clip_n=0, timeout=9999)
         use_cases.append(atr_config)
@@ -329,9 +329,11 @@ def entry(args):
     days_to_expiration = f"0DTE" if get_dataset_timeframe(args.dataset_id) in [0, None] else f"{int(get_dataset_timeframe(args.dataset_id))-1}DTE"
     subject = f"{name_of_application} | {args.ticker} | {days_to_expiration} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} | {signature_for_prod} | {datetime.now().strftime("%Y-%m-%d")}"
     string_generated, vlow_text, vhigh_text, dataset_configuration = subject + f" | [BREAK EVEN ON 5-POINT WIDE SPREAD]" + "\n", None, None, None
+    returned_values = {"low": [], "high": []}
     for col_for_sort in ["predicted_low", "in_between", "predicted_high"]:
         if col_for_sort == "in_between":
             string_generated += f"    {':' * 8} OUVERTURE à {actual_open:.0f} {':' * 8}\n"
+            returned_values.update({"open": actual_open})
             continue
         # 1. Tri du plus GRAND au plus PETIT
         liste_triee = sorted(data_from_workers, key=lambda x: x[f"probability_{col_for_sort}"], reverse=True)
@@ -387,6 +389,7 @@ def entry(args):
                 string_generated += (f"\t"                      
                       f"{' ':<4}{predicted_low:04d}    {probability_predicted_low:02d}%  {breakeven_low:03d}$   {risk_reward:04.1f}")+ "\n"
                 vlow_text = (predicted_low, probability_predicted_low,breakeven_low) if vlow_text is None else vlow_text
+                returned_values["low"].append({'predicted_low': predicted_low, 'probability_predicted_low': probability_predicted_low, 'breakeven_low': breakeven_low, 'risk_reward': risk_reward})
             elif 'high' in col_for_sort:
                 distance_from_open           = float((predicted_high - actual_open) / actual_open)
                 distance_from_current_value  = float((predicted_high - actual_close) / actual_close)
@@ -395,6 +398,7 @@ def entry(args):
                 string_generated += (f"\t"                      
                       f"{' ':<4}{predicted_high:04d}    {probability_predicted_high:02d}%  {breakeven_high:03d}$   {risk_reward:04.1f}")+ "\n"
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
+                returned_values["high"].append({'predicted_high': predicted_high, 'probability_predicted_high': probability_predicted_high, 'breakeven_high': breakeven_high, 'risk_reward': risk_reward})
             if dataset_configuration is None:
                 dataset_configuration = sorted_probability['dataset_configuration']
     assert vix_regime in ['Normal', 'Low', 'High']
@@ -416,12 +420,12 @@ def entry(args):
                          f"Par exemple, lors de la vente d'un Put Credit Spread 0DTE de 5 points de large (vendre le PUT {vlow_text[0]} et acheter le PUT {vlow_text[0]-5}), "
                          f"la prime minimale à recevoir devrait être de {vlow_text[2]}$. "
                          f"Cela représente un risque maximal de {spread_width-vlow_text[2]}$ et un Risk-Reward de {(spread_width-vlow_text[2])/vlow_text[2]:.2f}")
-    print(string_generated)
+    if getattr(args, 'verbose', True): print(string_generated)
     output_file = os.path.join(get_and_clean_stub_dir("atr_make_graphics"), f"{args.ticker}_{args.dataset_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png")
     make_plot(current_price=actual_close, low_levels=low_levels_for_graphics, high_levels=high_levels_for_graphics, display_plot=False, output_file=output_file, use_plotly=False)
     if not args.debug:
         send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated, pieces_jointes=output_file)
-    return None
+    return returned_values
 
 
 if __name__ == "__main__":

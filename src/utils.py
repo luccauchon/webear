@@ -34,6 +34,8 @@ from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 import shutil
+from datetime import date, datetime, timedelta
+import calendar
 os_name = platform.system()
 
 
@@ -858,68 +860,54 @@ def get_next_week_range(input_date=None):
             f"to {friday_next_week.strftime('%Y-%m-%d')}"), friday_next_week
 
 
-from datetime import date, datetime, timedelta
-import calendar
-
-
 def get_next_month_range(input_date=None):
+    return get_month_range(input_date, 1)
+
+
+def get_month_range(input_date=None, months_ahead=0):
     """
-    Returns a formatted string showing the next full calendar month range (1st to last day).
+    Retourne une chaîne formatée et l'objet date du dernier jour pour le mois ciblé.
 
     Args:
         input_date (str | date | datetime | None):
-            - If None: uses today's date
-            - If str: expects "YYYY-MM-DD" format
-            - If datetime/date: uses the given date
+            - Si None : utilise la date d'aujourd'hui
+            - Si str : attend le format "YYYY-MM-DD"
+            - Si datetime/date : utilise la date fournie
+        months_ahead (int):
+            - 0 pour le mois courant (par défaut)
+            - 1 pour le mois prochain
+            - l pour un mois plus lointain dans le futur
 
     Returns:
         tuple: (formatted_string, last_day_date)
-            - formatted_string (str): "Next month is from YYYY-MM-DD to YYYY-MM-DD"
-            - last_day_date (date): date object representing the last day of next month
-
-    Examples:
-        >>> get_next_month_range("2025-01-15")
-        ('Next month is from 2025-02-01 to 2025-02-28', datetime.date(2025, 2, 28))
-
-        >>> get_next_month_range("2024-01-15")  # Leap year February
-        ('Next month is from 2024-02-01 to 2024-02-29', datetime.date(2024, 2, 29))
-
-        >>> get_next_month_range("2025-12-20")
-        ('Next month is from 2026-01-01 to 2026-01-31', datetime.date(2026, 1, 31))
-
-        >>> get_next_month_range("2025-02-28")  # End of short month
-        ('Next month is from 2025-03-01 to 2025-03-31', datetime.date(2025, 3, 31))
     """
-    # Normalize input to date object
+    # Normalisation de l'entrée vers un objet date
     if input_date is None:
         dt = date.today()
     elif isinstance(input_date, str):
         dt = datetime.strptime(input_date, "%Y-%m-%d").date()
     elif isinstance(input_date, datetime):
         dt = input_date.date()
-    else:  # date object
+    else:
         dt = input_date
 
-    # Calculate next month (handling December → January rollover)
-    if dt.month == 12:
-        next_month = 1
-        next_year = dt.year + 1
-    else:
-        next_month = dt.month + 1
-        next_year = dt.year
+    # Calcul du mois et de l'année cible (gestion du débordement des années)
+    # L'indexation commence à 0 pour le calcul des mois (0 = Janvier, 11 = Décembre)
+    total_months = (dt.month - 1) + months_ahead
+    target_year = dt.year + (total_months // 12)
+    target_month = (total_months % 12) + 1
 
-    # First day is always the 1st
-    first_day = date(next_year, next_month, 1)
+    # Le premier jour est toujours le 1er du mois
+    first_day = date(target_year, target_month, 1)
 
-    # Get last day of next month using calendar.monthrange
-    _, days_in_month = calendar.monthrange(next_year, next_month)
-    last_day = date(next_year, next_month, days_in_month)
+    # Récupération du dernier jour du mois cible
+    _, days_in_month = calendar.monthrange(target_year, target_month)
+    last_day = date(target_year, target_month, days_in_month)
 
-    formatted_string = (f"Returned month is from {first_day.strftime('%Y-%m-%d')} "
+    formatted_string = (f"Target month is from {first_day.strftime('%Y-%m-%d')} "
                         f"to {last_day.strftime('%Y-%m-%d')}")
 
     return formatted_string, last_day
-
 
 def add_vwap_with_bands(
         df: pd.DataFrame,

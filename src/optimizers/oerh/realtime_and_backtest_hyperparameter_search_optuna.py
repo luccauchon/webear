@@ -1372,9 +1372,9 @@ def entry(args):
 
             fold_scores.append(acc)
 
-        mean_score = np.mean(fold_scores)
+        mean_score = float(np.mean(fold_scores))
         assert 0 <= mean_score <= 1
-        std_score = np.std(fold_scores)
+        std_score = float(np.std(fold_scores))
 
         mean_density = np.mean(fold_densities)
         density_penalty = abs(mean_density - args.density_target) if mean_density < args.density_target else 0.
