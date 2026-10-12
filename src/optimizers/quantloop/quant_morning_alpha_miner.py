@@ -385,17 +385,23 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def run_realtime(daily_df, modelfile):
+def run_realtime(modelfile, verbose):
     # Load model
     model = Top50EnsembleModel.load(modelfile)
 
+    # Load data
+    daily_df = factory_load_data(_dataset_id=model.args.dataset_id, _ticker=model.args.ticker, _args={"realtime": True})
+    if isinstance(daily_df.columns, pd.MultiIndex): daily_df.columns = daily_df.columns.get_level_values(0)
+    daily_df = daily_df.sort_index()
+    if verbose: print(f"{len(daily_df)} :: {daily_df.index[0]} --> {daily_df.index[-1]}")
+
     # Build dataset
-    config = Namespace(st1=model.args.st1, st2=model.args.st2, ema9=model.args.ema9, ema21=model.args.ema21, rsi14=model.args.rsi14, macd5=model.args.macd5,
-                       seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, reduce_feature=-1,)
-    X_new = build_df(df=daily_df, args=config, generate_for_realtime=True)
+    X_new = build_df(df=daily_df, args=Namespace(st1=model.args.st1, st2=model.args.st2, ema9=model.args.ema9, ema21=model.args.ema21, rsi14=model.args.rsi14,
+                                                 macd5=model.args.macd5, seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, reduce_feature=-1, verbose=verbose,),
+                     generate_for_realtime=True)
     agg = model.predict_aggregated(X_new.iloc[-1:])
-    print(agg[['median_probability', 'std_probability', 'predicted_class']])
-    return 123
+    if verbose: print(agg[['median_probability', 'std_probability', 'predicted_class']])
+    return agg[['median_probability', 'std_probability', 'predicted_class']]
 
 
 def build_df(df, args, generate_for_realtime):
@@ -567,10 +573,10 @@ def build_df(df, args, generate_for_realtime):
     if -1 != reduce_feature:
         feature_cols = feature_cols[:reduce_feature]
 
-    print(f"X is: Features computed from {heure_debut_str} and {heure_fin_str} and from previous days")
+    if getattr(args, "verbose", True): print(f"X is: Features computed from {heure_debut_str} and {heure_fin_str} and from previous days")
     if generate_for_realtime:
         X = daily_df[feature_cols].copy()
-        print(f"[REALTIME] [{len(X):5d}]  {X.index[0].strftime('%Y-%m-%d')} --> {X.index[-1].strftime('%Y-%m-%d')}")
+        if getattr(args, "verbose", True): print(f"[REALTIME] [{len(X):5d}]  {X.index[0].strftime('%Y-%m-%d')} --> {X.index[-1].strftime('%Y-%m-%d')}")
         return X
 
     # ---------------------------------------------------------
@@ -585,7 +591,7 @@ def build_df(df, args, generate_for_realtime):
 
     daily_df = daily_df.dropna()
 
-    print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} Daily Open * {seuil_pos}")
+    if getattr(args, "verbose", True): print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} Daily Open * {seuil_pos}")
 
     experience_str_desc = (f"{seuil_pos}__{heure_debut_str}-{heure_fin_str}__{time_15ish}-{time_16ish}_High_{strict_sup}_Open__"
         f"{ema_9}{ema_21}{rsi_14}{macd_5}__").replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_').replace(':', '')
@@ -601,10 +607,9 @@ def build_df(df, args, generate_for_realtime):
 
     X_train, X_test = X.iloc[:split_idx].copy(), X.iloc[split_idx:].copy()
     y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
-
-    print(f"[TRAIN] [{len(X_train):5d}]  {X_train.index[0].strftime('%Y-%m-%d')} --> {X_train.index[-1].strftime('%Y-%m-%d')}")
-    print(f"[TEST]  [{len(X_test):5d}]  {X_test.index[0].strftime('%Y-%m-%d')} --> {X_test.index[-1].strftime('%Y-%m-%d')}\n")
-
+    if getattr(args, "verbose", True):
+        print(f"[TRAIN] [{len(X_train):5d}]  {X_train.index[0].strftime('%Y-%m-%d')} --> {X_train.index[-1].strftime('%Y-%m-%d')}")
+        print(f"[TEST]  [{len(X_test):5d}]  {X_test.index[0].strftime('%Y-%m-%d')} --> {X_test.index[-1].strftime('%Y-%m-%d')}\n")
     return X, y, X_train, X_test, y_train, y_test, feature_cols, experience_str_desc
 
 
@@ -618,10 +623,15 @@ def entry(args):
     env_string = "".join([f"$env:{k}={v}; " for k, v in quant_env_vars.items()])
     # 3. Combiner le tout avec la commande Python
     command_line = f"{env_string}python " + " ".join(sys.argv)
+
+    # ---------------------------------------------------------
+    #
+    # ---------------------------------------------------------
+    if args.realtime:
+        return run_realtime(modelfile=args.modelfile, verbose=getattr(args, "verbose", True))
+
     print(f"Command Line: {command_line}")
-    nb_worker = int(args.nb_worker)
-    ticker = args.ticker
-    df = factory_load_data(_dataset_id=args.dataset_id, _ticker=ticker, _args={"realtime": args.realtime})
+    df = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"realtime": args.realtime})
 
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
@@ -629,12 +639,7 @@ def entry(args):
     df = df.sort_index()
     print(f"{len(df)} :: {df.index[0]} --> {df.index[-1]}")
 
-    # ---------------------------------------------------------
-    #
-    # ---------------------------------------------------------
-    if args.realtime:
-        return run_realtime(daily_df=df, modelfile=args.modelfile)
-
+    nb_worker = int(args.nb_worker)
     # ---------------------------------------------------------
     #
     # ---------------------------------------------------------
@@ -855,7 +860,7 @@ def entry(args):
         print("=" * 90)
         print("CRÉATION DU MODÈLE AGRÉGÉ TOP 50")
         print("=" * 90)
-
+        agg_test_f1 = None
         # -----------------------------------------------------
         # 10.1 Optionnel: évaluation honnête de l'agrégat sur TEST
         #      avec un modèle agrégé entraîné uniquement sur TRAIN.
@@ -899,7 +904,7 @@ def entry(args):
 
         ensemble_filename = os.path.join(
             output_dir,
-            f'_top50_ensemble_model__{experience_str_desc}.pkl'
+            f'_top50_ensemble_model__{experience_str_desc}__tf1_{agg_test_f1:.8f}.pkl'
         )
 
         final_top50_model.save(ensemble_filename)
