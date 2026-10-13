@@ -336,13 +336,19 @@ def next_weekday_with_check(date, df, max_look_ahead=999):
 def next_weekday(input_date, nn=1):
     _next_day = pd.to_datetime(input_date) if isinstance(input_date, str) else input_date
 
+    # Determine the step direction (forward +1 or backward -1)
+    step = -1 if nn < 0 else 1
+    # Use the absolute value to ensure the loop runs correctly
+    target_count = abs(nn)
+
     count = 0
-    while count < nn:
-        _next_day += pd.Timedelta(days=1)
+    while count < target_count:
+        _next_day += pd.Timedelta(days=step)
         # Only increment count if Mon(0) to Fri(4)
         if _next_day.weekday() < 5:
             count += 1
     return _next_day
+
 
 
 def is_weekday(date):
@@ -1202,24 +1208,29 @@ def get_next_step(the_date, dataset_id, nn):
     if 'day' == dataset_id:
         _next_ = next_weekday(the_date, nn)
     elif 'week' == dataset_id:
+        assert nn > 0
         _next_ = next_week(the_date)
         for u in range(1, nn):
             _next_ = next_week(_next_)
     elif 'month' == dataset_id:
+        assert nn > 0
         _next_ = next_month(the_date)
         for u in range(1, nn):
             _next_ = next_month(_next_)  # Fixed: was incorrectly calling next_week
     elif 'quarter' == dataset_id:
+        assert nn > 0
         # Advance by 3 months per quarter step
         _next_ = the_date
         for u in range(3 * nn):
             _next_ = next_month(_next_)
     elif 'year' == dataset_id:
+        assert nn > 0
         # Advance by 12 months per year step (for completeness, since 'year' is in DATASET_AVAILABLE)
         _next_ = the_date
         for u in range(12 * nn):
             _next_ = next_month(_next_)
     elif dataset_id.startswith('intraday'):
+        assert nn > 0
         # Extrait le nombre de minutes (ex: '5min' -> 5)
         def _get_dataset_timeframe(_dataset_id):
             try:
@@ -1245,6 +1256,7 @@ def get_next_step(the_date, dataset_id, nn):
         # Ajoute le nombre de minutes multiplié par l'étape nn
         _next_ = the_date + timedelta(minutes=tick_minutes * nn)
     elif dataset_id.startswith('extraday'):
+        assert nn > 0
         n_days = get_dataset_timeframe(_dataset_id=dataset_id)
         _next_ = next_weekday(the_date, n_days)
     else:

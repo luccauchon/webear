@@ -67,7 +67,7 @@ def safe_yf_download(tickers, period="6mo", interval="1d", auto_adjust=True):
     last_exc = None
     for attempt in range(1, YF_RETRY + 1):
         try:
-            df = yf.download(tickers, period=period, interval=interval, auto_adjust=auto_adjust, threads=True)
+            df = yf.download(tickers, period=period, interval=interval, auto_adjust=auto_adjust, threads=True, progress=False)
             # normalize: yfinance sometimes returns a MultiIndex with ('Close','^GSPC') or a flat frame
             if df is None:
                 raise ValueError("yfinance returned None")
@@ -155,35 +155,35 @@ def compute_percent_above_mas_from_parquet(parquet_path, window=50, ma_type='SMA
     return pct, details
 
 
-def category_A_market_internals():
+def category_A_market_internals(verbose):
     """Return points (0..3) from category A signals"""
-    logger.info("Running Category A: Market Internals")
+    if verbose: logger.info("Running Category A: Market Internals")
     points = 0
     # 1) percent above 50d
     pct50, details50 = compute_percent_above_mas_from_parquet(LOCAL_SP500_PARQUET, window=config['ma_windows']['short'])
     if pct50 is None:
-        logger.info("Percent above 50d MA: data unavailable")
+        if verbose: logger.info("Percent above 50d MA: data unavailable")
     else:
-        logger.info("Percent of SPX constituents above %dd MA: %.2f%%", config['ma_windows']['short'], pct50)
+        if verbose: logger.info("Percent of SPX constituents above %dd MA: %.2f%%", config['ma_windows']['short'], pct50)
         if pct50 < config['category_a_threshold_pct']:
-            logger.info("→ Fewer than %.1f%% above %dd: bearish → +1", config['category_a_threshold_pct'], config['ma_windows']['short'])
+            if verbose: logger.info("→ Fewer than %.1f%% above %dd: bearish → +1", config['category_a_threshold_pct'], config['ma_windows']['short'])
             points += 1
 
     # 2) percent above 200d
     pct200, details200 = compute_percent_above_mas_from_parquet(LOCAL_SP500_PARQUET, window=config['ma_windows']['long'])
     if pct200 is None:
-        logger.info("Percent above 200d MA: data unavailable")
+        if verbose: logger.info("Percent above 200d MA: data unavailable")
     else:
-        logger.info("Percent above %dd MA: %.2f%%", config['ma_windows']['long'], pct200)
+        if verbose: logger.info("Percent above %dd MA: %.2f%%", config['ma_windows']['long'], pct200)
         # add point if very low breadth below 60% (tunable)
         if pct200 < 60.0:
-            logger.info("→ Breadth below 60%% on 200d MA → +1")
+            if verbose: logger.info("→ Breadth below 60%% on 200d MA → +1")
             points += 1
 
     # 3) RSP vs SPX divergence
     d = safe_yf_download(["^GSPC", "RSP"], period="6mo", interval="1d", auto_adjust=True)
     if d.empty:
-        logger.info("SPX/RSP data unavailable")
+        if verbose: logger.info("SPX/RSP data unavailable")
     else:
         spx = extract_close(d, "^GSPC")
         rsp = extract_close(d, "RSP")
@@ -193,30 +193,30 @@ def category_A_market_internals():
             spx_ret = combined['SPX'].iloc[-1] / combined['SPX'].iloc[-(config['rsp_divergence_days'] + 1)] - 1
             rsp_ret = combined['RSP'].iloc[-1] / combined['RSP'].iloc[-(config['rsp_divergence_days'] + 1)] - 1
             underperf = spx_ret - rsp_ret
-            logger.info("SPX %d-day ret: %.2f%%, RSP %d-day ret: %.2f%%, underperf: %.2f%%",
+            if verbose: logger.info("SPX %d-day ret: %.2f%%, RSP %d-day ret: %.2f%%, underperf: %.2f%%",
                         config['rsp_divergence_days'], spx_ret * 100,
                         config['rsp_divergence_days'], rsp_ret * 100,
                         underperf * 100)
             if underperf > config['rsp_divergence_threshold']:
-                logger.info("→ RSP underperformed SPX by >%.2f%% → +1", config['rsp_divergence_threshold'] * 100)
+                if verbose: logger.info("→ RSP underperformed SPX by >%.2f%% → +1", config['rsp_divergence_threshold'] * 100)
                 points += 1
         else:
-            logger.info("Not enough SPX/RSP history for divergence check")
+            if verbose: logger.info("Not enough SPX/RSP history for divergence check")
 
-    logger.info("Category A points: %d", points)
+    if verbose: logger.info("Category A points: %d", points)
     return points
 
 
 # ---------------------------
 # Category B - Technical conditions (SPX)
 # ---------------------------
-def Category_B_Technical_Conditions():
-    logger.info("Running Category B: Technical Conditions (S&P 500)")
+def Category_B_Technical_Conditions(verbose):
+    if verbose: logger.info("Running Category B: Technical Conditions (S&P 500)")
     points = 0
     # Fetch SPX
     d = safe_yf_download("^GSPC", period="2y", interval="1d", auto_adjust=True)
     if d.empty:
-        logger.warning("SPX data missing - skipping Category B")
+        if verbose: logger.warning("SPX data missing - skipping Category B")
         return 0
 
     spx = extract_close(d, "^GSPC")
@@ -230,7 +230,7 @@ def Category_B_Technical_Conditions():
         weekly_rsi = ta.rsi(weekly, length=14)
         weekly_rsi_val = float(weekly_rsi.iloc[-1]) if not weekly_rsi.empty else np.nan
         weekly_cond = weekly_rsi_val > config['weekly_rsi_threshold']
-        logger.info("Weekly RSI: %.2f, > %d? %s", weekly_rsi_val, config['weekly_rsi_threshold'], weekly_cond)
+        if verbose: logger.info("Weekly RSI: %.2f, > %d? %s", weekly_rsi_val, config['weekly_rsi_threshold'], weekly_cond)
         points += int(bool(weekly_cond))
     except Exception as e:
         logger.debug("Weekly RSI calculation failed: %s", e)
@@ -244,7 +244,7 @@ def Category_B_Technical_Conditions():
             if bbu_col:
                 bbu = bb[bbu_col[0]]
                 bb_cond = spx.iloc[-1] > bbu.iloc[-1]
-                logger.info("SPX last: %.2f, BB upper: %.2f, > upper? %s", spx.iloc[-1], bbu.iloc[-1], bb_cond)
+                if verbose: logger.info("SPX last: %.2f, BB upper: %.2f, > upper? %s", spx.iloc[-1], bbu.iloc[-1], bb_cond)
                 points += int(bb_cond)
     except Exception as e:
         logger.debug("Bollinger calc failed: %s", e)
@@ -255,20 +255,20 @@ def Category_B_Technical_Conditions():
         ema20m = ta.ema(monthly, length=config['monthly_ema_months'])
         if not monthly.empty and not ema20m.empty:
             parabolic_cond = monthly.iloc[-1] > 1.02 * ema20m.iloc[-1]
-            logger.info("Monthly close: %.2f, 20-month EMA: %.2f, >2%%? %s", monthly.iloc[-1], ema20m.iloc[-1], parabolic_cond)
+            if verbose: logger.info("Monthly close: %.2f, 20-month EMA: %.2f, >2%%? %s", monthly.iloc[-1], ema20m.iloc[-1], parabolic_cond)
             points += int(parabolic_cond)
     except Exception as e:
         logger.debug("Monthly EMA calc failed: %s", e)
 
-    logger.info("Category B points: %d", points)
+    if verbose: logger.info("Category B points: %d", points)
     return points
 
 
 # ---------------------------
 # Category C - Macro Liquidity
 # ---------------------------
-def category_C_macro_liquidity():
-    logger.info("Running Category C: Macro Liquidity (FRED)")
+def category_C_macro_liquidity(verbose):
+    if verbose: logger.info("Running Category C: Macro Liquidity (FRED)")
     pts = 0
     end = datetime.today()
     start = end - timedelta(weeks=6)
@@ -282,9 +282,9 @@ def category_C_macro_liquidity():
             two_weeks_ago = (end - timedelta(weeks=2))
             past_val = float(df['DFII10'].asof(two_weeks_ago))
             change_bps = (recent - past_val) * 100.0
-            logger.info("DFII10 recent: %.3f, two-weeks-ago(asof): %.3f, change: %.1f bps", recent, past_val, change_bps)
+            if verbose: logger.info("DFII10 recent: %.3f, two-weeks-ago(asof): %.3f, change: %.1f bps", recent, past_val, change_bps)
             if change_bps >= config['real_yield_bps_move']:
-                logger.info("→ Real yields rose >= %d bps → +1", config['real_yield_bps_move'])
+                if verbose: logger.info("→ Real yields rose >= %d bps → +1", config['real_yield_bps_move'])
                 pts += 1
         else:
             logger.info("Insufficient DFII10 data")
@@ -298,30 +298,30 @@ def category_C_macro_liquidity():
         if len(df2) >= 5:
             recent = float(df2['NFCI'].iloc[-1])
             past_val = float(df2['NFCI'].asof(end - timedelta(weeks=2)))
-            logger.info("NFCI recent: %.4f, past(asof): %.4f", recent, past_val)
+            if verbose: logger.info("NFCI recent: %.4f, past(asof): %.4f", recent, past_val)
             if recent > past_val:
-                logger.info("→ Financial conditions tightened (NFCI up) → +1")
+                if verbose: logger.info("→ Financial conditions tightened (NFCI up) → +1")
                 pts += 1
         else:
-            logger.info("Insufficient NFCI data")
+            if verbose: logger.info("Insufficient NFCI data")
     except Exception as e:
         logger.warning("Error fetching NFCI: %s", e)
 
-    logger.info("Category C points: %d", pts)
+    if verbose: logger.info("Category C points: %d", pts)
     return pts
 
 
 # ---------------------------
 # Final scoring / orchestration
 # ---------------------------
-def run_once():
+def run_once(args):
     """
     Run the full scanner once and compute a normalized score 0..score_max (config['score_max'])
     Returns dictionary of raw_category_points and normalized score.
     """
-    a = category_A_market_internals()         # 0..3 (approx)
-    b = Category_B_Technical_Conditions()     # 0..3
-    c = category_C_macro_liquidity()          # 0..2
+    a = category_A_market_internals(verbose=getattr(args, "verbose", True))         # 0..3 (approx)
+    b = Category_B_Technical_Conditions(verbose=getattr(args, "verbose", True))     # 0..3
+    c = category_C_macro_liquidity(verbose=getattr(args, "verbose", True))          # 0..2
 
     raw_total = a + b + c
     # For normalization, assume maximum practical raw_total is 8 (3+3+2)
@@ -329,9 +329,9 @@ def run_once():
     norm_score = (raw_total / max_raw) * config['score_max']
     norm_score = float(np.clip(norm_score, 0, config['score_max']))
 
-    logger.info("=" * 60)
-    logger.info("RAW SCORE: %d (A=%d, B=%d, C=%d)", raw_total, a, b, c)
-    logger.info("NORMALIZED SCORE (0-%d): %.2f", config['score_max'], norm_score)
+    if getattr(args, "verbose", True): logger.info("=" * 60)
+    if getattr(args, "verbose", True): logger.info("RAW SCORE: %d (A=%d, B=%d, C=%d)", raw_total, a, b, c)
+    if getattr(args, "verbose", True): logger.info("NORMALIZED SCORE (0-%d): %.2f", config['score_max'], norm_score)
 
     # simple action mapping
     action = ""
@@ -342,7 +342,7 @@ def run_once():
     else:
         action = "Elevated risk — avoid selling credit put spreads this month"
 
-    logger.info("RECOMMENDATION: %s", action)
+    if getattr(args, "verbose", True): logger.info("RECOMMENDATION: %s", action)
 
     return {
         "raw_total": raw_total,

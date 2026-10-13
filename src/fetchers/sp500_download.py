@@ -49,11 +49,11 @@ def get_sp500_tickers_from_file(filepath):
 
 
 # Step 2: Download data for all tickers
-def download_sp500_data(tickers, period="max"):
+def download_sp500_data(tickers, period="max", args={}):
     all_data = {}
     failed_tickers = []
 
-    print(f"Downloading data for {len(tickers)} tickers...")
+    if getattr(args, "verbose", True): print(f"Downloading data for {len(tickers)} tickers...")
     for i, ticker in enumerate(tqdm(tickers)):
         try:
             end_date = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -69,7 +69,7 @@ def download_sp500_data(tickers, period="max"):
             failed_tickers.append(ticker)
         time.sleep(0.25)  # Be respectful to Yahoo's servers
 
-    print(f"\nDownload complete. Failed tickers: {failed_tickers}")
+    if getattr(args, "verbose", True): print(f"\nDownload complete. Failed tickers: {failed_tickers}")
     return all_data, failed_tickers
 
 
@@ -91,25 +91,25 @@ def entry(args):
         html_file = (Path(__file__).parent / '..' / '..' / 'data' / 'List of S&P 500 companies - Wikipedia.2026.08.21.html').resolve()
     else:
         html_file = args.html_file
-    print(f"Reading file {html_file}")
+    if getattr(args, "verbose", True): print(f"Reading file {html_file}")
 
     if not os.path.exists(html_file):
         raise FileNotFoundError(f"HTML file not found: {html_file}")
 
     tickers = get_sp500_tickers_from_file(html_file)
-    print(f"Found {len(tickers)} tickers.")
+    if getattr(args, "verbose", True): print(f"Found {len(tickers)} tickers.")
 
     # Download data (change period as needed: "1y", "5y", "max", etc.)
-    data_dict, failed = download_sp500_data(tickers, period="max")
+    data_dict, failed = download_sp500_data(tickers=tickers, period="max", args=args)
 
     # Save combined data to CSV
     if data_dict:
         combined_df = pd.concat(data_dict, names=['Ticker', 'Date'])
         # Save DataFrame to Parquet
         combined_df.to_parquet(FYAHOO_SPX500__OUTPUTFILENAME, engine='pyarrow', compression='snappy')
-        print(f"\nAll data saved to {FYAHOO_SPX500__OUTPUTFILENAME}")
+        if getattr(args, "verbose", True): print(f"\nAll data saved to {FYAHOO_SPX500__OUTPUTFILENAME}")
     else:
-        print("No data downloaded.")
+        if getattr(args, "verbose", True): print("No data downloaded.")
 
 
 if __name__ == "__main__":

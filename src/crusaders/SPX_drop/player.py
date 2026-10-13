@@ -37,15 +37,15 @@ def entry(args_player):
     signature_for_prod = TITLE_WEBEAR if args_player.production_setup else "DEV"
 
     # Update dataset
-    if args.update_dataset:
+    if getattr(args_player, "update_dataset", False):
         output_file = os.path.join(get_and_clean_stub_dir("spx_drop_working_dir"), "List of S&P 500 companies - Wikipedia.html")
         download_list_of_spx500(args=Namespace(output_file=output_file))
         sp500_download(args=Namespace(html_file=output_file))
 
     # Compute models
-    result_model_2 = entry_model_2()
-    result_model_3 = entry_model_3()
-    result_model_4 = entry_model_4()
+    result_model_2 = entry_model_2(args=Namespace(verbose=getattr(args_player, "verbose", True)))
+    result_model_3 = entry_model_3(args=Namespace(verbose=getattr(args_player, "verbose", True)))
+    result_model_4 = entry_model_4(args=Namespace(verbose=getattr(args_player, "verbose", True)))
 
     # Extraction propre des données pour le courriel
     score_2, reco_2 = result_model_2['score'], result_model_2['recommendation']
@@ -92,15 +92,15 @@ Le système
 """
 
     subject = f"Le Bouclier SPX | {signature_for_prod} @{datetime.now().strftime('%Y%m%d_%H%M')} | {synthese_globale}"
-
-    print("\n" + "="*60)
-    print("APERÇU DU COURRIEL GÉNÉRÉ :")
-    print("="*60)
-    print(f"Objet : {subject}")
-    print(email_body)
-    print("="*60)
-
-    send_html_email(destinataires=destinataires, sujet=subject, corps=email_body)
+    if getattr(args_player, "verbose", True):
+        print("\n" + "="*60)
+        print("APERÇU DU COURRIEL GÉNÉRÉ :")
+        print("="*60)
+        print(f"Objet : {subject}")
+        print(email_body)
+        print("="*60)
+    if getattr(args_player, "send_email", True):
+        send_html_email(destinataires=destinataires, sujet=subject, corps=email_body)
 
     return {'subject': subject, 'body': email_body}
 

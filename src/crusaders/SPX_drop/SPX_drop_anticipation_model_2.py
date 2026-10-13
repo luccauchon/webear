@@ -15,9 +15,12 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 from constants import FRED_API_KEY
+import logging
 
+# Désactive les messages d'information pour pandas_datareader
+logging.getLogger('pandas_datareader').setLevel(logging.ERROR)
 
-def category_A_Market_Internals():
+def category_A_Market_Internals(verbose):
     def compute_ma_stats(df, window=50, ma_type='SMA'):
         """
         Compute moving average (SMA or EMA) for each stock using 'Close' prices,
@@ -91,10 +94,10 @@ def category_A_Market_Internals():
         summary, _ = compute_ma_stats(df, window=50, ma_type='SMA')
         return 0 if summary['Percent_Above_MA'] > 50 else 1
 
-    def check_rsp_spx_divergence(days=20, threshold=0.03):
+    def check_rsp_spx_divergence(days=20, threshold=0.03, verbose=True):
         tickers = ["^GSPC", "RSP"]
         try:
-            data = yf.download(tickers, period="6mo", interval="1d", auto_adjust=True)
+            data = yf.download(tickers, period="6mo", interval="1d", auto_adjust=True, progress=False)
         except Exception as e:
             print(f"⚠️ Error downloading SPX/RSP data: {e}")
             return 0
@@ -126,21 +129,21 @@ def category_A_Market_Internals():
         rsp_return = (rsp_latest / rsp_past) - 1
         underperformance = spx_return - rsp_return
 
-        print(f"SPX {days}-day return: {spx_return:.2%}")
-        print(f"RSP {days}-day return: {rsp_return:.2%}")
-        print(f"RSP underperformance vs SPX: {underperformance:.2%}")
+        if verbose: print(f"SPX {days}-day return: {spx_return:.2%}")
+        if verbose: print(f"RSP {days}-day return: {rsp_return:.2%}")
+        if verbose: print(f"RSP underperformance vs SPX: {underperformance:.2%}")
 
         if underperformance > threshold:
-            print(f"✅ Divergence detected: RSP underperformed SPX by >{threshold:.0%} over {days} days.")
+            if verbose: print(f"✅ Divergence detected: RSP underperformed SPX by >{threshold:.0%} over {days} days.")
             return 1
         else:
-            print(f"❌ No significant divergence (> {threshold:.0%} underperformance).")
+            if verbose: print(f"❌ No significant divergence (> {threshold:.0%} underperformance).")
             return 0
 
-    def check_hyg_spx_divergence(days=5, spx_min_return=0.0, hyg_max_return=-0.001):
+    def check_hyg_spx_divergence(days=5, spx_min_return=0.0, hyg_max_return=-0.001, verbose=True):
         tickers = ["^GSPC", "HYG"]
         try:
-            data = yf.download(tickers, period="3mo", interval="1d", auto_adjust=True)
+            data = yf.download(tickers, period="3mo", interval="1d", auto_adjust=True, progress=False)
         except Exception as e:
             print(f"⚠️ Error downloading SPX/HYG data: {e}")
             return 0
@@ -169,33 +172,33 @@ def category_A_Market_Internals():
         spx_return = spx_latest / spx_past - 1
         hyg_return = hyg_latest / hyg_past - 1
 
-        print(f"📅 Period: {days} trading days")
-        print(f"📈 SPX return: {spx_return:.2%}")
-        print(f"📉 HYG return: {hyg_return:.2%}")
+        if verbose: print(f"📅 Period: {days} trading days")
+        if verbose: print(f"📈 SPX return: {spx_return:.2%}")
+        if verbose: print(f"📉 HYG return: {hyg_return:.2%}")
 
         spx_up = spx_return >= spx_min_return
         hyg_down = hyg_return <= hyg_max_return
 
         if spx_up and hyg_down:
-            print("⚠️ DIVERGENCE DETECTED: SPX up while HYG down!")
-            print("   → Equity market rising, but high-yield bonds weakening.")
-            print("   → Possible early warning of risk-off sentiment or credit stress.")
+            if verbose: print("⚠️ DIVERGENCE DETECTED: SPX up while HYG down!")
+            if verbose: print("   → Equity market rising, but high-yield bonds weakening.")
+            if verbose: print("   → Possible early warning of risk-off sentiment or credit stress.")
             return 1
         else:
-            print("✅ No divergence: SPX and HYG moving in expected alignment.")
+            if verbose: print("✅ No divergence: SPX and HYG moving in expected alignment.")
             return 0
 
     score = 0
     score += fewer_stocks_above_their_50_day_MA()
-    score += check_rsp_spx_divergence(days=20, threshold=0.03)
-    score += check_hyg_spx_divergence(days=5)
+    score += check_rsp_spx_divergence(days=20, threshold=0.03, verbose=verbose)
+    score += check_hyg_spx_divergence(days=5, verbose=verbose)
     return score
 
 
-def Category_B_Technical_Conditions():
+def Category_B_Technical_Conditions(verbose):
     ticker = "^GSPC"
     try:
-        data = yf.download(ticker, period="2y", interval="1d")
+        data = yf.download(ticker, period="2y", interval="1d", auto_adjust=True, ignore_tz=True, progress=False)
     except Exception as e:
         print(f"⚠️ Failed to download SPX data: {e}")
         return 0
@@ -225,15 +228,15 @@ def Category_B_Technical_Conditions():
 
     points = int(weekly_rsi_cond) + int(bb_cond) + int(parabolic_cond)
 
-    print("\n=== Category B: Technical Conditions (S&P 500) ===")
-    print(f"- Weekly RSI > 68: {weekly_rsi_cond} (RSI = {weekly_rsi.iloc[-1]:.2f} if available)")
-    print(f"- Price > 2σ Bollinger (20-day): {bb_cond}")
-    print(f"- Monthly close > 2% above 20-month EMA: {parabolic_cond}")
-    print(f"\nTotal Points: {points}/3")
+    if verbose: print("\n=== Category B: Technical Conditions (S&P 500) ===")
+    if verbose: print(f"- Weekly RSI > 68: {weekly_rsi_cond} (RSI = {weekly_rsi.iloc[-1]:.2f} if available)")
+    if verbose: print(f"- Price > 2σ Bollinger (20-day): {bb_cond}")
+    if verbose: print(f"- Monthly close > 2% above 20-month EMA: {parabolic_cond}")
+    if verbose: print(f"\nTotal Points: {points}/3")
     return points
 
 
-def category_C_Macro_Liquidity():
+def category_C_Macro_Liquidity(verbose):
     def real_yield_rising_20bp():
         end = datetime.today()
         start = end - timedelta(weeks=6)
@@ -268,42 +271,42 @@ def category_C_Macro_Liquidity():
 
     points = 0
     if real_yield_rising_20bp():
-        print("✅ Real yields rose ≥20 bps in 2 weeks → +1 point")
+        if verbose: print("✅ Real yields rose ≥20 bps in 2 weeks → +1 point")
         points += 1
     else:
-        print("❌ Real yields did not rise ≥20 bps")
+        if verbose: print("❌ Real yields did not rise ≥20 bps")
 
     if financial_conditions_tightening():
-        print("✅ Financial conditions tightened → +1 point")
+        if verbose: print("✅ Financial conditions tightened → +1 point")
         points += 1
     else:
-        print("❌ Financial conditions did not tighten")
+        if verbose: print("❌ Financial conditions did not tighten")
 
-    print(f"\n=== Category C: Macro Liquidity Score: {points}/2 ===")
+    if verbose: print(f"\n=== Category C: Macro Liquidity Score: {points}/2 ===")
     return points
 
 
-def entry():
-    print("Running Market Regime Scanner...\n")
+def entry(args):
+    if args.verbose: print("Running Market Regime Scanner...\n")
     score = 0
-    score += category_A_Market_Internals()
-    print("\n" + "="*60 + "\n")
-    score += Category_B_Technical_Conditions()
-    print("\n" + "="*60 + "\n")
-    score += category_C_Macro_Liquidity()
+    score += category_A_Market_Internals(verbose=args.verbose)
+    if args.verbose: print("\n" + "="*60 + "\n")
+    score += Category_B_Technical_Conditions(verbose=args.verbose)
+    if args.verbose: print("\n" + "="*60 + "\n")
+    score += category_C_Macro_Liquidity(verbose=args.verbose)
     str_response = (("\n" + "=" * 60) + f"FINAL REGIME SCORE: {score}/6"+
                     "| Score    | Meaning                                          | Action for credit put spreads |"+
                     "| -------- | ------------------------------------------------ | ----------------------------- |"+
                     "| **0–3**  | Low drop probability                             | Enter normal position         |"+
                     "| **4–6**  | Medium risk                                      | Reduce size 30–50%            |"+
                     "| **7–8**  | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
-    print("\n" + "="*60)
-    print(f"FINAL REGIME SCORE: {score}")
-    print("| Score    | Meaning                                          | Action for credit put spreads |")
-    print("| -------- | ------------------------------------------------ | ----------------------------- |")
-    print("| **0–3**  | Low drop probability                             | Enter normal position         |")
-    print("| **4–6**  | Medium risk                                      | Reduce size 30–50%            |")
-    print("| **7–8**  | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
+    if args.verbose: print("\n" + "="*60)
+    if args.verbose: print(f"FINAL REGIME SCORE: {score}")
+    if args.verbose: print("| Score    | Meaning                                          | Action for credit put spreads |")
+    if args.verbose: print("| -------- | ------------------------------------------------ | ----------------------------- |")
+    if args.verbose: print("| **0–3**  | Low drop probability                             | Enter normal position         |")
+    if args.verbose: print("| **4–6**  | Medium risk                                      | Reduce size 30–50%            |")
+    if args.verbose: print("| **7–8**  | High probability of 5–8% drop in next 30–45 days | Avoid selling CPS this month  |")
     # Note: max possible is 8 (2+3+1? Actually A=3, B=3, C=2 → max=8)
     recommendation = "| **0–3**  | Low drop probability                             | Enter normal position         |"
     if 4 <= score <= 6:

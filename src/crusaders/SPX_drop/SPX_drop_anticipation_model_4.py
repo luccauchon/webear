@@ -355,11 +355,11 @@ def backtest(start_date, end_date, parquet_path=LOCAL_SP500_PARQUET, resample_fr
 # ---------------------------
 # Live Scan Function
 # ---------------------------
-def run_live_scan(parquet_path=LOCAL_SP500_PARQUET):
+def run_live_scan(args,parquet_path=LOCAL_SP500_PARQUET):
     """
     Perform a live scan using the most recent available data (as of today).
     """
-    logger.info("Running live SPX drop anticipation scan...")
+    if args.verbose: logger.info("Running live SPX drop anticipation scan...")
 
     # 1. Determine asof date: last business day with market data (use today or previous close)
     today = pd.Timestamp.today().normalize()
@@ -411,24 +411,24 @@ def run_live_scan(parquet_path=LOCAL_SP500_PARQUET):
     norm_score = float(np.clip((raw_total / max_raw) * config['score_max'], 0, config['score_max']))
 
     # 6. Output
-    logger.info("=" * 50)
-    logger.info("LIVE SCAN RESULT (as of %s)", asof.strftime("%Y-%m-%d"))
-    logger.info("Category A Points: %d/3", A_pts)
-    logger.info("Category B Points: %d/3", B_pts)
-    logger.info("Category C Points: %d/2", C_pts)
-    logger.info("Raw Score: %d / 8", raw_total)
-    logger.info("Normalized Score: %.2f / 10", norm_score)
-    logger.info("=" * 50)
+    if args.verbose:logger.info("=" * 50)
+    if args.verbose:logger.info("LIVE SCAN RESULT (as of %s)", asof.strftime("%Y-%m-%d"))
+    if args.verbose:logger.info("Category A Points: %d/3", A_pts)
+    if args.verbose:logger.info("Category B Points: %d/3", B_pts)
+    if args.verbose:logger.info("Category C Points: %d/2", C_pts)
+    if args.verbose:logger.info("Raw Score: %d / 8", raw_total)
+    if args.verbose:logger.info("Normalized Score: %.2f / 10", norm_score)
+    if args.verbose:logger.info("=" * 50)
     recommendation = ""
     if norm_score >= 7.0:
         recommendation = "⚠️  HIGH DROP RISK SIGNAL DETECTED!"
-        logger.warning(recommendation)
+        if args.verbose: logger.warning(recommendation)
     elif norm_score >= 5.0:
         recommendation = "🟡 Moderate risk signal."
-        logger.info(recommendation)
+        if args.verbose: logger.info(recommendation)
     else:
         recommendation = "🟢 Low risk environment."
-        logger.info(recommendation)
+        if args.verbose: logger.info(recommendation)
 
     return {
         "asof": asof,

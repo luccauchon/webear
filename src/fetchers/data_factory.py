@@ -223,23 +223,23 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                     # Style: day_heikinashi or day_2B or extraday-12days
                     _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
                     assert _dataset_id in DATASET_AVAILABLE + ["extraday"]
-                daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime()
+                daily_data_cache, weekly_data_cache, monthly_data_cache, quaterly_data_cache, yearly_data_cache = fyahoo_realtime() if _get_vix else fyahoo_realtime(tickers=[_ticker])
                 the_vix = None
                 if _dataset_id in ["day", "extraday"]:
                     df_main = daily_data_cache[_ticker].sort_index().copy()
-                    the_vix = daily_data_cache["^VIX"]
+                    if _get_vix: the_vix = daily_data_cache["^VIX"]
                 elif _dataset_id == "week":
                     df_main = weekly_data_cache[_ticker].sort_index().copy()
-                    the_vix = weekly_data_cache["^VIX_MEAN"]
+                    if _get_vix: the_vix = weekly_data_cache["^VIX_MEAN"]
                 elif _dataset_id == "month":
                     df_main = monthly_data_cache[_ticker].sort_index().copy()
-                    the_vix = monthly_data_cache["^VIX_MEAN"]
+                    if _get_vix: the_vix = monthly_data_cache["^VIX_MEAN"]
                 elif _dataset_id == "quarter":
                     df_main = quaterly_data_cache[_ticker].sort_index().copy()
-                    the_vix = quaterly_data_cache["^VIX"]
+                    if _get_vix: the_vix = quaterly_data_cache["^VIX"]
                 elif _dataset_id == "year":
                     df_main = yearly_data_cache[_ticker].sort_index().copy()
-                    the_vix = yearly_data_cache["^VIX"]
+                    if _get_vix: the_vix = yearly_data_cache["^VIX"]
                 if _get_vix:
                     df_vix = the_vix.sort_index().copy()
                 assert _clip_n_before == 0

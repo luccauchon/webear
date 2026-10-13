@@ -34,7 +34,7 @@ def entry(args):
 
     # Simulation d'un temps de réflexion humain (entre 2 et 5 secondes) avant de lancer la requête
     delay = random.uniform(2.0, 5.0)
-    print(f"Navigation vers le site... (attente simulée de {delay:.2f} secondes)")
+    if getattr(args, "verbose", True): print(f"Navigation vers le site... (attente simulée de {delay:.2f} secondes)")
     time.sleep(delay)
 
     try:
@@ -43,15 +43,13 @@ def entry(args):
 
         # Vérification que le téléchargement a réussi (Statut 200)
         if response.status_code == 200:
-            print("Page téléchargée avec succès !")
+            if getattr(args, "verbose", True):print("Page téléchargée avec succès !")
             # Sauvegarde du contenu HTML dans un fichier local
             with open(args.output_file, "w", encoding="utf-8") as file:
                 file.write(response.text)
-            print("Le fichier a été enregistré sous le nom 'sp500_companies.html'.")
+            if getattr(args, "verbose", True):print("Le fichier a été enregistré sous le nom 'sp500_companies.html'.")
         else:
-            print(
-                f"Échec du téléchargement. Code d'erreur du serveur : {response.status_code}"
-            )
+            if getattr(args, "verbose", True):print(f"Échec du téléchargement. Code d'erreur du serveur : {response.status_code}")
 
     except requests.exceptions.RequestException as e:
         print(f"Une erreur est survenue lors de la connexion : {e}")
