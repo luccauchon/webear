@@ -1271,8 +1271,11 @@ def get_dataset_timeframe(_dataset_id):
                 _n_minutes = int(_dataset_id.split("_")[1][:-3])
                 return _n_minutes
             except:
-                _n_minutes = int(_dataset_id.split("-")[1][:-3])
-                return _n_minutes
+                try:
+                    _n_minutes = int(_dataset_id.split("-")[1][:-3])
+                    return _n_minutes
+                except:
+                    return 1  # Par defaut
         elif _dataset_id.startswith("extraday"):
             try:
                 _n_days = int(re.search(r'\d+', _dataset_id.split("_")[1]).group())
