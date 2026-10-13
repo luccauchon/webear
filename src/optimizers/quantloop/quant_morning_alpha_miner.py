@@ -684,10 +684,10 @@ def entry(args):
 
     zzz = len(combo_to_be_processed) * len(get_models())
 
-    use_cases__shared, master_cmd__shared = Queue(2 * zzz), Value("i", 0)
+    use_cases__shared, master_cmd__shared = Queue(), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, nb_worker)]
 
-    print(f"Lancement des evaluations en CV | Queue de dimension {2 * zzz}")
+    print(f"Lancement des evaluations en CV")
 
     for k in range(0, nb_worker):
         p = Process(
