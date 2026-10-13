@@ -318,7 +318,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
                 # On recharge le tuple et on réaffecte chaque variable dans le même ordre
                 pipe, X_train_sub, y_train, tscv, scoring, features_str, model_name, combo_list = pickle.load(memoire)
 
-            cv_scores = cross_val_score(pipe, X_train_sub, y_train, cv=tscv, scoring='f1_weighted', n_jobs=None)
+            cv_scores = cross_val_score(pipe, X_train_sub, y_train, cv=tscv, scoring='f1_weighted', n_jobs=1)
             mean_cv_f1 = cv_scores.mean()
 
             all_results_computed.append({
