@@ -240,7 +240,7 @@ def get_parser():
 
     parser.add_argument("--dataset-id", type=str, default="day")
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
-    parser.add_argument("--debug", action="store_true", default=False, help="Debug mode. Don't send the emails.")
+    parser.add_argument("--no-email", action="store_true", default=False, help="Don't send the emails.")
     parser.add_argument("--n-trials", type=int, default=999)
     parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
@@ -385,7 +385,7 @@ def entry(args):
                 distance_from_open           = float((predicted_low - actual_open) / actual_open)
                 distance_from_current_value  = float((predicted_low - actual_close) / actual_close)
                 distance_from_previous_close = float((predicted_low - previous_close) / previous_close)
-                risk_reward                  = (spread_width - breakeven_low) / breakeven_low
+                risk_reward                  = (spread_width - breakeven_low) / breakeven_low if breakeven_low != 0 else 0
                 string_generated += (f"\t"                      
                       f"{' ':<4}{predicted_low:04d}    {probability_predicted_low:02d}%  {breakeven_low:03d}$   {risk_reward:04.1f}")+ "\n"
                 vlow_text = (predicted_low, probability_predicted_low,breakeven_low) if vlow_text is None else vlow_text
@@ -394,7 +394,7 @@ def entry(args):
                 distance_from_open           = float((predicted_high - actual_open) / actual_open)
                 distance_from_current_value  = float((predicted_high - actual_close) / actual_close)
                 distance_from_previous_close = float((predicted_high - previous_close) / previous_close)
-                risk_reward                  = (spread_width - breakeven_high) / breakeven_high
+                risk_reward                  = (spread_width - breakeven_high) / breakeven_high if breakeven_high != 0 else 0
                 string_generated += (f"\t"                      
                       f"{' ':<4}{predicted_high:04d}    {probability_predicted_high:02d}%  {breakeven_high:03d}$   {risk_reward:04.1f}")+ "\n"
                 vhigh_text = (predicted_high, probability_predicted_high, breakeven_high) if vhigh_text is None else vhigh_text
@@ -411,6 +411,7 @@ def entry(args):
     string_explicative += (f"Entraînement du {dataset_configuration['train_info']['start_date']} au {dataset_configuration['train_info']['end_date']} ({dataset_configuration['train_info']['bars']} chandelles)\n"
                            f"Test         du {dataset_configuration['test_info']['start_date']} au {dataset_configuration['test_info']['end_date']} ({dataset_configuration['test_info']['bars']} chandelles)")
     string_generated += ("\n\n"+string_explicative)
+    rrc = (spread_width-vlow_text[2])/vlow_text[2] if 0 != vlow_text[2] else 0.
     string_generated += ("\n\nBonjour,\n"
                          f"Voici les zones de probabilités pour la valeur de clôture du {args.ticker}. "
                          f"Par exemple, pour la fermeture des marchés d'aujourd'hui ({datetime.now().strftime('%Y-%m-%d')}), "
@@ -419,11 +420,11 @@ def entry(args):
                          f"Idéalement, assurez-vous de percevoir une prime qui correspond au seuil de rentabilité (Break-Even) spécifié ci-dessus. "
                          f"Par exemple, lors de la vente d'un Put Credit Spread 0DTE de 5 points de large (vendre le PUT {vlow_text[0]} et acheter le PUT {vlow_text[0]-5}), "
                          f"la prime minimale à recevoir devrait être de {vlow_text[2]}$. "
-                         f"Cela représente un risque maximal de {spread_width-vlow_text[2]}$ et un Risk-Reward de {(spread_width-vlow_text[2])/vlow_text[2]:.2f}")
+                         f"Cela représente un risque maximal de {spread_width-vlow_text[2]}$ et un Risk-Reward de {rrc:.2f}")
     if getattr(args, 'verbose', True): print(string_generated)
     output_file = os.path.join(get_and_clean_stub_dir("atr_make_graphics"), f"{args.ticker}_{args.dataset_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png")
     make_plot(current_price=actual_close, low_levels=low_levels_for_graphics, high_levels=high_levels_for_graphics, display_plot=False, output_file=output_file, use_plotly=False)
-    if not args.debug:
+    if not getattr(args, "no_email", False):
         send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated, pieces_jointes=output_file)
     return returned_values
 

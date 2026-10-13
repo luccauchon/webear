@@ -187,13 +187,10 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
         if _realtime_data:
             if _dataset_id.startswith("intraday"):
                 assert _ticker in ["^GSPC"]
-                df_spx_main_local = get_1_minute_df(verbose=False, SPX=True)
-                df_vix_main_local = get_1_minute_df(verbose=False, SPX=False, VIX=True)
-                df_realtime = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=True, spy=False, spx=True, ndx=False)
+                df_spx_main_local    = get_1_minute_df(verbose=False, SPX=True)
+                df_realtime          = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='2d', vix=True, spy=False, spx=True, ndx=False)
                 df_spx_main_realtime = df_realtime['spx']
-                df_vix_main_realtime = df_realtime['vix']
-                # print(f"LOCAL     {df_spx_main_local.index[0]}::{df_spx_main_local.index[-1]}  {len(df_spx_main_local)}")
-                # print(f"REALTIME  {df_spx_main_realtime.index[0]}::{df_spx_main_realtime.index[-1]}  {len(df_spx_main_realtime)}")
+
                 def _combine_2df(df_a, df_b):
                     # 1. Fusionner les deux DataFrames (l'un en dessous de l'autre)
                     df_combined = pd.concat([df_a, df_b])
@@ -206,10 +203,11 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                     df_new = df_new.sort_index()
                     return df_new
                 df_main = _combine_2df(df_a=df_spx_main_local, df_b=df_spx_main_realtime)
-                # print("========================================================")
-                # print(f"FUSIONNED {df_main.index[0]}::{df_main.index[-1]}  {len(df_main)}")
 
-                df_vix = _combine_2df(df_a=df_vix_main_local, df_b=df_vix_main_realtime)
+                if _get_vix:
+                    df_vix_main_local = get_1_minute_df(verbose=False, SPX=False, VIX=True)
+                    df_vix_main_realtime = df_realtime['vix']
+                    df_vix = _combine_2df(df_a=df_vix_main_local, df_b=df_vix_main_realtime)
 
                 _n_minutes = get_dataset_timeframe(_dataset_id)
                 if _n_minutes > 1:

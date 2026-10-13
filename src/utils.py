@@ -822,28 +822,23 @@ def get_next_day_range(input_date=None):
     return f"Returned day is {next_day.strftime('%Y-%m-%d')}", next_day
 
 
-def get_next_week_range(input_date=None):
+def get_week_range(input_date=None, weeks_ahead=0):
     """
-    Returns a formatted string showing the next Monday-to-Friday week range.
+    Returns a formatted string showing the Monday-to-Friday week range
+    based on the number of weeks ahead specified.
 
     Args:
         input_date (str | date | datetime | None):
             - If None: uses today's date
             - If str: expects "YYYY-MM-DD" format
             - If datetime/date: uses the given date
+        weeks_ahead (int):
+            - 0: current week
+            - 1: next week (default)
+            - 2+: future weeks
 
     Returns:
-        str: "Next week is from YYYY-MM-DD to YYYY-MM-DD"
-
-    Examples:
-        >>> get_next_week_range("2025-02-05")  # Wednesday
-        'Next week is from 2025-02-10 to 2025-02-14'
-
-        >>> get_next_week_range("2025-02-14")  # Friday
-        'Next week is from 2025-02-17 to 2025-02-21'
-
-        >>> get_next_week_range("2025-02-16")  # Sunday
-        'Next week is from 2025-02-17 to 2025-02-21'
+        tuple[str, date]: A message string and the Friday date object.
     """
     # Normalize input to date object
     if input_date is None:
@@ -858,12 +853,18 @@ def get_next_week_range(input_date=None):
     # Find Monday of current week (Monday = weekday 0)
     monday_this_week = dt - timedelta(days=dt.weekday())
 
-    # Next week's Monday is 7 days after current week's Monday
-    monday_next_week = monday_this_week + timedelta(days=7)
-    friday_next_week = monday_next_week + timedelta(days=4)  # Monday + 4 days = Friday
+    # Calculate target week's Monday and Friday based on weeks_ahead
+    target_monday = monday_this_week + timedelta(weeks=weeks_ahead)
+    target_friday = target_monday + timedelta(days=4)  # Monday + 4 days = Friday
 
-    return (f"Returned week is from {monday_next_week.strftime('%Y-%m-%d')} "
-            f"to {friday_next_week.strftime('%Y-%m-%d')}"), friday_next_week
+    message = (f"Returned week is from {target_monday.strftime('%Y-%m-%d')} "
+               f"to {target_friday.strftime('%Y-%m-%d')}")
+
+    return message, target_friday
+
+
+def get_next_week_range(input_date=None):
+    return get_week_range(input_date=input_date, weeks_ahead=1)
 
 
 def get_next_month_range(input_date=None):
