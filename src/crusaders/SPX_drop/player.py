@@ -102,7 +102,7 @@ Le système
     if getattr(args_player, "send_email", True):
         send_html_email(destinataires=destinataires, sujet=subject, corps=email_body)
 
-    return {'subject': subject, 'body': email_body}
+    return {'subject': subject, 'body': email_body, 'avg_score': avg_score}
 
 
 if __name__ == "__main__":
