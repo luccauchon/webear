@@ -331,7 +331,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
             if mean_cv_f1 > best_mean_cv_f1:
                 best_mean_cv_f1 = mean_cv_f1
 
-            if 0 == len(all_results_computed) % int(10000):
+            if 0 == len(all_results_computed) % int(100000):
                 print(
                     f"[{str(os.getpid()):<6}:{str(k):<4}]  {best_mean_cv_f1:8.8f} :: {mean_cv_f1:8.8f}  "
                     f"| {len(all_results_computed):6d} cases computed  "
