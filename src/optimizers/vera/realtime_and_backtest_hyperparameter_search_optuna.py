@@ -247,7 +247,7 @@ def realtime_and_backtesting_mode(args):
     realtime = args.execution_mode in ["realtime"]
 
     # Tracking variables for PnL and results
-    str_resulting = ""
+    str_resulting, inf_resulting = "", []
     put_spread_results, call_spread_results, all_loss_in_dollars, all_credit_in_dollars = [], [], [], []
     n_clip_value = 0
     credit_spread_size = 500  # Maximum loss per spread in dollars
@@ -274,6 +274,7 @@ def realtime_and_backtesting_mode(args):
     # 3. Main Backtesting / Realtime Loop
     ###########################################################################
     # Iterate through the specified number of historical days
+    args.back_n_days = args.back_n_days if hasattr(args, "args.back_n_days") else 100
     loop_iter = tqdm(range(0, args.back_n_days), desc="Backtesting") if getattr(args, 'verbose_print_progress_bar', False) else range(0, args.back_n_days)
 
     for n_days in loop_iter:
@@ -446,7 +447,7 @@ def realtime_and_backtesting_mode(args):
                    f"{put_icon}Put@{atr_predicted_low:.0f}:{atr_prob_down:.0%}:{be_down:.0f}$ "
                    f"|{call_icon}Call@{atr_predicted_high:.0f}:{atr_prob_up:.0%}:{be_up:.0f}$ "
                    f"{tmp_streak_str} {day_meta_data_str} {loss_str}")
-
+        inf_resulting.append({"atr_predicted_low": atr_predicted_low, "atr_prob_down": atr_prob_down, "atr_predicted_high": atr_predicted_high, "atr_prob_up": atr_prob_up})
         str_resulting += str_tmp + "\n"
 
         # Handle continuous console printing based on verbosity flags
@@ -497,6 +498,7 @@ def realtime_and_backtesting_mode(args):
 
         # Break loop if running in realtime mode (only 1 day processed)
         if realtime:
+            assert 1 == len(inf_resulting)
             break
 
     ###########################################################################
@@ -537,7 +539,7 @@ def realtime_and_backtesting_mode(args):
             with open(ml_file_path, "wb") as f:
                 pickle.dump(ml_dataset, f)
 
-    return {"put_win_rate": put_win_rate, "call_win_rate": call_win_rate, "combined_win_rate": (put_win_rate+call_win_rate)/2,}
+    return {"put_win_rate": put_win_rate, "call_win_rate": call_win_rate, "combined_win_rate": (put_win_rate+call_win_rate)/2, "inf_resulting": inf_resulting}
 
 
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
