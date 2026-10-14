@@ -379,7 +379,7 @@ def parse_arguments():
 
     parser.add_argument("--realtime", action="store_true", default=False, help="Run in real-time mode to check for live signals using a saved model.")
     parser.add_argument("--modelfile", type=str, default=None, help="Specific model filename to load in real-time mode. If not provided, loads the latest model.")
-
+    parser.add_argument("--output-dir", type=str, default="quant", help="Model save directory")
     return parser.parse_args()
 
 
@@ -686,7 +686,6 @@ def entry(args):
     out__shared = [Queue(1) for k in range(0, nb_worker)]
 
     print(f"Lancement des evaluations en CV")
-
     for k in range(0, nb_worker):
         p = Process(
             target=_worker_processor,
@@ -694,10 +693,7 @@ def entry(args):
         )
         p.start()
 
-    print(
-        f"Evaluation CV de {len(combo_to_be_processed)} combinaisons sur "
-        f"{len(get_models())} modeles avec {nb_worker} workers..."
-    )
+    print(f"Evaluation CV de {len(combo_to_be_processed) * len(get_models())} combinaisons avec {nb_worker} workers...")
     print(f"Starting training now...")
     with master_cmd__shared.get_lock():
         master_cmd__shared.value = 1
@@ -834,20 +830,19 @@ def entry(args):
     # ---------------------------------------------------------
     # 9. Sauvegarde des résultats finaux en CSV
     # ---------------------------------------------------------
-    output_dir = "quant"
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    output_filename_csv = os.path.join(output_dir, f'_cv_all_combinations__{experience_str_desc}.csv')
+    output_filename_csv = os.path.join(args.output_dir, f'_cv_all_combinations__{experience_str_desc}.csv')
     df_sorted_results.to_csv(output_filename_csv, index=False)
 
     df_test_results_sorted = df_test_results.sort_values(by='Test_F1_Score', ascending=False).reset_index(drop=True)
     df_test_results_sorted.to_csv(
-        os.path.join(output_dir, f'_test_results__{experience_str_desc}.csv'),
+        os.path.join(args.output_dir, f'_test_results__{experience_str_desc}.csv'),
         index=False
     )
 
     top_50.to_csv(
-        os.path.join(output_dir, f'_top50_selection__{experience_str_desc}.csv'),
+        os.path.join(args.output_dir, f'_top50_selection__{experience_str_desc}.csv'),
         index=False
     )
 
@@ -901,7 +896,7 @@ def entry(args):
         )
 
         ensemble_filename = os.path.join(
-            output_dir,
+            args.output_dir,
             f'_top50_ensemble_model__{experience_str_desc}__tf1_{agg_test_f1:.8f}.pkl'
         )
 
