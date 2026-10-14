@@ -304,11 +304,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
         try:
             tmp = use_cases__shared.get(timeout=0.033)
         except:
-            time.sleep(1.033)
+            time.sleep(3.033)
             try:
                 tmp = use_cases__shared.get(timeout=0.033)
             except:
-                time.sleep(3.033)
+                time.sleep(9.033)
                 try:
                     tmp = use_cases__shared.get(timeout=0.033)
                 except:
@@ -700,6 +700,9 @@ def entry(args):
         f"Evaluation CV de {len(combo_to_be_processed)} combinaisons sur "
         f"{len(get_models())} modeles avec {nb_worker} workers..."
     )
+    print(f"Starting training now...")
+    with master_cmd__shared.get_lock():
+        master_cmd__shared.value = 1
 
     pbar = tqdm(combo_to_be_processed, desc="Submitting training with CV")
     uuu = 0
@@ -732,9 +735,6 @@ def entry(args):
 
             use_cases__shared.put(bytes_donnees)
             uuu += 1
-    print(f"Starting training now...")
-    with master_cmd__shared.get_lock():
-        master_cmd__shared.value = 1
 
     for k in range(0, nb_worker):
         data_from_workers.extend(out__shared[k].get())
