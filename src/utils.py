@@ -1,29 +1,14 @@
-import numpy as np
-from pathlib import Path
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
 from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY, CLAUSE_NON_RESPONSABILITE, IS_RUNNING_HOME_SWEET_HOME
 import sys
-import re
 from types import SimpleNamespace
 import platform
-import os
-import yfinance as yf
 import math
 import pandas as pd
-import warnings
 import glob
 import numpy as np
-from datetime import datetime, timedelta, date
 import random
-from pathlib import Path
 import copy
-from collections import defaultdict
-from tqdm import tqdm
-import pickle
-#from fetchers.serialize_fyahoo import realtime as fyahoo_realtime
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import smtplib
 import re
 import os
@@ -35,7 +20,7 @@ from email import encoders
 from pathlib import Path
 import shutil
 from datetime import date, datetime, timedelta
-import calendar
+
 os_name = platform.system()
 
 
@@ -558,27 +543,34 @@ def transform_path(line, date_str):
 
 
 def format_duration(seconds):
-    """Convert a duration in seconds to a compact human-readable string.
+    """Convert a duration in seconds to a compact human-readable string including milliseconds.
 
-    Formats the input duration as a concatenation of hours, minutes, and seconds,
+    Formats the input duration as a concatenation of hours, minutes, seconds, and milliseconds,
     omitting any units with zero values, except when the total duration is less
     than a minute—in that case, seconds are always shown (including '0s' for zero).
+    Milliseconds are only shown if they are greater than zero.
 
     Examples:
-        format_duration(3663)  -> '1h1m3s'
-        format_duration(61)    -> '1m1s'
-        format_duration(5)     -> '5s'
-        format_duration(0)     -> '0s'
+        format_duration(3663.5)   -> '1h1m3s500ms'
+        format_duration(61.005)   -> '1m1s5ms'
+        format_duration(5)        -> '5s'
+        format_duration(0.042)    -> '0s42ms'
+        format_duration(0)        -> '0s'
 
     Args:
-        seconds (float or int): A non-negative duration in seconds. Will be
-            converted to an integer (truncated toward zero).
+        seconds (float or int): A non-negative duration in seconds.
 
     Returns:
-        str: A compact time string using 'h', 'm', and 's' suffixes.
+        str: A compact time string using 'h', 'm', 's', and 'ms' suffixes.
     """
-    seconds = int(seconds)  # Ensure it's an integer
-    hours, remainder = divmod(seconds, 3600)
+    # 1. Extraire les millisecondes avant de tronquer les secondes
+    # (int((seconds % 1) * 1000) permet de récupérer la partie décimale en ms)
+    ms = int(round((seconds % 1) * 1000))
+
+    # 2. Convertir la partie entière pour le reste du calcul
+    seconds_int = int(seconds)
+
+    hours, remainder = divmod(seconds_int, 3600)
     minutes, secs = divmod(remainder, 60)
 
     parts = []
@@ -586,8 +578,14 @@ def format_duration(seconds):
         parts.append(f"{hours}h")
     if minutes:
         parts.append(f"{minutes}m")
-    if secs or not parts:  # Always show seconds if duration is <1 min, or if it's 0s
+
+    # Toujours afficher les secondes si la durée totale est < 1 min, ou si 'parts' est vide
+    if secs or not parts:
         parts.append(f"{secs}s")
+
+    # Ajouter les millisecondes uniquement si elles sont supérieures à 0
+    if ms > 0:
+        parts.append(f"{ms}ms")
 
     return ''.join(parts)
 
@@ -1471,3 +1469,22 @@ def compute_break_even_credit(win_rate, spread_width):
     loss_rate = 1.0 - win_rate
     breakeven_credit = loss_rate * spread_width
     return breakeven_credit
+
+
+def minutes_jusqua_16h():
+    # Récupère l'heure actuelle
+    maintenant = datetime.now()
+    heure = maintenant.hour
+    minute = maintenant.minute
+
+    # Calcule le total de minutes depuis minuit
+    minutes_actuelles = (heure * 60) + minute
+    minutes_cible = 16 * 60  # 16h00 vaut 960 minutes
+
+    # Calcule la différence
+    restant = minutes_cible - minutes_actuelles
+
+    if restant < 0:
+        return 0
+
+    return restant

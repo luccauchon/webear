@@ -10,9 +10,7 @@ except ImportError:
     from version import sys__name, sys__version
 import time
 from utils import str2bool, format_duration
-import matplotlib.pyplot as plt
 from fetchers.data_factory import factory_load_data
-import seaborn as sns
 import os
 import sys
 import pandas as pd
@@ -296,7 +294,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
             if 0 != master_cmd__shared.value:
                 break
         time.sleep(0.333)
-
+    # for cle, valeur in os.environ.items(): print(f"{cle}: {valeur}")
     # Traitement des requêtes
     all_results_computed, best_mean_cv_f1, times = [], 0., [0]
     while True:
@@ -331,11 +329,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
             if mean_cv_f1 > best_mean_cv_f1:
                 best_mean_cv_f1 = mean_cv_f1
 
-            if 0 == len(all_results_computed) % int(100000):
+            if 0 == len(all_results_computed) % int(os.environ.get("Q__DISPLAY_RATE", 100000)):
                 print(
                     f"[{str(os.getpid()):<6}:{str(k):<4}]  {best_mean_cv_f1:8.8f} :: {mean_cv_f1:8.8f}  "
                     f"| {len(all_results_computed):6d} cases computed  "
-                    f"| Mean time per pass: {format_duration(int(np.mean(times)))}"
+                    f"| Mean time per pass: {format_duration(np.mean(times))}"
                 )
         except Exception as e:
             print(e)
