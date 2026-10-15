@@ -242,6 +242,8 @@ def get_parser():
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     parser.add_argument("--no-email", action="store_true", default=False, help="Don't send the emails.")
     parser.add_argument("--n-trials", type=int, default=999)
+    parser.add_argument("--nb-worker", type=int, default=15)
+    parser.add_argument("--verbose", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--use-close-for-range", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
 
@@ -286,8 +288,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
 
 def entry(args):
-    nb_worker = 15
-    verbose = True
+    nb_worker = getattr(args, "nb_worker", 15)
     destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
     signature_for_prod = TITLE_WEBEAR if args.production_setup else "DEV"
     spread_width = 500.0

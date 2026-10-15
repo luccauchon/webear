@@ -112,7 +112,7 @@ def GET_SUBJECT(app_name, production_setup=False):
     return f"{app_name.upper()} | {signature_for_prod} @{datetime.now().strftime("%Y%m%d_%H%M")} | "
 
 
-TITLE_WEBEAR = "WEBEAR 1.0"
+TITLE_WEBEAR = "WEBEAR"
 
 CLAUSE_NON_RESPONSABILITE = """
 Avertissement légal et clause de non-responsabilité (Canada)

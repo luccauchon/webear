@@ -25,6 +25,7 @@ def get_parser():
     parser.add_argument('--ticker', type=str, default='^GSPC', help='Ticker symbol')
     parser.add_argument('--realtime', action='store_true', default=False, help='')
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--send-email", action=argparse.BooleanOptionalAction, default=True)
     return parser
 
 
@@ -46,7 +47,9 @@ def entry(args):
     tt1 = "le jour" if args.dataset_id in ["day"] else ("la semaine" if args.dataset_id in ["week"] else ("le mois" if args.dataset_id in ["month"] else "?"))
     string_generated += (f"Le graphique prédit {tt1} d'après : il calcule le pourcentage de chances que la chandelle suivante soit encore rouge (la baisse continue) "
                          "ou qu'elle tourne au vert (le prix rebondit).")
-    send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated, pieces_jointes=[output_file], cc="luccauchon@gmail.com", cci="luccauchon@gmail.com")
+    if getattr(args, "send_email", True):
+        send_html_email(destinataires=destinataires, sujet=subject, corps=string_generated, pieces_jointes=[output_file], cc="luccauchon@gmail.com", cci="luccauchon@gmail.com")
+    return {"proba_txt": information_returned['probability_text']}
 
 
 if __name__ == "__main__":
