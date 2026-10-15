@@ -20,6 +20,8 @@ from email import encoders
 from pathlib import Path
 import shutil
 from datetime import date, datetime, timedelta
+from datetime import datetime, date, timedelta
+import calendar
 
 os_name = platform.system()
 
@@ -663,10 +665,6 @@ def get_filename_for_dataset(dataset_choice, older_dataset=None):
     if older_dataset is not None and older_dataset != '':
         return transform_path(mapping[dataset_choice], older_dataset)
     return mapping[dataset_choice]
-
-
-from datetime import datetime, date, timedelta
-import calendar
 
 
 def next_day(input_date, skip_weekends=True):

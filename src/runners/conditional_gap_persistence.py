@@ -181,12 +181,15 @@ def calculate_sp500_probabilities(args):
     if latest_open < df_ticker[low_col].iloc[-2]:
         active_probs.append(8)
         current_condition += " | [8] Open_t < Low_t-1"
-
-    close_t__str = f"{df_ticker[close_col].iloc[-1]:.0f}$"
-    open_t__str = f"{df_ticker[open_col].iloc[-1]:.0f}$"
-    low_t_1__str = f"{df_ticker[low_col].iloc[-2]:.0f}$"
-    high_t_1__str = f"{df_ticker[high_col].iloc[-2]:.0f}$"
-    close_t_1__str = f"{df_ticker[close_col].iloc[-2]:.0f}$"
+    close_t        = df_ticker[close_col].iloc[-1]
+    close_t__str   = f"{close_t:.0f}$"
+    open_t__str    = f"{df_ticker[open_col].iloc[-1]:.0f}$"
+    low_t_1        = df_ticker[low_col].iloc[-2]
+    low_t_1__str   = f"{low_t_1:.0f}$"
+    high_t_1       = df_ticker[high_col].iloc[-2]
+    high_t_1__str  = f"{high_t_1:.0f}$"
+    close_t_1      = df_ticker[close_col].iloc[-2]
+    close_t_1__str = f"{close_t_1:.0f}$"
 
     # ==========================================
     # OUTPUT RESULTS
@@ -206,66 +209,74 @@ def calculate_sp500_probabilities(args):
     string_generated += (f"    -> Today we are in: {current_condition}") + "\n"
     string_generated += (f"    -> Open  @t  : {latest_open:.2f}  @{df_ticker.index[-1].strftime('%Y-%m-%d_%H%M')}") + "\n"
     string_generated += (f"    -> Close @t-1: {yesterday_close:.2f}  @{df_ticker.index[-2].strftime('%Y-%m-%d_%H%M')}") + "\n"
-
-    if 1 in active_probs or args.display_all:
+    tech_info = {}
+    if 1 in active_probs or getattr(args, "display_all", False):
         b1, e1 = (BOLD, RESET) if 1 in active_probs else ("", "")
         string_generated += (f"{b1}\n[1] Probability that Close_t({close_t__str}) > Low_t-1({low_t_1__str}) + {eps_pct_str}  (Put Credit Spread)") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count1}  ({(count1 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob1:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob1, 500):.2f}${e1}") + "\n"
+        tech_info.update({1: {'close_t': close_t, 'thres': low_t_1, 'sign': ">", "proba": prob1}})
 
-    if 2 in active_probs or args.display_all:
+    if 2 in active_probs or getattr(args, "display_all", False):
         b2, e2 = (BOLD, RESET) if 2 in active_probs else ("", "")
         string_generated += (f"{b2}\n[2] Probability that Close_t({close_t__str}) < High_t-1({high_t_1__str}) - {eps_pct_str}  (Call Credit Spread)") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count2}  ({(count2 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob2:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob2, 500):.2f}${e2}") + "\n"
+        tech_info.update({1: {'close_t': close_t, 'thres': high_t_1, 'sign': "<", "proba": prob2}})
 
-    if 3 in active_probs or args.display_all:
+    if 3 in active_probs or getattr(args, "display_all", False):
         b3, e3 = (BOLD, RESET) if 3 in active_probs else ("", "")
         string_generated += (f"{b3}\n[3] Probability that Close_t({close_t__str}) < Low_t-1({low_t_1__str}) - {eps_pct_str}  (Breaks Previous Low :: Call Credit Spread)") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) - {eps_pct_str} (Gap Down)") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count3}  ({(count3 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob3:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob3, 500):.2f}${e3}") + "\n"
+        tech_info.update({3: {'close_t': close_t, 'thres': low_t_1, 'sign': "<", "proba": prob3}})
 
-    if 4 in active_probs or args.display_all:
+    if 4 in active_probs or getattr(args, "display_all", False):
         b4, e4 = (BOLD, RESET) if 4 in active_probs else ("", "")
         string_generated += (f"{b4}\n[4] Probability that Close_t({close_t__str}) > High_t-1({high_t_1__str}) + {eps_pct_str}  (Breaks Previous High :: Put Credit Spread)") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count4}  ({(count4 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob4:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob4, 500):.2f}${e4}") + "\n"
+        tech_info.update({4: {'close_t': close_t, 'thres': high_t_1, 'sign': ">", "proba": prob4}})
 
-    if 5 in active_probs or args.display_all:
+    if 5 in active_probs or getattr(args, "display_all", False):
         b5, e5 = (BOLD, RESET) if 5 in active_probs else ("", "")
         string_generated += (f"{b5}\n[5] Probability that Close_t({close_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Higher Than Yesterday's Close)") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) > Close_t-1({close_t_1__str}) + {eps_pct_str} (Gap Up)") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count5}  ({(count5 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob5:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob5, 500):.2f}${e5}") + "\n"
+        tech_info.update({5: {'close_t': close_t, 'thres': close_t_1, 'sign': ">", "proba": prob5}})
 
-    if 6 in active_probs or args.display_all:
+    if 6 in active_probs or getattr(args, "display_all", False):
         b6, e6 = (BOLD, RESET) if 6 in active_probs else ("", "")
         string_generated += (f"{b6}\n[6] Probability that Close_t({close_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}  (Closes Lower Than Yesterday's Close + Epsilon)") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) < Close_t-1({close_t_1__str}) + {eps_pct_str}") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count6}  ({(count6 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob6:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob6, 500):.2f}${e6}") + "\n"
+        tech_info.update({6: {'close_t': close_t, 'thres': close_t_1, 'sign': "<", "proba": prob6}})
 
-    if 7 in active_probs or args.display_all:
+    if 7 in active_probs or getattr(args, "display_all", False):
         b7, e7 = (BOLD, RESET) if 7 in active_probs else ("", "")
         string_generated += (f"{b7}\n[7] Probability that Close_t({close_t__str}) > Close_t-1({close_t_1__str})") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) > High_t-1({high_t_1__str})") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count7}  ({(count7 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob7:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob7, 500):.2f}${e7}") + "\n"
+        tech_info.update({7: {'close_t': close_t, 'thres': close_t_1, 'sign': ">", "proba": prob7}})
 
-    if 8 in active_probs or args.display_all:
+    if 8 in active_probs or getattr(args, "display_all", False):
         b8, e8 = (BOLD, RESET) if 8 in active_probs else ("", "")
         string_generated += (f"{b8}\n[8] Probability that Close_t({close_t__str}) < Close_t-1({close_t_1__str})") + "\n"
         string_generated += (f"    GIVEN THAT Open_t({open_t__str}) < Low_t-1({low_t_1__str})") + "\n"
         string_generated += (f"    -> Sample Size (Occurrences): {count8}  ({(count8 / total_bars):.2%} :: total of {total_bars} bars)") + "\n"
         string_generated += (f"    -> Probability: {prob8:.2%}  , Break Even Premium (with 500$ max loss): {compute_break_even_credit(prob8, 500):.2f}${e8}") + "\n"
+        tech_info.update({8: {'close_t': close_t, 'thres': close_t_1, 'sign': "<", "proba": prob8}})
 
     string_generated += ("-" * 50)
-    print(string_generated)
-    return {'string_generated': string_generated}
+    if getattr(args, "verbose", True): print(string_generated)
+    return {'string_generated': string_generated, 'tech_info': tech_info}
 
 
 if __name__ == "__main__":
