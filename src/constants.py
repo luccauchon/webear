@@ -24,12 +24,10 @@ except:
 BASE_FINANCE_COMPILED_MODELS             = r"D:\Finance\compiled_models"
 BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
 BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
-BASE_YFINANCE_DIR                        = r"C:\Finance\data\yfinance"
-BASE_FORECAST_DIR                        = r"C:\Finance\data\forecast"
+BASE_YFINANCE_DIR                        = r"D:\Finance\data\yfinance"
+BASE_FORECAST_DIR                        = r"D:\Finance\data\forecast"
+HISTORIAN_NAME_TO_BE_DETERMINED          = r"D:\Finance\data\historian"
 IS_RUNNING_HOME_SWEET_HOME               = True if os.path.exists(r"C:\WEBEAR_HOME_SWEET_HOME") else False
-if os.path.exists('D:') and os.path.isdir('D:'):
-    BASE_YFINANCE_DIR = r"D:\Finance\data\yfinance"
-    BASE_FORECAST_DIR = r"D:\Finance\data\forecast"
 if IS_RUNNING_ON_CASIR:
     BASE_YFINANCE_DIR                       = "/gpfs/groups/gc014b/cj3272/experiences/yfinance"
     BASE_FORECAST_DIR                       = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
