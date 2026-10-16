@@ -1,7 +1,7 @@
 """
 🎯 RULE-BASED TECHNICAL FORECASTING SYSTEM (JIT-ACCELERATED)
 ====================================================================================================
-🔧 ENHANCED: Added "floor", "short_any", and "ceiling" target modes for defined-risk strategies
+🔧 ENHANCED: Added "floor", "short_any", "ceiling", "any_2B" and "any_2B_for_sell" target modes
 
 📋 OVERVIEW
 -----------
@@ -45,18 +45,19 @@ generate actionable trading signals with configurable lookahead horizons.
 
 4️⃣ TARGET LABELING STRATEGIES (Forecast Ground Truth)
    ├─ Purpose: Define what constitutes a "successful" prediction
-   ├─ Six Modes:
+   ├─ Nine Modes:
    │  • "exact"      : Price must exceed threshold EXACTLY at t + lookahead_bars
    │  • "any"        : Price must exceed threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "any_half_B" : Price must exceed threshold in SECOND HALF of window [t+B//2+1, t+B]
    │  • "any_half_B_for_sell" : Price must drop below threshold in SECOND HALF of window [t+B//2+1, t+B]
-   │  • "floor" 🆕   : Price must NEVER fall below threshold in [t+1, t+lookahead_bars]
-   │  • "short_any" 🆕: Price must drop below threshold ANYWHERE in [t+1, t+lookahead_bars]
-   │  • "ceiling" 🆕  : Price must NEVER rise above threshold in [t+1, t+lookahead_bars]
+   │  • "floor"      : Price must NEVER fall below threshold in [t+1, t+lookahead_bars]
+   │  • "short_any"  : Price must drop below threshold ANYWHERE in [t+1, t+lookahead_bars]
+   │  • "ceiling"    : Price must NEVER rise above threshold in [t+1, t+lookahead_bars]
+   │  • "any_2B"     : Price must exceed threshold in the LAST TWO BARS of the window [t+B-1, t+B]
+   │  • "any_2B_for_sell" 🆕 : Price must drop below threshold in the LAST TWO BARS of the window [t+B-1, t+B]
    ├─ Parameters:
    │  • lookahead_bars : Forecast horizon in bars (default: 5)
    │  • threshold_pct  : Minimum price move to trigger positive label (default: 0.01 = 1%)
-   │                     For "floor" mode: use NEGATIVE value (e.g., -0.015 = -1.5% floor)
    └─ Output: Binary labels (1 = target met, 0 = not met) for signal evaluation
 
 ⚙️ SIGNAL GENERATION LOGIC [✅ OPTIONAL JIT]
@@ -371,6 +372,32 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
     print(f"\n💾 Best model saved as: {model_filename}")
 
 
+def _describe_target_mode(target_type: str, lookahead_bars: int) -> str:
+    """Human-readable description of a target labeling mode (used by --realtime)."""
+    B = lookahead_bars
+    if target_type == "any":
+        return f"any point in window [t+1, t+{B}]"
+    if target_type == "any_half_B":
+        return f"any point in second half [t+{B // 2 + 1}, t+{B}]"
+    if target_type == "any_half_B_for_sell":
+        return f"any point in second half [t+{B // 2 + 1}, t+{B}] (bearish)"
+    if target_type == "floor":
+        return f"NEVER falls below floor [t+1, t+{B}] 🛡️"
+    if target_type == "short_any":
+        return f"price drops below threshold ANYWHERE in window [t+1, t+{B}] 📉"
+    if target_type == "ceiling":
+        return f"NEVER rises above ceiling [t+1, t+{B}] 🧢"
+    if target_type == "any_2B":
+        win_size = min(2, B)
+        first = B - win_size + 1
+        return f"only the LAST {win_size} bar(s) count: price exceeds threshold in [t+{first}, t+{B}] 🎯"
+    if target_type == "any_2B_for_sell":
+        win_size = min(2, B)
+        first = B - win_size + 1
+        return f"only the LAST {win_size} bar(s) count: price drops below threshold in [t+{first}, t+{B}] 📉"
+    return "exact future point"
+
+
 def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_n: int, use_realtime_data: bool, return_values_as_dict: bool):
     """Run forecast in real-time mode using saved model parameters."""
     # Load model
@@ -498,20 +525,7 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
         else:
             # Human-readable output
             if signal != 0:
-                if target_type == "any":
-                    target_mode_desc = f"any point in window [t+1, t+{lookahead_bars}]"
-                elif target_type == "any_half_B":
-                    target_mode_desc = f"any point in second half [t+{lookahead_bars // 2 + 1}, t+{lookahead_bars}]"
-                elif target_type == "any_half_B_for_sell":
-                    target_mode_desc = f"any point in second half [t+{lookahead_bars // 2 + 1}, t+{lookahead_bars}]"
-                elif target_type == "floor":
-                    target_mode_desc = f"NEVER falls below floor [t+1, t+{lookahead_bars}] 🛡️"
-                elif target_type == "short_any":
-                    target_mode_desc = f"price drops below threshold ANYWHERE in window [t+1, t+{lookahead_bars}] 📉"
-                elif target_type == "ceiling":
-                    target_mode_desc = f"NEVER rises above ceiling [t+1, t+{lookahead_bars}] 🧢"
-                else:
-                    target_mode_desc = "exact future point"
+                target_mode_desc = _describe_target_mode(target_type, lookahead_bars)
                 print(f"\n🎯 Real-Time Signal Detected:")
                 print(f"On {current_date.strftime('%Y-%m-%d_%H%M')} {ticker_display} is at {current_price:.2f} and {direction} activated for +{lookahead_bars}Bars , {ticker_display} {operator} {target_price:.2f} on {target_date.strftime('%Y-%m-%d_%H%M')}")
                 print(f"   Threshold: {threshold_pct * 100:.2f}% | Target Mode: '{target_type}' ({target_mode_desc}) | Model: {os.path.basename(model_path)}\n")
@@ -530,7 +544,7 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
                 "metric_target_type": f"{metric_used}::{target_type}",
                 "dataset_id": dataset_id,
                 "ticker": ticker,
-                "lookahead_bars": lookahead_bars,}
+                "lookahead_bars": lookahead_bars, }
     else:
         return signal, current_price, current_date.strftime('%Y-%m-%d'), target_price, target_date, train_win_rate, val_win_rate, threshold_pct, f"{metric_used}::{target_type}", dataset_id, ticker, lookahead_bars
 
@@ -605,9 +619,9 @@ def create_target_any_at_half_B(close: pd.Series, lookahead_bars: int, threshold
 
 def create_target_any_at_half_B_for_sell(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """
-    Any at half B: Checks if price EXCEEDS threshold at ANY point from t+B//2+1 to t+B.
-    (i.e., the second half of the lookahead window, excluding the midpoint itself)
-    Uses a forward-looking rolling maximum for efficient vectorized computation.
+    Any at half B (bearish): Checks if price DROPS BELOW threshold at ANY point
+    from t+B//2+1 to t+B (i.e., the second half of the lookahead window).
+    Uses a forward-looking rolling minimum for efficient vectorized computation.
 
     Parameters
     ----------
@@ -621,7 +635,7 @@ def create_target_any_at_half_B_for_sell(close: pd.Series, lookahead_bars: int, 
     Returns
     -------
     pd.Series
-        Binary labels (1 if threshold exceeded in window, 0 otherwise), with NaN for incomplete windows
+        Binary labels (1 if threshold breached in window, 0 otherwise), with NaN for incomplete windows
     """
     half_B = lookahead_bars // 2
     window_size = lookahead_bars - half_B  # Size of window from t+half_B+1 to t+B inclusive
@@ -630,12 +644,12 @@ def create_target_any_at_half_B_for_sell(close: pd.Series, lookahead_bars: int, 
     if window_size <= 0:
         return pd.Series(np.nan, index=close.index, dtype=float)
 
-    # Get max over the window [t+half_B+1, t+B] for each t
-    # Reverse series, apply rolling max, reverse back, then shift to align window
-    future_max = close.iloc[::-1].rolling(window=window_size, min_periods=window_size).max().iloc[::-1].shift(-(half_B + 1))
+    # Get MIN over the window [t+half_B+1, t+B] for each t
+    # Reverse series, apply rolling min, reverse back, then shift to align window
+    future_min = close.iloc[::-1].rolling(window=window_size, min_periods=window_size).min().iloc[::-1].shift(-(half_B + 1))
 
-    # True if max in window > threshold
-    labels = (future_max < close * (1 + threshold_pct)).astype(float)
+    # True if min in window < threshold
+    labels = (future_min < close * (1 + threshold_pct)).astype(float)
 
     # Mask out last lookahead_bars where future data is incomplete
     labels.iloc[-lookahead_bars:] = np.nan
@@ -645,7 +659,7 @@ def create_target_any_at_half_B_for_sell(close: pd.Series, lookahead_bars: int, 
 
 def create_target_floor(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """
-    🆕 FLOOR MODE: Label = 1 only if price NEVER falls below threshold
+    FLOOR MODE: Label = 1 only if price NEVER falls below threshold
     throughout the entire lookahead window [t+1, t+B].
 
     Ideal for put credit spreads / defined-risk bullish strategies where you profit
@@ -688,7 +702,7 @@ def create_target_floor(close: pd.Series, lookahead_bars: int, threshold_pct: fl
 
 def create_target_short_any(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """
-    🆕 SHORT ANY MODE: Checks if price DROPS below threshold at ANY point from t+1 to t+lookahead_bars.
+    SHORT ANY MODE: Checks if price DROPS below threshold at ANY point from t+1 to t+lookahead_bars.
     A win (1) means the price successfully dropped by threshold_pct.
     Symmetrical to "any" mode but for short targets.
     """
@@ -701,7 +715,7 @@ def create_target_short_any(close: pd.Series, lookahead_bars: int, threshold_pct
 
 def create_target_ceiling(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
     """
-    🆕 CEILING MODE: Label = 1 only if price NEVER rises above the ceiling.
+    CEILING MODE: Label = 1 only if price NEVER rises above the ceiling.
     Ideal for call credit spreads / defined-risk bearish strategies.
     Symmetrical to "floor" mode but for short targets.
     """
@@ -710,6 +724,118 @@ def create_target_ceiling(close: pd.Series, lookahead_bars: int, threshold_pct: 
     labels = (future_max < close * (1 + threshold_pct)).astype(float)
     labels.iloc[-lookahead_bars:] = np.nan
     return labels
+
+
+def create_target_any_last_2B(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    ANY-2B MODE ("any_2B"): Label = 1 if the price EXCEEDS the threshold at ANY point
+    inside the LAST TWO BARS of the lookahead window, i.e. [t+B-1, t+B].
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series.
+    lookahead_bars : int
+        Number of bars to look ahead (B).
+    threshold_pct : float, optional
+        Percentage threshold for the target (default: 0.0).
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if threshold exceeded within the last 2 bars, 0 otherwise),
+        with NaN for the last `lookahead_bars` rows where the forward window is incomplete.
+    """
+    if lookahead_bars <= 0:
+        return pd.Series(np.nan, index=close.index, dtype=float)
+
+    window_size = min(2, lookahead_bars)
+    start_offset = lookahead_bars - window_size + 1
+
+    future_max = (
+        close.iloc[::-1]
+        .rolling(window=window_size, min_periods=window_size).max()
+        .iloc[::-1]
+        .shift(-start_offset)
+    )
+
+    labels = (future_max > close * (1 + threshold_pct)).astype(float)
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
+def create_target_any_last_2B_for_sell(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    🆕 ANY-2B FOR SELL MODE ("any_2B_for_sell"): Label = 1 if the price DROPS BELOW the threshold
+    at ANY point inside the LAST TWO BARS of the lookahead window, i.e. [t+B-1, t+B].
+
+    Bearish counterpart to `any_2B`, designed specifically for `call_credit` strategies.
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series.
+    lookahead_bars : int
+        Number of bars to look ahead (B).
+    threshold_pct : float, optional
+        Percentage threshold for the target (default: 0.0).
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if threshold breached downwards within the last 2 bars, 0 otherwise),
+        with NaN for the last `lookahead_bars` rows where the forward window is incomplete.
+    """
+    if lookahead_bars <= 0:
+        return pd.Series(np.nan, index=close.index, dtype=float)
+
+    window_size = min(2, lookahead_bars)
+    start_offset = lookahead_bars - window_size + 1
+
+    future_min = (
+        close.iloc[::-1]
+        .rolling(window=window_size, min_periods=window_size).min()
+        .iloc[::-1]
+        .shift(-start_offset)
+    )
+
+    # Bearish: Win if min in the last 2 bars drops below threshold
+    labels = (future_min < close * (1 + threshold_pct)).astype(float)
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
+# Registry: target_type string → (labeling function, direction, required optimize_target(s))
+# direction: "long"  → FutureLabel == 1 means price went UP past the threshold (bullish win condition)
+#            "short" → FutureLabel == 1 means price went DOWN past the threshold (bearish win condition)
+TARGET_MODES = {
+    "exact": (create_target_exact, "long", ["put_credit"]),
+    "any": (create_target_any, "long", ["put_credit"]),
+    "any_half_B": (create_target_any_at_half_B, "long", ["put_credit"]),
+    "any_half_B_for_sell": (create_target_any_at_half_B_for_sell, "short", ["call_credit"]),
+    "floor": (create_target_floor, "long", ["put_credit"]),
+    "short_any": (create_target_short_any, "short", ["call_credit"]),
+    "ceiling": (create_target_ceiling, "short", ["call_credit"]),
+    "any_2B": (create_target_any_last_2B, "long", ["put_credit"]),
+    "any_2B_for_sell": (create_target_any_last_2B_for_sell, "short", ["call_credit"]),
+}
+
+
+def build_labels(close: pd.Series, target_type: str, lookahead_bars: int, threshold_pct: float) -> pd.Series:
+    """Single entry point that dispatches to the correct labeling function."""
+    if target_type not in TARGET_MODES:
+        raise ValueError(
+            f"Unknown target_type '{target_type}'. Valid options: {sorted(TARGET_MODES.keys())}"
+        )
+    func, _direction, _opt = TARGET_MODES[target_type]
+    return func(close, lookahead_bars, threshold_pct)
+
+
+def is_short_target_type(target_type: str) -> bool:
+    """True when FutureLabel == 1 represents a bearish (downward) outcome."""
+    return TARGET_MODES.get(target_type, (None, "long", None))[1] == "short"
 
 
 # ============================================
@@ -755,20 +881,13 @@ class ForecastSystem:
         if self.precomputed_labels is not None:
             # Inject precomputed labels to save compute time during optimization
             df['FutureLabel'] = self.precomputed_labels.reindex(df.index)
-        elif self.target_type == "floor":
-            df['FutureLabel'] = create_target_floor(close, self.lookahead_bars, self.threshold_pct)
-        elif self.target_type == "short_any":
-            df['FutureLabel'] = create_target_short_any(close, self.lookahead_bars, self.threshold_pct)
-        elif self.target_type == "ceiling":
-            df['FutureLabel'] = create_target_ceiling(close, self.lookahead_bars, self.threshold_pct)
-        elif self.target_type == "any":
-            df['FutureLabel'] = create_target_any(close, self.lookahead_bars, self.threshold_pct)
-        elif self.target_type == "any_half_B":
-            df['FutureLabel'] = create_target_any_at_half_B(close, self.lookahead_bars, self.threshold_pct)
-        elif self.target_type == "any_half_B_for_cell":
-            df['FutureLabel'] = create_target_any_at_half_B_for_sell(close, self.lookahead_bars, self.threshold_pct)
-        else:  # "exact"
-            df['FutureLabel'] = create_target_exact(close, self.lookahead_bars, self.threshold_pct)
+        else:
+            df['FutureLabel'] = build_labels(
+                close=close,
+                target_type=self.target_type,
+                lookahead_bars=self.lookahead_bars,
+                threshold_pct=self.threshold_pct,
+            )
 
         # ✅ SIGNAL GENERATION: JIT or vectorized pandas
         if self.use_jit_signals and len(df) > 100:  # JIT overhead not worth it for small datasets
@@ -834,7 +953,7 @@ class ForecastSystem:
         valid = valid[valid['Signal'] != 0].copy()
         if len(valid) == 0: return {'total_signals': 0}
 
-        is_short_target = self.target_type in ["short_any", "ceiling"]
+        is_short_target = is_short_target_type(self.target_type)
 
         long_signals = valid[valid['Signal'] == 1]
         short_signals = valid[valid['Signal'] == -1]
@@ -983,7 +1102,7 @@ def plot_forecast_results(df: pd.DataFrame, price_col, optimize_target, sample: 
     fig, axes = plt.subplots(3, 1, figsize=(14, 10), gridspec_kw={'height_ratios': [3, 1, 1]}, sharex=True)
     ax1, ax2, ax3 = axes
 
-    is_short_target = target_type in ["short_any", "ceiling"]
+    is_short_target = is_short_target_type(target_type)
 
     ax1.plot(plot_df.index, plot_df[price_col], label='Close', alpha=0.7, linewidth=1, color='black')
     ax1.plot(plot_df.index, plot_df['OneEuro'], label='One-Euro Filter', color='blue', linewidth=2)
@@ -1156,8 +1275,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target (use NEGATIVE for floor mode)")
     algo_grp.add_argument("--density-target", type=float, default=0.04, help="Target trade density (signals per bar) for optimization penalty. A 0 value disable it.")
     algo_grp.add_argument('--train-ratio', type=float, default=0.8, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
-    algo_grp.add_argument('--use-jit-signals', action='store_true', default=True,
-                          help='Enable JIT acceleration for signal generation (recommended for large datasets)')
+    algo_grp.add_argument('--use-jit-signals', action='store_true', default=True, help='Enable JIT acceleration for signal generation (recommended for large datasets)')
     algo_grp.add_argument("--n-trials", type=int, default=50, help="Number of trials for Optuna optimization")
     algo_grp.add_argument('--timeout', type=int, default=120, help='Max runtime (seconds)')
     algo_grp.add_argument(
@@ -1173,13 +1291,14 @@ def setup_argparse() -> argparse.ArgumentParser:
         default="put_credit",
         help="Target to optimize during Optuna search: 'put_credit', 'call_credit'"
     )
-    # Target labeling mode - UPDATED to include "short_any" and "ceiling"
+    # Target labeling mode - UPDATED to include "any_2B_for_sell"
     algo_grp.add_argument(
         "--target-type",
         type=str,
-        choices=["exact", "any", "any_half_B", "any_half_B_for_sell", "floor", "short_any", "ceiling"],
+        choices=sorted(TARGET_MODES.keys()),
         default="any_half_B",
-        help="Target labeling method: 'exact', 'any', 'any_half_B', 'any_half_B_for_sell', 'floor' 🆕, 'short_any' 🆕, or 'ceiling' 🆕"
+        help=("Target labeling method: 'exact', 'any', 'any_half_B', 'any_half_B_for_sell', 'floor', "
+              "'short_any', 'ceiling', 'any_2B', or 'any_2B_for_sell' 🆕 (bearish: only the LAST TWO bars [t+B-1, t+B] count for drop)")
     )
 
     viz_grp = parser.add_argument_group("Visualization")
@@ -1237,8 +1356,14 @@ def entry(args):
     df.columns = ['_'.join(str(c) for c in col).strip('_') for col in df.columns]
     price_col = f'Close_{args.ticker}'
 
-    if 1 == args.lookahead_bars:
-        assert args.target_type in ["exact", "any", "floor", "short_any", "ceiling"]
+    if args.target_type not in TARGET_MODES:
+        raise ValueError(f"Unknown --target-type '{args.target_type}'. Valid: {sorted(TARGET_MODES.keys())}")
+
+    if args.lookahead_bars == 1:
+        # With a 1-bar horizon every window-based mode degenerates to a single future bar.
+        assert args.target_type in ["exact", "any", "floor", "short_any", "ceiling", "any_2B", "any_2B_for_sell"], (
+            f"target_type '{args.target_type}' is not meaningful with --lookahead-bars 1"
+        )
 
     # ✅ OPTIMIZATION & TRAIN/VALIDATION SPLIT LOGIC
     min_history = max(args.rsi_period, args.macd_slow, 100) + args.lookahead_bars + 10
@@ -1262,33 +1387,21 @@ def entry(args):
     # ✅ PRE-COMPUTE LABELS ONCE (Before Optuna)
     # Since target generation does NOT depend on RSI/MACD/OneEuro parameters,
     # calculate it globally before the study starts to save massive compute time!
-    precomputed_labels = None
     close_train = df_train[price_col]
-    if args.target_type == "floor":
-        assert args.optimize_target in ['put_credit']
-        precomputed_labels = create_target_floor(close_train, args.lookahead_bars, args.threshold_pct)
-    elif args.target_type == "short_any":
-        assert args.optimize_target in ['call_credit']
-        precomputed_labels = create_target_short_any(close_train, args.lookahead_bars, args.threshold_pct)
-    elif args.target_type == "ceiling":
-        assert args.optimize_target in ['call_credit']
-        precomputed_labels = create_target_ceiling(close_train, args.lookahead_bars, args.threshold_pct)
-    elif args.target_type == "any":
-        assert args.optimize_target in ['put_credit']
-        precomputed_labels = create_target_any(close_train, args.lookahead_bars, args.threshold_pct)
-    elif args.target_type == "any_half_B":
-        assert args.optimize_target in ['put_credit']
-        precomputed_labels = create_target_any_at_half_B(close_train, args.lookahead_bars, args.threshold_pct)
-    elif args.target_type == "any_half_B_for_cell":
-        assert args.optimize_target in ['call_credit']
-        precomputed_labels = create_target_any_at_half_B_for_sell(close_train, args.lookahead_bars, args.threshold_pct)
-    else:
-        assert args.optimize_target in ['put_credit']
-        precomputed_labels = create_target_exact(close_train, args.lookahead_bars, args.threshold_pct)
+    _func, _direction, allowed_optimize = TARGET_MODES[args.target_type]
+    assert args.optimize_target in allowed_optimize, (
+        f"target_type '{args.target_type}' must be optimized with "
+        f"--optimize-target in {allowed_optimize}, got '{args.optimize_target}'"
+    )
+    precomputed_labels = _func(close_train, args.lookahead_bars, args.threshold_pct)
 
     if args.verbose:
+        print(f"\n🏷️  Pre-computed labels using target_type='{args.target_type}' "
+              f"(direction={_direction}) :: {_describe_target_mode(args.target_type, args.lookahead_bars)}")
         print(f"\n🚀 Starting Optuna Optimization with TimeSeriesSplit(n_splits=10) for {args.n_trials} trials...")
         print(f"🎯 Optimization Target: {args.optimize_target.upper()} signals only")
+
+    is_short_target = is_short_target_type(args.target_type)
 
     def objective(trial):
         rsi_period = trial.suggest_int("rsi_period", 5, 30)
@@ -1352,8 +1465,6 @@ def entry(args):
                 fold_scores.append(0.0)
                 continue
 
-            is_short_target = args.target_type in ["short_any", "ceiling"]
-
             if is_short_target:
                 val_df_filtered['ActualUp'] = (1 - val_df_filtered['FutureLabel'].astype(int))
                 val_df_filtered['ActualDown'] = val_df_filtered['FutureLabel'].astype(int)
@@ -1382,7 +1493,7 @@ def entry(args):
 
         # Alpha controls how much we punish inconsistency across different time periods
         alpha = 1.
-        beta  = 4.
+        beta = 4.
         final_score = mean_score - (alpha * std_score) - (beta * density_penalty)
         return final_score
 
@@ -1486,7 +1597,7 @@ def entry(args):
                 print(f"   Density: {metrics.get('short_signals', 0) / len(df_subset):.2%}")
                 print(f"   Short Signals: {metrics.get('short_signals', 0)} | Accuracy: {metrics.get('short_accuracy', 0) * 100:.2f}%")
             print(f"   Look-ahead Horizon: {args.lookahead_bars} bars")
-            print(f"   Target Mode: '{args.target_type}'")
+            print(f"   Target Mode: '{args.target_type}' ({_describe_target_mode(args.target_type, args.lookahead_bars)})")
             print(f"   Threshold For Creating Target: {args.threshold_pct * 100:.2f}%\n")
         if plot_results and not args.disable_plot_sample:
             # Determine test win rate based on optimization target
