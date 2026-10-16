@@ -1274,7 +1274,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--lookahead-bars", type=int, default=10, help="Future bars to forecast")
     algo_grp.add_argument("--threshold-pct", type=float, default=0., help="Min %% move to create the target (use NEGATIVE for floor mode)")
     algo_grp.add_argument("--density-target", type=float, default=0.04, help="Target trade density (signals per bar) for optimization penalty. A 0 value disable it.")
-    algo_grp.add_argument('--train-ratio', type=float, default=0.8, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
+    algo_grp.add_argument('--train-ratio', type=float, default=0.9, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
     algo_grp.add_argument('--use-jit-signals', action='store_true', default=True, help='Enable JIT acceleration for signal generation (recommended for large datasets)')
     algo_grp.add_argument("--n-trials", type=int, default=50, help="Number of trials for Optuna optimization")
     algo_grp.add_argument('--timeout', type=int, default=120, help='Max runtime (seconds)')
