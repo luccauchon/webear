@@ -35,7 +35,7 @@ from argparse import Namespace
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.parallel")
 
 
-class Top50EnsembleModel:
+class TopNEnsembleModel:
     """
     Agrège les meilleurs modèles sélectionnés, par exemple le top 50.
 
@@ -62,7 +62,7 @@ class Top50EnsembleModel:
 
     def __repr__(self):
         return (
-            f"Top50EnsembleModel(n_models={self.n_models_}, "
+            f"TopNEnsembleModel(n_models={self.n_models_}, "
             f"fitted={self.is_fitted_}, threshold={self.threshold})"
             f"  Command Line: {self.command_line}"
         )
@@ -96,7 +96,7 @@ class Top50EnsembleModel:
         self.classes_ = np.unique(y_arr)
 
         if len(self.classes_) != 2:
-            raise ValueError("Top50EnsembleModel est conçu pour une classification binaire.")
+            raise ValueError("TopNEnsembleModel est conçu pour une classification binaire.")
 
         # Par convention, la classe positive est la dernière classe (ex: 1 si classes=[0, 1])
         self.positive_class_ = self.classes_[-1]
@@ -385,7 +385,7 @@ def parse_arguments():
 
 def run_realtime(modelfile, verbose):
     # Load model
-    model = Top50EnsembleModel.load(modelfile)
+    model = TopNEnsembleModel.load(modelfile)
 
     # Load data
     daily_df = factory_load_data(_dataset_id=model.args.dataset_id, _ticker=model.args.ticker, _args={"realtime": True})
@@ -743,8 +743,8 @@ def entry(args):
     # ---------------------------------------------------------
     df_sorted_results = pd.DataFrame(results).sort_values(by='CV_F1_Score', ascending=False).reset_index(drop=True)
 
-    top_50 = df_sorted_results.head(50)
-    bottom_10 = df_sorted_results.tail(10)
+    top_50 = df_sorted_results.head(50).copy()
+    bottom_10 = df_sorted_results.tail(10).copy()
     models_to_test = pd.concat([top_50, bottom_10]).reset_index(drop=True)
 
     print("=" * 90)
@@ -847,11 +847,17 @@ def entry(args):
     )
 
     # ---------------------------------------------------------
-    # 10. Création du modèle agrégé TOP 50
+    # 10. Création du modèle agrégé TOP 10, 50, 250
     # ---------------------------------------------------------
-    if len(top_50) > 0:
+    top_10  = df_sorted_results.head(10).copy()
+    top_250 = df_sorted_results.head(250).copy()
+    for name_top, top_n in zip(["top_10", "top_50", "top_250"], [top_10, top_50, top_250]):
+        if len(top_n) == 0:
+            print(f"[WARN] Aucun modèle disponible pour construire l'agrégat {name_top}.")
+            continue
+
         print("=" * 90)
-        print("CRÉATION DU MODÈLE AGRÉGÉ TOP 50")
+        print(f"CRÉATION DU MODÈLE AGRÉGÉ {name_top}")
         print("=" * 90)
         agg_test_f1 = None
         # -----------------------------------------------------
@@ -861,54 +867,52 @@ def entry(args):
         #      sur toutes les données.
         # -----------------------------------------------------
         try:
-            eval_top50_model = Top50EnsembleModel(threshold=0.5)
-            eval_top50_model.fit(
+            eval_top_n_model = TopNEnsembleModel(threshold=0.5)
+            eval_top_n_model.fit(
                 X=X_train,
                 y=y_train,
-                top_models_df=top_50,
+                top_models_df=top_n,
                 model_factory=get_models_for_ensemble
             )
 
-            agg_test = eval_top50_model.predict_aggregated(X_test)
+            agg_test = eval_top_n_model.predict_aggregated(X_test)
             agg_test_preds = agg_test['predicted_class'].to_numpy()
             agg_test_f1 = f1_score(y_test, agg_test_preds, average='weighted')
 
-            print(f"[INFO] Agrégat TOP50 (entraîné sur TRAIN seulement) | TEST F1: {agg_test_f1:.8f}")
+            print(f"[INFO] Agrégat {name_top} (entraîné sur TRAIN seulement) | TEST F1: {agg_test_f1:.8f}")
             print(
                 f"[INFO] Moyenne médiane proba test: {agg_test['median_probability'].mean():.6f} | "
                 f"Moyenne std proba test: {agg_test['std_probability'].mean():.6f}"
             )
 
-            del eval_top50_model
+            del eval_top_n_model
         except Exception as e:
-            print(f"[WARN] Impossible d'évaluer l'agrégat TOP50 sur le test: {e}")
+            print(f"[WARN] Impossible d'évaluer l'agrégat {name_top} sur le test: {e}")
 
         # -----------------------------------------------------
         # 10.2 Modèle agrégé final entraîné sur TOUTES les données
         # -----------------------------------------------------
-        final_top50_model = Top50EnsembleModel(threshold=0.5, command_line=command_line, args=args)
+        final_top_n_model = TopNEnsembleModel(threshold=0.5, command_line=command_line, args=args)
 
-        final_top50_model.fit(
+        final_top_n_model.fit(
             X=X,
             y=y,
-            top_models_df=top_50,
+            top_models_df=top_n,
             model_factory=get_models_for_ensemble
         )
 
         ensemble_filename = os.path.join(
             args.output_dir,
-            f'_top50_ensemble_model__{experience_str_desc}__tf1_{agg_test_f1:.8f}.pkl'
+            f'_{name_top}_ensemble_model__{experience_str_desc}__tf1_{agg_test_f1:.8f}.pkl'
         )
 
-        final_top50_model.save(ensemble_filename)
+        final_top_n_model.save(ensemble_filename)
 
-        print(f"✅ Modèle agrégé TOP50 sauvegardé: {ensemble_filename}")
+        print(f"✅ Modèle agrégé {name_top} sauvegardé: {ensemble_filename}")
         print("Réutilisation:")
-        print(f"    model = Top50EnsembleModel.load({ensemble_filename!r})")
+        print(f"    model = TopNEnsembleModel.load({ensemble_filename!r})")
         print("    agg = model.predict_aggregated(X_new)")
         print("    # agg[['median_probability', 'std_probability', 'predicted_class']]")
-    else:
-        print("[WARN] Aucun modèle disponible pour construire l'agrégat TOP50.")
 
 
 if __name__ == "__main__":
