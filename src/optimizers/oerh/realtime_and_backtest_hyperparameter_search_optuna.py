@@ -130,7 +130,7 @@ pd.options.mode.chained_assignment = None
 # 1. ONE-EURO FILTER (Adaptive Smoothing)
 # ============================================
 from algorithms.one_euro_filter import one_euro_filter
-from utils import DATASET_AVAILABLE, get_next_step
+from utils import get_next_step
 
 
 # ============================================
