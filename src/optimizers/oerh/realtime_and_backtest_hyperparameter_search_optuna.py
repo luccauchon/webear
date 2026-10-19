@@ -1,7 +1,7 @@
 """
 🎯 RULE-BASED TECHNICAL FORECASTING SYSTEM (JIT-ACCELERATED)
 ====================================================================================================
-🔧 ENHANCED: Added "floor", "short_any", "ceiling", "any_2B" and "any_2B_for_sell" target modes
+🔧 ENHANCED: Added "floor", "short_any", "ceiling", "any_2B", "any_2B_for_sell", "any_4B" and "any_4B_for_sell" target modes
 
 📋 OVERVIEW
 -----------
@@ -45,7 +45,7 @@ generate actionable trading signals with configurable lookahead horizons.
 
 4️⃣ TARGET LABELING STRATEGIES (Forecast Ground Truth)
    ├─ Purpose: Define what constitutes a "successful" prediction
-   ├─ Nine Modes:
+   ├─ Eleven Modes:
    │  • "exact"      : Price must exceed threshold EXACTLY at t + lookahead_bars
    │  • "any"        : Price must exceed threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "any_half_B" : Price must exceed threshold in SECOND HALF of window [t+B//2+1, t+B]
@@ -54,7 +54,9 @@ generate actionable trading signals with configurable lookahead horizons.
    │  • "short_any"  : Price must drop below threshold ANYWHERE in [t+1, t+lookahead_bars]
    │  • "ceiling"    : Price must NEVER rise above threshold in [t+1, t+lookahead_bars]
    │  • "any_2B"     : Price must exceed threshold in the LAST TWO BARS of the window [t+B-1, t+B]
-   │  • "any_2B_for_sell" 🆕 : Price must drop below threshold in the LAST TWO BARS of the window [t+B-1, t+B]
+   │  • "any_2B_for_sell" : Price must drop below threshold in the LAST TWO BARS of the window [t+B-1, t+B]
+   │  • "any_4B"     : Price must exceed threshold in the LAST FOUR BARS of the window [t+B-3, t+B]
+   │  • "any_4B_for_sell" 🆕 : Price must drop below threshold in the LAST FOUR BARS of the window [t+B-3, t+B]
    ├─ Parameters:
    │  • lookahead_bars : Forecast horizon in bars (default: 5)
    │  • threshold_pct  : Minimum price move to trigger positive label (default: 0.01 = 1%)
@@ -393,6 +395,14 @@ def _describe_target_mode(target_type: str, lookahead_bars: int) -> str:
         return f"only the LAST {win_size} bar(s) count: price exceeds threshold in [t+{first}, t+{B}] 🎯"
     if target_type == "any_2B_for_sell":
         win_size = min(2, B)
+        first = B - win_size + 1
+        return f"only the LAST {win_size} bar(s) count: price drops below threshold in [t+{first}, t+{B}] 📉"
+    if target_type == "any_4B":
+        win_size = min(4, B)
+        first = B - win_size + 1
+        return f"only the LAST {win_size} bar(s) count: price exceeds threshold in [t+{first}, t+{B}] 🎯"
+    if target_type == "any_4B_for_sell":
+        win_size = min(4, B)
         first = B - win_size + 1
         return f"only the LAST {win_size} bar(s) count: price drops below threshold in [t+{first}, t+{B}] 📉"
     return "exact future point"
@@ -807,6 +817,87 @@ def create_target_any_last_2B_for_sell(close: pd.Series, lookahead_bars: int, th
     return labels
 
 
+def create_target_any_last_4B(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    ANY-4B MODE ("any_4B"): Label = 1 if the price EXCEEDS the threshold at ANY point
+    inside the LAST FOUR BARS of the lookahead window, i.e. [t+B-3, t+B].
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series.
+    lookahead_bars : int
+        Number of bars to look ahead (B).
+    threshold_pct : float, optional
+        Percentage threshold for the target (default: 0.0).
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if threshold exceeded within the last 4 bars, 0 otherwise),
+        with NaN for the last `lookahead_bars` rows where the forward window is incomplete.
+    """
+    if lookahead_bars <= 0:
+        return pd.Series(np.nan, index=close.index, dtype=float)
+
+    window_size = min(4, lookahead_bars)
+    start_offset = lookahead_bars - window_size + 1
+
+    future_max = (
+        close.iloc[::-1]
+        .rolling(window=window_size, min_periods=window_size).max()
+        .iloc[::-1]
+        .shift(-start_offset)
+    )
+
+    labels = (future_max > close * (1 + threshold_pct)).astype(float)
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
+def create_target_any_last_4B_for_sell(close: pd.Series, lookahead_bars: int, threshold_pct: float = 0.0) -> pd.Series:
+    """
+    🆕 ANY-4B FOR SELL MODE ("any_4B_for_sell"): Label = 1 if the price DROPS BELOW the threshold
+    at ANY point inside the LAST FOUR BARS of the lookahead window, i.e. [t+B-3, t+B].
+
+    Bearish counterpart to `any_4B`, designed specifically for `call_credit` strategies.
+
+    Parameters
+    ----------
+    close : pd.Series
+        Closing prices series.
+    lookahead_bars : int
+        Number of bars to look ahead (B).
+    threshold_pct : float, optional
+        Percentage threshold for the target (default: 0.0).
+
+    Returns
+    -------
+    pd.Series
+        Binary labels (1 if threshold breached downwards within the last 4 bars, 0 otherwise),
+        with NaN for the last `lookahead_bars` rows where the forward window is incomplete.
+    """
+    if lookahead_bars <= 0:
+        return pd.Series(np.nan, index=close.index, dtype=float)
+
+    window_size = min(4, lookahead_bars)
+    start_offset = lookahead_bars - window_size + 1
+
+    future_min = (
+        close.iloc[::-1]
+        .rolling(window=window_size, min_periods=window_size).min()
+        .iloc[::-1]
+        .shift(-start_offset)
+    )
+
+    # Bearish: Win if min in the last 4 bars drops below threshold
+    labels = (future_min < close * (1 + threshold_pct)).astype(float)
+    labels.iloc[-lookahead_bars:] = np.nan
+
+    return labels
+
+
 # Registry: target_type string → (labeling function, direction, required optimize_target(s))
 # direction: "long"  → FutureLabel == 1 means price went UP past the threshold (bullish win condition)
 #            "short" → FutureLabel == 1 means price went DOWN past the threshold (bearish win condition)
@@ -820,6 +911,8 @@ TARGET_MODES = {
     "ceiling": (create_target_ceiling, "short", ["call_credit"]),
     "any_2B": (create_target_any_last_2B, "long", ["put_credit"]),
     "any_2B_for_sell": (create_target_any_last_2B_for_sell, "short", ["call_credit"]),
+    "any_4B": (create_target_any_last_4B, "long", ["put_credit"]),
+    "any_4B_for_sell": (create_target_any_last_4B_for_sell, "short", ["call_credit"]),
 }
 
 
@@ -1291,14 +1384,14 @@ def setup_argparse() -> argparse.ArgumentParser:
         default="put_credit",
         help="Target to optimize during Optuna search: 'put_credit', 'call_credit'"
     )
-    # Target labeling mode - UPDATED to include "any_2B_for_sell"
+    # Target labeling mode - UPDATED to include "any_4B" and "any_4B_for_sell"
     algo_grp.add_argument(
         "--target-type",
         type=str,
         choices=sorted(TARGET_MODES.keys()),
         default="any_half_B",
         help=("Target labeling method: 'exact', 'any', 'any_half_B', 'any_half_B_for_sell', 'floor', "
-              "'short_any', 'ceiling', 'any_2B', or 'any_2B_for_sell' 🆕 (bearish: only the LAST TWO bars [t+B-1, t+B] count for drop)")
+              "'short_any', 'ceiling', 'any_2B', 'any_2B_for_sell', 'any_4B' 🆕, or 'any_4B_for_sell' 🆕 (bearish: only the LAST FOUR bars count for drop)")
     )
 
     viz_grp = parser.add_argument_group("Visualization")
@@ -1361,7 +1454,7 @@ def entry(args):
 
     if args.lookahead_bars == 1:
         # With a 1-bar horizon every window-based mode degenerates to a single future bar.
-        assert args.target_type in ["exact", "any", "floor", "short_any", "ceiling", "any_2B", "any_2B_for_sell"], (
+        assert args.target_type in ["exact", "any", "floor", "short_any", "ceiling", "any_2B", "any_2B_for_sell", "any_4B", "any_4B_for_sell"], (
             f"target_type '{args.target_type}' is not meaningful with --lookahead-bars 1"
         )
 
