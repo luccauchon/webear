@@ -1455,11 +1455,11 @@ def get_taurus_v1_models():
 
 
 def round_price_for_put_credit_spread(price):
-    return math.floor(price / 5) * 5  # Put section: round down to nearest 5
+    return float(math.floor(price / 5) * 5)  # Put section: round down to nearest 5
 
 
 def round_price_for_call_credit_spread(price):
-    return math.ceil(price / 5) * 5  # Call section: round up to nearest 5
+    return float(math.ceil(price / 5) * 5)  # Call section: round up to nearest 5
 
 
 def compute_break_even_credit(win_rate, spread_width):
