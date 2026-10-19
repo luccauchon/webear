@@ -704,12 +704,12 @@ def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_tradi
 
 
 def get_df_SPY_and_VIX_virgin_at_minutes():
-    _tmp = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=True, spy=True, spx=True, ndx=True)
-    return _tmp['spy'], _tmp['spx'], _tmp['vix'], _tmp['ndx']
+    _tmp = factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=True, spy=True, spx=True, ndx=True, qqq=True)
+    return _tmp['spy'], _tmp['spx'], _tmp['vix'], _tmp['ndx'], _tmp['qqq']
 
 
-def factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=False, spy=False, spx=True, ndx=False):
-    df_spy, df_spx, df_vix, df_ndx = None, None, None, None
+def factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=False, spy=False, spx=True, ndx=False, qqq=False):
+    df_spy, df_spx, df_vix, df_ndx, df_qqq = None, None, None, None, None
     if vix:
         df_vix       = yf.download("^VIX", period=period, interval='1m', auto_adjust=False, progress=False)
         df_vix       = df_vix.drop("Volume", axis=1)
@@ -723,8 +723,10 @@ def factory_df_SPY_SPX_VIX_NDX_at_minutes(period='max', vix=False, spy=False, sp
     if ndx:
         df_ndx       = yf.download("^NDX", period=period, interval='1m', auto_adjust=False, progress=False)
         df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
-
-    return  {'spy': df_spy, 'spx': df_spx, 'vix': df_vix, 'ndx': df_ndx}
+    if qqq:
+        df_qqq       = yf.download("QQQ", period=period, interval='1m', auto_adjust=False, progress=False)
+        df_qqq.index = df_ndx.index.tz_convert('US/Eastern')
+    return  {'spy': df_spy, 'spx': df_spx, 'vix': df_vix, 'ndx': df_ndx, 'qqq': df_qqq}
 
 
 def get_df_SPY_and_VIX_virgin_at_30minutes():
@@ -745,75 +747,7 @@ def get_df_SPY_and_VIX_virgin_at_30minutes():
     df_ndx       = yf.download("^NDX", start=start_date, end=end_date, interval='30m', auto_adjust=False, progress=False)
     df_ndx.index = df_ndx.index.tz_convert('US/Eastern')
 
-    return  df_spy, df_spx, df_vix, df_ndx
+    df_qqq       = yf.download("QQQ", start=start_date, end=end_date, interval='30m', auto_adjust=False, progress=False)
+    df_qqq.index = df_ndx.index.tz_convert('US/Eastern')
 
-
-def get_df_SPY_and_VIX(interval="1d", add_moving_averages=True, _window_sizes=(2,3,4,5)):
-    df_vix    = yf.download("^VIX", period="max", interval="1d", auto_adjust=False)
-    df_vix    = df_vix.drop("Volume", axis=1)
-    df_spy    = yf.download("SPY", period="max", interval="1d", auto_adjust=False)
-    merged_df = pd.merge(df_spy, df_vix, on='Date', how='left')
-    assert 0 == np.sum(merged_df.isna().sum().values)
-    if interval in ['1mo', '1wk']:
-        # Define the list of symbols
-        symbols = ['SPY', '^VIX']
-        # Define the aggregation functions for each column type
-        agg_funcs = {
-            'Open': 'first',
-            'High': 'max',
-            'Low': 'min',
-            'Close': 'last',}
-        agg_dict = {(col, symbol): agg_funcs[col] for symbol in symbols for col in agg_funcs}
-        df_1jil = None
-        if interval == '1wk':
-            df_1jil = copy.deepcopy(merged_df.resample('W-FRI').agg(agg_dict))
-            # Resample the volume data into 5-minute mean volumes
-            volume_candles = merged_df['Volume'].resample('W-FRI').mean()
-            # Add the volume column to the candles DataFrame
-            df_1jil['Volume'] = volume_candles
-            if merged_df.index[-1].weekday() < 5:  # 5 represents Saturday
-                df_1jil = df_1jil.drop(df_1jil.index[-1])
-        if interval == '1mo':
-            df_1jil = copy.deepcopy(merged_df.resample('ME').agg(agg_dict))
-            # Resample the volume data into monthly mean volumes
-            volume_candles = merged_df['Volume'].resample('ME').mean()
-            # Add the volume column to the candles DataFrame
-            df_1jil['Volume'] = volume_candles
-            if merged_df.index[-1].day < 28:
-                df_1jil = df_1jil.drop(df_1jil.index[-1])
-        assert 0 == np.sum(df_1jil.isna().sum().values)
-        merged_df = copy.deepcopy(df_1jil)
-    merged_df['day_of_week']  = merged_df.index.dayofweek + 1
-    merged_df['week_of_year'] = merged_df.index.isocalendar().week + 1
-    merged_df['unique_week']  = merged_df.index.year * 1000 + merged_df['week_of_year']
-    merged_df['month_of_year'] = merged_df.index.month
-    #merged_df[('Close_direction', 'SPY')]  = merged_df.apply(lambda row: 1 if row[('Close', 'SPY')] > row[('Open', 'SPY')] else -1, axis=1)
-    #merged_df[('Close_direction', '^VIX')] = merged_df.apply(lambda row: 1 if row[('Close', '^VIX')] > row[('Open', '^VIX')] else -1, axis=1)
-
-    if add_moving_averages:
-        for window_size in _window_sizes:  # Define the window size for the moving average
-            do_ma_on_those = [('Close', 'SPY'), ('High', 'SPY'), ('Low', 'SPY'), ('Open', 'SPY'), ('Volume', 'SPY'),
-                              ('Close', '^VIX'), ('High', '^VIX'), ('Low', '^VIX'), ('Open', '^VIX')]
-            new_cols = []
-            for col in merged_df.columns:
-                if not col in do_ma_on_those:
-                    continue
-                col_title = (col[0] + f'_MA{window_size}', col[1])
-                merged_df[col_title] = merged_df[col].rolling(window=window_size, center=True).mean()
-                merged_df[col_title] = merged_df[col_title].shift(window_size // 2)
-                new_cols.append(col_title)
-
-                col_title = (col[0] + f'_EMA{window_size}', col[1])
-                merged_df[col_title] = merged_df[col].ewm(span=window_size, adjust=False).mean()
-                new_cols.append(col_title)
-
-            #print(new_cols)
-        merged_df = merged_df.dropna()
-
-    merged_df = merged_df.sort_index(ascending=True)
-
-    # merged_df[['column1', 'column2']] = merged_df[['column1', 'column2']].astype(int)
-    # float_cols = merged_df.select_dtypes(include=['float64']).columns
-    # merged_df[float_cols] = merged_df[float_cols].astype(int)
-
-    return copy.deepcopy(merged_df), f'spy_vix_multicol_reverse_rc1__direction_at_{interval}'
+    return  df_spy, df_spx, df_vix, df_ndx, df_qqq
