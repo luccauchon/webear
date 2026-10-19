@@ -654,7 +654,7 @@ def resample_candles(df, n_minutes, ticker):
     return df_resampled.copy()
 
 
-def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_trading_hours=True, verbose=False):
+def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_trading_hours=True, verbose=False, QQQ=False):
     # Group files by date
     files_by_date = defaultdict(list)
 
@@ -667,6 +667,8 @@ def get_1_minute_df(SPY=False, NDX=False, VIX=False, SPX=True, only_active_tradi
         if "__VIX" in filename and not VIX:
             continue
         if "__SPX" in filename and not SPX:
+            continue
+        if "__QQQ" in filename and not QQQ:
             continue
         date = filename.split('_')[0]  # "2026-03-31"
         files_by_date[date].append(file)
