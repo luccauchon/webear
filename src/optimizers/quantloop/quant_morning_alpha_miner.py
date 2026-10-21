@@ -64,7 +64,7 @@ class TopNEnsembleModel:
         self.metadata_ = {}
         self.command_line = command_line
         self.args = args
-        self.test_f1_score = test_f1_score
+        self.test_f1_score_ = test_f1_score
 
     def __repr__(self):
         return (
@@ -77,6 +77,27 @@ class TopNEnsembleModel:
         result = []
         for a_model_ in self.models_: result.append(a_model_['cv_f1_score'])
         return np.mean(result), np.std(result)
+
+    def get_test_f1_score(self):
+        try:
+            return self.test_f1_score_
+        except AttributeError:
+            return self.test_f1_score  # Backward compatibility
+
+    def get_n_models(self):
+        return self.n_models_
+
+    def get_adjusted_strike_price(self, a_price):
+        # reprise de la méthode build_df
+        round_method = lambda x: x
+        if self.args.seuil_pos > 1:
+            round_method = round_price_for_call_credit_spread
+        elif self.args.seuil_pos < 1:
+            round_method = round_price_for_put_credit_spread
+        return round_method(a_price)
+
+    def get_et1_et2(self):
+        return self.args.et1, self.args.et2
 
     def fit(self, X, y, top_models_df, model_factory):
         """
