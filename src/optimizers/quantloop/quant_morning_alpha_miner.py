@@ -73,10 +73,10 @@ class TopNEnsembleModel:
             f"  Command Line: {self.command_line}"
         )
 
-    def get_mean_cv_f1_score(self):
+    def get_mean_std_cv_f1_score(self):
         result = []
         for a_model_ in self.models_: result.append(a_model_['cv_f1_score'])
-        return np.mean(result)
+        return np.mean(result), np.std(result)
 
     def fit(self, X, y, top_models_df, model_factory):
         """
@@ -403,14 +403,16 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def run_realtime(modelfile, verbose):
+def run_realtime(modelfile, verbose, daily_df_precomputed):
     # Load model
     model = TopNEnsembleModel.load(modelfile)
 
     # Load data
-    daily_df = factory_load_data(_dataset_id=model.args.dataset_id, _ticker=model.args.ticker, _args={"realtime": True})
-    if isinstance(daily_df.columns, pd.MultiIndex): daily_df.columns = daily_df.columns.get_level_values(0)
-    daily_df = daily_df.sort_index()
+    daily_df = daily_df_precomputed
+    if daily_df is None:
+        daily_df = factory_load_data(_dataset_id=model.args.dataset_id, _ticker=model.args.ticker, _args={"realtime": True})
+        if isinstance(daily_df.columns, pd.MultiIndex): daily_df.columns = daily_df.columns.get_level_values(0)
+        daily_df = daily_df.sort_index()
     if verbose: print(f"{len(daily_df)} :: {daily_df.index[0]} --> {daily_df.index[-1]}")
 
     # Build dataset
@@ -655,7 +657,7 @@ def entry(args):
     #
     # ---------------------------------------------------------
     if args.realtime:
-        return run_realtime(modelfile=args.modelfile, verbose=getattr(args, "verbose", True))
+        return run_realtime(modelfile=args.modelfile, verbose=getattr(args, "verbose", True), daily_df_precomputed=getattr(args, "daily_df_precomputed", None))
 
     print(f"Command Line: {command_line}")
     df = factory_load_data(_dataset_id=args.dataset_id, _ticker=args.ticker, _args={"realtime": args.realtime})
