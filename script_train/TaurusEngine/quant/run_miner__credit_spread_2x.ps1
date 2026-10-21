@@ -4,7 +4,7 @@ $scriptPath = "..\..\..\src\optimizers\quantloop"
 $scriptPython = ".\quant_morning_alpha_miner.py"
 
 # Paramètres fixes du script
-$workers = 10
+$workers = 20
 $featureDim = 6
 $et1 = "15:56"
 $outputDir = "quant\miner1__credit_spread_2x"
