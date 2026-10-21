@@ -6,7 +6,7 @@ $scriptPython = ".\quant_morning_alpha_miner.py"
 # Paramètres fixes du script
 $workers = 12
 $featureDim = 12
-$et1 = "15:56"
+$et1 = "15:59"
 $outputDir = "quant\miner1__credit_spread_2x"
 
 # Variables d'environnement
