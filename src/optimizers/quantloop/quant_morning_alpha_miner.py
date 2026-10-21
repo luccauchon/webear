@@ -9,7 +9,7 @@ except ImportError:
     sys.path.insert(0, str(parent_dir))
     from version import sys__name, sys__version
 import time
-from utils import str2bool, format_duration
+from utils import str2bool, format_duration, round_price_for_put_credit_spread, round_price_for_call_credit_spread
 from fetchers.data_factory import factory_load_data
 import os
 import sys
@@ -17,11 +17,14 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score, KFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from itertools import combinations
 from datetime import datetime
@@ -33,6 +36,9 @@ import argparse
 from argparse import Namespace
 # Ignore cet avertissement spécifique lié à sklearn parallel
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.parallel")
+warnings.filterwarnings("ignore", message="The least populated class in y has only")
+from sklearn.exceptions import FitFailedWarning
+warnings.filterwarnings("ignore", category=FitFailedWarning)
 
 
 class TopNEnsembleModel:
@@ -48,8 +54,7 @@ class TopNEnsembleModel:
     - Ce modèle est prévu pour une classification binaire.
     - Pour les SVM, il est conseillé d'utiliser une factory avec probability=True.
     """
-
-    def __init__(self, threshold=0.5, command_line="", args=Namespace()):
+    def __init__(self, threshold=0.5, command_line="", args=Namespace(), test_f1_score=0):
         self.threshold = threshold
         self.is_fitted_ = False
         self.models_ = []
@@ -59,6 +64,7 @@ class TopNEnsembleModel:
         self.metadata_ = {}
         self.command_line = command_line
         self.args = args
+        self.test_f1_score = test_f1_score
 
     def __repr__(self):
         return (
@@ -66,6 +72,11 @@ class TopNEnsembleModel:
             f"fitted={self.is_fitted_}, threshold={self.threshold})"
             f"  Command Line: {self.command_line}"
         )
+
+    def get_mean_cv_f1_score(self):
+        result = []
+        for a_model_ in self.models_: result.append(a_model_['cv_f1_score'])
+        return np.mean(result)
 
     def fit(self, X, y, top_models_df, model_factory):
         """
@@ -318,20 +329,29 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
 
             cv_scores = cross_val_score(pipe, X_train_sub, y_train, cv=tscv, scoring='f1_weighted', n_jobs=1)
             mean_cv_f1 = cv_scores.mean()
+            std_cv_f1 = cv_scores.std()
+            penalty_factor = 1.0
+            adjusted_score = mean_cv_f1 - (penalty_factor * std_cv_f1)
 
+            # On s'assure que le score ne devienne pas négatif par accident
+            adjusted_score = max(0.0, adjusted_score)
             all_results_computed.append({
                 'Model': model_name,
                 'Num_Features': len(combo_list),
                 'Features_str': features_str,
-                'CV_F1_Score': mean_cv_f1
+                'CV_F1_Score': adjusted_score,  # Utilisation du score pénalisé
+                'Raw_Mean_F1': mean_cv_f1,  # Optionnel : pour garder une trace du vrai score
+                'Std_F1': std_cv_f1  # Optionnel : pour analyse
             })
 
-            if mean_cv_f1 > best_mean_cv_f1:
-                best_mean_cv_f1 = mean_cv_f1
+            if adjusted_score > best_mean_cv_f1:
+                best_mean_cv_f1 = adjusted_score
 
             if 0 == len(all_results_computed) % int(os.environ.get("Q__DISPLAY_RATE", 100000)):
+                mean_total_score = [result['CV_F1_Score'] for result in all_results_computed]
+                mean_total_score = sum(mean_total_score) / len(mean_total_score)
                 print(
-                    f"[{str(os.getpid()):<6}:{str(k):<4}]  {best_mean_cv_f1:8.8f} :: {mean_cv_f1:8.8f}  "
+                    f"[{str(os.getpid()):<6}:{str(k):<4}] {best_mean_cv_f1:8.8f} :: {mean_total_score:8.8f}  "
                     f"| {len(all_results_computed):6d} cases computed  "
                     f"| Mean time per pass: {format_duration(np.mean(times))}"
                 )
@@ -364,18 +384,18 @@ def parse_arguments():
 
     # Fenêtre d'analyse matinale (calcul des features)
     parser.add_argument('--st1', type=str, default="09:30", help="Heure de début de la fenêtre d'analyse (HH:MM).")
-    parser.add_argument('--st2', type=str, default="10:30", help="Heure de fin de la fenêtre d'analyse (HH:MM).")
+    parser.add_argument('--st2', type=str, default="10:00", help="Heure de fin de la fenêtre d'analyse (HH:MM).")
 
     # Fenêtre cible après-midi (calcul du High pour la target)
-    parser.add_argument('--et1', type=str, default="15:00", help="Heure de début de la fenêtre cible (HH:MM).")
+    parser.add_argument('--et1', type=str, default="15:55", help="Heure de début de la fenêtre cible (HH:MM).")
     parser.add_argument('--et2', type=str, default="16:00", help="Heure de fin de la fenêtre cible (HH:MM).")
 
     # Définition de la cible (target)
-    parser.add_argument('--seuil-pos', type=float, default=1., help="Seuil multiplicateur du Daily Open pour la cible.")
+    parser.add_argument('--seuil-pos', type=float, default=1., help="Seuil multiplicateur du Daily Open pour la cible. Si >1, arrondi au 5 supérieur et si <1, arrondi au 5 inférieur")
     parser.add_argument('--et-gt-open', type=int, default=1, help="1 si la cible est High > (Open * seuil), 0 si High < (Open * seuil).")
 
     # Sélection des features
-    parser.add_argument('--reduce-feature', type=int, default=-1, help="Nombre max de features à utiliser (-1 pour toutes les garder).")
+    parser.add_argument('--limit-feature-dim', type=int, default=10, help="Nombre min de features à utiliser. Plus petit == plus de combinaisons à évaluer.")
 
     parser.add_argument("--realtime", action="store_true", default=False, help="Run in real-time mode to check for live signals using a saved model.")
     parser.add_argument("--modelfile", type=str, default=None, help="Specific model filename to load in real-time mode. If not provided, loads the latest model.")
@@ -395,11 +415,20 @@ def run_realtime(modelfile, verbose):
 
     # Build dataset
     X_new = build_df(df=daily_df, args=Namespace(st1=model.args.st1, st2=model.args.st2, ema9=model.args.ema9, ema21=model.args.ema21, rsi14=model.args.rsi14,
-                                                 macd5=model.args.macd5, seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, reduce_feature=-1, verbose=verbose,),
+                                                 macd5=model.args.macd5, seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, verbose=verbose,),
                      generate_for_realtime=True)
     agg = model.predict_aggregated(X_new.iloc[-1:])
-    if verbose: print(agg[['median_probability', 'std_probability', 'predicted_class']])
-    return agg[['median_probability', 'std_probability', 'predicted_class']]
+    # open = daily_df['Open'].iloc[0]
+    # print(open)
+    # Code du build_df:
+    # strict_sup = int(args.et_gt_open)
+    # round_method = lambda x: x if seuil_pos == 1 else (round_price_for_call_credit_spread if seuil_pos > 1 else round_price_for_put_credit_spread)
+    # if 1 == strict_sup:
+    #    strike_price = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
+    # else:
+    #    strike_price = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
+    # a ajouter dans le retour
+    return {"result": agg[['median_probability', 'std_probability', 'predicted_class']], "model_args": model.args}
 
 
 def build_df(df, args, generate_for_realtime):
@@ -567,10 +596,6 @@ def build_df(df, args, generate_for_realtime):
         # 'Morning_Open',
         # 'Morning_Close',
     ]
-    reduce_feature = int(args.reduce_feature)
-    if -1 != reduce_feature:
-        feature_cols = feature_cols[:reduce_feature]
-
     if getattr(args, "verbose", True): print(f"X is: Features computed from {heure_debut_str} and {heure_fin_str} and from previous days")
     if generate_for_realtime:
         X = daily_df[feature_cols].copy()
@@ -581,11 +606,15 @@ def build_df(df, args, generate_for_realtime):
     # 2.5 APPLICATION DE LA NOUVELLE CIBLE
     # ---------------------------------------------------------
     strict_sup = int(args.et_gt_open)
-
+    round_method = lambda x: x
+    if seuil_pos > 1: round_method = round_price_for_call_credit_spread
+    elif seuil_pos < 1 : round_method = round_price_for_put_credit_spread
     if 1 == strict_sup:
-        daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > (daily_open.reindex(daily_df.index) * seuil_pos)).astype(int)
+        seuil_calcule = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
+        daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
     else:
-        daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < (daily_open.reindex(daily_df.index) * seuil_pos)).astype(int)
+        seuil_calcule = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
+        daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
 
     daily_df = daily_df.dropna()
 
@@ -642,13 +671,13 @@ def entry(args):
     #
     # ---------------------------------------------------------
     X, y, X_train, X_test, y_train, y_test, feature_cols, experience_str_desc = build_df(df=df, args=args, generate_for_realtime=False)
-
+    print(f"Features ({len(feature_cols)}): {str(feature_cols)[1:-2]}\n")
     # ---------------------------------------------------------
     # 4. Configuration de la Cross-Validation et des Modèles
     # ---------------------------------------------------------
-    tscv = TimeSeriesSplit(n_splits=12)
-
-    def get_models(probability=False):
+    tscv = TimeSeriesSplit(n_splits=6)
+    # tscv = StratifiedKFold(n_splits=12, shuffle=True, random_state=42)
+    def get_models():
         """
         Retourne une instance fraîche de chaque modèle et son type de prétraitement.
 
@@ -658,9 +687,13 @@ def entry(args):
         """
         return {
             'LogisticRegression': ('scaled', LogisticRegression(random_state=42, max_iter=1000)),
-            'RandomForest': ('raw', RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42, n_jobs=-1)),
-            'SVM': ('scaled', SVC(kernel='rbf', C=1.0, random_state=42, class_weight="balanced", probability=probability)),
-            'GradientBoosting': ('raw', GradientBoostingClassifier(n_estimators=50, learning_rate=0.05, max_depth=3, random_state=42))
+            'RandomForest': ('raw', RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42, n_jobs=1)),
+            'SVM': ('scaled',CalibratedClassifierCV(estimator=SVC(kernel='rbf', C=1.0, random_state=42, class_weight="balanced"),ensemble=False)),
+            'GradientBoosting': ('raw', GradientBoostingClassifier(n_estimators=50, learning_rate=0.05, max_depth=3, random_state=42)),
+            'ExtraTrees': ("raw",ExtraTreesClassifier(n_estimators=100,max_depth=8,random_state=42,n_jobs=1,)),
+            #'HistGradientBoosting': ("raw", HistGradientBoostingClassifier(max_iter=100,learning_rate=0.05,max_depth=3,random_state=42, early_stopping=True,),),
+            #'KNN': ("scaled",KNeighborsClassifier(n_neighbors=7,weights="distance",n_jobs=1,),),
+            #'MLP': ("scaled",MLPClassifier(hidden_layer_sizes=(32,),activation="relu",solver="adam",alpha=1e-3,max_iter=9999,random_state=42,early_stopping=False,),),
         }
 
     def get_models_for_ensemble():
@@ -669,18 +702,15 @@ def entry(args):
         On active probability=True pour les SVM afin de pouvoir calculer
         la médiane et l'écart-type des probabilités.
         """
-        return get_models(probability=True)
+        return get_models()
 
     # ---------------------------------------------------------
     # 5. Évaluation de toutes les combinaisons via Cross-Validation
     # ---------------------------------------------------------
     data_from_workers = []
     combo_to_be_processed = []
-    for r in range(1, len(feature_cols) + 1):
-        for combo in combinations(feature_cols, r):
-            combo_to_be_processed.append(list(combo))
-
-    zzz = len(combo_to_be_processed) * len(get_models())
+    for r in range(int(args.limit_feature_dim), len(feature_cols) + 1):
+        combo_to_be_processed.extend([list(c) for c in combinations(feature_cols, r)])
 
     use_cases__shared, master_cmd__shared = Queue(), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, nb_worker)]
@@ -699,12 +729,9 @@ def entry(args):
         master_cmd__shared.value = 1
 
     pbar = tqdm(combo_to_be_processed, desc="Submitting training with CV")
-    uuu = 0
-
     for combo_list in pbar:
         X_train_sub = X_train[combo_list]
         features_str = "|".join(combo_list)
-
         for model_name, (data_type, model) in get_models().items():
             if data_type == 'scaled':
                 pipe = Pipeline([('scaler', StandardScaler()), ('model', model)])
@@ -728,14 +755,12 @@ def entry(args):
                 bytes_donnees = memoire.getvalue()
 
             use_cases__shared.put(bytes_donnees)
-            uuu += 1
 
     for k in range(0, nb_worker):
         data_from_workers.extend(out__shared[k].get())
 
     results = data_from_workers
 
-    assert len(results) == uuu == zzz, f"{len(results)=} == {uuu=} == {zzz=}"
     print("Évaluation CV terminée")
 
     # ---------------------------------------------------------
@@ -828,30 +853,20 @@ def entry(args):
     print(f"Features     : {', '.join(best_model['Features'])}")
 
     # ---------------------------------------------------------
-    # 9. Sauvegarde des résultats finaux en CSV
+    # 9. Création du répertoire des modèles
     # ---------------------------------------------------------
     os.makedirs(args.output_dir, exist_ok=True)
-
-    output_filename_csv = os.path.join(args.output_dir, f'_cv_all_combinations__{experience_str_desc}.csv')
-    df_sorted_results.to_csv(output_filename_csv, index=False)
-
-    df_test_results_sorted = df_test_results.sort_values(by='Test_F1_Score', ascending=False).reset_index(drop=True)
-    df_test_results_sorted.to_csv(
-        os.path.join(args.output_dir, f'_test_results__{experience_str_desc}.csv'),
-        index=False
-    )
-
-    top_50.to_csv(
-        os.path.join(args.output_dir, f'_top50_selection__{experience_str_desc}.csv'),
-        index=False
-    )
 
     # ---------------------------------------------------------
     # 10. Création du modèle agrégé TOP 10, 50, 250
     # ---------------------------------------------------------
+    top_5   = df_sorted_results.head(5).copy()
     top_10  = df_sorted_results.head(10).copy()
+    top_50  = df_sorted_results.head(50).copy()
+    top_100 = df_sorted_results.head(100).copy()
     top_250 = df_sorted_results.head(250).copy()
-    for name_top, top_n in zip(["top_10", "top_50", "top_250"], [top_10, top_50, top_250]):
+    # top_500 = df_sorted_results.head(500).copy()
+    for name_top, top_n in zip(["top_5", "top_10", "top_50", "top_100", "top_250", ], [top_5, top_10, top_50, top_100, top_250, ]):
         if len(top_n) == 0:
             print(f"[WARN] Aucun modèle disponible pour construire l'agrégat {name_top}.")
             continue
@@ -892,7 +907,7 @@ def entry(args):
         # -----------------------------------------------------
         # 10.2 Modèle agrégé final entraîné sur TOUTES les données
         # -----------------------------------------------------
-        final_top_n_model = TopNEnsembleModel(threshold=0.5, command_line=command_line, args=args)
+        final_top_n_model = TopNEnsembleModel(threshold=0.5, command_line=command_line, args=args, test_f1_score=float(agg_test_f1))
 
         final_top_n_model.fit(
             X=X,

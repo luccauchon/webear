@@ -327,7 +327,9 @@ def entry(args):
     actual_high, actual_low, actual_close, actual_open, vix_regime = next(({k: v for k, v in item.items() if k in ['actual_high', 'actual_low', 'actual_close', 'actual_open', 'vix_regime']}.values() for item in data_from_workers))
     low_levels_for_graphics, high_levels_for_graphics = [], []
     name_of_application = "ATR-CL" if args.use_close_for_range else "ATR-HL"
-    days_to_expiration = f"0DTE" if get_dataset_timeframe(args.dataset_id) in [0, None] else f"{int(get_dataset_timeframe(args.dataset_id))-1}DTE"
+    days_to_expiration = f"D-0DTE" if get_dataset_timeframe(args.dataset_id) in [0, None] else f"D-{int(get_dataset_timeframe(args.dataset_id))-1}DTE"
+    if args.dataset_id == 'day': days_to_expiration = f"D-0DTE"
+    elif args.dataset_id == 'week': days_to_expiration = f"W-5DTE"
     subject = f"{name_of_application} | {args.ticker} | {days_to_expiration} | VIX Regime is {vix_regime} | Ouverture:{actual_open:.0f} | {signature_for_prod} | {datetime.now().strftime("%Y-%m-%d")}"
     string_generated, vlow_text, vhigh_text, dataset_configuration = subject + f" | [BREAK EVEN ON 5-POINT WIDE SPREAD]" + "\n", None, None, None
     returned_values = {"low": [], "high": []}
@@ -403,6 +405,7 @@ def entry(args):
             if dataset_configuration is None:
                 dataset_configuration = sorted_probability['dataset_configuration']
     assert vix_regime in ['Normal', 'Low', 'High']
+    returned_values.update({"vix_regime": vix_regime})
     string_explicative = "VIX bas (Faible)"
     if vix_regime == "Normal":
         string_explicative = "VIX normal\n\tEnvironnement de volatilité typique\n\tMouvement attendu modéré"

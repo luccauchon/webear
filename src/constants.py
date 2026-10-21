@@ -21,13 +21,14 @@ try:
         IS_RUNNING_MAC = True
 except:
     IS_RUNNING_MAC = False
-BASE_FINANCE_COMPILED_MODELS             = r"D:\Finance\compiled_models"
-BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = r"D:\Finance\data\daily"
-BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = r"D:\Finance\data\daily_30minutes"
-BASE_YFINANCE_DIR                        = r"D:\Finance\data\yfinance"
-BASE_FORECAST_DIR                        = r"D:\Finance\data\forecast"
-HISTORIAN_NAME_TO_BE_DETERMINED          = r"D:\Finance\data\historian"
 IS_RUNNING_HOME_SWEET_HOME               = True if os.path.exists(r"C:\WEBEAR_HOME_SWEET_HOME") else False
+THE_DRIVE                                = "D" if IS_RUNNING_HOME_SWEET_HOME else "C"
+BASE_FINANCE_COMPILED_MODELS             = rf"{THE_DRIVE}:\Finance\compiled_models"
+BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR  = rf"{THE_DRIVE}:\Finance\data\daily"
+BASE_YFINANCE_30MIN_DAILY_SERIALIZER_DIR = rf"{THE_DRIVE}:\Finance\data\daily_30minutes"
+BASE_YFINANCE_DIR                        = rf"{THE_DRIVE}:\Finance\data\yfinance"
+BASE_FORECAST_DIR                        = rf"{THE_DRIVE}:\Finance\data\forecast"
+HISTORIAN_ARGUS                          = rf"{THE_DRIVE}:\Finance\data\historian\argus"
 if IS_RUNNING_ON_CASIR:
     BASE_YFINANCE_DIR                       = "/gpfs/groups/gc014b/cj3272/experiences/yfinance"
     BASE_FORECAST_DIR                       = "/gpfs/groups/gc014b/cj3272/experiences/forecast"
