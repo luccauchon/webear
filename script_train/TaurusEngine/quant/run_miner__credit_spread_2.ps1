@@ -31,7 +31,7 @@ Set-Location $scriptPath
 foreach ($etGtOpen in $listeEtGtOpen) {
     foreach ($st2 in $listeSt2) {
         foreach ($seuil in $listeSeuil) {
-            # python $scriptPython1 --nb-worker $workers --limit-feature-dim $featureDim --seuil-pos $seuil --et-gt-open $etGtOpen --st2 $st2 --et1 $et1 --output-dir $outputDir
+            python $scriptPython1 --nb-worker $workers --limit-feature-dim $featureDim --seuil-pos $seuil --et-gt-open $etGtOpen --st2 $st2 --et1 $et1 --output-dir $outputDir
 
             # 2. Accumulation des valeurs pour le second script
             $argsEt1 += $et1
