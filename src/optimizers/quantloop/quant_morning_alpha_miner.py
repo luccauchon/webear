@@ -94,7 +94,7 @@ class TopNEnsembleModel:
             round_method = round_price_for_call_credit_spread
         elif self.args.seuil_pos < 1:
             round_method = round_price_for_put_credit_spread
-        return round_method(a_price)
+        return round_method(float(self.args.seuil_pos) * a_price)
 
     def get_et1_et2(self):
         return self.args.et1, self.args.et2
@@ -638,7 +638,6 @@ def build_df(df, args, generate_for_realtime):
     else:
         seuil_calcule = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
         daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
-
     daily_df = daily_df.dropna()
 
     if getattr(args, "verbose", True): print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} Daily Open * {seuil_pos}")
