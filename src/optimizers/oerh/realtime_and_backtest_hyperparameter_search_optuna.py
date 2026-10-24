@@ -1470,11 +1470,11 @@ def entry(args):
     train_end_idx = max(train_end_idx, min_history)
 
     df_train = df.iloc[:train_end_idx].copy()
-    df_val = df.iloc[train_end_idx:].copy()
+    df_test  = df.iloc[train_end_idx:].copy()
     if args.verbose:
         str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
-        str_te = f"({df_val.index[0].strftime('%Y-%m-%d_%H%M')}::{df_val.index[-1].strftime('%Y-%m-%d_%H%M')})"
-        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Test={len(df_val)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
+        str_te = f"({df_test.index[0].strftime('%Y-%m-%d_%H%M')}::{df_test.index[-1].strftime('%Y-%m-%d_%H%M')})"
+        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Test={len(df_test)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
         print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: optimized [0, 12]")
 
     # ✅ PRE-COMPUTE LABELS ONCE (Before Optuna)
@@ -1707,8 +1707,8 @@ def entry(args):
     # Run on training set (backtest)
     _, metrics_train = run_and_report(df_subset=df_train, label="🔧 TRAINING SET (Backtest)", optimize_target=args.optimize_target, plot_results=False, params=best_params)
 
-    # Run on test set (final evaluation) a.k.a. validation set :)
-    df_results_val, metrics_val = run_and_report(df_subset=df_val, label="✅ TEST SET (Final Evaluation)", optimize_target=args.optimize_target, plot_results=True, params=best_params)
+    # Run on test set (final evaluation) a.k.a. test set :)
+    df_results_val, metrics_val = run_and_report(df_subset=df_test, label="✅ TEST SET (Final Evaluation)", optimize_target=args.optimize_target, plot_results=True, params=best_params)
 
     # Print comparison summary
     if not args.disable_print and metrics_train and metrics_val:
@@ -1731,7 +1731,7 @@ def entry(args):
         print("=" * 60 + "\n")
 
     # 💾 Save best model at the end of optimization
-    total_bars_val = metrics_val.get('total_bars', len(df_val))
+    total_bars_val = metrics_val.get('total_bars', len(df_test))
     signal_density = metrics_val.get('total_signals', 0) / total_bars_val if total_bars_val > 0 else 0.0
     if args.optimize_target == "put_credit":
         signal_density = metrics_val.get('long_signals', 0) / total_bars_val if total_bars_val > 0 else 0.0
