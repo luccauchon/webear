@@ -1395,7 +1395,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     )
 
     viz_grp = parser.add_argument_group("Visualization")
-    viz_grp.add_argument("--plot-sample", type=int, default=100, help="Number of recent bars to plot")
+    viz_grp.add_argument("--plot-sample", type=int, default=1000, help="Number of recent bars to plot")
     viz_grp.add_argument("--disable-plot-sample", action="store_true", default=False, help="Skip plotting section")
 
     realtime_grp = parser.add_argument_group("Real-Time Mode")
