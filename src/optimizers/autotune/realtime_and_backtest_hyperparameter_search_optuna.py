@@ -732,7 +732,7 @@ def entry(args):
                     fold_scores.append(obj)
 
             # Return the mean score across all 20 folds
-            alpha = 0.5
+            alpha = 1.0
             final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
             return float(final_score)
 
