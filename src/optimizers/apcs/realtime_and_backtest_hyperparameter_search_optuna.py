@@ -1799,7 +1799,7 @@ def entry(args):
 
         mean_score = np.mean(fold_scores)
         std_score = np.std(fold_scores)
-        alpha = 0.5
+        alpha = 1.0
         final_score = mean_score - (alpha * std_score)
         return final_score
 
