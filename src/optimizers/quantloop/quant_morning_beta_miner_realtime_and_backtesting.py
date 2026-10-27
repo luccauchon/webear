@@ -1,5 +1,3 @@
-from llvmlite.binding import passmanagers
-
 try:
     from version import sys__name, sys__version
 except ImportError:
@@ -73,8 +71,8 @@ def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir):
     open_derniere_journee = df_dernier_jour["Open"].iloc[0]
     strike_price = best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
     key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
-    win_rate = [cwr[1] for cwr in computed_win_rate if key_dict==cwr[0]]
-    assert len(win_rate) == 1
+    win_rate = [v for k, v in computed_win_rate.items() if key_dict==k]
+    assert len(win_rate) == 1, f"La donnees {key_dict} devrait exister dans le fichier {os.path.join(models_dir, 'win_rate.json')}"
     win_rate = win_rate[0]
     # Repris du code du backtesting
     if 1 == result_pcs["result"]["predicted_class"].values[0] and 0 == result_ccs["result"]["predicted_class"].values[0]:
@@ -147,37 +145,31 @@ def get_key_from_parameters(st1, st2, et1, et2, seuil_pos):
     return f"{st1} :: {st2} | {et1} :: {et2} | {seuil_pos}"
 
 
-def entry(args):
-    if args.realtime:
-        return realtime(ticker=args.ticker, st1=args.st1, st2=args.st2, et1=args.et1, et2=args.et2, seuil_pos=args.seuil_pos, models_dir=args.models_dir)
+def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
+    # Attendre le Go du master
+    while True:
+        with master_cmd__shared.get_lock():
+            if 0 != master_cmd__shared.value:
+                break
+        time.sleep(0.333)
 
-    ###########################################################################
-    # Lecture des données
-    ###########################################################################
-    df_1minute = factory_load_data(_dataset_id="intraday-1min", _ticker=args.ticker, _args={})
-    if isinstance(df_1minute.columns, pd.MultiIndex): df_1minute.columns = df_1minute.columns.get_level_values(0)
-    df_1minute = df_1minute.sort_index()
-    close_col = 'Close'
-
-    ###########################################################################
-    # Boucle pour effectuer le backtest
-    ###########################################################################
-    assert len(args.st1)==len(args.st2)==len(args.et1)==len(args.et2)==len(args.seuil_pos)
+    # Traitement des requêtes
     resultats_dct = {}
-    for st1, st2, et1, et2, seuil_pos in tqdm(zip(args.st1, args.st2, args.et1, args.et2, args.seuil_pos)):
-        ###########################################################################
-        # Lecture des modèles requis
-        ###########################################################################
-        all_models = read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=args.models_dir)
-        #print(f" Fenêtre d\'analyse : {st1} :: {st2}")
-        #print(f" Fenêtre cible     : {et1} :: {et2}")
-        #print(f" Niveau de prix    : {seuil_pos}")
-        #print(f" Nombre de modèles : {len(all_models)}")
+    while True:
+        _use_case = None
+        try:
+            item = use_cases__shared.get(timeout=2)
+            _use_case = item
+        except:
+            break  # Queue is empty or no more items within timeout
+        st1, st2, et1, et2, seuil_pos, df_1minute, models_dir = _use_case
+        key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
+        all_models = read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
         groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
         total_jours = len(groupes_par_jour)
         date_2_result = {}
         # 2. On itère sur le nombre de jours à reculer (ex: de 1 jour à (total - 3) jours)
-        for lookback_jours in tqdm(range(0, total_jours - 3)):
+        for lookback_jours in range(0, total_jours - 3):
             # On sélectionne uniquement les jours restants (on exclut les 'lookback_jours' derniers jours)
             jours_restants = groupes_par_jour if 0 == lookback_jours else groupes_par_jour[:-lookback_jours]
             date_derniere_journee, df_dernier_jour = jours_restants[-1]
@@ -192,7 +184,7 @@ def entry(args):
             #print(f" >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
             df_filtre = pd.concat([df_jour for _, df_jour in jours_restants])
             #print(f" \t >>> {df_filtre.index[0]} --> {df_filtre.index[-1]}")
-            pred_results = compute_prediction(df_=df_filtre, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=args.models_dir))
+            pred_results = compute_prediction(df_=df_filtre, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir))
             result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
 
             #print(f"PUT CREDIT SPREAD  : {result_pcs['result']['predicted_class'].values[0]}  {result_pcs['result']['median_probability'].values[0]:.0%}")
@@ -231,20 +223,62 @@ def entry(args):
             #input("ENTER")
         # 1. On compte les occurrences de chaque résultat (1, 0, -1) dans le dictionnaire
         statistiques = Counter(date_2_result.values())
-        # 2. Affichage des résultats
-        #print(f"--- Statistiques globales ({len(date_2_result)} jours analysés) ---")
-        #print(f"Win  (1)      : {statistiques.get(1, 0)} jours")
-        #print(f"Loss (0)      : {statistiques.get(0, 0)} jours")
-        #print(f"Fait rien (-1): {statistiques.get(-1, 0)} jours")
         total_signal_activated = statistiques.get(1, 0) + statistiques.get(0, 0)
         win_rate = statistiques.get(1, 0) / total_signal_activated
-        key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
-        print(f"Win Rate: {win_rate:.2%}  ({key_dict})")
         assert key_dict not in resultats_dct
         resultats_dct.update({key_dict: win_rate})
-    resultats_dct_trie = sorted(resultats_dct.items(), key=lambda x: x[1])
+    out__shared.put(resultats_dct)
+
+
+def entry(args):
+    if args.realtime:
+        return realtime(ticker=args.ticker, st1=args.st1, st2=args.st2, et1=args.et1, et2=args.et2, seuil_pos=args.seuil_pos, models_dir=args.models_dir)
+
+    ###########################################################################
+    # Lecture des données
+    ###########################################################################
+    df_1minute = factory_load_data(_dataset_id="intraday-1min", _ticker=args.ticker, _args={})
+    if isinstance(df_1minute.columns, pd.MultiIndex): df_1minute.columns = df_1minute.columns.get_level_values(0)
+    df_1minute = df_1minute.sort_index()
+    close_col = 'Close'
+    nb_worker = 12
+
+    ###########################################################################
+    # Boucle pour effectuer le backtest
+    ###########################################################################
+    assert len(args.st1)==len(args.st2)==len(args.et1)==len(args.et2)==len(args.seuil_pos)
+
+    use_cases, tmp_lst = [], []
+    for st1, st2, et1, et2, seuil_pos in tqdm(zip(args.st1, args.st2, args.et1, args.et2, args.seuil_pos)):
+        key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
+        if key_dict in tmp_lst: continue  # Pass it. Already computed (because generated cases for et-gt-open==0 and ==1)
+        use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir))
+        tmp_lst.append(key_dict)
+    print(f"Got {len(use_cases)} use cases to process with {nb_worker} workers...")
+    data_from_workers = []
+    use_cases__shared, master_cmd__shared = Queue(), Value("i", 0)
+    out__shared = [Queue(1) for k in range(0, nb_worker)]
+
+    # Lancement des workers
+    for k in range(0, nb_worker):
+        p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k],))
+        p.start()
+    # Envoie les informations aux workers pour traitement
+    for use_case in use_cases:
+        use_cases__shared.put(use_case)
+    # Autoriser les workers à traiter
+    with master_cmd__shared.get_lock():
+        master_cmd__shared.value = 1
+    # Récupération des résultats
+    for k in range(0, nb_worker):
+        data_from_workers.append(out__shared[k].get())
+    # 1. Filtrer pour enlever les dictionnaires vides
+    filtered_data = [d for d in data_from_workers if d]
+    dict_unique = {}
+    for d in filtered_data:
+        dict_unique |= d
     with open(os.path.join(args.models_dir, "win_rate.json"), "w", encoding="utf-8") as f:
-        json.dump(resultats_dct_trie, f, indent=4)
+        json.dump(dict_unique, f, indent=4)
     return None
 
 
