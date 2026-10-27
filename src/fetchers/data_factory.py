@@ -167,7 +167,6 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
     _get_vix = _args.get("get_vix", False)
     _proxy_spx = _args.get("proxy_spx", False)
     _filter_per_day = _args.get("filter_per_day", [])
-    _replace_last_candle = _args.get("new_values_for_last_candles", {})
     _meta_info = ""
     if _proxy_spx:  # Préséance sur realtime
         assert _ticker in ["^GSPC"]
@@ -273,7 +272,7 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
                     # Style: day_heikinashi or day_2B or extraday-...
                     _dataset_id, _meta_info = re.split(r"[-_]", _dataset_id, maxsplit=1)
                     assert _dataset_id in DATASET_AVAILABLE + ["extraday"]
-                with open(get_filename_for_dataset(_dataset_id if _dataset_id in [DATASET_AVAILABLE] else "day", older_dataset=None), 'rb') as f:
+                with open(get_filename_for_dataset(_dataset_id if _dataset_id in DATASET_AVAILABLE else "day", older_dataset=None), 'rb') as f:
                     _master_data_cache = pickle.load(f)
                 assert _master_data_cache is not None
                 df_main = _master_data_cache[_ticker].sort_index().copy()
@@ -321,14 +320,6 @@ def factory_load_data(_dataset_id, _ticker, _args={}):
         df_main = resample_macro_candles(df=df_main, n=n_bars, timeframe=_dataset_id, ticker=_ticker)
         if _get_vix:
             df_vix = resample_macro_candles(df=df_main, n=n_bars, timeframe=_dataset_id, ticker="^VIX")
-    if len(_replace_last_candle) > 0:
-        # # Cibler la dernière ligne (-1) pour chaque colonne spécifique
-        # df.loc[df.index[-1], ("Open", ticker)] = new_open
-        # df.loc[df.index[-1], ("High", ticker)] = new_high
-        # df.loc[df.index[-1], ("Low", ticker)] = new_low
-        # df.loc[df.index[-1], ("Close", ticker)] = new_close
-        # df.loc[df.index[-1], ("Volume", ticker)] = new_volume
-        pass
     ###########################################################################
     # Retour des valeurs
     ###########################################################################

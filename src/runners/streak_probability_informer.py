@@ -30,8 +30,7 @@ def get_parser():
 
 
 def entry(args):
-    configuration = Namespace(dataset_id=args.dataset_id, ticker=args.ticker, limit=12, generate_image=True, realtime=args.realtime, generate_html=False)
-    result = plotly_close_oriented(configuration)
+    result = plotly_close_oriented(args=Namespace(dataset_id=args.dataset_id, ticker=args.ticker, limit=12, generate_image=True, realtime=args.realtime, generate_html=False, clip_n=getattr(args, "clip_n", 0)))
     output_file = Path(result['output_filename'])
     target_date = result['target_date']
     information_returned = result["information_returned"]

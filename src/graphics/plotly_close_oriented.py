@@ -30,8 +30,7 @@ def main(args):
     GENERATE_IMAGE = args.generate_image
     GENERATE_HTML = args.generate_html
     # Load cached data
-    data = factory_load_data(_dataset_id=DATASET_ID, _ticker=TICKER, _args={"realtime": REALTIME})
-
+    data = factory_load_data(_dataset_id=DATASET_ID, _ticker=TICKER, _args={"realtime": REALTIME, "clip_n": getattr(args, "clip_n", 0)})
     # Extract and rename OHLC columns
     df = copy.deepcopy(data[[('Open', TICKER), ('High', TICKER), ('Low', TICKER), ('Close', TICKER)]])
     df.columns = ['Open', 'High', 'Low', 'Close']
