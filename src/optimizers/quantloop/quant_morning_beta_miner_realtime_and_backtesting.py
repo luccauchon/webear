@@ -69,7 +69,7 @@ def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir):
     groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
     date_derniere_journee, df_dernier_jour = groupes_par_jour[-1]
     open_derniere_journee = df_dernier_jour["Open"].iloc[0]
-    strike_price = best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
+    strike_price = int(best_model_pcs.get_adjusted_strike_price(open_derniere_journee))
     key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
     win_rate = [v for k, v in computed_win_rate.items() if key_dict==k]
     assert len(win_rate) == 1, f"La donnees {key_dict} devrait exister dans le fichier {os.path.join(models_dir, 'win_rate.json')}"
@@ -136,8 +136,11 @@ def read_models(st1, st2, et1, et2, seuil_pos, models_dir):
     for file_path in file_paths:
         ensemble_filename = str(file_path)
         if f"_ensemble_model__{seuil_pos}__{st1}-{st2}__{et1}00-{et2}00".replace(':', '') in ensemble_filename:
-            model = TopNEnsembleModel.load(ensemble_filename)
-            all_models.append((model, ensemble_filename))
+            try:
+                model = TopNEnsembleModel.load(ensemble_filename)
+                all_models.append((model, ensemble_filename))
+            except Exception:
+                pass # Pour l'instant.
     return all_models
 
 

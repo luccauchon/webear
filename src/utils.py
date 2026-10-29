@@ -867,6 +867,96 @@ def get_next_month_range(input_date=None):
     return get_month_range(input_date, 1)
 
 
+def get_quarter_range(input_date=None, quarters_ahead=0):
+    """
+    Retourne une chaîne formatée et l'objet date du dernier jour pour le trimestre ciblé.
+
+    Args:
+        input_date (str | date | datetime | None):
+            - Si None : utilise la date d'aujourd'hui
+            - Si str : attend le format "YYYY-MM-DD"
+            - Si datetime/date : utilise la date fournie
+        quarters_ahead (int):
+            - 0 pour le trimestre courant (par défaut)
+            - 1 pour le trimestre prochain
+            - l pour un trimestre plus lointain dans le futur
+
+    Returns:
+        tuple: (formatted_string, last_day_date)
+    """
+    # Normalisation de l'entrée vers un objet date
+    if input_date is None:
+        dt = date.today()
+    elif isinstance(input_date, str):
+        dt = datetime.strptime(input_date, "%Y-%m-%d").date()
+    elif isinstance(input_date, datetime):
+        dt = input_date.date()
+    else:
+        dt = input_date
+
+    # Détermination du trimestre courant (0 = Q1, 1 = Q2, 2 = Q3, 3 = Q4)
+    current_quarter = (dt.month - 1) // 3
+
+    # Calcul du trimestre et de l'année cible
+    total_quarters = current_quarter + quarters_ahead
+    target_year = dt.year + (total_quarters // 4)
+    target_quarter = total_quarters % 4
+
+    # Déduction des mois de début et de fin du trimestre cible (1-indexed)
+    start_month = (target_quarter * 3) + 1
+    end_month = start_month + 2
+
+    # Premier et dernier jour du trimestre
+    first_day = date(target_year, start_month, 1)
+    _, days_in_month = calendar.monthrange(target_year, end_month)
+    last_day = date(target_year, end_month, days_in_month)
+
+    formatted_string = (f"Target quarter is from {first_day.strftime('%Y-%m-%d')} "
+                        f"to {last_day.strftime('%Y-%m-%d')}")
+
+    return formatted_string, last_day
+
+
+def get_year_range(input_date=None, years_ahead=0):
+    """
+    Retourne une chaîne formatée et l'objet date du dernier jour pour l'année ciblée.
+
+    Args:
+        input_date (str | date | datetime | None):
+            - Si None : utilise la date d'aujourd'hui
+            - Si str : attend le format "YYYY-MM-DD"
+            - Si datetime/date : utilise la date fournie
+        years_ahead (int):
+            - 0 pour l'année courante (par défaut)
+            - 1 pour l'année prochaine
+            - l pour une année plus lointaine dans le futur
+
+    Returns:
+        tuple: (formatted_string, last_day_date)
+    """
+    # Normalisation de l'entrée vers un objet date
+    if input_date is None:
+        dt = date.today()
+    elif isinstance(input_date, str):
+        dt = datetime.strptime(input_date, "%Y-%m-%d").date()
+    elif isinstance(input_date, datetime):
+        dt = input_date.date()
+    else:
+        dt = input_date
+
+    # Calcul de l'année cible
+    target_year = dt.year + years_ahead
+
+    # Premier et dernier jour de l'année
+    first_day = date(target_year, 1, 1)
+    last_day = date(target_year, 12, 31)
+
+    formatted_string = (f"Target year is from {first_day.strftime('%Y-%m-%d')} "
+                        f"to {last_day.strftime('%Y-%m-%d')}")
+
+    return formatted_string, last_day
+
+
 def get_month_range(input_date=None, months_ahead=0):
     """
     Retourne une chaîne formatée et l'objet date du dernier jour pour le mois ciblé.
@@ -911,6 +1001,7 @@ def get_month_range(input_date=None, months_ahead=0):
                         f"to {last_day.strftime('%Y-%m-%d')}")
 
     return formatted_string, last_day
+
 
 def add_vwap_with_bands(
         df: pd.DataFrame,

@@ -94,7 +94,7 @@ class TopNEnsembleModel:
             round_method = round_price_for_call_credit_spread
         elif self.args.seuil_pos < 1:
             round_method = round_price_for_put_credit_spread
-        return round_method(float(self.args.seuil_pos) * a_price)
+        return int(round_method(float(self.args.seuil_pos) * a_price))
 
     def get_et1_et2(self):
         return self.args.et1, self.args.et2
@@ -414,6 +414,7 @@ def parse_arguments():
     # Définition de la cible (target)
     parser.add_argument('--seuil-pos', type=float, default=1., help="Seuil multiplicateur du Daily Open pour la cible. Si >1, arrondi au 5 supérieur et si <1, arrondi au 5 inférieur")
     parser.add_argument('--et-gt-open', type=int, default=1, help="1 si la cible est High > (Open * seuil), 0 si High < (Open * seuil).")
+    parser.add_argument('--target-definition', type=str, default="open_as_level", choices=["open_as_level", "last_morning_close_as_level", "last_morning_vwap_as_level"], help="Définition de la cible à utiliser")
 
     # Sélection des features
     parser.add_argument('--limit-feature-dim', type=int, default=10, help="Nombre min de features à utiliser. Plus petit == plus de combinaisons à évaluer.")
@@ -438,7 +439,8 @@ def run_realtime(modelfile, verbose, daily_df_precomputed):
 
     # Build dataset
     X_new = build_df(df=daily_df, args=Namespace(st1=model.args.st1, st2=model.args.st2, ema9=model.args.ema9, ema21=model.args.ema21, rsi14=model.args.rsi14,
-                                                 macd5=model.args.macd5, seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, verbose=verbose,),
+                                                 macd5=model.args.macd5, seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, verbose=verbose,
+                                                 target_definition=getattr(model.args, "target_definition", "open_as_level"),),
                      generate_for_realtime=True)
     agg = model.predict_aggregated(X_new.iloc[-1:])
     # open = daily_df['Open'].iloc[0]
@@ -494,7 +496,7 @@ def build_df(df, args, generate_for_realtime):
     # ---------------------------------------------------------
     morning_mask = (df.index.time >= fenetre_analysee[0]) & (df.index.time <= fenetre_analysee[1])
     df_morning = df[morning_mask].copy()
-
+    df_morning__last_close_value = df_morning.iloc[-1]['Close']
     df_morning['typical_price'] = (df_morning['High'] + df_morning['Low'] + df_morning['Close']) / 3.0
     df_morning['tp_vol'] = df_morning['typical_price'] * df_morning['Volume']
     df_morning['up_volume'] = np.where(df_morning['Close'] > df_morning['Open'], df_morning['Volume'], 0)
@@ -507,7 +509,7 @@ def build_df(df, args, generate_for_realtime):
     df_morning['vwap'] = np.where(df_morning['cum_vol'] > 0, df_morning['cum_tp_vol'] / df_morning['cum_vol'], np.nan)
     df_morning['vwap_slope'] = daily_morning_groups['vwap'].diff()
     df_morning['vwap_deriv'] = daily_morning_groups['vwap_slope'].diff()
-
+    df_morning__last_vwap_value = df_morning['vwap'].iloc[-1]
     morning_groups = df_morning.groupby(df_morning.index.date)
 
     def calc_rsi(series, period=14):
@@ -630,14 +632,31 @@ def build_df(df, args, generate_for_realtime):
     # ---------------------------------------------------------
     strict_sup = int(args.et_gt_open)
     round_method = lambda x: x
-    if seuil_pos > 1: round_method = round_price_for_call_credit_spread
+    if seuil_pos > 1:    round_method = round_price_for_call_credit_spread
     elif seuil_pos < 1 : round_method = round_price_for_put_credit_spread
-    if 1 == strict_sup:
-        seuil_calcule = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
-        daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
-    else:
-        seuil_calcule = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
-        daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
+    target_definition = getattr(args, "target_definition", "open_as_level")
+    if "open_as_level" == target_definition:
+        if 1 == strict_sup:
+            seuil_calcule      = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
+            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
+        else:
+            seuil_calcule      = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
+            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
+    elif "last_morning_close_as_level" == target_definition:
+        if 1 == strict_sup:
+            seuil_calcule      = round_method(df_morning__last_close_value * seuil_pos)
+            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
+        else:
+            seuil_calcule      = round_method(df_morning__last_close_value * seuil_pos)
+            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
+    elif "last_morning_vwap_as_level" == target_definition:
+        if 1 == strict_sup:
+            seuil_calcule      = round_method(df_morning__last_vwap_value * seuil_pos)
+            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
+        else:
+            seuil_calcule      = round_method(df_morning__last_vwap_value * seuil_pos)
+            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
+
     daily_df = daily_df.dropna()
 
     if getattr(args, "verbose", True): print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} Daily Open * {seuil_pos}")
@@ -698,7 +717,7 @@ def entry(args):
     # 4. Configuration de la Cross-Validation et des Modèles
     # ---------------------------------------------------------
     tscv = TimeSeriesSplit(n_splits=6)
-    # tscv = StratifiedKFold(n_splits=12, shuffle=True, random_state=42)
+
     def get_models():
         """
         Retourne une instance fraîche de chaque modèle et son type de prétraitement.
