@@ -394,9 +394,10 @@ def evaluate_datasets(df_full: pd.DataFrame, train_ratio: float, params: dict, f
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
 
     idx = int(len(valid_df) * train_ratio)
-    valid_train, valid_test = valid_df.iloc[:idx], valid_df.iloc[idx:]
+    valid_train, valid_test = valid_df.iloc[:idx].copy(), valid_df.iloc[idx:].copy()
     if len(valid_test) == 0: valid_test = valid_train.iloc[[-1]]
-
+    print(f"TRAIN & VALID: {valid_train.index[0]}::{valid_train.index[-1]}")
+    print(f"TEST         : {valid_test.index[0]}::{valid_test.index[-1]}")
     X_train_np, y_train_np = valid_train[features].to_numpy(dtype=np.float32), valid_train['forward_return'].to_numpy()
     X_test_np, y_test_np = valid_test[features].to_numpy(dtype=np.float32), valid_test['forward_return'].to_numpy()
 
@@ -637,7 +638,8 @@ def entry(args=None):
     df = load_data(filename=args.data_filename, timeframe=timeframe)
     idx = int(len(df) * train_val_split_ratio)
     df_train, df_test = df.iloc[:idx].copy(), df.iloc[idx:].copy()
-
+    print(f"TRAIN & VALID: {df_train.index[0]}::{df_train.index[-1]}")
+    print(f"TEST         : {df_test.index[0]}::{df_test.index[-1]}")
     print(f"Optimizing {model_type.upper()}...")
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5)
     sampler = optuna.samplers.RandomSampler() if args.random_sampler else optuna.samplers.TPESampler(n_startup_trials=args.random_startup_trials, seed=42)
@@ -672,7 +674,7 @@ def entry(args=None):
     print(f"Best CV Mean Sharpe: {study.best_value:.4f}")
     print("Evaluating on Hold-Out Test Set...")
     (train_r2, train_wr, train_sharpe, _, test_r2, test_wr, test_sharpe, _, _, train_cons_wr, train_cons_sharpe, _, _, test_cons_wr, test_cons_sharpe, _) = evaluate_datasets(df_full=df, train_ratio=train_val_split_ratio, params=best_params, features=best_features, model_type=best_model_type)
-    (alldata_r2, alldata_wr, alldata_sharpe, _, _, _, _, _, _, alldata_cons_wr, alldata_cons_sharpe, _, _, _, _, _) = evaluate_datasets(df_full=df, train_ratio=1.0, params=best_params, features=best_features, model_type=best_model_type)
+    (alldata_r2, alldata_wr, alldata_sharpe, _, _, _, _, _, _, alldata_cons_wr, alldata_cons_sharpe, _, _, _, _, _)                                       = evaluate_datasets(df_full=df, train_ratio=1.0, params=best_params, features=best_features, model_type=best_model_type)
 
     print(f"Train ML Win Rate: {train_wr:.2%} | Train Consensus Win Rate: {train_cons_wr:.2%}")
     print(f"Test ML Win Rate: {test_wr:.2%} | Test Consensus Win Rate: {test_cons_wr:.2%}")
