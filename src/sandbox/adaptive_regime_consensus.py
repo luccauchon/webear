@@ -37,18 +37,15 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 pd.options.mode.chained_assignment = None
 
 # --- OPTIMIZATION CACHES ---
-# These dictionaries cache rolling calculations to prevent Optuna from recomputing
-# the same moving averages repeatedly across thousands of trials.
 _rolling_cache = {}
 _pct_rank_cache = {}
 _zscore_cache = {}
 
 # --- CONSTANTS ---
-MACRO_LAG_DAYS = 20  # Shift macro data to account for real-world reporting delays
+MACRO_LAG_DAYS = 20
 
 try:
     from numba import njit
-
 
     @njit(cache=True)
     def _rolling_pct_rank_numba(arr, window):
@@ -69,7 +66,6 @@ try:
             if count_valid > 0:
                 res[i] = (count_less + 0.5 * count_equal + 0.5) / count_valid
         return res
-
 
     def rolling_percentile_rank(series, window):
         arr = series.to_numpy()
@@ -387,14 +383,19 @@ def get_model_and_scaler(model_type: str, params: dict):
     return model, scaler
 
 
-def evaluate_datasets(df_full: pd.DataFrame, train_ratio: float, params: dict, features: list, model_type: str) -> tuple:
+def evaluate_datasets(df_train: pd.DataFrame, df_test: pd.DataFrame, params: dict, features: list, model_type: str) -> tuple:
+    # On concatène pour préserver l'historique nécessaire aux rolling windows du test set
+    df_full = pd.concat([df_train, df_test])
     df_feat = compute_features(df_full, params)
     # CRITICAL FIX: Use Log Returns for better statistical properties
     df_feat['forward_return'] = np.log(df_feat["ground_truth_spx"] / df_feat["spx"])
     valid_df = df_feat.dropna(subset=features + ['forward_return'])
 
-    idx = int(len(valid_df) * train_ratio)
-    valid_train, valid_test = valid_df.iloc[:idx].copy(), valid_df.iloc[idx:].copy()
+    # Split par date pour correspondre aux splits originaux de df_train et df_test
+    split_date  = df_train.index[-1]
+    valid_train = valid_df[valid_df.index <= split_date]
+    valid_test  = valid_df[valid_df.index > split_date]
+
     if len(valid_test) == 0: valid_test = valid_train.iloc[[-1]]
     print(f"TRAIN & VALID: {valid_train.index[0]}::{valid_train.index[-1]}")
     print(f"TEST         : {valid_test.index[0]}::{valid_test.index[-1]}")
@@ -673,11 +674,10 @@ def entry(args=None):
 
     print(f"Best CV Mean Sharpe: {study.best_value:.4f}")
     print("Evaluating on Hold-Out Test Set...")
-    (train_r2, train_wr, train_sharpe, _, test_r2, test_wr, test_sharpe, _, _, train_cons_wr, train_cons_sharpe, _, _, test_cons_wr, test_cons_sharpe, _) = evaluate_datasets(df_full=df, train_ratio=train_val_split_ratio, params=best_params, features=best_features, model_type=best_model_type)
-    (alldata_r2, alldata_wr, alldata_sharpe, _, _, _, _, _, _, alldata_cons_wr, alldata_cons_sharpe, _, _, _, _, _)                                       = evaluate_datasets(df_full=df, train_ratio=1.0, params=best_params, features=best_features, model_type=best_model_type)
+    (train_r2, train_wr, train_sharpe, _, test_r2, test_wr, test_sharpe, _, _, train_cons_wr, train_cons_sharpe, _, _, test_cons_wr, test_cons_sharpe, _) = evaluate_datasets(df_train=df_train, df_test=df_test, params=best_params, features=best_features, model_type=best_model_type)
 
-    print(f"Train ML Win Rate: {train_wr:.2%} | Train Consensus Win Rate: {train_cons_wr:.2%}")
-    print(f"Test ML Win Rate: {test_wr:.2%} | Test Consensus Win Rate: {test_cons_wr:.2%}")
+    print(f"Train Win Rate: {train_wr:.2%} | Train Consensus Win Rate: {train_cons_wr:.2%}")
+    print(f"Test Win Rate: {test_wr:.2%} | Test Consensus Win Rate: {test_cons_wr:.2%}")
 
     df_feat = compute_features(df, best_params)
     df_feat['forward_return'] = np.log(df_feat["ground_truth_spx"] / df_feat["spx"])
