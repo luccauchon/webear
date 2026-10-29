@@ -89,7 +89,10 @@ os.makedirs(OUTPUT_DIR_WAVLET_BASED_STOCK_FORECAST, exist_ok=True)
 try:
     FRED_API_KEY = open(r"C:\pwd\fredapikey.txt", "r", encoding="utf-8").read().strip()
 except:
-    FRED_API_KEY = None
+    try:
+        FRED_API_KEY = open(r"/Users/luccauchon/fredapikey.txt", "r", encoding="utf-8").read().strip()
+    except:
+        FRED_API_KEY = None
 
 #
 def GET_EMAILS(dev=False):
