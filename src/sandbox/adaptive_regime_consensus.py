@@ -644,7 +644,7 @@ def entry(args=None):
     print(f"Optimizing {model_type.upper()}...")
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5)
     sampler = optuna.samplers.RandomSampler() if args.random_sampler else optuna.samplers.TPESampler(n_startup_trials=args.random_startup_trials, seed=42)
-
+    print(f"Using sampler {str(sampler)}")
     study_kwargs = {"study_name": args.study_name, "direction": "maximize", "pruner": pruner, "sampler": sampler}
     if args.storage:
         storage = args.storage
