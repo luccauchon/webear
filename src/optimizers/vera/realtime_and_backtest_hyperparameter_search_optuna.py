@@ -466,7 +466,7 @@ def realtime_and_backtesting_mode(args):
         expected_datetime = market_close_datetime - timedelta(minutes=args.intraday_candle_space)
         expected_last_time = expected_datetime.time()
         if last_time != expected_last_time:
-            raise Exception(f"Realtime mode activated. Please run after {expected_last_time}.")
+            raise Exception(f"Realtime mode activated. Please run after {expected_last_time}. {last_time} != {expected_last_time}")
         assert last_time == expected_last_time, f"{last_time=}, {expected_last_time=}"
 
         if args.intraday_candle_space < 60:
