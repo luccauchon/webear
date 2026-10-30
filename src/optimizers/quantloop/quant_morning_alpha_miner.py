@@ -443,16 +443,6 @@ def run_realtime(modelfile, verbose, daily_df_precomputed):
                                                  target_definition=getattr(model.args, "target_definition", "open_as_level"),),
                      generate_for_realtime=True)
     agg = model.predict_aggregated(X_new.iloc[-1:])
-    # open = daily_df['Open'].iloc[0]
-    # print(open)
-    # Code du build_df:
-    # strict_sup = int(args.et_gt_open)
-    # round_method = lambda x: x if seuil_pos == 1 else (round_price_for_call_credit_spread if seuil_pos > 1 else round_price_for_put_credit_spread)
-    # if 1 == strict_sup:
-    #    strike_price = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
-    # else:
-    #    strike_price = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
-    # a ajouter dans le retour
     return {"result": agg[['median_probability', 'std_probability', 'predicted_class']], "model_args": model.args}
 
 
