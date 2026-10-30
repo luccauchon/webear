@@ -266,9 +266,7 @@ def realtime_and_backtesting_mode(args):
     ###########################################################################
     # 2. Load 1-minute Historical/Realtime Data
     ###########################################################################
-    df_ticker_1min_data, df_vix_1min_data = factory_load_data(
-        _dataset_id="intraday-1min", _ticker=args.ticker, _args={"get_vix": True, "realtime": realtime}
-    )
+    df_ticker_1min_data, df_vix_1min_data = factory_load_data(_dataset_id="intraday-1min", _ticker=args.ticker, _args={"get_vix": True, "realtime": realtime})
 
     ###########################################################################
     # 3. Main Backtesting / Realtime Loop
