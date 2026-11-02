@@ -49,9 +49,9 @@ def setup_argparse() -> argparse.ArgumentParser:
 
 def print_configuration_nice(configuration: Namespace, profile_name: str):
     """Helper function to pretty-print the configuration before optimization."""
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 80)
     print(f" 🚀 OPTIMIZATION PROFILE: {profile_name.upper().replace('_', ' ')}")
-    print("=" * 70)
+    print("=" * 80)
 
     # Define profile-specific keys to highlight
     profile_keys = [
@@ -70,13 +70,13 @@ def print_configuration_nice(configuration: Namespace, profile_name: str):
             if val is True or val is not None:
                 print(f"   • {key:<25}: {val}")
 
-    print("-" * 70)
+    print("-" * 80)
     print(" ⚙️  Full Configuration Namespace:")
     # Print all other configuration parameters neatly sorted
     for key in sorted(config_dict.keys()):
         if key not in profile_keys:
             print(f"   • {key:<25}: {config_dict[key]}")
-    print("=" * 70 + "\n")
+    print("=" * 80 + "\n")
 
 
 def entry(args):
