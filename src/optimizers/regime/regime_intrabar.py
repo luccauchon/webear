@@ -176,9 +176,9 @@ def characterize_clusters(_features, _model, _scaler, _stats):
 # =========================================================
 def print_all_cluster_characteristics(_stats, _features, _model, _scaler, _n_clusters):
     """Print comprehensive characteristics for ALL discovered clusters"""
-    print("\n" + "═" * 70)
+    print("\n" + "═" * 80)
     print(" " * 20 + "🔍 ALL REGIME CHARACTERISTICS")
-    print("═" * 70 + "\n")
+    print("═" * 80 + "\n")
 
     X = _scaler.transform(_features.dropna())
     regimes = _model.predict(X)
@@ -478,12 +478,12 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
             print(f"🔍 No models found: {pattern}")
             return
         print(f"\n📦 Available models for {ticker}:")
-        print("─" * 70)
+        print("─" * 80)
         for m in sorted(models, key=lambda x: x.stat().st_mtime, reverse=True):
             stat = m.stat()
             print(f"• {m.name}")
             print(f"  └─ Modified: {datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')} | {stat.st_size / 1024:.1f} KB")
-        print("─" * 70)
+        print("─" * 80)
         return
 
     if model_filename:
