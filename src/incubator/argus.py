@@ -32,7 +32,7 @@ import os
 import random
 import subprocess
 from datetime import datetime
-from utils import get_next_step, get_month_range,get_week_range, minutes_jusqua_16h, get_quarter_range, get_year_range
+from utils import get_next_step, get_month_range,get_week_range, minutes_jusqua_16h, get_quarter_range, get_year_range, compute_break_even_credit
 from fetchers.data_factory import factory_load_data
 import schedule
 import traceback
@@ -140,8 +140,8 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                                                                                          tightness_weights=v["tightness_weights"], nb_worker=v["nb_worker"]))
                     all_results_computed.append({v["key_id"]: data_from_atr_probability_zone})
                 if k == "vera":
-                    min_16h = minutes_jusqua_16h()
-                    time.sleep(60)  # Make sure that we don't get "Exception: Realtime mode activated. Please run after 10:20:00." exception
+                    min_16h = minutes_jusqua_16h()+1
+                    time.sleep(61)  # Make sure that we don't get "Exception: Realtime mode activated. Please run after 10:20:00." exception
                     vera_results = vera_entry_point(args=Namespace(realtime=True, intraday_candle_space=min_16h, ticker=v["ticker"], verbose_print_results=False,
                                                                    tightness_weight=v["tightness_weight"], n_trials=v["n_trials"], n_split=v["n_split"], ))
                     assert 1 == len(vera_results["inf_resulting"])  # Realtime
@@ -163,10 +163,10 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                     all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
                 if k == "cleaner":
                     pass
+                out__shared.put(all_results_computed)  # Send back information for displaying
             except Exception as eee:
                 print(eee)
                 traceback.print_exc()
-        out__shared.put(all_results_computed)
 
     # Quit
 
@@ -178,18 +178,35 @@ def entry():
     high_col  = ('High', ticker)
     low_col   = ('Low', ticker)
 
-    starter_auth = {'bouclier_spx': True, "realtime": True, "trend_ema": True, "horizontal_lines": True, "vera": True,
-                    "splash_screen": True,
+    starter_auth = {'bouclier_spx': False, "realtime": True, "trend_ema": True, "horizontal_lines": True, "vera": True,
+                    "splash_screen": False,
                     "gap": False,  # Pas utilise
-                    "day_streaker": True, "week_streaker": True, "historian": True, "quant": True,
+                    "day_streaker": True, "week_streaker": False, "historian": True, "quant": True,
                     "activer_console": True, "activer_random_update": False, }
 
     vera__tightness_weight, vera__n_trials, vera__n_split = 0.33, 250, 0.9
     horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.3, 0.99, 2, 16], 500
     horizontal_lines__max_horizontal_lines, horizontal_lines__max_horizontal_lines_h0 = 3, 5
     historian__output_dir, historian__accumulator = HISTORIAN_ARGUS, []
-    quant__st2 = ("09:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", "11:45", "12:00", "12:30", "13:00","13:30", "14:00", "15:00")
-    quant__seuil_pos = (0.999, 0.9975, 0.9950, 0.9925, 0.9900, 1.001, 1.0025, 1.0050, 1.0075, 1.0100)
+    quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2"
+    def extraire_quant_parameters_from_filename(output_directory):
+        quant_st2, quant_seuil_pos = [], []
+        for a_file in [r for r in os.listdir(output_directory) if r.endswith(".pkl")]:
+            # print(a_file.split("_ensemble_model__"))
+            # print(a_file.split("_ensemble_model__")[1].split("__"))
+            seuil_pos = a_file.split("_ensemble_model__")[1].split("__")[0]
+            st1st2 = a_file.split("_ensemble_model__")[1].split("__")[1]
+            et1et2 = a_file.split("_ensemble_model__")[1].split("__")[2].split("_")[0]
+            # print(a_file.split("_ensemble_model__")[1].split("__")[-1].split("_"))
+            tf1 = a_file.split("_ensemble_model__")[1].split("__")[-1].split("_")[1][:-4]
+            # print(a_file.split("_ensemble_model__")[1].split("__"))
+            # print(f"{seuil_pos}  {st1st2}  {et1et2}  {tf1}")
+            quant_seuil_pos.append(float(seuil_pos))
+            st2 = st1st2.split("-")[1]
+            st2 = f"{st2[:2]}:{st2[2:]}"
+            quant_st2.append(st2)
+        return tuple(sorted(set(quant_st2), key=lambda x: datetime.strptime(x, "%H:%M").time())), tuple(sorted(set(quant_seuil_pos)))
+    quant__st2, quant__seuil_pos = extraire_quant_parameters_from_filename(quant__models_dir)
     argus__nb_worker = 2
 
     if starter_auth["activer_console"]: clean_console()
@@ -210,9 +227,11 @@ def entry():
     def make_display(info):
         console_length = 160
         actual_close, actual_open, actual_high, actual_low = float(info['close']), float(info['open']), float(info['high']), float(info['low'])
-        first_indent = " " * 12
-        second_indent = " " * 24
-        second_indent_pp = " " * 36
+        _10char_indent = " " * 10
+        _12char_indent = " " * 12
+        _24char_indent = " " * 24
+        _31char_indent = " " * 31
+        _36char_indent = " " * 36
         saut_ligne = "\n"
         gras = "\033[1m"
         bleu = "\033[34m"
@@ -258,6 +277,9 @@ def entry():
         def format_proba(proba):
             return f"{proba:>4.0%}"
 
+        def format_be(break_even):
+            return f"{int(break_even):03d}$"
+
         def determine_color(actual_price, limit_price, dte, situation):
             price_a = actual_price if situation == "lower" else limit_price
             price_b = limit_price  if situation == "lower" else actual_price
@@ -266,10 +288,18 @@ def entry():
                 if compute_distance(price_a, price_b) < 0.001: return orange_fonce
                 if compute_distance(price_a, price_b) < 0.0025: return orange_clair
                 if compute_distance(price_a, price_b) < 0.0050: return jaune
+            if dte == "h2":
+                if compute_distance(price_a, price_b) < 0: return rouge_clair
+                if compute_distance(price_a, price_b) < 0.0025: return orange_fonce
+                if compute_distance(price_a, price_b) < 0.0050: return orange_clair
+                if compute_distance(price_a, price_b) < 0.0075: return jaune
             if dte == "h5":
                 if compute_distance(price_a, price_b) < 0: return rouge_clair
             if dte == "hweek":
                 if compute_distance(price_a, price_b) < 0: return rouge_clair
+                if compute_distance(price_a, price_b) < 0.0025: return orange_fonce
+                if compute_distance(price_a, price_b) < 0.0050: return orange_clair
+                if compute_distance(price_a, price_b) < 0.0075: return jaune
             if dte == "h10":
                 if compute_distance(price_a, price_b) < 0: return rouge_clair
             if dte == "h15":
@@ -278,13 +308,29 @@ def entry():
                 if compute_distance(price_a, price_b) < 0: return rouge_clair
             if dte == "hmonth":
                 if compute_distance(price_a, price_b) < 0: return rouge_clair
+                if compute_distance(price_a, price_b) < 0.0025: return orange_fonce
+                if compute_distance(price_a, price_b) < 0.0050: return orange_clair
+                if compute_distance(price_a, price_b) < 0.0075: return jaune
+            if dte == "hquarter":
+                if compute_distance(price_a, price_b) < 0: return rouge_clair
+                if compute_distance(price_a, price_b) < 0.0025: return orange_fonce
+                if compute_distance(price_a, price_b) < 0.0050: return orange_clair
+                if compute_distance(price_a, price_b) < 0.0075: return jaune
+            if dte == "hyear":
+                if compute_distance(price_a, price_b) < 0: return rouge_clair
+                if compute_distance(price_a, price_b) < 0.0025: return orange_fonce
+                if compute_distance(price_a, price_b) < 0.0050: return orange_clair
+                if compute_distance(price_a, price_b) < 0.0075: return jaune
             return ""
 
         def make_bloc_line(texte_ln_c1, texte_ln_c2, avec_saut_ligne=True):
-            return f"{first_indent*2}{texte_ln_c1}{second_indent_pp}{texte_ln_c2}{saut_ligne if avec_saut_ligne else ''}"
+            return f"{_12char_indent*2}{texte_ln_c1}{_31char_indent}{texte_ln_c2}{saut_ligne if avec_saut_ligne else ''}"
 
         def make_bloc_line_3(texte_ln_c1, texte_ln_c2, texte_ln_c3, avec_saut_ligne=True):
-            return f"{first_indent*2}{texte_ln_c1}{second_indent_pp}{texte_ln_c2}{' '*8}{texte_ln_c3}{saut_ligne if avec_saut_ligne else ''}"
+            return f"{_12char_indent*2}{texte_ln_c1}{_31char_indent}{texte_ln_c2}{' '*8}{texte_ln_c3}{saut_ligne if avec_saut_ligne else ''}"
+
+        def make_bloc_line_4(texte_ln_c1, texte_ln_c2, texte_ln_c3, texte_ln_c4, avec_saut_ligne=True):
+            return f"{_12char_indent*2}{texte_ln_c1}{_31char_indent}{texte_ln_c2}{' '*8}{texte_ln_c3}{' '*2}{texte_ln_c4}{saut_ligne if avec_saut_ligne else ''}"
 
         def make_upper_limits(info):
             #######################################################################
@@ -302,30 +348,30 @@ def entry():
                     #  C1
                     limit_price, proba, date = hquarter_data["price"], hquarter_data["proba"], hquarter_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hquarter", situation="upper")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h80_data["price"], h80_data["proba"], h80_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h80", situation="upper")}{texte_l1_c2}{reset}"
 
                     #  C3
                     limit_price, proba, date = hyear_data["price"], hyear_data["proba"], hyear_data["date"]
                     dates.append(date)
-                    texte_l1_c3 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c3 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c3 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hyear", situation="upper")}{texte_l1_c3}{reset}"
 
                     #  C4
                     limit_price, proba, date = h240_data["price"], h240_data["proba"], h240_data["date"]
                     dates.append(date)
-                    texte_l1_c4 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c4 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c4 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h240", situation="upper")}{texte_l1_c4}{reset}"
 
-                    _bloc += f"  {texte_l1_c1}{' '*int(console_length//10)}{texte_l1_c2}{' '*int(console_length//5)}{texte_l1_c3}{' '*int(console_length//11)}{texte_l1_c4}{saut_ligne if ee < info['max_horizontal_lines'] else ''}"
-                _bloc_result  = f" QUARTER ({dates[0]}){' '*int(console_length//18)}H80 ({dates[1]}){' '*int(console_length//6)}"
-                _bloc_result += f" YEAR ({dates[2]}){' ' * int(console_length // 18)}H240 ({dates[3]}){' ' * int(console_length // 6)}"
+                    _bloc += f"  {texte_l1_c1}{' '*(int(console_length//10)-5)}{texte_l1_c2}{' '*(int(console_length//5)-7)}{texte_l1_c3}{' '*(int(console_length//11)-3)}{texte_l1_c4}{saut_ligne if ee < info['max_horizontal_lines'] else ''}"
+                _bloc_result  = f" QUARTER {fleche_haut}({dates[0]}){' '*int(console_length//18)}H80 {fleche_haut}({dates[1]}){' '*(int(console_length//6)-3)}"
+                _bloc_result += f" YEAR {fleche_haut}({dates[2]}){' ' * (int(console_length // 18)+3)}H240 {fleche_haut}({dates[3]}){' ' * int(console_length // 6)}"
                 _bloc_result += saut_ligne + _bloc
                 return _bloc_result
 
@@ -339,17 +385,17 @@ def entry():
                     #  C1
                     limit_price, proba, date = hmonth_data["price"], hmonth_data["proba"], hmonth_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hmonth", situation="upper")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h20_data["price"], h20_data["proba"], h20_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h20", situation="upper")}{texte_l1_c2}{reset}"
 
                     bloc_monthH20 += make_bloc_line(texte_l1_c1, texte_l1_c2)
-                bloc_monthH20 = f"{first_indent}{' ' * int(bloc_monthH20_length[0]//2)}MONTH ({dates[0]}){second_indent}{' ' * int(bloc_monthH20_length[1] // 3 - 2)}H20 ({dates[1]}){' ' * (int(bloc_monthH20_length[1]//2) - 3)}" +saut_ligne+ bloc_monthH20
+                bloc_monthH20 = f"{_12char_indent}{' ' * int(bloc_monthH20_length[0]//2)}MONTH {fleche_haut}({dates[0]}){_24char_indent}{' ' * int(bloc_monthH20_length[1] // 3 - 2)}H20 {fleche_haut}({dates[1]}){' ' * (int(bloc_monthH20_length[1]//2) - 3)}" +saut_ligne+ bloc_monthH20
                 return bloc_monthH20
 
             #######################################################################
@@ -362,17 +408,17 @@ def entry():
                     #  C1
                     limit_price, proba, date = h10_data["price"], h10_data["proba"], h10_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h10", situation="upper")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h15_data["price"], h15_data["proba"], h15_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h15", situation="upper")}{texte_l1_c2}{reset}"
 
                     bloc_H10H15 += make_bloc_line(texte_l1_c1, texte_l1_c2)
-                bloc_H10H15 = f"{first_indent}{' ' * int(bloc_H10H15_length[0] // 2)}H10 ({dates[0]}){second_indent}{' ' * int(bloc_H10H15_length[1] // 3)}H15 ({dates[1]}){' ' * (int(bloc_H10H15_length[1] // 2) - 3)}" + saut_ligne + bloc_H10H15
+                bloc_H10H15 = f"{_12char_indent}{' ' * int(bloc_H10H15_length[0] // 2)}H10 {fleche_haut}({dates[0]}){_24char_indent}{' ' * int(bloc_H10H15_length[1] // 3)}H15 {fleche_haut}({dates[1]}){' ' * (int(bloc_H10H15_length[1] // 2) - 3)}" + saut_ligne + bloc_H10H15
                 return bloc_H10H15
 
             #######################################################################
@@ -382,6 +428,7 @@ def entry():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
                 quant_dataset = [[],[],[]]  # Chaque colonne est représentée par une liste
                 liste_des_strike_prices_tries = sorted(list(info["quant"].keys()), key=int)
+                assert len(liste_des_strike_prices_tries) <= 10
                 for e, strike_price in enumerate(liste_des_strike_prices_tries):
                     information_for_price_level = sorted(info["quant"][f"{strike_price}"], key=lambda x: x['timestamp'])
                     most_recent_information_for_price_level = information_for_price_level[-1]
@@ -394,13 +441,13 @@ def entry():
                     #  C1
                     limit_price, proba, date = hweek_data["price"], hweek_data["proba"], hweek_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hweek", situation="upper")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h5_data["price"], h5_data["proba"], h5_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h5", situation="upper")}{texte_l1_c2}{reset}"
 
                     # C3
@@ -415,8 +462,8 @@ def entry():
                     # C1 + C2 + C3
                     bloc_weekH5 += make_bloc_line_3(texte_l1_c1, texte_l1_c2, texte_l1_c3, True if ee < info['max_horizontal_lines'] else False)
                 qtrend_info = f"{rouge_clair}{fleche_bas_pleine}{reset}=call credit spread  {vert}{fleche_haut_pleine}{reset}=put credit spread" if info["display_qtrend_info"] else ""
-                bloc_weekH5 = (f"{first_indent}{' ' * int(bloc_weekH5_length[0] // 2)}WEEK ({dates[0]}){second_indent}{' ' * int(bloc_weekH5_length[1] // 3 - 1)}H5 ({dates[1]}){' ' * (int(bloc_weekH5_length[1] // 2)-4)}" +
-                               f"QTREND |{len(liste_des_strike_prices_tries)}| (updated @{info['quant_meta_info']['timestamp']}) {qtrend_info}" + saut_ligne + bloc_weekH5)
+                bloc_weekH5 = (f"{_12char_indent}{' ' * int(bloc_weekH5_length[0] // 2)}WEEK {fleche_haut}({dates[0]}){_24char_indent}{' ' * int(bloc_weekH5_length[1] // 3 - 1)}H5 {fleche_haut}({dates[1]}){' ' * (int(bloc_weekH5_length[1] // 2)-4)}" +
+                               f"QTREND (@{info['quant_meta_info']['timestamp']}) {qtrend_info}" + saut_ligne + bloc_weekH5)
                 return bloc_weekH5
 
             return quarter_year_h80_h240() + saut_ligne + month_h20() + saut_ligne + h10_h15() + saut_ligne + week_h5()
@@ -437,30 +484,30 @@ def entry():
                     #  C1
                     limit_price, proba, date = hquarter_data["price"], hquarter_data["proba"], hquarter_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
-                    texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hquarter", situation="upper")}{texte_l1_c1}{reset}"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
+                    texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hquarter", situation="lower")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h80_data["price"], h80_data["proba"], h80_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
-                    texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h80", situation="upper")}{texte_l1_c2}{reset}"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
+                    texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h80", situation="lower")}{texte_l1_c2}{reset}"
 
                     #  C3
                     limit_price, proba, date = hyear_data["price"], hyear_data["proba"], hyear_data["date"]
                     dates.append(date)
-                    texte_l1_c3 = f"{format_price(limit_price)} ({format_proba(proba)})"
-                    texte_l1_c3 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hyear", situation="upper")}{texte_l1_c3}{reset}"
+                    texte_l1_c3 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
+                    texte_l1_c3 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hyear", situation="lower")}{texte_l1_c3}{reset}"
 
                     #  C4
                     limit_price, proba, date = h240_data["price"], h240_data["proba"], h240_data["date"]
                     dates.append(date)
-                    texte_l1_c4 = f"{format_price(limit_price)} ({format_proba(proba)})"
-                    texte_l1_c4 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h240", situation="upper")}{texte_l1_c4}{reset}"
+                    texte_l1_c4 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
+                    texte_l1_c4 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h240", situation="lower")}{texte_l1_c4}{reset}"
 
-                    _bloc += f"  {texte_l1_c1}{' ' * int(console_length // 10)}{texte_l1_c2}{' ' * int(console_length // 5)}{texte_l1_c3}{' ' * int(console_length // 11)}{texte_l1_c4}{saut_ligne if ee < info['max_horizontal_lines'] else ''}"
-                _bloc_result = f" QUARTER ({dates[0]}){' ' * int(console_length // 18)}H80 ({dates[1]}){' ' * int(console_length // 6)}"
-                _bloc_result += f" YEAR ({dates[2]}){' ' * int(console_length // 18)}H240 ({dates[3]}){' ' * int(console_length // 6)}"
+                    _bloc += f"  {texte_l1_c1}{' ' * (int(console_length // 10)-5)}{texte_l1_c2}{' ' * (int(console_length // 5)-7)}{texte_l1_c3}{' ' * (int(console_length // 11)-6)}{texte_l1_c4}{saut_ligne if ee < info['max_horizontal_lines'] else ''}"
+                _bloc_result = f" QUARTER {fleche_bas}({dates[0]}){' ' * int(console_length // 18)}H80 {fleche_bas}({dates[1]}){' ' * (int(console_length // 6)-3)}"
+                _bloc_result += f" YEAR {fleche_bas}({dates[2]}){' ' * (int(console_length // 18))}H240 {fleche_bas}({dates[3]}){' ' * int(console_length // 6)}"
                 _bloc_result += saut_ligne + _bloc
                 return _bloc_result
 
@@ -470,21 +517,39 @@ def entry():
             def week_h5():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
                 dates = []
-                for hweek_data, h5_data in zip(trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines']], trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines']]):
+                for hweek_data, h5_data, h2_down_data, h2_down_up in zip(trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines']],
+                                                                         trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines']],
+                                                                         trier_par_prix_decroissant(info["h2_down"])[:info['max_horizontal_lines']],
+                                                                         trier_par_prix_decroissant(info["h2_up"])[:info['max_horizontal_lines']],
+                                                                         ):
                     #  C1
                     limit_price, proba, date = hweek_data["price"], hweek_data["proba"], hweek_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hweek", situation="lower")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h5_data["price"], h5_data["proba"], h5_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h5", situation="lower")}{texte_l1_c2}{reset}"
 
-                    bloc_weekH5 += make_bloc_line(texte_l1_c1, texte_l1_c2)
-                bloc_weekH5 = f"{first_indent}{' ' * int(bloc_weekH5_length[0] // 2)}WEEK ({dates[0]}){second_indent}{' ' * int(bloc_weekH5_length[1] // 3 - 1)}H5 ({dates[1]}){' ' * (int(bloc_weekH5_length[1] // 2) - 2)}" + saut_ligne + bloc_weekH5
+                    #  C3
+                    limit_price, proba, date = h2_down_data["price"], h2_down_data["proba"], h2_down_data["date"]
+                    dates.append(date)
+                    texte_l1_c3 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
+                    texte_l1_c3 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h2", situation="lower")}{texte_l1_c3}{reset}"
+
+                    #  C4
+                    limit_price, proba, date = h2_down_up["price"], h2_down_up["proba"], h2_down_up["date"]
+                    dates.append(date)
+                    texte_l1_c4 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
+                    texte_l1_c4 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h2", situation="upper")}{texte_l1_c4}{reset}"
+
+                    bloc_weekH5 += make_bloc_line_4(texte_l1_c1, texte_l1_c2, texte_l1_c3, texte_l1_c4)
+                bloc_weekH5 = (f"{_12char_indent}{' ' * int(bloc_weekH5_length[0] // 2)}WEEK {fleche_bas}({dates[0]}){_24char_indent}{' ' * int(bloc_weekH5_length[1] // 3 - 1)}"
+                               f"H5 {fleche_bas}({dates[1]}){' ' * (int(bloc_weekH5_length[1] // 2) - 2)}{_10char_indent}"
+                               f"{' '*5}H2 {fleche_bas}|{fleche_haut} H2 ({dates[2]})") + saut_ligne + bloc_weekH5
                 return bloc_weekH5
 
             #######################################################################
@@ -497,17 +562,17 @@ def entry():
                     #  C1
                     limit_price, proba, date = h10_data["price"], h10_data["proba"], h10_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h10", situation="lower")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h15_data["price"], h15_data["proba"], h15_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h15", situation="lower")}{texte_l1_c2}{reset}"
 
                     bloc_H10H15 += make_bloc_line(texte_l1_c1, texte_l1_c2)
-                bloc_H10H15 = f"{first_indent}{' ' * int(bloc_H10H15_length[0] // 2)}H10 ({dates[0]}){second_indent}{' ' * int(bloc_H10H15_length[1] // 3)}H15 ({dates[1]}){' ' * (int(bloc_H10H15_length[1] // 2) - 3)}" + saut_ligne + bloc_H10H15
+                bloc_H10H15 = f"{_12char_indent}{' ' * int(bloc_H10H15_length[0] // 2)}H10 {fleche_bas}({dates[0]}){_24char_indent}{' ' * int(bloc_H10H15_length[1] // 3)}H15 {fleche_bas}({dates[1]}){' ' * (int(bloc_H10H15_length[1] // 2) - 3)}" + saut_ligne + bloc_H10H15
                 return bloc_H10H15
 
             #######################################################################
@@ -521,36 +586,36 @@ def entry():
                     #  C1
                     limit_price, proba, date = hmonth_data["price"], hmonth_data["proba"], hmonth_data["date"]
                     dates.append(date)
-                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="hmonth", situation="lower")}{texte_l1_c1}{reset}"
 
                     #  C2
                     limit_price, proba, date = h20_data["price"], h20_data["proba"], h20_data["date"]
                     dates.append(date)
-                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                    texte_l1_c2 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                     texte_l1_c2 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h20", situation="lower")}{texte_l1_c2}{reset}"
 
                     bloc_monthH20 += make_bloc_line(texte_l1_c1, texte_l1_c2, True if ee < info['max_horizontal_lines'] else False)
-                bloc_monthH20 = f"{first_indent}{' ' * int(bloc_monthH20_length[0] // 2)}MONTH ({dates[0]}){second_indent}{' ' * int(bloc_monthH20_length[1] // 3 - 2)}H20 ({dates[1]}){' ' * (int(bloc_monthH20_length[1] // 2) - 3)}" + saut_ligne + bloc_monthH20
+                bloc_monthH20 = f"{_12char_indent}{' ' * int(bloc_monthH20_length[0] // 2)}MONTH {fleche_bas}({dates[0]}){_24char_indent}{' ' * int(bloc_monthH20_length[1] // 3 - 2)}H20 {fleche_bas}({dates[1]}){' ' * (int(bloc_monthH20_length[1] // 2) - 3)}" + saut_ligne + bloc_monthH20
                 return bloc_monthH20
 
             return week_h5() + saut_ligne + h10_h15() + saut_ligne + month_h20() + saut_ligne + quarter_year_h80_h240()
 
         def make_upper_H0_limits(info):
-            bloc_H0 = f"{first_indent * 7}H0:: "
+            bloc_H0 = f"{_12char_indent * 7}H0:: "
             for e, h0_data in enumerate(trier_par_prix_croissant(info["h0_up"])[:info['max_horizontal_lines_h0']]):
                 limit_price, proba, date = h0_data["price"], h0_data["proba"], h0_data["date"]
-                texte_l1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                texte_l1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                 texte_l1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h0", situation="upper")}{texte_l1}{reset}"
                 bloc_H0 += f"{texte_l1} "
                 if e < info['max_horizontal_lines_h0']-1: bloc_H0 += f"| "
             return bloc_H0
 
         def make_lower_H0_limits(info):
-            bloc_H0 = f"{first_indent * 7}H0:: "
+            bloc_H0 = f"{_12char_indent * 7}H0:: "
             for e, h0_data in enumerate(trier_par_prix_decroissant(info["h0_down"])[:info['max_horizontal_lines_h0']]):
                 limit_price, proba, date = h0_data["price"], h0_data["proba"], h0_data["date"]
-                texte_l1 = f"{format_price(limit_price)} ({format_proba(proba)})"
+                texte_l1 = f"{format_price(limit_price)} ({format_proba(proba)},{format_be(compute_break_even_credit(proba,500))})"
                 texte_l1 = f"{determine_color(actual_price=actual_close, limit_price=limit_price, dte="h0", situation="lower")}{texte_l1}{reset}"
                 bloc_H0 += f"{texte_l1} "
                 if e < info['max_horizontal_lines_h0']-1: bloc_H0 += f"| "
@@ -600,7 +665,7 @@ def entry():
         ligne_previous_close_bar_day_streaker  = f"{color_day_streaker}{info['day_streaker']['proba']:.0%}{fleche_haut if info['day_streaker']['dir']=='up' else fleche_bas}(D{info['day_streaker']['b']}){reset}"
         color_week_streaker, tmr_week_streaker = f"{rouge_clair}" if info['week_streaker']['dir'] == 'down' and info["close"] > info["close_t_m1"] else (f"{rouge_clair}" if info['week_streaker']['dir'] == 'up' and info["close"] < info["close_t_m1"] else f"{vert}"), info["week_streaker"]["realtime"]
         ligne_previous_close_bar_week_streaker = f"{color_week_streaker}{info['week_streaker']['proba']:.0%}{fleche_haut if info['week_streaker']['dir'] == 'up' else fleche_bas}(W{info['week_streaker']['b']}){reset}"
-        ligne_previous_close_bar = (f"({gras}{info['previous_now_txt']}) CLOSE:{int(previous_close)}{reset} | {ligne_previous_close_bar_day_streaker} : {ligne_previous_close_bar_week_streaker} | "
+        ligne_previous_close_bar = (f"({gras}{info['previous_now_txt']}) CLOSE:{int(previous_close)}{reset} | {ligne_previous_close_bar_day_streaker} | "
                                     f"E-VWAP {fleche_haut_pleine}{info["energy_above_vwap"]}/{fleche_bas_pleine}{info["energy_below_vwap"]}").center(console_length + len(gras) + len(reset), "=")
         if previous_close > actual_close: print(ligne_previous_close_bar)
         else: print(f"{'='*console_length}")
@@ -609,7 +674,8 @@ def entry():
         _diff = f"{rouge_clair}{_diff:.2%}{fleche_bas}{reset}" if _diff < 0 else f"{vert}{_diff:.2%}{fleche_haut}{reset}"
         ligne_centrale = f"[REALTIME] OPEN:{int(actual_open)}  HIGH:{int(actual_high)}  LOW:{int(actual_low)}  {' '*8}{gras}CLOSE:{int(actual_close)}{reset} ({_diff})   {info['now_txt']}"
         length_of_ligne_centrale = len(ligne_centrale) - len(gras) - len(reset)
-        ligne_centrale_vera = f"{info['vera']['minutes_jusqua_16h']:03}minutes:: Put@{info['vera']['atr_predicted_low']}:{info['vera']['atr_prob_down']:.0%} | Call@{info['vera']['atr_predicted_high']}:{info['vera']['atr_prob_up']:.0%}"
+        be_put, be_call = compute_break_even_credit(info['vera']['atr_prob_down'],500), compute_break_even_credit(info['vera']['atr_prob_up'],500)
+        ligne_centrale_vera = f"{info['vera']['minutes_jusqua_16h']:03}minutes:: Put@{info['vera']['atr_predicted_low']}:{info['vera']['atr_prob_down']:.0%},{be_put:.0f}$ | Call@{info['vera']['atr_predicted_high']}:{info['vera']['atr_prob_up']:.0%},{be_call:.0f}$"
         print(ligne_centrale+f"{' '*2} VERA::"+ligne_centrale_vera)
         print(make_lower_H0_limits(info).ljust(console_length, ' '))
         if previous_close <= actual_close: print(ligne_previous_close_bar)
@@ -655,6 +721,8 @@ def entry():
                 'h15_down': [],
                 'h0_down': [],
                 'h0_up': [],
+                'h2_down': [],
+                'h2_up': [],
                 'day_streaker':  {'b': 0, 'proba': 0, 'dir': 'up', 'realtime': False},
                 'week_streaker': {'b': 0, 'proba': 0, 'dir': 'up', 'realtime': False},
                 'quant': {},
@@ -754,6 +822,14 @@ def entry():
                              {"price": random.randint(7700, 7900), "proba": random.random(), "date": get_next_step(now, "day", 15).strftime('%Y-%m-%d')},
                              {"price": random.randint(7700, 7900), "proba": random.random(), "date": get_next_step(now, "day", 15).strftime('%Y-%m-%d')},
                              {"price": random.randint(7700, 7900), "proba": random.random(), "date": get_next_step(now, "day", 15).strftime('%Y-%m-%d')}],
+                'h2_down': [{"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 2).strftime('%Y-%m-%d')},
+                        {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 2).strftime('%Y-%m-%d')},
+                        {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 2).strftime('%Y-%m-%d')},
+                        {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 2).strftime('%Y-%m-%d')}],
+                'h2_up': [{"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 1).strftime('%Y-%m-%d')},
+                        {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 1).strftime('%Y-%m-%d')},
+                        {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 1).strftime('%Y-%m-%d')},
+                        {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 1).strftime('%Y-%m-%d')}],
                 'h0_down': [{"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 0).strftime('%Y-%m-%d')},
                             {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 0).strftime('%Y-%m-%d')},
                             {"price": random.randint(7700, 7750), "proba": random.random(), "date": get_next_step(now, "day", 0).strftime('%Y-%m-%d')},
@@ -813,11 +889,11 @@ def entry():
         def request_for_bouclier_spx(**kwargs):
             use_cases__shared.put({"bouclier_spx": kwargs})
         # 1. Gère les exécutions de la journée (toutes les 4 heures à partir de 9h30)
-        scheduler.add_job(request_for_bouclier_spx,'cron',day_of_week='mon-fri',hour='9,13',minute=30,kwargs={'update_dataset': False})
+        #scheduler.add_job(request_for_bouclier_spx,'cron',day_of_week='mon-fri',hour='9,13',minute=30,kwargs={'update_dataset': False})
         # 2. Gère l'exécution finale à 16h00 pile
-        scheduler.add_job(request_for_bouclier_spx,'cron',day_of_week='mon-fri',hour=16,minute=0,kwargs={'update_dataset': False})
+        scheduler.add_job(request_for_bouclier_spx,'cron',day_of_week='mon-fri',hour=7,minute=0,kwargs={'update_dataset': False})
         scheduler.add_job(request_for_bouclier_spx, 'date', kwargs={'update_dataset': False})
-        scheduler.add_job(request_for_bouclier_spx,'cron',day_of_week='tue,fri',hour=6,minute=15,kwargs={'update_dataset': True})
+        #scheduler.add_job(request_for_bouclier_spx,'cron',day_of_week='tue,fri',hour=6,minute=15,kwargs={'update_dataset': True})
     if starter_auth["bouclier_spx"]: setup_bouclier_spx()
 
     ###########################################################################
@@ -839,8 +915,8 @@ def entry():
     def setup_horizontal_lines():
         def request_for_horizontal_lines(**kwargs):
             use_cases__shared.put({"horizontal_lines": kwargs})
-        for _dataset_id, _key_id in zip(["year",  "extraday-240days", "quarter",  "extraday-80days", "extraday-20days", "month",  "extraday-15days", "extraday-10days", "extraday-5days", "week",  "day"],
-                                                      ["hyear", "h240",             "hquarter", "h80",             "h20",             "hmonth", "h15",             "h10",             "h5",             "hweek", "h0"]):
+        for _dataset_id, _key_id in zip(["year",  "extraday-240days", "quarter",  "extraday-80days", "extraday-20days", "month",  "extraday-15days", "extraday-10days", "extraday-5days", "extraday-2days", "week",  "day"],
+                                                      ["hyear", "h240",             "hquarter", "h80",             "h20",             "hmonth", "h15",             "h10",             "h5",             "h2",             "hweek", "h0"]):
             n_split = 0.7 if _key_id in ["hyear", "h240", ] else (0.8 if _key_id in ["hquarter", "h80"] else 0.9)
             kwargs = {'dataset_id': _dataset_id, "key_id": _key_id, "ticker": ticker, "n_split": n_split, "n_trials": horizontal_lines__n_trials,
                       "tightness_weights": horizontal_lines__tightness_weights, "nb_worker": horizontal_lines__nb_worker}
@@ -862,7 +938,7 @@ def entry():
                 return  # Ignore l'exécution si on est hors de la plage
             use_cases__shared.put({"vera": kwargs})
         kwargs = {"ticker": ticker, "tightness_weight": vera__tightness_weight, "n_trials": vera__n_trials, "n_split": vera__n_split}
-        scheduler.add_job(request_for_vera,'cron',day_of_week='mon-fri',hour='9-16',minute='*/5',kwargs=kwargs)
+        scheduler.add_job(request_for_vera,'cron',day_of_week='mon-fri',hour='9-16',minute='*/5 ',kwargs=kwargs)
     if starter_auth["vera"]: setup_vera()
 
     ###########################################################################
@@ -902,7 +978,7 @@ def entry():
     def setup_quant():
         def request_for_quant(**kwargs):
             use_cases__shared.put({"quant": kwargs})
-        kwargs = {"ticker": ticker, "st1":"09:30", "et1":"15:59", "et2":"16:00", "realtime": True, "models_dir": r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2"}
+        kwargs = {"ticker": ticker, "st1":"09:30", "et1":"15:59", "et2":"16:00", "realtime": True, "models_dir": quant__models_dir}
         for st2 in quant__st2:
             for seuil_pos in quant__seuil_pos:
                 # 1. Convertir la chaîne "HH:MM" en objet datetime pour manipuler le temps facilement
@@ -1102,15 +1178,10 @@ def entry():
             if k == "realtime_values":
                 for k2, v2 in v.items():
                     argus__information_displayed[k2] = f"{v2:.0f}"
-            if k in ["hyear","h240","hquarter","h80","h20", "hmonth", "h15", "h10", "h5", "hweek", "h0"]:
+            if k in ["hyear","h240","hquarter","h80","h20", "hmonth", "h15", "h10", "h5", "hweek", "h0", "h2"]:
                 argus__information_displayed[f"{k}_down"] = []
                 argus__information_displayed[f"{k}_up"] = []
-                if k == "h240": dte_date = get_next_step(datetime.now(), "day", 240).strftime('%Y-%m-%d')
-                if k == "h80": dte_date = get_next_step(datetime.now(), "day", 80).strftime('%Y-%m-%d')
-                if k == "h20": dte_date = get_next_step(datetime.now(), "day", 20).strftime('%Y-%m-%d')
-                if k == "h15": dte_date = get_next_step(datetime.now(), "day", 15).strftime('%Y-%m-%d')
-                if k == "h10": dte_date = get_next_step(datetime.now(), "day", 10).strftime('%Y-%m-%d')
-                if k == "h5": dte_date = get_next_step(datetime.now(), "day", 5).strftime('%Y-%m-%d')
+                if k in ["h240", "h80", "h20", "h15", "h10", "h5", "h2"]: dte_date = get_next_step(datetime.now(), "day", int(k[1:]) - 1).strftime('%Y-%m-%d')
                 if k == "h0": dte_date = datetime.now().strftime('%Y-%m-%d')
                 if k == "hyear": dte_date = get_year_range(datetime.now())[1].strftime('%Y-%m-%d')
                 if k == "hquarter": dte_date = get_quarter_range(datetime.now())[1].strftime('%Y-%m-%d')
