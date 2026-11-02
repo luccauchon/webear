@@ -897,9 +897,9 @@ def main(args):
     else:
         if verbose:
             # Nicely formatted output for 1-point prediction performance
-            print("\n" + "=" * 70)
+            print("\n" + "=" * 80)
             print("1-POINT PREDICTION PERFORMANCE SUMMARY".center(70))
-            print("=" * 70)
+            print("=" * 80)
         total_number_of_winning_trade = 0
         total_number_of_loosing_trade = 0
         for strategy, results in performance_tracking_1_point_prediction.items():
@@ -915,7 +915,7 @@ def main(args):
                 print(f"  ❌ Failure: {len(failure):3d} {failure}")
                 print(f"  🎯 Success Rate: {success_rate:5.1f}%  (out of {total} trades)")
         if verbose:
-            print("\n" + "=" * 70)
+            print("\n" + "=" * 80)
         total_number_of_possible_trade = number_of_step_back
     return total_number_of_possible_trade, total_number_of_winning_trade, total_number_of_loosing_trade, description_of_what_user_shall_do, parameters_best_models, misc_returned
 
