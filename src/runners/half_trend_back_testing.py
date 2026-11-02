@@ -206,9 +206,9 @@ def _update_alerts_ui_print_only_2(setup_log, configuration_setup):
             )
             result_lines.append(result_line)
 
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 80)
     print(f"{YELLOW}SUMMARY{RESET}".center(70))
-    print("=" * 70)
+    print("=" * 80)
     for line in result_lines:
         print(line)
 
