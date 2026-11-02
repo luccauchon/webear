@@ -249,9 +249,9 @@ def characterize_clusters(_features, _model, _scaler, _stats):
 # =========================================================
 def print_all_cluster_characteristics(_stats, _features, _model, _scaler, _n_clusters):
     """Print comprehensive characteristics for ALL discovered clusters"""
-    print("\n" + "═" * 70)
+    print("\n" + "═" * 80)
     print(" " * 20 + "🔍 ALL REGIME CHARACTERISTICS")
-    print("═" * 70 + "\n")
+    print("═" * 80 + "\n")
 
     # Get feature means per cluster for interpretability
     X = _scaler.transform(_features.dropna())
@@ -754,12 +754,12 @@ def run_real_time_inference(args, ticker, list_models, model_filename, use_enhan
             print(f"🔍 No models found matching: {pattern}")
             return
         print(f"\n📦 Available models for {ticker}:")
-        print("─" * 70)
+        print("─" * 80)
         for m in sorted(models, key=lambda x: x.stat().st_mtime, reverse=True):
             stat = m.stat()
             print(f"• {m.name}")
             print(f"  └─ Modified: {datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')} | Size: {stat.st_size / 1024:.1f} KB")
-        print("─" * 70)
+        print("─" * 80)
         print("\n💡 Use --model-filename <name> to load a specific model")
         return
 
