@@ -117,7 +117,7 @@ def main(Q1, P, Q2, older_dataset, frequency, detailed):
     # =============================================
     # Mode 1: Intra-month (Close vs Open)
     # =============================================
-    print("=" * 70)
+    print("=" * 80)
     print(f"🔍 Pattern: {Q1}↓ → {P}↑ → {Q2}↓ → next {frequency.upper()}")
     print(f"   Mode 1: Intra-{frequency.upper()} direction (Close > Open = ↑, Close < Open = ↓)")
 
@@ -128,7 +128,7 @@ def main(Q1, P, Q2, older_dataset, frequency, detailed):
     # =============================================
     # Mode 2: Inter-month (Close-to-Close returns)
     # =============================================
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 80)
     print("   Mode 2: Price-based returns (Close[t] > Close[t-1] = ↑)")
 
     # Compute month-over-month returns
