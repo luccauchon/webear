@@ -943,9 +943,9 @@ def entry(args):
     # ========================================================================
     # 📊 TRAIN vs VALIDATION COMPARISON - GENERALIZATION CHECK
     # ========================================================================
-    print("\n" + "═" * 70)
+    print("\n" + "═" * 80)
     print(" 🔄 TRAIN vs TEST PERFORMANCE COMPARISON")
-    print("═" * 70)
+    print("═" * 80)
 
     # ✅ Re-evaluate training set with BEST parameters on the FULL dataset
     signals_train_best_all = dgdr_strategy_vectorized(
@@ -995,7 +995,7 @@ def entry(args):
 
     # Display comparison table
     print(f"\n{'Metric':<20} {'Train':>12} {'Test':>12} {'Δ (Test-Train)':>15}")
-    print("-" * 70)
+    print("-" * 80)
     print(f"{'Trades':<20} {train_metrics['trades']:>12,} {test_metrics['trades']:>12,} {test_metrics['trades'] - train_metrics['trades']:>15,}")
     print(f"{'Win Rate (%)':<20} {train_metrics['win_rate']:>12.2f} {test_metrics['win_rate']:>12.2f} {test_metrics['win_rate'] - train_metrics['win_rate']:>15.2f}")
     print(f"{'Trade Density':<20} {train_metrics['trade_density']:>12.4f} {test_metrics['trade_density']:>12.4f} {test_metrics['trade_density'] - train_metrics['trade_density']:>15.4f}")
@@ -1003,7 +1003,7 @@ def entry(args):
 
     # Generalization assessment
     print("\n" + "🔍 GENERALIZATION ASSESSMENT:")
-    print("-" * 70)
+    print("-" * 80)
 
     wr_diff = abs(test_metrics['win_rate'] - train_metrics['win_rate'])
     score_diff = abs(test_metrics['score'] - train_metrics['score'])
@@ -1025,7 +1025,7 @@ def entry(args):
     elif test_metrics['trade_density'] < train_metrics['trade_density'] * 0.5:
         print("💡 Note: Much lower trade density in Test – market regime may differ.")
 
-    print("═" * 70 + "\n")
+    print("═" * 80 + "\n")
     # ========================================================================
     # END COMPARISON SECTION
     # ========================================================================
