@@ -288,6 +288,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
 
 def entry(args):
+    freeze_support()
     nb_worker = getattr(args, "nb_worker", 15)
     destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
     signature_for_prod = TITLE_WEBEAR if args.production_setup else "DEV"
@@ -434,6 +435,7 @@ def entry(args):
 
 
 if __name__ == "__main__":
+    freeze_support()
     parser = get_parser()
     args = parser.parse_args()
     entry(args)
