@@ -76,7 +76,7 @@ def parse_arguments():
     )
     data_grp.add_argument(
         "--n-test", "-nt", type=int, default=24,
-        help="Number of final time steps (months) to reserve for out-of-sample testing."
+        help="Number of final time steps to reserve for out-of-sample testing."
     )
     data_grp.add_argument(
         "--target-type", "-tt", type=str, default="soft_higher",
@@ -176,7 +176,8 @@ def parse_arguments():
         "--model-path", type=str, default=None,
         help="(Optional for --real-time) Path to a specific pickled model. Defaults to the latest model in --output-dir."
     )
-    parser.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    exec_grp.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    exec_grp.add_argument("--nb-worker",type=int,default=4,required=False,help="Number of parallel worker processes.")
 
     args = parser.parse_args()
 
@@ -385,6 +386,17 @@ def entry_point(args):
         print(f"📦 Loading dataset from : {final_dataset_filename}  {_is_same_file_str}")
         saved_params['dataset_filename'] = final_dataset_filename
         print("✅ Using saved training parameters for real-time feature engineering.")
+    if verbose:
+        print(f"parse args → load pickled data (market + macro) <<{final_dataset_filename}>>"              
+              f"→ build features + target (+{look_head_for_prediction}bars)"
+              f"→ split train/test (last {n_test} bars held out)"
+              f"→ loop over feature combinations"
+              f" ├─ scale features"
+              f" ├─ RandomizedSearchCV (TimeSeriesSplit CV)"
+              f" ├─ evaluate on held-out test set"
+              f" └─ keep best by CV score (test = tie-breaker only)"
+              f"→ save best model + params to .pkl"
+              f"→ (optional) real-time prediction with saved model")
     if verbose:
         print(f"🔄 Loading data from <<{final_dataset_filename}>>")
     with open(final_dataset_filename, 'rb') as f:
@@ -641,10 +653,10 @@ def entry_point(args):
             scoring=scoring_sl1,
             n_iter=100,
             cv=tscv,
-            n_jobs=-1,
+            n_jobs=args.nb_worker,
             random_state=SEED,
-            verbose=0,
-            refit=True
+            verbose=1 if args.verbose else 0,
+            refit=True,
         )
 
         random_search.fit(X_train_scaled, y_train_full)

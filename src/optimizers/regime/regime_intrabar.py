@@ -613,6 +613,8 @@ def entry_main(args):
     print(f"   Target: Close > Open | Min samples in a cluster: {min_n_in_cluster}")
     print(f"   Trials: {max_n_trials} | Timeout: {timeout}s | CV Splits: {args.cv_splits}")
     print(f"   Enhanced Features: {'✅ ENABLED' if args.add_enhanced_features else '❌ DISABLED (standard)'}")
+    if args.objective_asymmetric_toward_bullish_regimes:
+        print(f"   Consistency rewards bullish consensus only (bearish regimes get ~0)")
     print("-" * 60)
 
     df = load_data(ticker, dataset_id)
@@ -710,6 +712,11 @@ def entry_main(args):
                 prob_bullish = subset.mean()
                 prob_score = prob_bullish
                 consistency = 1 - (prob_bullish * (1 - prob_bullish))
+                if args.objective_asymmetric_toward_bullish_regimes:
+                    # Consistency rewards bullish consensus only (bearish regimes get 0),
+                    # so the optimizer is pushed to isolate tradable bullish regimes rather
+                    # than merely "extreme" ones in either direction.
+                    consistency = np.clip((prob_bullish - 0.5) * 2.0, 0.0, 1.0)
                 sample_bonus = np.clip(len(subset) / (2 * min_n_in_cluster), 0, 1)
 
                 # Separation from other regimes
@@ -738,7 +745,7 @@ def entry_main(args):
             else:
                 base = np.mean(scores)
                 fold_scores.append(base * (valid_regimes / _n_clusters) if args.penalize_invalid_cluster else base)
-        alpha = 0.5
+        alpha = 1.0
         final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
         return final_score
 
@@ -922,6 +929,7 @@ if __name__ == "__main__":
     # Clustering config
     parser.add_argument("--min-n-in-cluster", type=int, default=33, help="Min samples per cluster")
     parser.add_argument("--penalize-invalid-cluster", action="store_true", help="Penalize unused clusters")
+    parser.add_argument("--objective-asymmetric-toward-bullish-regimes", action="store_true", default=False, help="")
 
     # Trade evaluation (generalized for binary outcome)
     parser.add_argument("--credit-received", type=float, default=1.0, help="Profit if bullish (win payout)")
