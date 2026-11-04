@@ -235,20 +235,31 @@ def classify_pattern(
     """
     Classify a 3-turn pattern as BUY, SELL, or None.
 
-    This is shared by backtest and realtime so the exact same rules are used.
+    Enhancement:
+    - EMA and RSI filters are evaluated at the confirmation bar (t3[1] + 1),
+      not the pivot bar (t3[1]). Under Option B the pivot is confirmed at
+      t3[1] + 1 and entry executes at the open of t3[1] + 2, so the
+      confirmation bar is the correct, causally-available decision bar.
+      This aligns the regime filter with the actual entry decision instead
+      of using indicators one bar stale.
     """
     neckline_price = t2[2]
     trade_type = None
+
+    # Option B decision bar: the bar at which the pivot is confirmed.
+    # Guard with a clamp so callers that pass a truncated series never
+    # index out of bounds.
+    filter_idx = min(t3[1] + 1, len(prices) - 1)
 
     # --- SELL LOGIC (Call Credit Spread) – Lower High pattern ---
     if t1[0] == "Peak" and t2[0] == "Valley" and t3[0] == "Peak":
         if trade_direction in ["sell", "both"]:
             if t1[2] > neckline_price and t3[2] > neckline_price:
                 if t3[2] < t1[2]:
-                    # EMA Filter: Price must be below EMA for SELL setup
-                    if prices[t3[1]] < ema[t3[1]]:
-                        # RSI Filter: Prevent selling when oversold
-                        if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] >= rsi_sell_min:
+                    # EMA Filter: price must be below EMA for SELL setup
+                    if prices[filter_idx] < ema[filter_idx]:
+                        # RSI Filter: prevent selling when oversold
+                        if not np.isnan(rsi[filter_idx]) and rsi[filter_idx] >= rsi_sell_min:
                             trade_type = "SELL"
 
     # --- BUY LOGIC (Put Credit Spread) – Higher Low pattern ---
@@ -256,10 +267,10 @@ def classify_pattern(
         if trade_direction in ["buy", "both"]:
             if t1[2] < neckline_price and t3[2] < neckline_price:
                 if t3[2] > t1[2]:
-                    # EMA Filter: Price must be above EMA for BUY setup
-                    if prices[t3[1]] > ema[t3[1]]:
-                        # RSI Filter: Prevent buying when overbought
-                        if not np.isnan(rsi[t3[1]]) and rsi[t3[1]] <= rsi_buy_max:
+                    # EMA Filter: price must be above EMA for BUY setup
+                    if prices[filter_idx] > ema[filter_idx]:
+                        # RSI Filter: prevent buying when overbought
+                        if not np.isnan(rsi[filter_idx]) and rsi[filter_idx] <= rsi_buy_max:
                             trade_type = "BUY"
 
     return trade_type
