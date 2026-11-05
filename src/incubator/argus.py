@@ -196,6 +196,7 @@ def entry():
     vera__tightness_weight, vera__n_trials, vera__n_split = 0.33, 250, 0.9
     horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.333, 0.666, 0.999, 2, 16], 999
     horizontal_lines__max_lines, horizontal_lines__max_lines_h0, horizontal_lines__max_week_h5 = 3, 5, 4
+    hirozontal_lines__n_split_year_h240, hirozontal_lines__n_split_quarter_h80, hirozontal_lines__n_split = 0.88, 0.88, 0.9
     historian__output_dir, historian__accumulator = HISTORIAN_ARGUS, []
     quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2"
     def extraire_quant_parameters_from_filename(output_directory):
@@ -930,7 +931,7 @@ def entry():
             use_cases__shared.put({"horizontal_lines": kwargs})
         for _dataset_id, _key_id in zip(["year",  "extraday-240days", "quarter",  "extraday-80days", "extraday-20days", "month",  "extraday-15days", "extraday-10days", "extraday-5days", "extraday-2days", "week",  "day"],
                                                       ["hyear", "h240",             "hquarter", "h80",             "h20",             "hmonth", "h15",             "h10",             "h5",             "h2",             "hweek", "h0"]):
-            n_split = 0.7 if _key_id in ["hyear", "h240", ] else (0.8 if _key_id in ["hquarter", "h80"] else 0.9)
+            n_split = hirozontal_lines__n_split_year_h240 if _key_id in ["hyear", "h240", ] else (hirozontal_lines__n_split_quarter_h80 if _key_id in ["hquarter", "h80"] else hirozontal_lines__n_split)
             kwargs = {'dataset_id': _dataset_id, "key_id": _key_id, "ticker": ticker, "n_split": n_split, "n_trials": horizontal_lines__n_trials,
                       "tightness_weights": horizontal_lines__tightness_weights, "nb_worker": horizontal_lines__nb_worker}
             scheduler.add_job(request_for_horizontal_lines, 'cron', day_of_week='mon-fri', hour=7, minute=0, kwargs=kwargs)
