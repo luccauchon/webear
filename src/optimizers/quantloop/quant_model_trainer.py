@@ -498,7 +498,7 @@ def entry_point(args):
         if _target_type_used in ["lower", "soft_lower"]:
             print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '!DOWN'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '>'} {last_value * (1 - _target_pourcentage_used):.0f}")
         if _target_type_used in ["higher", "soft_higher"]:
-            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else '!UP'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {last_value * (1 + _target_pourcentage_used):.0f}")
+            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else 'DOWN'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {last_value * (1 + _target_pourcentage_used):.0f}")
         if _target_type_used in ["in_between"]:
             _str_left_tmp = f"{last_value * (1 - _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
             _str_right_tmp = f"{last_value * (1 + _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
