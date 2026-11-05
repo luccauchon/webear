@@ -682,9 +682,11 @@ def entry():
         if previous_close > actual_close: print(ligne_previous_close_bar)
         else: print(f"{'='*console_length}")
         print(make_upper_H0_limits(info).ljust(console_length, ' '))
-        _diff = (actual_close - previous_close) / actual_close if 0 != previous_close else 0
-        _diff = f"{rouge_clair}{_diff:.2%}{fleche_bas}{reset}" if _diff < 0 else f"{vert}{_diff:.2%}{fleche_haut}{reset}"
-        ligne_centrale = f"[REALTIME] OPEN:{int(actual_open)}  HIGH:{int(actual_high)}  LOW:{int(actual_low)}  {' '*8}{gras}CLOSE:{int(actual_close)}{reset} ({_diff})   {info['now_txt']}"
+        _diff_close_to_previous_close = (actual_close - previous_close) / actual_close if 0 != previous_close else 0
+        _diff_close_to_previous_close = f"{rouge_clair}{_diff_close_to_previous_close:.2%}{fleche_bas}{reset}" if _diff_close_to_previous_close < 0 else f"{vert}{_diff_close_to_previous_close:.2%}{fleche_haut}{reset}"
+        _diff_open_to_previous_close  = (actual_open - previous_close) / actual_close if 0 != previous_close else 0
+        _diff_open_to_previous_close  = f"{rouge_clair}{_diff_open_to_previous_close:.2%}{fleche_bas}{reset}" if _diff_open_to_previous_close < 0 else f"{vert}{_diff_open_to_previous_close:.2%}{fleche_haut}{reset}"
+        ligne_centrale = f"[REALTIME] OPEN:{int(actual_open)} ({_diff_open_to_previous_close}) HIGH:{int(actual_high)}  LOW:{int(actual_low)}  {' '*8}{gras}CLOSE:{int(actual_close)}{reset} ({_diff_close_to_previous_close})   {info['now_txt']}"
         length_of_ligne_centrale = len(ligne_centrale) - len(gras) - len(reset)
         be_put, be_call = compute_break_even_credit(info['vera']['atr_prob_down'],500), compute_break_even_credit(info['vera']['atr_prob_up'],500)
         ligne_centrale_vera = f"{info['vera']['minutes_jusqua_16h']:03}minutes:: Put@{info['vera']['atr_predicted_low']}:{info['vera']['atr_prob_down']:.0%},{be_put:.0f}$ | Call@{info['vera']['atr_predicted_high']}:{info['vera']['atr_prob_up']:.0%},{be_call:.0f}$"
