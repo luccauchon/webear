@@ -43,6 +43,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import copy
 from datetime import datetime, timedelta
+import psutil
+import gc
 
 
 def clean_console():
@@ -141,7 +143,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                     all_results_computed.append({v["key_id"]: data_from_atr_probability_zone})
                 if k == "vera":
                     min_16h = minutes_jusqua_16h()+1
-                    time.sleep(61)  # Make sure that we don't get "Exception: Realtime mode activated. Please run after 10:20:00." exception
+                    # time.sleep(61)  # Make sure that we don't get "Exception: Realtime mode activated. Please run after 10:20:00." exception
                     vera_results = vera_entry_point(args=Namespace(realtime=True, intraday_candle_space=min_16h, ticker=v["ticker"], verbose_print_results=False,
                                                                    tightness_weight=v["tightness_weight"], n_trials=v["n_trials"], n_split=v["n_split"], ))
                     assert 1 == len(vera_results["inf_resulting"])  # Realtime
@@ -162,7 +164,14 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                     tmp_lst = [{'strike_price': int(strike_price), 'win_rate': win_rate, 'action': action, 'timestamp': timestamp}]
                     all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
                 if k == "cleaner":
-                    pass
+                    gc.collect()
+                    # Récupérer l'identifiant du processus actuel
+                    process = psutil.Process(os.getpid())
+                    # Obtenir la mémoire utilisée en octets (RSS = Resident Set Size)
+                    memoire_octets = process.memory_info().rss
+                    # Convertir en Mégaoctets (Mo) pour une lecture plus facile
+                    memoire_mo = memoire_octets / (1024 ** 2)
+                    all_results_computed.append({k:memoire_mo})
                 out__shared.put(all_results_computed)  # Send back information for displaying
             except Exception as eee:
                 print(eee)
@@ -185,8 +194,8 @@ def entry():
                     "activer_console": True, "activer_random_update": False, }
 
     vera__tightness_weight, vera__n_trials, vera__n_split = 0.33, 250, 0.9
-    horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.3, 0.99, 2, 16], 500
-    horizontal_lines__max_horizontal_lines, horizontal_lines__max_horizontal_lines_h0 = 3, 5
+    horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.333, 0.666, 0.999, 2, 16], 999
+    horizontal_lines__max_lines, horizontal_lines__max_lines_h0, horizontal_lines__max_week_h5 = 3, 5, 4
     historian__output_dir, historian__accumulator = HISTORIAN_ARGUS, []
     quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2"
     def extraire_quant_parameters_from_filename(output_directory):
@@ -426,7 +435,7 @@ def entry():
             #######################################################################
             def week_h5():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
-                quant_dataset = [[],[],[]]  # Chaque colonne est représentée par une liste
+                quant_dataset = [[] for luco in range(0, info['max_horizontal_lines_week_h5'])]  # Chaque colonne est représentée par une liste
                 liste_des_strike_prices_tries = sorted(list(info["quant"].keys()), key=int)
                 assert len(liste_des_strike_prices_tries) <= 10
                 for e, strike_price in enumerate(liste_des_strike_prices_tries):
@@ -436,7 +445,9 @@ def entry():
                     if e in [0, 1, 2, 3, 4]: quant_dataset[1].append((strike_price, win_rate, action, timestamp))
                     if e in [5, 6, 7, 8, 9]: quant_dataset[2].append((strike_price, win_rate, action, timestamp))
                 dates, ee = [], 0
-                for hweek_data, h5_data, quant_data in zip(trier_par_prix_decroissant(info["hweek_up"])[:info['max_horizontal_lines']], trier_par_prix_decroissant(info["h5_up"])[:info['max_horizontal_lines']], quant_dataset):
+                for hweek_data, h5_data, quant_data in zip(trier_par_prix_decroissant(info["hweek_up"])[:info['max_horizontal_lines_week_h5']],
+                                                           trier_par_prix_decroissant(info["h5_up"])[:info['max_horizontal_lines_week_h5']],
+                                                           quant_dataset):
                     ee += 1
                     #  C1
                     limit_price, proba, date = hweek_data["price"], hweek_data["proba"], hweek_data["date"]
@@ -460,7 +471,7 @@ def entry():
                         elif action == "PASS": tmp_str = f"{gris_fonce}{barre}{fleche_haut_pleine}{tmp_str}{reset}"
                         texte_l1_c3 += f"{tmp_str}" if e == len(quant_data)-1 else f"{tmp_str} | "
                     # C1 + C2 + C3
-                    bloc_weekH5 += make_bloc_line_3(texte_l1_c1, texte_l1_c2, texte_l1_c3, True if ee < info['max_horizontal_lines'] else False)
+                    bloc_weekH5 += make_bloc_line_3(texte_l1_c1, texte_l1_c2, texte_l1_c3, True if ee < info['max_horizontal_lines_week_h5'] else False)
                 qtrend_info = f"{rouge_clair}{fleche_bas_pleine}{reset}=call credit spread  {vert}{fleche_haut_pleine}{reset}=put credit spread" if info["display_qtrend_info"] else ""
                 bloc_weekH5 = (f"{_12char_indent}{' ' * int(bloc_weekH5_length[0] // 2)}WEEK {fleche_haut}({dates[0]}){_24char_indent}{' ' * int(bloc_weekH5_length[1] // 3 - 1)}H5 {fleche_haut}({dates[1]}){' ' * (int(bloc_weekH5_length[1] // 2)-4)}" +
                                f"QTREND (@{info['quant_meta_info']['timestamp']}) {qtrend_info}" + saut_ligne + bloc_weekH5)
@@ -517,10 +528,10 @@ def entry():
             def week_h5():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
                 dates = []
-                for hweek_data, h5_data, h2_down_data, h2_down_up in zip(trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines']],
-                                                                         trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines']],
-                                                                         trier_par_prix_decroissant(info["h2_down"])[:info['max_horizontal_lines']],
-                                                                         trier_par_prix_decroissant(info["h2_up"])[:info['max_horizontal_lines']],
+                for hweek_data, h5_data, h2_down_data, h2_down_up in zip(trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines_week_h5']],
+                                                                         trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines_week_h5']],
+                                                                         trier_par_prix_decroissant(info["h2_down"])[:info['max_horizontal_lines_week_h5']],
+                                                                         trier_par_prix_decroissant(info["h2_up"])[:info['max_horizontal_lines_week_h5']],
                                                                          ):
                     #  C1
                     limit_price, proba, date = hweek_data["price"], hweek_data["proba"], hweek_data["date"]
@@ -691,7 +702,9 @@ def entry():
         previous_now = get_next_step(now, "day", -1)
         previous_now_txt = previous_now.strftime('%Y-%m-%d')
         info = {'now': now, 'now_txt': now_txt, 'previous_now': previous_now, 'previous_now_txt': previous_now_txt, 'ticker': ticker,
-                'max_horizontal_lines': horizontal_lines__max_horizontal_lines, 'max_horizontal_lines_h0': horizontal_lines__max_horizontal_lines_h0, 'display_qtrend_info': False,
+                'max_horizontal_lines': horizontal_lines__max_lines, 'max_horizontal_lines_h0': horizontal_lines__max_lines_h0,
+                'max_horizontal_lines_week_h5': horizontal_lines__max_week_h5,
+                'display_qtrend_info': False,
                 'df__60min': None, 'df__240min': None, 'df__day': None, 'df__week': None, 'df__month': None,
                 'open': 0, 'high': 0, 'low': 0, 'close': 0, 'energy_above_vwap': 0, 'energy_below_vwap': 0,
                 'bouclier_spx': '-',
@@ -1232,6 +1245,8 @@ def entry():
                 strike_price_str, tmp_dict = v
                 argus__information_displayed["quant"].setdefault(strike_price_str, []).extend(tmp_dict)
                 argus__information_displayed['quant_meta_info'].update({'timestamp': datetime.now().strftime('%Hh%Mm%Ss')})
+            if k == "cleaner":
+                gc.collect()
         now = datetime.now()
         now_txt = now.strftime('%Y-%m-%d %Hh%Mm%Ss')
         previous_now = get_next_step(now, "day", -1)
