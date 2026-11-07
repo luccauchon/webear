@@ -296,9 +296,16 @@ def extract_info_from_filename(filename):
 
 
 def previous_weekday_with_check(date, df):
-    yesterday = previous_weekday(date)
+    # 1. On force la date en Timestamp pandas (gère les strings comme '2026-10-31')
+    current_date = pd.to_datetime(date)
+
+    # 2. On calcule le jour ouvré précédent
+    yesterday = previous_weekday(current_date)
+
+    # 3. La boucle fonctionne car 'yesterday' et 'df.index' partagent le même type
     while yesterday not in df.index:
         yesterday = previous_weekday(yesterday)
+
     return yesterday
 
 

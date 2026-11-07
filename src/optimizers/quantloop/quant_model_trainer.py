@@ -42,8 +42,14 @@ from sklearn.metrics import (classification_report, confusion_matrix,
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
 from tqdm import tqdm
-from utils import get_next_step
+from utils import get_next_step, round_price_for_call_credit_spread, round_price_for_put_credit_spread
 from constants import WEBEARStyle
+import sys
+import warnings
+from sklearn.exceptions import InconsistentVersionWarning
+
+# Ignore l'avertissement de version de scikit-learn
+warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 
 def parse_arguments():
@@ -86,6 +92,10 @@ def parse_arguments():
     data_grp.add_argument(
         "--target-percentage", "-tp", type=float, default=0.01,
         help="Threshold fraction for 'soft' or 'in_between' target types (e.g., 0.01 = 1pct)."
+    )
+    data_grp.add_argument(
+        "--override-target-percentage", "-ortp", type=float, default=None,
+        help="In realtime, override the target pourcentage from the model."
     )
     data_grp.add_argument(
         "--look-ahead", "-la", type=float, default=1.0,
@@ -165,7 +175,7 @@ def parse_arguments():
         help="Directory to save the best model and training metadata."
     )
     exec_grp.add_argument(
-        "--no-verbose", action="store_false", dest="verbose", default=True,
+        "--verbose", action="store_false", dest="verbose", default=True,
         help="Disable detailed console output and progress reports."
     )
     exec_grp.add_argument(
@@ -173,10 +183,15 @@ def parse_arguments():
         help="Run in real-time prediction mode: loads data, builds features, and predicts the next month using the latest saved model."
     )
     exec_grp.add_argument(
+        "--realtime", action="store_true", default=False,
+        help="Run in real-time prediction mode: loads data, builds features, and predicts the next month using the latest saved model."
+    )
+    exec_grp.add_argument(
         "--model-path", type=str, default=None,
         help="(Optional for --real-time) Path to a specific pickled model. Defaults to the latest model in --output-dir."
     )
     exec_grp.add_argument("--clip", action="store_true", help="Exclude incomplete current bar in real-time")
+    exec_grp.add_argument('--clip-n', type=int, default=0, help="Do a .iloc[:-n] on the loaded dataset. A value of greater than 0 enable it.")
     exec_grp.add_argument("--nb-worker",type=int,default=4,required=False,help="Number of parallel worker processes.")
 
     args = parser.parse_args()
@@ -226,7 +241,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         'PCE_Inflation_YoY', 'WALCL_YoY',
         'DGS10_Level', 'DGS10_MoM_Chg'
     ]
-    _df_fusionned = _df_market.join(_df_macro[macro_features]).dropna()
+    _df_fusionned = _df_market.join(_df_macro[macro_features]).dropna().copy()
 
     # 3. Ajout de nouvelles Features
     _df_fusionned['VIX_Ratio'] = _df_fusionned['VIX'] / _df_fusionned['VIX'].rolling(12).mean()
@@ -298,7 +313,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     return _df_fusionned
 
 
-def save_best_model(best_setup, args, output_dir, verbose=True):
+def save_best_model(best_setup, args, output_dir, command_line, verbose=True):
     """Saves the best model configuration AND training parameters to a pickle file."""
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -319,7 +334,8 @@ def save_best_model(best_setup, args, output_dir, verbose=True):
             'target_percentage': args.target_percentage,
             'target_type': args.target_type,
             'dataset_filename': args.dataset,
-        }
+        },
+        'command_line': command_line,
     }
 
     with open(filepath, 'wb') as f:
@@ -330,75 +346,71 @@ def save_best_model(best_setup, args, output_dir, verbose=True):
 
 
 def entry_point(args):
-    n_test = args.n_test
-    type_of_target = args.target_type
-    percentage_of_type_target = args.target_percentage
-    look_head_for_prediction = args.look_ahead
-    my_scaler = args.my_scaler
-    features = args.features
-    vix_lag = args.vix_lag
-    rsi_lag = args.rsi_lag
-    rsi_window = args.rsi_window
-    verbose = args.verbose
-    the_estimator = args.the_estimator
-    the_scorer = args.scorer
-    training_mode = args.training_mode
-    max_random_iterations = args.max_random_iterations
-    minimum_features = args.minimum_features
-    time_limit = args.time_limit
-    output_dir = args.output_dir
+    command_line = f"python " + " ".join(sys.argv)
     final_dataset_filename = args.dataset
-    np.set_printoptions(linewidth=np.inf)
-    saved_data = None
-
+    verbose                = args.verbose
     # ─────────────────────────────────────────────────────────────────────────
     # 🔄 LOAD SAVED PARAMETERS FIRST IF IN REAL-TIME MODE
     # ─────────────────────────────────────────────────────────────────────────
-    if args.real_time:
+    if getattr(args, "real_time", False) or getattr(args, "realtime", False):
         model_path = args.model_path
-        if model_path is None:
-            os.makedirs(output_dir, exist_ok=True)
-            pkl_files = sorted([f for f in os.listdir(output_dir) if f.endswith('.pkl')])
-            if not pkl_files:
-                print("❌ No saved models found. Please train a model first or specify --model-path.")
-                return
-            model_path = os.path.join(output_dir, pkl_files[-1])
-
-        print(f"📦 Loading model and training parameters from: {model_path}")
+        assert model_path is not None
+        if verbose: print(f"📦 Loading model and training parameters from: {model_path}")
         with open(model_path, 'rb') as f:
             saved_data = pickle.load(f)
+        command_line = getattr(command_line, "command_line", "")
+        if verbose: print(f"Command line used: {command_line}")
 
         # Override CLI args with saved training parameters
         saved_params = saved_data.get('params', {})
         assert 'rsi_window' in saved_params
-        rsi_window = saved_params.get('rsi_window', rsi_window)
+        rsi_window = saved_params.get('rsi_window')
         assert 'vix_lag' in saved_params
-        vix_lag = saved_params.get('vix_lag', vix_lag)
+        vix_lag = saved_params.get('vix_lag')
         assert 'rsi_lag' in saved_params
-        rsi_lag = saved_params.get('rsi_lag', rsi_lag)
+        rsi_lag = saved_params.get('rsi_lag')
         assert 'look_ahead' in saved_params
-        look_head_for_prediction = saved_params.get('look_ahead', look_head_for_prediction)
+        look_head_for_prediction = saved_params.get('look_ahead')
         assert 'target_percentage' in saved_params
-        percentage_of_type_target = saved_params.get('target_percentage', percentage_of_type_target)
+        percentage_of_type_target = saved_params.get('target_percentage')
         assert 'target_type' in saved_params
-        type_of_target = saved_params.get('target_type', type_of_target)
+        type_of_target = saved_params.get('target_type')
         _is_same_file_str = f"(overriding {saved_params['dataset_filename']})" if final_dataset_filename != saved_params['dataset_filename'] else ""
-        print(f"📦 Loading dataset from : {final_dataset_filename}  {_is_same_file_str}")
+        if verbose: print(f"📦 Loading dataset from : {final_dataset_filename}  {_is_same_file_str}")
         saved_params['dataset_filename'] = final_dataset_filename
-        print("✅ Using saved training parameters for real-time feature engineering.")
-    if verbose:
-        print(f"parse args → load pickled data (market + macro) <<{final_dataset_filename}>>"              
-              f"→ build features + target (+{look_head_for_prediction}bars)"
-              f"→ split train/test (last {n_test} bars held out)"
-              f"→ loop over feature combinations"
-              f" ├─ scale features"
-              f" ├─ RandomizedSearchCV (TimeSeriesSplit CV)"
-              f" ├─ evaluate on held-out test set"
-              f" └─ keep best by CV score (test = tie-breaker only)"
-              f"→ save best model + params to .pkl"
-              f"→ (optional) real-time prediction with saved model")
+        if verbose: print("✅ Using saved training parameters for real-time feature engineering.")
+    else:
+        n_test = args.n_test
+        type_of_target = args.target_type
+        percentage_of_type_target = args.target_percentage
+        look_head_for_prediction = int(args.look_ahead)
+        my_scaler = args.my_scaler
+        features = args.features
+        vix_lag = args.vix_lag
+        rsi_lag = args.rsi_lag
+        rsi_window = args.rsi_window
+        the_estimator = args.the_estimator
+        the_scorer = args.scorer
+        training_mode = args.training_mode
+        max_random_iterations = args.max_random_iterations
+        minimum_features = args.minimum_features
+        time_limit = args.time_limit
+        output_dir = args.output_dir
+        saved_data = None
+        if verbose:
+            print(f"parse args → load pickled data (market + macro) <<{final_dataset_filename}>>"              
+                  f"→ build features + target (+{look_head_for_prediction}bars)"
+                  f"→ split train/test (last {n_test} bars held out)"
+                  f"→ loop over feature combinations"
+                  f" ├─ scale features"
+                  f" ├─ RandomizedSearchCV (TimeSeriesSplit CV)"
+                  f" ├─ evaluate on held-out test set"
+                  f" └─ keep best by CV score (test = tie-breaker only)"
+                  f"→ save best model + params to .pkl"
+                  f"→ (optional) real-time prediction with saved model")
     if verbose:
         print(f"🔄 Loading data from <<{final_dataset_filename}>>")
+    np.set_printoptions(linewidth=np.inf)
     with open(final_dataset_filename, 'rb') as f:
         loaded_data = pickle.load(f)
     df_market = loaded_data["market_data"]
@@ -410,17 +422,19 @@ def entry_point(args):
         _look_head_for_prediction=look_head_for_prediction,
         _percentage_of_type_target=percentage_of_type_target,
         _type_of_target=type_of_target, _verbose=verbose,
-        create_target=not args.real_time  # Skip target creation in real-time mode
+        create_target=not (getattr(args, "real_time", False) or getattr(args, "realtime", False))  # Skip target creation in real-time mode
     )
     # ─────────────────────────────────────────────────────────────────────────
     # 🚀 REAL-TIME PREDICTION MODE
     # ─────────────────────────────────────────────────────────────────────────
-    if args.real_time:
+    if getattr(args, "real_time", False) or getattr(args, "realtime", False):
         if df.empty:
             print("❌ No valid data points available after feature engineering.")
             return
-        if args.clip:
+        if getattr(args, "clip", False):
             df = df.iloc[:-1].copy()
+        elif getattr(args, "clip_n", 0):
+            df = df.iloc[:-int(args.clip_n)].copy()
         last_date = df.index[-1].strftime('%Y-%m-%d')
         last_value = df.iloc[-1]['Close']
 
@@ -431,14 +445,16 @@ def entry_point(args):
 
         _target_type_used = saved_data['params']['target_type']
         _target_pourcentage_used = saved_data['params']['target_percentage']
-        _look_ahead_used = saved_data['params']['look_ahead']
+        _target_pourcentage_used = getattr(args, "override_target_percentage", _target_pourcentage_used)
+        _look_ahead_used = int(saved_data['params']['look_ahead'])
+        assert look_head_for_prediction == _look_ahead_used
         _dataset_filename_used = saved_data['params']['dataset_filename']
         assert final_dataset_filename == saved_data['params']['dataset_filename']
         scaler = setup_to_use['scaler']
         model = setup_to_use['model']
         feat_cols = setup_to_use['features']
 
-        print(f"Beta    Priorite    Philosophie\n"
+        if verbose: print(f"Beta    Priorite    Philosophie\n"
               f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
               f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
               f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
@@ -447,7 +463,7 @@ def entry_point(args):
         _tmp_ttu_3 = f'{WEBEARStyle.BOLD}soft_higher{WEBEARStyle.END}' if _target_type_used == 'soft_higher' else f'soft_higher'
         _tmp_ttu_4 = f'{WEBEARStyle.BOLD}soft_lower{WEBEARStyle.END}' if _target_type_used == 'soft_lower' else f'soft_lower'
         _tmp_ttu_5 = f'{WEBEARStyle.BOLD}in_between{WEBEARStyle.END}' if _target_type_used == 'in_between' else f'in_between'
-        print(f"🔹 {_tmp_ttu_1}\n"
+        if verbose: print(f"🔹 {_tmp_ttu_1}\n"
               f"Logic: 1 if future_price > current_price, else 0\n"
               f"Meaning: Predicts any upward movement, no matter how small.\n"
               f"Use case: Pure directional bias. Highly sensitive to market noise.\n"
@@ -472,7 +488,7 @@ def entry_point(args):
               f"Meaning: Predicts the market will stay sideways/consolidate within ± your threshold.\n"
               f"Use case: Useful for range-bound strategies, volatility selling, or avoiding false breakout signals.\n"
               f"\n")
-        print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f} {'(clipping activated)' if args.clip else ''}")
+        if verbose: print(f"📅 Using last datapoint: {last_date} @ {last_value:.0f} {'(clipping activated)' if getattr(args, "clip", False) else (f'(clipping activated,{int(getattr(args, "clip_n", 0))})' if getattr(args, "clip_n", 0) > 0 else '')}")
 
         # Prepare last row
         X_last = df[feat_cols].iloc[[-1]]
@@ -488,38 +504,41 @@ def entry_point(args):
         dataset_id = "month" if "_month_" in final_dataset_filename else dataset_id
         dataset_id = "week" if "_week_" in final_dataset_filename or "_week" in final_dataset_filename else dataset_id
         assert dataset_id is not None, f"{dataset_id=}   {final_dataset_filename=}"
-        ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(look_head_for_prediction))
-        assert 0 < int(look_head_for_prediction)
+        ff_date = get_next_step(the_date=last_date, dataset_id=dataset_id, nn=int(_look_ahead_used))
+        assert 0 < int(_look_ahead_used)
         _now_timestamp = datetime.now().strftime("%Y-%m-%d")
-        print("\n" + "═" * 50)
-        print(f"🚀 REAL-TIME PREDICTION FOR +{int(look_head_for_prediction)} BAR{'' if 1 == int(look_head_for_prediction) else 'S'}")
-        print(f"📅 Date/Value used : {last_date} @ {last_value:.0f}")
-        print(f"📅 Today's date    : {_now_timestamp}")
+        if verbose: print("\n" + "═" * 50)
+        if verbose: print(f"🚀 REAL-TIME PREDICTION FOR +{int(_look_ahead_used)} BAR{'' if 1 == int(_look_ahead_used) else 'S'}")
+        if verbose: print(f"📅 Date/Value used : {last_date} @ {last_value:.0f}")
+        if verbose: print(f"📅 Today's date    : {_now_timestamp}")
         if _target_type_used in ["lower", "soft_lower"]:
-            print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '!DOWN'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '>'} {last_value * (1 - _target_pourcentage_used):.0f}")
+            if verbose: print(f"📊 Prediction      : {'DOWN' if _realtime_prediction == 1 else '!DOWN'} @ {proba:.2%} : on {ff_date}, price {'<' if _realtime_prediction == 1 else '>'} {last_value * (1 - _target_pourcentage_used):.0f}")
         if _target_type_used in ["higher", "soft_higher"]:
-            print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else 'DOWN'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {last_value * (1 + _target_pourcentage_used):.0f}")
+            strike_price = round_price_for_put_credit_spread(last_value * (1 - _target_pourcentage_used)) if _realtime_prediction == 1 else round_price_for_call_credit_spread(last_value * (1 + _target_pourcentage_used))
+            if verbose: print(f"📊 Prediction      : {'UP' if _realtime_prediction == 1 else 'DOWN'} @ {proba:.2%} : on {ff_date}, price {'>' if _realtime_prediction == 1 else '<'} {strike_price:.0f}")
         if _target_type_used in ["in_between"]:
-            _str_left_tmp = f"{last_value * (1 - _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
-            _str_right_tmp = f"{last_value * (1 + _target_pourcentage_used):.0f}" if _realtime_prediction == 1 else '?'
-            print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '!RANGE'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
-        print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
-        print("═" * 50)
-        print(f"🔑 Features Used   : {feat_cols}")
-        print(f"   Scorer: {setup_to_use['scorer']}")
+            _str_left_tmp  = f"{round_price_for_put_credit_spread(last_value * (1 - _target_pourcentage_used)):.0f}" if _realtime_prediction == 1 else '?'
+            _str_right_tmp = f"{round_price_for_call_credit_spread(last_value * (1 + _target_pourcentage_used)):.0f}" if _realtime_prediction == 1 else '?'
+            if verbose: print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '!RANGE'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
+        if verbose: print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
+        if verbose: print("═" * 50)
+        if verbose: print(f"🔑 Features Used   : {feat_cols}")
+        if verbose: print(f"   Scorer: {setup_to_use['scorer']}")
         # 🔧 ENHANCED: Show CV score as selection metric, Test score as unbiased reference
         cv_score_str = f"{setup_to_use.get('cv_score', 'N/A'):.2%}" if isinstance(setup_to_use.get('cv_score'), (int, float)) else setup_to_use.get('cv_score', 'N/A')
         test_score_str = f"{setup_to_use.get('test_score', 'N/A'):.2%}" if isinstance(setup_to_use.get('test_score'), (int, float)) else setup_to_use.get('test_score', 'N/A')
-        print(f"   CV/Test scores: {cv_score_str}/{test_score_str}")
-        print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
-        print(f"   Target: {type_of_target} @{percentage_of_type_target:.2%}")
-        print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
-              f"    y    : {setup_to_use['y_test_final'].values}\n"
-              f"    y_hat: {setup_to_use['y_hat_test_final']}")
-        print("Confusion Matrix:")
-        print(confusion_matrix(setup_to_use['y_test_final'], setup_to_use['y_hat_test_final']))
-        print("═" * 50)
-        return _realtime_prediction
+        if verbose: print(f"   CV/Test scores: {cv_score_str}/{test_score_str}")
+        if verbose: print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
+        if verbose: print(f"   Target: {_target_type_used} @{_target_pourcentage_used:.2%}")
+        if verbose: print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
+                          f"    y    : {setup_to_use['y_test_final'].values}\n"
+                          f"    y_hat: {setup_to_use['y_hat_test_final']}")
+        if verbose: print("Confusion Matrix:")
+        if verbose: print(confusion_matrix(setup_to_use['y_test_final'], setup_to_use['y_hat_test_final']))
+        if verbose: print("═" * 50)
+        return {"realtime_prediction": _realtime_prediction, "last_date": last_date, "last_value": last_value, "now": _now_timestamp,
+                "target_type": _target_type_used, "target_pourcentage_used": _target_pourcentage_used, "look_ahead": _look_ahead_used, "dataset_id": dataset_id,
+                "clip_n": getattr(args, "clip_n", 0)}
 
     # ─────────────────────────────────────────────────────────────────────────
     # 📚 STANDARD TRAINING LOOP
@@ -742,7 +761,7 @@ def entry_point(args):
     # 💾 Save the best model after loop finishes or breaks
     # ─────────────────────────────────────────────────────────────────────────
     if best_setup_found is not None and best_setup_found.get('cv'):
-        save_best_model(best_setup_found, args, output_dir, verbose)
+        save_best_model(best_setup=best_setup_found, args=args, output_dir=output_dir, command_line=command_line, verbose=verbose)
     else:
         if verbose:
             print("\n⚠️ No valid model was trained. Nothing to save.")

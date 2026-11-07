@@ -45,6 +45,7 @@ import copy
 from datetime import datetime, timedelta
 import psutil
 import gc
+import json
 
 
 def clean_console():
@@ -526,13 +527,13 @@ def entry():
             #######################################################################
             # WEEK/H5
             #######################################################################
-            def week_h5():
+            def week_h5_h2():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
                 dates = []
                 for hweek_data, h5_data, h2_down_data, h2_down_up in zip(trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines_week_h5']],
                                                                          trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines_week_h5']],
                                                                          trier_par_prix_decroissant(info["h2_down"])[:info['max_horizontal_lines_week_h5']],
-                                                                         trier_par_prix_decroissant(info["h2_up"])[:info['max_horizontal_lines_week_h5']],
+                                                                         trier_par_prix_croissant(info["h2_up"])[:info['max_horizontal_lines_week_h5']],
                                                                          ):
                     #  C1
                     limit_price, proba, date = hweek_data["price"], hweek_data["proba"], hweek_data["date"]
@@ -611,7 +612,7 @@ def entry():
                 bloc_monthH20 = f"{_12char_indent}{' ' * int(bloc_monthH20_length[0] // 2)}MONTH {fleche_bas}({dates[0]}){_24char_indent}{' ' * int(bloc_monthH20_length[1] // 3 - 2)}H20 {fleche_bas}({dates[1]}){' ' * (int(bloc_monthH20_length[1] // 2) - 3)}" + saut_ligne + bloc_monthH20
                 return bloc_monthH20
 
-            return week_h5() + saut_ligne + h10_h15() + saut_ligne + month_h20() + saut_ligne + quarter_year_h80_h240()
+            return week_h5_h2() + saut_ligne + h10_h15() + saut_ligne + month_h20() + saut_ligne + quarter_year_h80_h240()
 
         def make_upper_H0_limits(info):
             bloc_H0 = f"{_12char_indent * 7}H0:: "
@@ -1024,25 +1025,17 @@ def entry():
         def request_for_historian_dump(**kwargs):
             info, output_dir, acc = kwargs["info"], kwargs["output_dir"], kwargs["accumulator_historian"]
             info = copy.deepcopy(info)
-            info["df__60min"], info["df__240min"], info["df__day"], info["df__week"], info["df__month"] = [], [], [], [], []
-            acc.append(info)
+            for key in ["df__60min", "df__240min", "df__day", "df__week", "df__month"]: info[key] = []
+            acc_json = json.dumps(acc)
             maintenant = datetime.now()
             timestamp_cle = maintenant.strftime("%Y-%m-%d %H:%M:%S")
-            def stringifier_cles_rec(obj):
-                """Convertit récursivement toutes les clés de dictionnaires en str."""
-                if isinstance(obj, dict):
-                    return {str(cle): stringifier_cles_rec(valeur) for cle, valeur in obj.items()}
-                elif isinstance(obj, list):
-                    return [stringifier_cles_rec(element) for element in obj]
-                return obj
-            info_propre = stringifier_cles_rec(info)
             # On ajoute l'année, le mois et le jour comme colonnes de partitionnement
             dict_pour_parquet = {
                 "year": [maintenant.year],
                 "month": [maintenant.month],
                 "day": [maintenant.day],
                 "timestamp": [timestamp_cle],
-                "info": [info_propre], }
+                "info": [acc_json], }
             table = pa.Table.from_pydict(dict_pour_parquet)
             # write_to_dataset va créer automatiquement l'arborescence :
             # dossier/year=2026/month=10/day=16/xxxx.parquet
@@ -1052,6 +1045,7 @@ def entry():
             info, output_dir, acc = kwargs["info"], kwargs["output_dir"], kwargs["accumulator_historian"]
             info = copy.deepcopy(info)
             info["df__60min"], info["df__240min"], info["df__day"], info["df__week"], info["df__month"]=[],[],[],[],[]
+            info["timestamp_dump"] = datetime.now()
             acc.append(info)
         kwargs = {"info": argus__information_displayed, "output_dir": historian__output_dir, "accumulator_historian": historian__accumulator}
         scheduler.add_job(request_for_historian, 'cron', day_of_week='mon-fri', hour='9', minute='30-59', kwargs=kwargs)

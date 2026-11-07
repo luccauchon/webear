@@ -339,7 +339,7 @@ def entry_point(args):
     output_dir = args.output_dir
     final_dataset_filename = args.dataset
     np.set_printoptions(linewidth=np.inf)
-
+    command_line = f"python " + " ".join(sys.argv)
     if verbose:
         print(f"Beta    Priorite    Philosophie\n"
               f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
@@ -423,7 +423,8 @@ def entry_point(args):
     # 💾 Save the best model after loop finishes or breaks
     # ─────────────────────────────────────────────────────────────────────────
     if best_setup_found is not None:
-        save_best_model(best_setup_found, args, output_dir, verbose)
+        # , args, output_dir, command_line, verbose=True
+        save_best_model(best_setup=best_setup_found, args=args, output_dir=output_dir, verbose=verbose, command_line=command_line)
     else:
         if verbose:
             print("\n⚠️ No valid model was trained. Nothing to save.")

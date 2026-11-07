@@ -69,7 +69,7 @@ from optuna.samplers import TPESampler
 # Statistics
 from statsmodels.stats.proportion import proportion_confint
 from numba import njit
-
+import sys
 # Logging configuration
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -506,7 +506,7 @@ def run_real_time_inference(args, ticker, list_models, model_filename):
 
     with open(model_path, "rb") as f:
         model_data = pickle.load(f)
-
+    print(f"Command line: {getattr(model_data, 'command_line', '')}")
     _model = model_data["model"]
     _scaler = model_data["scaler"]
     _stats = model_data["stats"]
@@ -607,7 +607,7 @@ def entry_main(args):
 
     np.random.seed(random_seed)
     os.makedirs(args.output_dir, exist_ok=True)
-
+    command_line = f"python " + " ".join(sys.argv)
     print(f"🚀 Starting Bullish IntraBar Regime Optimization")
     print(f"   Ticker: {ticker} | Dataset: {dataset_id}")
     print(f"   Target: Close > Open | Min samples in a cluster: {min_n_in_cluster}")
@@ -869,7 +869,7 @@ def entry_main(args):
 
     with open(model_path, "wb") as f:
         pickle.dump({
-            "model": model, "scaler": scaler, "stats": _stats, "params": best_params,
+            "model": model, "scaler": scaler, "stats": _stats, "params": best_params, "command_line": command_line,
             "metadata": {
                 "ticker": ticker,
                 "target": "bullish_close_gt_open",
