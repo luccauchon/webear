@@ -415,6 +415,7 @@ def parse_arguments():
     parser.add_argument('--seuil-pos', type=float, default=1., help="Seuil multiplicateur du Daily Open pour la cible. Si >1, arrondi au 5 supérieur et si <1, arrondi au 5 inférieur")
     parser.add_argument('--et-gt-open', type=int, default=1, help="1 si la cible est High > (Open * seuil), 0 si High < (Open * seuil).")
     parser.add_argument('--target-definition', type=str, default="open_as_level", choices=["open_as_level", "last_morning_close_as_level", "last_morning_vwap_as_level"], help="Définition de la cible à utiliser")
+    parser.add_argument("--n-split", type=float, default=0.90, help="Train/Test split ratio (default: 0.80).")
 
     # Sélection des features
     parser.add_argument('--limit-feature-dim', type=int, default=10, help="Nombre min de features à utiliser. Plus petit == plus de combinaisons à évaluer.")

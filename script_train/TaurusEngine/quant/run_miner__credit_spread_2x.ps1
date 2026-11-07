@@ -6,7 +6,7 @@ $scriptPython2 = ".\quant_morning_beta_miner_realtime_and_backtesting.py"
 
 # Paramètres fixes du script
 $workers = 12
-$featureDim = 12
+$featureDim = 8
 $et1 = "15:59"
 $outputDir = "quant\miner1__credit_spread_2x"
 
