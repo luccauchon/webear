@@ -7,6 +7,7 @@ $scriptPython2 = ".\quant_morning_beta_miner_realtime_and_backtesting.py"
 # Paramètres fixes du script
 $workers = 12
 $featureDim = 8
+$nsplit = 0.8
 $et1 = "15:59"
 $outputDir = "quant\miner1__credit_spread_2x"
 
@@ -31,7 +32,7 @@ Set-Location $scriptPath
 foreach ($etGtOpen in $listeEtGtOpen) {
     foreach ($st2 in $listeSt2) {
         foreach ($seuil in $listeSeuil) {
-            python $scriptPython1 --nb-worker $workers --limit-feature-dim $featureDim --seuil-pos $seuil --et-gt-open $etGtOpen --st2 $st2 --et1 $et1 --output-dir $outputDir
+            python $scriptPython1 --n-split $nsplit --nb-worker $workers --limit-feature-dim $featureDim --seuil-pos $seuil --et-gt-open $etGtOpen --st2 $st2 --et1 $et1 --output-dir $outputDir
 
             # 2. Accumulation des valeurs pour le second script
             $argsEt1 += $et1
