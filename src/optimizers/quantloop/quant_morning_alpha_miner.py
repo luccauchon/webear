@@ -54,7 +54,7 @@ class TopNEnsembleModel:
     - Ce modèle est prévu pour une classification binaire.
     - Pour les SVM, il est conseillé d'utiliser une factory avec probability=True.
     """
-    def __init__(self, threshold=0.5, command_line="", args=Namespace(), test_f1_score=0):
+    def __init__(self, threshold=0.5, command_line="", args=Namespace(), test_f1_score=0., train_test_dates=None):
         self.threshold = threshold
         self.is_fitted_ = False
         self.models_ = []
@@ -65,6 +65,7 @@ class TopNEnsembleModel:
         self.command_line = command_line
         self.args = args
         self.test_f1_score_ = test_f1_score
+        self.train_test_dates = train_test_dates
 
     def __repr__(self):
         return (
@@ -441,6 +442,7 @@ def run_realtime(modelfile, verbose, daily_df_precomputed):
     # Build dataset
     X_new = build_df(df=daily_df, args=Namespace(st1=model.args.st1, st2=model.args.st2, ema9=model.args.ema9, ema21=model.args.ema21, rsi14=model.args.rsi14,
                                                  macd5=model.args.macd5, seuil_pos=model.args.seuil_pos, et1=model.args.et1, et2=model.args.et2, verbose=verbose,
+                                                 n_split=getattr(model.args, "n_split", 0.9), # Backward compatibility
                                                  target_definition=getattr(model.args, "target_definition", "open_as_level"),),
                      generate_for_realtime=True)
     agg = model.predict_aggregated(X_new.iloc[-1:])
@@ -662,7 +664,7 @@ def build_df(df, args, generate_for_realtime):
     y = daily_df['target'].copy()
 
     # Split temporel strict (90% Train pour CV / 10% Test pour évaluation finale)
-    split_idx = int(len(daily_df) * 0.90)
+    split_idx = int(len(daily_df) * float(args.n_split))
 
     X_train, X_test = X.iloc[:split_idx].copy(), X.iloc[split_idx:].copy()
     y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
@@ -703,6 +705,8 @@ def entry(args):
     #
     # ---------------------------------------------------------
     X, y, X_train, X_test, y_train, y_test, feature_cols, experience_str_desc = build_df(df=df, args=args, generate_for_realtime=False)
+    train_t1, train_t2 = X_train.index[0].strftime('%Y-%m-%d'), X_train.index[-1].strftime('%Y-%m-%d')
+    test_t1, test_t2   = X_test.index[0].strftime('%Y-%m-%d'), X_test.index[-1].strftime('%Y-%m-%d')
     print(f"Features ({len(feature_cols)}): {str(feature_cols)[1:-2]}\n")
     # ---------------------------------------------------------
     # 4. Configuration de la Cross-Validation et des Modèles
@@ -714,7 +718,7 @@ def entry(args):
         Retourne une instance fraîche de chaque modèle et son type de prétraitement.
 
         probability=False est utilisé pour la CV afin de ne pas ralentir les SVM.
-        probability=True est utilisé pour l'agrégat final afin de pouvoir
+        probability=True est utilisé pour l'agrégat final pour pouvoir
         récupérer les probabilités et calculer médiane / std.
         """
         return {
@@ -906,7 +910,7 @@ def entry(args):
         print("=" * 90)
         print(f"CRÉATION DU MODÈLE AGRÉGÉ {name_top}")
         print("=" * 90)
-        agg_test_f1 = None
+        agg_test_f1 = 0.
         # -----------------------------------------------------
         # 10.1 Optionnel: évaluation honnête de l'agrégat sur TEST
         #      avec un modèle agrégé entraîné uniquement sur TRAIN.
@@ -939,7 +943,8 @@ def entry(args):
         # -----------------------------------------------------
         # 10.2 Modèle agrégé final entraîné sur TOUTES les données
         # -----------------------------------------------------
-        final_top_n_model = TopNEnsembleModel(threshold=0.5, command_line=command_line, args=args, test_f1_score=float(agg_test_f1))
+        final_top_n_model = TopNEnsembleModel(threshold=0.5, command_line=command_line, args=args, test_f1_score=float(agg_test_f1),
+                                              train_test_dates={"train_dates":(train_t1, train_t2), "test_dates":(test_t1, test_t2)})
 
         final_top_n_model.fit(
             X=X,
@@ -960,7 +965,7 @@ def entry(args):
         print(f"    model = TopNEnsembleModel.load({ensemble_filename!r})")
         print("    agg = model.predict_aggregated(X_new)")
         print("    # agg[['median_probability', 'std_probability', 'predicted_class']]")
-
+    return None
 
 if __name__ == "__main__":
     freeze_support()

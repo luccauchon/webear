@@ -53,7 +53,7 @@ def parse_arguments():
 
     # Définition des cibles (liste de seuils)
     parser.add_argument('--seuil-pos', type=float, nargs="+", default=[0.999], help="Liste des seuils multiplicateurs du Daily Open pour la cible.")
-
+    parser.add_argument('--nb-worker', type=int, default=12, help="Nombre de workers pour l'évaluation parallèle.")
     return parser.parse_args()
 
 
@@ -171,6 +171,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
         groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
         total_jours = len(groupes_par_jour)
         date_2_result = {}
+        test_date_t1 = pd.to_datetime(sorted(list(set([am[0].train_test_dates['test_dates'][0] for am in all_models])))[-1])
         # 2. On itère sur le nombre de jours à reculer (ex: de 1 jour à (total - 3) jours)
         for lookback_jours in range(0, total_jours - 3):
             # On sélectionne uniquement les jours restants (on exclut les 'lookback_jours' derniers jours)
@@ -186,7 +187,9 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             date_fin   = jours_restants[-1][0]
             #print(f" >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
             df_filtre = pd.concat([df_jour for _, df_jour in jours_restants])
-            #print(f" \t >>> {df_filtre.index[0]} --> {df_filtre.index[-1]}")
+            # print(f" \t >>> {df_filtre.index[0]} --> {df_filtre.index[-1]}")
+            if df_filtre.index[-1].tz_localize(None) < test_date_t1:
+                continue
             pred_results = compute_prediction(df_=df_filtre, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir))
             result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
 
@@ -244,7 +247,7 @@ def entry(args):
     if isinstance(df_1minute.columns, pd.MultiIndex): df_1minute.columns = df_1minute.columns.get_level_values(0)
     df_1minute = df_1minute.sort_index()
     close_col = 'Close'
-    nb_worker = 12
+    nb_worker = getattr(args, "nb_worker", 12)
 
     ###########################################################################
     # Boucle pour effectuer le backtest
