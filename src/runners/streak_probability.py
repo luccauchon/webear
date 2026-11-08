@@ -444,7 +444,7 @@ def new_main(args, bring_my_own_df=None):
     delta = args.delta
     verbose = args.verbose
     debug_speeding = args.debug_verify_speeding
-    forward_steps = args.forward_steps
+    forward_steps = getattr(args, "forward_steps", 1)
     print_condition_probability = getattr(args, 'print_condition_probability', True)
     if bring_my_own_df is None:
         _spx500 = factory_load_data(_dataset_id=data_frequency, _ticker=ticker, _args={})
