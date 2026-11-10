@@ -15,10 +15,10 @@ if %JOUR% geq 1 if %JOUR% leq 5 (
         echo Lancement du script...
         
         :: METTEZ VOTRE CODE ICI
-        start "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\YFINANCE_SUBSET.bat"
+        start /high "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\YFINANCE_SUBSET.bat"
         timeout /t 65 /nobreak > nul
 		
-		start "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\TAURUS\H_HTML_DAY__after_4pm.bat"
+		start /high "" cmd /c "D:\PyCharmProjects\webear\script_fct\windows\TAURUS\H_HTML_DAY__after_4pm.bat"
         timeout /t 65 /nobreak > nul
     )
 )

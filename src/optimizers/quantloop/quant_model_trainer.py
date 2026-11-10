@@ -59,16 +59,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="Train and evaluate time-series classifiers on combined market & macro data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        epilog="""
-        Examples:
-          # Train normally
-          python train_model.py
-
-          # Real-time prediction (uses latest model in ./output_models)
-          python train_model.py --real-time
-
-          # Real-time prediction with a specific model file
-          python train_model.py --real-time --model-path ./output_models/best_model_RandomForestClassifier_soft_higher_20260419_120000.pkl
+        epilog="""        
         """
     )
 
@@ -301,7 +292,7 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         # We explicitly restore NaNs where future_close is missing so dropna() works as expected.
         _df_fusionned.loc[future_close.isna(), "Target"] = np.nan
 
-        # Drop only rows with invalid targets (preserves rows where other features might be NaN but you handle them elsewhere)
+        # Drop only rows with invalid targets (preserves rows where other features might be NaN)
         _df_fusionned = _df_fusionned.dropna(subset=["Target"])
     else:
         # Real-time mode: only drop rows with missing features
@@ -397,17 +388,6 @@ def entry_point(args):
         time_limit = args.time_limit
         output_dir = args.output_dir
         saved_data = None
-        if verbose:
-            print(f"parse args → load pickled data (market + macro) <<{final_dataset_filename}>>"              
-                  f"→ build features + target (+{look_head_for_prediction}bars)"
-                  f"→ split train/test (last {n_test} bars held out)"
-                  f"→ loop over feature combinations"
-                  f" ├─ scale features"
-                  f" ├─ RandomizedSearchCV (TimeSeriesSplit CV)"
-                  f" ├─ evaluate on held-out test set"
-                  f" └─ keep best by CV score (test = tie-breaker only)"
-                  f"→ save best model + params to .pkl"
-                  f"→ (optional) real-time prediction with saved model")
     if verbose:
         print(f"🔄 Loading data from <<{final_dataset_filename}>>")
     np.set_printoptions(linewidth=np.inf)
@@ -445,7 +425,7 @@ def entry_point(args):
 
         _target_type_used = saved_data['params']['target_type']
         _target_pourcentage_used = saved_data['params']['target_percentage']
-        _target_pourcentage_used = getattr(args, "override_target_percentage", _target_pourcentage_used)
+        _target_pourcentage_used = getattr(args, "override_target_percentage") if getattr(args, "override_target_percentage", None) is not None else _target_pourcentage_used
         _look_ahead_used = int(saved_data['params']['look_ahead'])
         assert look_head_for_prediction == _look_ahead_used
         _dataset_filename_used = saved_data['params']['dataset_filename']

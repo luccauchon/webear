@@ -21,7 +21,7 @@ if not defined HEURE goto SUIVANT
 :: 2. Vérification du Lundi au Vendredi à 15:32
 if !JOUR! geq 1 if !JOUR! leq 5 (
     if "!HEURE!"=="15:32" (        
-        start "[YAMAHA SPX]" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\taurus & python yamaha.py --production-setup"
+        start /high "[YAMAHA SPX]" cmd /c "@echo off & call conda activate PY312_HT & cd ..\..\src\crusaders\taurus & python yamaha.py --production-setup"
         :: Attendre la minute suivante pour éviter les doublons
         timeout /t 60 /nobreak > nul
     )

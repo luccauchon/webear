@@ -46,6 +46,7 @@ from datetime import datetime, timedelta
 import psutil
 import gc
 import json
+from datetime import datetime, date
 
 
 def clean_console():
@@ -81,9 +82,9 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             continue
         all_results_computed = []
         for use_case in use_case_batch:
+            assert 1 == len(use_case)
+            k, v = next(iter(use_case.items()))
             try:
-                assert 1 == len(use_case)
-                k, v = next(iter(use_case.items()))
                 #print(f"[{os.getpid()}] ------Processing {k} --------------{v}")
                 #out__shared.put({"info_computing": f"[{os.getpid()}] Processing {k}:{v}"})
                 if k == "bouclier_spx":
@@ -177,6 +178,11 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             except Exception as eee:
                 print(eee)
                 traceback.print_exc()
+                with open("erreurs_dans_worker.txt", "a", encoding="utf-8") as fichier_log:
+                    fichier_log.write(f"{k=}  {v=}\n")
+                    fichier_log.write(f"Erreur : {eee}\n")
+                    fichier_log.write(traceback.format_exc())
+                    fichier_log.write("\n" + "=" * 80 + "\n")  # Séparateur visuel entre les erreurs
 
     # Quit
 
@@ -188,7 +194,7 @@ def entry():
     high_col  = ('High', ticker)
     low_col   = ('Low', ticker)
 
-    starter_auth = {'bouclier_spx': False, "realtime": True, "trend_ema": True, "horizontal_lines": True, "vera": True,
+    starter_auth = {'bouclier_spx': False, "realtime": True, "trend_ema": True, "horizontal_lines": False, "vera": True,
                     "splash_screen": False,
                     "gap": False,  # Pas utilise
                     "day_streaker": True, "week_streaker": False, "historian": True, "quant": True,
@@ -1022,36 +1028,58 @@ def entry():
     # Historian
     ###########################################################################
     def setup_historian():
+        def _convertir(donnees):
+            """Parcourt récursivement la structure pour transformer les datetime et date en string.
+
+            Laisse intacts les types de base (str, int, float, bool, None).
+            """
+            if isinstance(donnees, dict):
+                return {cle: _convertir(valeur) for cle, valeur in donnees.items()}
+
+            elif isinstance(donnees, list):
+                return [_convertir(element) for element in donnees]
+
+            # datetime hérite de date, il faut donc vérifier datetime EN PREMIER
+            elif isinstance(donnees, datetime):
+                return donnees.strftime("%Y-%m-%d %H:%M:%S")
+
+            elif isinstance(donnees, date):
+                return donnees.strftime("%Y-%m-%d")
+
+            # Retourne inchangés les str, int, float, bool, None, etc.
+            return donnees
         def request_for_historian_dump(**kwargs):
-            info, output_dir, acc = kwargs["info"], kwargs["output_dir"], kwargs["accumulator_historian"]
-            info = copy.deepcopy(info)
-            for key in ["df__60min", "df__240min", "df__day", "df__week", "df__month"]: info[key] = []
-            acc_json = json.dumps(acc)
-            maintenant = datetime.now()
-            timestamp_cle = maintenant.strftime("%Y-%m-%d %H:%M:%S")
-            # On ajoute l'année, le mois et le jour comme colonnes de partitionnement
-            dict_pour_parquet = {
-                "year": [maintenant.year],
-                "month": [maintenant.month],
-                "day": [maintenant.day],
-                "timestamp": [timestamp_cle],
-                "info": [acc_json], }
-            table = pa.Table.from_pydict(dict_pour_parquet)
-            # write_to_dataset va créer automatiquement l'arborescence :
-            # dossier/year=2026/month=10/day=16/xxxx.parquet
-            pq.write_to_dataset(table, root_path=output_dir, partition_cols=["year", "month", "day"], use_dictionary=True, compression="zstd", compression_level=12)
-            del kwargs["accumulator_historian"][:]
-        def request_for_historian(**kwargs):
-            info, output_dir, acc = kwargs["info"], kwargs["output_dir"], kwargs["accumulator_historian"]
-            info = copy.deepcopy(info)
-            info["df__60min"], info["df__240min"], info["df__day"], info["df__week"], info["df__month"]=[],[],[],[],[]
-            info["timestamp_dump"] = datetime.now()
-            acc.append(info)
+            try:
+                info, output_dir, acc = kwargs["info"], kwargs["output_dir"], kwargs["accumulator_historian"]
+                info = copy.deepcopy(info)
+                for key in ["df__60min", "df__240min", "df__day", "df__week", "df__month"]: info[key] = []
+                acc.append(json.dumps(_convertir(info)))
+                maintenant = datetime.now()
+                timestamp_cle = maintenant.strftime("%Y-%m-%d %H:%M:%S")
+                if kwargs.get("dump_acc", False):
+                    nb_lignes = len(acc)
+                    # On ajoute l'année, le mois et le jour comme colonnes de partitionnement
+                    dict_pour_parquet = {
+                        "year": [maintenant.year] * nb_lignes,
+                        "month": [maintenant.month] * nb_lignes,
+                        "day": [maintenant.day] * nb_lignes,
+                        "timestamp": [timestamp_cle] * nb_lignes,
+                        "acc": list(acc), }
+                    table = pa.Table.from_pydict(_convertir(dict_pour_parquet))
+                    pq.write_to_dataset(table, root_path=output_dir, partition_cols=["year", "month", "day"], use_dictionary=True, compression="zstd", compression_level=12)
+                    del acc[:]
+            except Exception as eee:
+                print(eee)
+                traceback.print_exc()
+                with open("erreurs_dans_dump_historian.txt", "a", encoding="utf-8") as fichier_log:
+                    fichier_log.write(f"Erreur : {eee}\n")
+                    fichier_log.write(traceback.format_exc())
+                    fichier_log.write("\n" + "=" * 40 + "\n")  # Séparateur visuel entre les erreurs
         kwargs = {"info": argus__information_displayed, "output_dir": historian__output_dir, "accumulator_historian": historian__accumulator}
-        scheduler.add_job(request_for_historian, 'cron', day_of_week='mon-fri', hour='9', minute='30-59', kwargs=kwargs)
-        scheduler.add_job(request_for_historian, 'cron', day_of_week='mon-fri', hour='10-15', minute='*', kwargs=kwargs)
-        scheduler.add_job(request_for_historian, 'cron', day_of_week='mon-fri', hour='16', minute='0', kwargs=kwargs)
-        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='11,13,16', minute='0', kwargs=kwargs)
+        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='9', minute='30-59', kwargs=kwargs)
+        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='10-15', minute='*', kwargs=kwargs)
+        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='16', minute='0', kwargs=kwargs)
+        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='11,13,16', minute='0', kwargs=kwargs | {"dump_acc": True})
     if starter_auth["historian"]: setup_historian()
 
     def setup_cleaner():
@@ -1145,18 +1173,7 @@ def entry():
         print("\n🚀 *Note: 'Startup (Once)' means the task executes immediately at program start.*")
         print("=" * 95)
 
-        try:
-            print("\nLancement de la boucle de surveillance dans : ", end="", flush=True)
-            for i in range(5, -1, -1):
-                print(f"{i}...", end="", flush=True)
-                time.sleep(1)
-                # Supprime le chiffre précédent pour afficher le suivant au même endroit
-                if i > 0:
-                    print("\b\b\b\b", end="", flush=True)
-            print("\nBoucle démarrée !")
-        except KeyboardInterrupt:
-            print("\n\nDémarrage annulé par l'utilisateur.")
-            sys.exit(0)
+        input("Press enter to continue")
 
     # =============================================================================
     if starter_auth["activer_console"]: clean_console()

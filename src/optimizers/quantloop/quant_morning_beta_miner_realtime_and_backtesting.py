@@ -79,7 +79,7 @@ def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir):
         return {"action": "PUT_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
     if 0 == result_pcs["result"]["predicted_class"].values[0] and 1 == result_ccs["result"]["predicted_class"].values[0]:
         return {"action": "CALL_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
-    return {"action": "PASS", "strike_price": strike_price}
+    return {"action": "PASS", "strike_price": strike_price, "win_rate": 0}
 
 
 def get_models_from_parameters(all_models, **kwargs):
@@ -120,9 +120,13 @@ def get_best_model(models):
 
 def compute_prediction(df_, all_models_, args_):
     models_for_ccs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 0})
-    if 0 == len(models_for_ccs): raise Exception(f"Aucun modèle pour le CALL CREDIT SPREAD (et-gt-open=0) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
+    if 0 == len(models_for_ccs):
+        models_for_ccs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 0})
+        if 0 == len(models_for_ccs): raise Exception(f"Aucun modèle pour le CALL CREDIT SPREAD (et-gt-open=0) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
     models_for_pcs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 1})
-    if 0 == len(models_for_pcs): raise Exception(f"Aucun modèle pour le PUT CREDIT SPREAD (et-gt-open=1) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
+    if 0 == len(models_for_pcs):
+        models_for_pcs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 1})
+        if 0 == len(models_for_pcs): raise Exception(f"Aucun modèle pour le PUT CREDIT SPREAD (et-gt-open=1) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
     best_model_ccs, file_model_ccs = get_best_model(models=models_for_ccs)
     best_model_pcs, file_model_pcs = get_best_model(models=models_for_pcs)
     result_ccs = entry_quant_morning_alpha_miner(args=Namespace(modelfile=file_model_ccs, realtime=True, daily_df_precomputed=df_, verbose=False))
