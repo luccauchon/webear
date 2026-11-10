@@ -520,14 +520,17 @@ def _run_backtesting(config, df_mom, dataset_id, dry_run=False):
 
             print("Le pourcentage de (close_t+1 - close_t)/close_t selon la prediction")
 
-        pct = _fraction_below(results_pred_0_diff_on_close.values())
+        pct  = _fraction_below(results_pred_0_diff_on_close.values())
         pct2 = _fraction_above(results_pred_0_diff_on_close.values())
         if config.verbose:print(f"\t PRED=0 % < 0 : {pct:.2%}  {' ' * 5}% > 0 : {pct2:.2%}")
 
-        pct = _fraction_below(results_pred_1_diff_on_close.values())
+        pct  = _fraction_below(results_pred_1_diff_on_close.values())
         pct2 = _fraction_above(results_pred_1_diff_on_close.values())
         if config.verbose:print(f"\t PRED=1 % < 0 : {pct:.2%}  {' ' * 5}% > 0 : {pct2:.2%}")
-        return {"win_rate": win_rate, "win_rate_pred_0": win_rate_pred_0, "win_rate_pred_1": win_rate_pred_1,}
+        return {"win_rate": win_rate, "win_rate_pred_0": win_rate_pred_0, "win_rate_pred_1": win_rate_pred_1,
+                "n_win_rate": (sum(results.values()), len(results)),
+                "n_win_rate_pred_0": (sum(results_pred_0.values()), len(results_pred_0)),
+                "n_win_rate_pred_1": (sum(results_pred_1.values()), len(results_pred_1))}
 
     if target_type == "in_between":
         print(
@@ -570,9 +573,9 @@ def _run_backtesting(config, df_mom, dataset_id, dry_run=False):
     return None
 
 
-def _run_iterate_backtesting(args, df_mom):
+def _run_iterate_backtesting(args, df_mom, go_back_ranges, squeeze=True):
     end_go_back_length__2__optimal_target_percentage = {}
-    for _end_go_back_length in range(6, 492, 6):
+    for _end_go_back_length in go_back_ranges:
         args_copie = argparse.Namespace(**vars(args) | {"verbose": False, "end_go_back_length": _end_go_back_length})
 
         # Run it once to get the parameters used by the model
@@ -586,20 +589,21 @@ def _run_iterate_backtesting(args, df_mom):
               f"\n\tTarget pourcentage used by model: {model_parameters['target_pourcentage_used']}")
 
         if "soft_higher" == model_parameters['target_type']:
-            winrate__2__all_target_percentage_if_pred_0, winrate__2__all_target_percentage_if_pred_1 = None, None
             # strike *= 1 + M*cte  where factor = 1 + M*cte and 0<cte<1
-            decreasing_modifier_call_credit_spread = np.linspace(0, 1, 1001)
-            increasing_modifier_call_credit_spread = np.linspace(1, 15, 30)
+            decreasing_modifier_call_credit_spread = list(np.linspace(-0.5, 1, 202))
+            increasing_modifier_call_credit_spread = list(np.linspace(1, 33, 66))
             # strike *= 1 - M*cte  where factor = 1 - M*cte and 0<cte<1
-            increasing_modifier_put_credit_spread = np.linspace(1, 33, 66)
-            decreasing_modifier_put_credit_spread = np.linspace(0, 10, 101)
+            increasing_modifier_put_credit_spread  = list(np.linspace(1, 33, 66))
+            decreasing_modifier_put_credit_spread  = list(np.linspace(-1, 10, 101))
             # Baseline
             baseline = _run_backtesting(config=argparse.Namespace(**vars(args_copie)), df_mom=df_mom.copy(), dataset_id=args.dataset_id)
             print(f"[BASELINE]  Win Rate: {baseline['win_rate']:.2%}   "
                   f"Win Rate Pred 0: {baseline['win_rate_pred_0']:.2%}   "
                   f"Win Rate Pred 1: {baseline['win_rate_pred_1']:.2%}")
+
             winrate__2__optimal_modifiers__call_credit_spread = {baseline['win_rate_pred_0']: model_parameters['target_pourcentage_used']}
-            if baseline["win_rate_pred_0"] == 1:
+            win_rate__2__n__call_credit_spread = {}
+            if baseline["win_rate_pred_0"] == 1 and squeeze:
                 # Squeeze it
                 print(f"[PRED=0] Need to squeeze (decrease the factor/decrease M , S *= 1+M*{model_parameters['target_pourcentage_used']}) "
                       f"the CALL CREDIT SPREAD because baseline has a win rate of 100%")
@@ -609,7 +613,7 @@ def _run_iterate_backtesting(args, df_mom):
                     if result["win_rate_pred_0"] == 1:
                         winrate__2__optimal_modifiers__call_credit_spread.update({result["win_rate_pred_0"]: float(_modifier__call_credit_spread)})
                         break
-            else:
+            elif baseline["win_rate_pred_0"] < 1:
                 # Relax it
                 print(f"[PRED=0] Need to relax (increase the factor/increase M , because S *= 1+M*{model_parameters['target_pourcentage_used']}) "
                       f"the CALL CREDIT SPREAD because baseline has a win rate of {baseline['win_rate_pred_0']:.0%}, which is below 100%")
@@ -618,6 +622,7 @@ def _run_iterate_backtesting(args, df_mom):
                                               df_mom=df_mom.copy(), dataset_id=args.dataset_id, )
                     if all(k < result["win_rate_pred_0"] for k in winrate__2__optimal_modifiers__call_credit_spread):
                         winrate__2__optimal_modifiers__call_credit_spread.update({result["win_rate_pred_0"]: float(_modifier__call_credit_spread)})
+                        win_rate__2__n__call_credit_spread.update({result["win_rate_pred_0"]: result["n_win_rate_pred_0"]})
                     if result["win_rate_pred_0"] == 1:
                         break
             winrate__2__all_target_percentage_if_pred_0 = {k: v * model_parameters['target_pourcentage_used'] for k, v in winrate__2__optimal_modifiers__call_credit_spread.items()}
@@ -626,10 +631,11 @@ def _run_iterate_backtesting(args, df_mom):
                   f"to F={1 + optimal_modifier__call_credit_spread * model_parameters['target_pourcentage_used']:.8f}({max_win_rate:.2%}) "
                   f"")
             for k, v in winrate__2__optimal_modifiers__call_credit_spread.items():
-                print(f"[PRED=0] \t{1 + v * model_parameters['target_pourcentage_used']:.8f}({k:.2%})")
+                print(f"[PRED=0] \t{1 + v * model_parameters['target_pourcentage_used']:.8f}({k:.2%}) {win_rate__2__n__call_credit_spread[k] if k in win_rate__2__n__call_credit_spread else ''}")
 
             win_rate__2__optimal_modifiers__put_credit_spread = {baseline['win_rate_pred_1']: model_parameters['target_pourcentage_used']}
-            if baseline["win_rate_pred_1"] == 1:
+            win_rate__2__n__put_credit_spread = {}
+            if baseline["win_rate_pred_1"] == 1 and squeeze:
                 # Squeeze it
                 print(f"[PRED=1] Need to squeeze (increase the factor/decrease M , because S *= 1-M*{model_parameters['target_pourcentage_used']}) "
                       f"the PUT CREDIT SPREAD because baseline has a win rate of 100%")
@@ -639,7 +645,7 @@ def _run_iterate_backtesting(args, df_mom):
                     if result["win_rate_pred_1"] == 1:
                         win_rate__2__optimal_modifiers__put_credit_spread.update({result["win_rate_pred_1"]: float(_modifier__put_credit_spread)})
                         break
-            else:
+            elif baseline["win_rate_pred_1"] < 1:
                 # Relax it
                 print(f"[PRED=1] Need to relax (decrease the factor/increase M , S *= 1-M*{model_parameters['target_pourcentage_used']}) "
                       f"the PUT CREDIT SPREAD because baseline has a win rate of {baseline['win_rate_pred_1']:.0%}, which is below 100%")
@@ -648,6 +654,7 @@ def _run_iterate_backtesting(args, df_mom):
                                               df_mom=df_mom.copy(), dataset_id=args.dataset_id, )
                     if all(k < result["win_rate_pred_1"] for k in win_rate__2__optimal_modifiers__put_credit_spread):
                         win_rate__2__optimal_modifiers__put_credit_spread.update({result["win_rate_pred_1"]: float(_modifier__put_credit_spread)})
+                        win_rate__2__n__put_credit_spread.update({result["win_rate_pred_1"]: result["n_win_rate_pred_1"]})
                     if result["win_rate_pred_1"] == 1:
                         break
             winrate__2__all_target_percentage_if_pred_1 = {k: v * model_parameters['target_pourcentage_used'] for k, v in win_rate__2__optimal_modifiers__put_credit_spread.items()}
@@ -656,11 +663,10 @@ def _run_iterate_backtesting(args, df_mom):
                   f"to F={1 - optimal_modifier__put_credit_spread * model_parameters['target_pourcentage_used']:.8f}({max_win_rate:.2%}) "
                   f"")
             for k, v in win_rate__2__optimal_modifiers__put_credit_spread.items():
-                print(f"[PRED=1] \t{1 - v * model_parameters['target_pourcentage_used']:.8f}({k:.2%})")
-            print(f"[PRED=0]\n\t{json.dumps({k: f"{v:.8f}" if isinstance(v, (int, float)) else v for k, v in winrate__2__all_target_percentage_if_pred_0.items()}, indent=4, sort_keys=True)}")
-            print(f"[PRED=1]\n\t{json.dumps({k: f"{v:.8f}" if isinstance(v, (int, float)) else v for k, v in winrate__2__all_target_percentage_if_pred_1.items()}, indent=4, sort_keys=True)}")
+                print(f"[PRED=1] \t{1 - v * model_parameters['target_pourcentage_used']:.8f}({k:.2%}) {win_rate__2__n__put_credit_spread[k] if k in win_rate__2__n__put_credit_spread else ''}")
+
             end_go_back_length__2__optimal_target_percentage.update({_end_go_back_length: {"pred_0":winrate__2__all_target_percentage_if_pred_0,
-                                                                        "pred_1":winrate__2__all_target_percentage_if_pred_1}})
+                                                                                           "pred_1":winrate__2__all_target_percentage_if_pred_1}})
     return end_go_back_length__2__optimal_target_percentage
 
 
@@ -671,9 +677,9 @@ def entry(args):
     args.quant_dataset = r"D:\Finance\compiled_models\quant\2026.05.06\generated__combined_month_macro.data"
     args.quant_model = r"D:\Finance\compiled_models\quant\2026.05.06\best_model_RandomForestClassifier_soft_higher_20260506_004718.pkl"
 
-    end_go_back_length__2__optimal_target_percentage = _run_iterate_backtesting(args=args, df_mom=df_mom)
-    output_filename_result = os.path.join(Path(args.quant_dataset).parent, "optimal_target_percentage.json")
-    with open(output_filename_result, "w", encoding="utf-8") as f: json.dump(end_go_back_length__2__optimal_target_percentage, f, indent=4, sort_keys=True)
+    end_go_back_length__2__optimal_target_percentage = _run_iterate_backtesting(args=args, df_mom=df_mom, go_back_ranges=[6,12,24,36,48,60,72], squeeze=False)
+    #output_filename_result = os.path.join(Path(args.quant_dataset).parent, "optimal_target_percentage.json")
+    #with open(output_filename_result, "w", encoding="utf-8") as f: json.dump(end_go_back_length__2__optimal_target_percentage, f, indent=4, sort_keys=True)
 
 
 if __name__ == "__main__":
