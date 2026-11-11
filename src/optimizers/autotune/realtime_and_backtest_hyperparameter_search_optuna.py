@@ -514,6 +514,8 @@ def entry(args):
             print(f"Dataset: {dataset_id} | Look Ahead: {la_bars} bars")
             print(f"Training score: {saved_model['train_score']:.6%} | Test score: {test_win_rate:.6%}")
             print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Test win rate: {saved_model['validation_win_rate']:.6%}")
+            train_density, test_density = saved_model.get('train_trade_density', 0), saved_model.get('test_trade_density')
+            print(f"Training density: {train_density:.6%} | Test density: {test_density:.6%}")
             print(f"Optimization metric: {opt_metric} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type_label}")
             print(f"Datapoint used: {last_date_str} | Signal computed: {last_signal} {signal_str}")
 
@@ -815,24 +817,24 @@ def entry(args):
     # --- Test Set Evaluation ---
     results_valid = strat_best.generate_signals(test_closes)
     sig_valid = results_valid[results_valid['signal'] != 0]
-    validation_win_rate = 0.
+    test_win_rate = 0.
     test_score = 0.
     signal_density_test = 0.0
 
     if len(sig_valid) > 0:
         col_fmt_val = METRIC_MAP[optimize]['col'].format(la)
-        validation_win_rate = METRIC_MAP[optimize]['calc'](sig_valid[col_fmt_val].values, win_threshold)
+        test_win_rate = METRIC_MAP[optimize]['calc'](sig_valid[col_fmt_val].values, win_threshold)
         signal_density_test = len(sig_valid) / len(results_valid)
         if signal_density_test < required_signal_density:
             gap = required_signal_density - signal_density_test
             penalty = max(0.0, 1.0 - gap * 5.0)
-            test_score = validation_win_rate * penalty
+            test_score = test_win_rate * penalty
         else:
-            test_score = validation_win_rate
+            test_score = test_win_rate
 
         if verbose:
             print("\n📊 Final Performance (TEST SET):")
-            print(f"   🎯 Win Rate ({optimize}): {validation_win_rate * 100:.2f}%")
+            print(f"   🎯 Win Rate ({optimize}): {test_win_rate * 100:.2f}%")
             print(f"   📉 Penalized Score: {test_score * 100:.2f}%")
             print(f"   📈 Trade Density: {signal_density_test:.4f} ({len(sig_valid)} trades / {len(results_valid)} bars)")
     else:
@@ -844,14 +846,14 @@ def entry(args):
     # 💾 SAVE MODEL
     os.makedirs(args.output_dir, exist_ok=True)
     w, bw, th, la, op = best_params['window'], best_params['bandwidth'], best_params['threshold'], best_params['lookahead_bars'], optimize
-    model_name = f"autotune__la{la}__op{op}__wth{win_threshold}__trainsc{score_of_best_trial:.4f}__trainwr{train_win_rate:.4f}__twr{validation_win_rate:.4f}.pkl"
+    model_name = f"autotune__la{la}__op{op}__wth{win_threshold}__trainsc{score_of_best_trial:.4f}__trainwr{train_win_rate:.4f}__twr{test_win_rate:.4f}.pkl"
     model_path = os.path.join(args.output_dir, model_name)
 
     model_data = {
         'params': best_params, 'win_threshold': win_threshold, 'signal_type': signal_label,
         'signal_type_code': signal_type, 'optimize_metric': optimize,
         'train_score': train_score, 'val_score': test_score, 'test_score': test_score,
-        'train_win_rate': train_win_rate, 'validation_win_rate': validation_win_rate,
+        'train_win_rate': train_win_rate, 'validation_win_rate': test_win_rate,
         'dataset_id': dataset_id, 'ticker': ticker, 'command_line': command_line,
         'train_trade_density': signal_density_train,
         'test_trade_density': signal_density_test,
@@ -869,7 +871,7 @@ def entry(args):
             results=results_valid, params=best_params, metrics=final_metrics,
             ticker=ticker, dataset_id=dataset_id, output_dir=args.output_dir,
             verbose=verbose, signal_type=signal_label, optimize_metric=optimize,
-            win_threshold=win_threshold, test_win_rate=validation_win_rate,
+            win_threshold=win_threshold, test_win_rate=test_win_rate,
         )
 
 
