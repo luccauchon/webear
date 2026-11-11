@@ -514,7 +514,7 @@ def entry(args):
             print(f"Dataset: {dataset_id} | Look Ahead: {la_bars} bars")
             print(f"Training score: {saved_model['train_score']:.6%} | Test score: {test_win_rate:.6%}")
             print(f"Training win rate: {saved_model['train_win_rate']:.6%} | Test win rate: {saved_model['validation_win_rate']:.6%}")
-            train_density, test_density = saved_model.get('train_trade_density', 0), saved_model.get('test_trade_density')
+            train_density, test_density = saved_model.get('train_trade_density', 0), saved_model.get('test_trade_density', 0)
             print(f"Training density: {train_density:.6%} | Test density: {test_density:.6%}")
             print(f"Optimization metric: {opt_metric} | Win Threshold: {rt_win_threshold:.2%} | Signal Type: {rt_signal_type_label}")
             print(f"Datapoint used: {last_date_str} | Signal computed: {last_signal} {signal_str}")
