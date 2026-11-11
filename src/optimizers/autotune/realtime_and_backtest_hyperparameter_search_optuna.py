@@ -194,8 +194,13 @@ def _auto_tune(data: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray, n
             seg_len = window - lag
             base = i - window
             for k in range(seg_len):
-                x = hp[base + k]; y = hp[base + k + lag]
-                Sx += x; Sy += y; Sxx += x * x; Syy += y * y; Sxy += x * y
+                x = hp[base + k];
+                y = hp[base + k + lag]
+                Sx += x;
+                Sy += y;
+                Sxx += x * x;
+                Syy += y * y;
+                Sxy += x * y
             den1 = seg_len * Sxx - Sx * Sx
             den2 = seg_len * Syy - Sy * Sy
             if den1 > 1e-10 and den2 > 1e-10:
@@ -268,7 +273,8 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
                 has_valid_bar = True
             forward_returns[i] = best_ret if has_valid_bar else 0.0
 
-            min_p = prices[i]; max_p = prices[i]
+            min_p = prices[i];
+            max_p = prices[i]
             for j in range(i + 1, end):
                 if prices[j] < min_p: min_p = prices[j]
                 if prices[j] > max_p: max_p = prices[j]
@@ -523,7 +529,7 @@ def entry(args):
             elif opt_metric == 'profit_target':
                 target_price = last_price * (1.0 + abs_wt)
             elif opt_metric == 'range_bound':
-                target_price = last_price * (1.0 + abs_wt) # Borne supérieure par défaut pour l'affichage
+                target_price = last_price * (1.0 + abs_wt)  # Borne supérieure par défaut pour l'affichage
         elif signal == -1:
             if opt_metric == 'hold_ceiling':
                 target_price = last_price * (1.0 + rt_win_threshold)
@@ -532,7 +538,7 @@ def entry(args):
             elif opt_metric == 'profit_target':
                 target_price = last_price * (1.0 - abs_wt)
             elif opt_metric == 'range_bound':
-                target_price = last_price * (1.0 - abs_wt) # Borne inférieure par défaut pour l'affichage
+                target_price = last_price * (1.0 - abs_wt)  # Borne inférieure par défaut pour l'affichage
 
         # Invalidation du signal si la logique ne correspond pas à la métrique d'optimisation
         if last_signal != 0:
@@ -605,7 +611,7 @@ def entry(args):
         elif optimization_metric == "sell_wr":
             threshold_multiplier = 1.0 + rt_win_threshold
         else:
-            threshold_multiplier = 1.0 # Neutre
+            threshold_multiplier = 1.0  # Neutre
 
         # =====================================================================
         # RETOUR DU DICTIONNAIRE ENRICHI
@@ -654,12 +660,12 @@ def entry(args):
     assert 0.0 < train_ratio < 1.0, "--train-ratio must be between 0.0 and 1.0"
     split_idx = int(len(closes) * train_ratio)
     train_closes = closes.iloc[:split_idx].copy()
-    valid_closes = closes.iloc[split_idx:].copy()
+    test_closes  = closes.iloc[split_idx:].copy()
 
     if verbose:
         print(f"📊 Train/Test Split: {train_ratio:.0%} / {1 - train_ratio:.0%}")
         print(f"   Train: {len(train_closes)} bars ({train_closes.index[0].strftime('%Y%m%d_%H%M')}::{train_closes.index[-1].strftime('%Y%m%d_%H%M')}) | "
-              f"Test: {len(valid_closes)} bars ({valid_closes.index[0].strftime('%Y%m%d_%H%M')}::{valid_closes.index[-1].strftime('%Y%m%d_%H%M')})\n")
+              f"Test: {len(test_closes)} bars ({test_closes.index[0].strftime('%Y%m%d_%H%M')}::{test_closes.index[-1].strftime('%Y%m%d_%H%M')})\n")
 
     lookahead_bars = args.lookahead_bars
     win_threshold = args.win_threshold
@@ -688,10 +694,10 @@ def entry(args):
 
     def objective(trial):
         try:
-            window                = trial.suggest_int('window', window_min, window_max, step=window_step)
-            bandwidth             = trial.suggest_float('bandwidth', bandwidth_min, bandwidth_max, step=bandwidth_step)
-            threshold             = trial.suggest_float('threshold', threshold_min, threshold_max, step=threshold_step)
-            _lookahead_bars       = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars)
+            window = trial.suggest_int('window', window_min, window_max, step=window_step)
+            bandwidth = trial.suggest_float('bandwidth', bandwidth_min, bandwidth_max, step=bandwidth_step)
+            threshold = trial.suggest_float('threshold', threshold_min, threshold_max, step=threshold_step)
+            _lookahead_bars = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars)
             enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
             enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
 
@@ -792,6 +798,7 @@ def entry(args):
     sig_train = results_train[results_train['signal'] != 0]
     train_win_rate = 0.
     train_score = score_of_best_trial  # Default to Optuna's returned score
+    signal_density_train = 0.0
 
     if len(sig_train) > 0:
         col_fmt_train = METRIC_MAP[optimize]['col'].format(la)
@@ -805,30 +812,34 @@ def entry(args):
         else:
             train_score = train_win_rate
 
-    # --- Validation Set Evaluation ---
-    results_valid = strat_best.generate_signals(valid_closes)
+    # --- Test Set Evaluation ---
+    results_valid = strat_best.generate_signals(test_closes)
     sig_valid = results_valid[results_valid['signal'] != 0]
     validation_win_rate = 0.
-    val_score = 0.
+    test_score = 0.
+    signal_density_test = 0.0
+
     if len(sig_valid) > 0:
         col_fmt_val = METRIC_MAP[optimize]['col'].format(la)
         validation_win_rate = METRIC_MAP[optimize]['calc'](sig_valid[col_fmt_val].values, win_threshold)
-        signal_density_val = len(sig_valid) / len(results_valid)
-        if signal_density_val < required_signal_density:
-            gap = required_signal_density - signal_density_val
+        signal_density_test = len(sig_valid) / len(results_valid)
+        if signal_density_test < required_signal_density:
+            gap = required_signal_density - signal_density_test
             penalty = max(0.0, 1.0 - gap * 5.0)
-            val_score = validation_win_rate * penalty
+            test_score = validation_win_rate * penalty
         else:
-            val_score = validation_win_rate
+            test_score = validation_win_rate
 
         if verbose:
-            print("\n📊 Final Performance (VALIDATION SET):")
+            print("\n📊 Final Performance (TEST SET):")
             print(f"   🎯 Win Rate ({optimize}): {validation_win_rate * 100:.2f}%")
-            print(f"   📉 Penalized Score: {val_score * 100:.2f}%")
+            print(f"   📉 Penalized Score: {test_score * 100:.2f}%")
+            print(f"   📈 Trade Density: {signal_density_test:.4f} ({len(sig_valid)} trades / {len(results_valid)} bars)")
     else:
         if verbose:
-            print("\n📊 Final Performance (VALIDATION SET):")
+            print("\n📊 Final Performance (TEST SET):")
             print("   🎯 Win Rate: N/A (0 signals generated)")
+            print(f"   📈 Trade Density: {signal_density_test:.4f} (0 trades / {len(results_valid)} bars)")
 
     # 💾 SAVE MODEL
     os.makedirs(args.output_dir, exist_ok=True)
@@ -839,9 +850,13 @@ def entry(args):
     model_data = {
         'params': best_params, 'win_threshold': win_threshold, 'signal_type': signal_label,
         'signal_type_code': signal_type, 'optimize_metric': optimize,
-        'train_score': train_score, 'val_score': val_score,
+        'train_score': train_score, 'val_score': test_score, 'test_score': test_score,
         'train_win_rate': train_win_rate, 'validation_win_rate': validation_win_rate,
         'dataset_id': dataset_id, 'ticker': ticker, 'command_line': command_line,
+        'train_trade_density': signal_density_train,
+        'test_trade_density': signal_density_test,
+        'train_trades_count': len(sig_train) if len(sig_train) > 0 else 0,
+        'test_trades_count': len(sig_valid) if len(sig_valid) > 0 else 0,
     }
     with open(model_path, 'wb') as f:
         pickle.dump(model_data, f)
