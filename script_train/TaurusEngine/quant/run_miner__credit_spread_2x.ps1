@@ -6,7 +6,7 @@ $scriptPython2 = ".\quant_morning_beta_miner_realtime_and_backtesting.py"
 
 # Paramètres fixes du script
 $workers = 12
-$featureDim = 8
+$featureDim = 10
 $nsplit = 0.8
 $et1 = "15:59"
 $outputDir = "quant\miner1__credit_spread_2x"
@@ -15,8 +15,8 @@ $outputDir = "quant\miner1__credit_spread_2x"
 $env:Q__DISPLAY_RATE = 1000
 
 # --- Listes des valeurs variables ---
-$listeSt2      = @("09:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", "11:45", "12:00", "12:30", "13:00","13:30", "14:00", "15:00")
-$listeSeuil    = @(0.999, 0.9975, 0.9950, 0.9925, 0.9900, 1.001, 1.0025, 1.0050, 1.0075, 1.0100)
+$listeSt2      = @("09:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", "11:45", "12:00", "12:15", "12:30", "12:45", "13:00", "13:15", "13:30", "13:45", "14:00", "14:15", "14:30", "14:45", "15:00")
+$listeSeuil    = @(0.999, 0.9975, 0.9950, 0.9925, 0.9900, 0.9875, 1.001, 1.0025, 1.0050, 1.0075, 1.0100, 1.0125)
 $listeEtGtOpen = @(0, 1)
 
 # Listes pour accumuler les arguments du second script

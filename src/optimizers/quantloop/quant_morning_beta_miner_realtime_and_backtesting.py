@@ -29,9 +29,12 @@ from multiprocessing import Process, Queue, freeze_support, Value
 import warnings
 import argparse
 from argparse import Namespace
+import os
+import time
+from utils import format_execution_time
+from functools import lru_cache
 
-
-def parse_arguments():
+def _parse_arguments():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     # Ticker de l'actif financier (ex: ^GSPC)
@@ -57,7 +60,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir, verbose):
+def _realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir, verbose):
     df_1minute = factory_load_data(_dataset_id="intraday-1min", _ticker=ticker, _args={"realtime": True})
     if isinstance(df_1minute.columns, pd.MultiIndex): df_1minute.columns = df_1minute.columns.get_level_values(0)
     df_1minute = df_1minute.sort_index()
@@ -66,28 +69,24 @@ def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir, verbose):
         with open(winrate_file, "r", encoding="utf-8") as fichier:
             computed_win_rate = json.load(fichier)
     else: computed_win_rate = None
-    all_models = read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
-    pred_results = compute_prediction(df_=df_1minute, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir, verbose=verbose))
+    all_models = _read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
+    pred_results = _compute_prediction(df_=df_1minute, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir, verbose=verbose))
     result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
     groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
     date_derniere_journee, df_dernier_jour = groupes_par_jour[-1]
     open_derniere_journee = df_dernier_jour["Open"].iloc[0]
     strike_price = int(best_model_pcs.get_adjusted_strike_price(open_derniere_journee))
-    key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
+    key_dict = _get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
     win_rate = [0.] if computed_win_rate is None else [v for k, v in computed_win_rate.items() if key_dict==k]
     assert len(win_rate) == 1, f"La donnees {key_dict} devrait exister dans le fichier {os.path.join(models_dir, 'win_rate.json')}"
     win_rate = win_rate[0]
-    # Repris du code du backtesting
-    if 1 == result_pcs["result"]["predicted_class"].values[0] and 0 == result_ccs["result"]["predicted_class"].values[0]:
-        dict_returned = {"action": "PUT_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
-    elif 0 == result_pcs["result"]["predicted_class"].values[0] and 1 == result_ccs["result"]["predicted_class"].values[0]:
-        dict_returned = {"action": "CALL_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
-    else: dict_returned = {"action": "PASS", "strike_price": strike_price, "win_rate": 0}
+    win_dict = _compute_win_situation_from_computed_predictions(result_pcs=result_pcs, result_ccs=result_ccs, future_price_max=None, future_price_min=None, strike_price=strike_price)
+    dict_returned = {"action": win_dict["action"], "strike_price": strike_price, "win_rate": win_rate}
     if verbose: print(f"{dict_returned=}")
     return dict_returned
 
 
-def get_models_from_parameters(all_models, **kwargs):
+def _get_models_from_parameters(all_models, **kwargs):
     results = []
     for a_model, a_filename in all_models:
         keep_model = True
@@ -100,7 +99,7 @@ def get_models_from_parameters(all_models, **kwargs):
     return results
 
 
-def get_best_model(models):
+def _get_best_model(models):
     # Le protocole idéal pour faire votre choix :
     # 1. Comparez les scores F1 sur le jeu de test de tous vos modèles entraînés.
     # 2. Éliminez les modèles qui montrent un écart trop grand entre la CV et le test (signe de surapprentissage).
@@ -126,13 +125,13 @@ def get_best_model(models):
     return best_model
 
 
-def compute_prediction(df_, all_models_, args_):
-    models_for_ccs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 0})
+def _compute_prediction(df_, all_models_, args_):
+    models_for_ccs = _get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 0})
     if 0 == len(models_for_ccs): raise Exception(f"Aucun modèle pour le CALL CREDIT SPREAD (et-gt-open=0) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
-    models_for_pcs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 1})
+    models_for_pcs = _get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 1})
     if 0 == len(models_for_pcs): raise Exception(f"Aucun modèle pour le PUT CREDIT SPREAD (et-gt-open=1) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
-    best_model_ccs, file_model_ccs = get_best_model(models=models_for_ccs)
-    best_model_pcs, file_model_pcs = get_best_model(models=models_for_pcs)
+    best_model_ccs, file_model_ccs = _get_best_model(models=models_for_ccs)
+    best_model_pcs, file_model_pcs = _get_best_model(models=models_for_pcs)
     if getattr(args_, "verbose", False): print(f"{'='*80}\nCALL CREDIT SPREAD\n{'='*80}")
     result_ccs = entry_quant_morning_alpha_miner(args=Namespace(modelfile=file_model_ccs, realtime=True, daily_df_precomputed=df_.copy(), verbose=getattr(args_, "verbose", False)))
     if getattr(args_, "verbose", False): print(f"{'='*80}\nPUT CREDIT SPREAD\n{'='*80}")
@@ -140,7 +139,8 @@ def compute_prediction(df_, all_models_, args_):
     return {'result_ccs': result_ccs, 'best_model_ccs': best_model_ccs, 'result_pcs': result_pcs, 'best_model_pcs': best_model_pcs, 'file_model_ccs': file_model_ccs, 'file_model_pcs': file_model_pcs}
 
 
-def read_models(st1, st2, et1, et2, seuil_pos, models_dir):
+def _read_models(st1, st2, et1, et2, seuil_pos, models_dir):
+    restrict_model = None
     all_models = []
     file_paths = [Path(root) / file for root, _, files in os.walk(models_dir) for file in files if file.endswith(".joblib")]
     key_to_look_for = f"_ensemble_model__{seuil_pos}__{st1}-{st2}__{et1}00-{et2}00".replace(':', '')
@@ -149,6 +149,9 @@ def read_models(st1, st2, et1, et2, seuil_pos, models_dir):
     for ensemble_filename in file_paths:
         ensemble_filename = str(ensemble_filename)
         if key_to_look_for in ensemble_filename:
+            if restrict_model is not None:
+                if restrict_model not in ensemble_filename:
+                    continue
             try:
                 model = TopNEnsembleModel.load(ensemble_filename)
                 if model is not None: all_models.append((model, ensemble_filename))
@@ -157,7 +160,7 @@ def read_models(st1, st2, et1, et2, seuil_pos, models_dir):
     return all_models
 
 
-def get_key_from_parameters(st1, st2, et1, et2, seuil_pos):
+def _get_key_from_parameters(st1, st2, et1, et2, seuil_pos):
     if isinstance(st1, (list, tuple)):
         return f"{st1[0]} :: {st2[0]} | {et1[0]} :: {et2[0]} | {seuil_pos[0]}"
     return f"{st1} :: {st2} | {et1} :: {et2} | {seuil_pos}"
@@ -172,90 +175,121 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
         time.sleep(0.333)
 
     # Traitement des requêtes
-    resultats_dct = {}
+    resultats_dct, test_date_t1 = {}, None
     while True:
+        t1 = time.time()
         _use_case = None
         try:
             item = use_cases__shared.get(timeout=2)
             _use_case = item
         except:
             break  # Queue is empty or no more items within timeout
-        st1, st2, et1, et2, seuil_pos, df_1minute, models_dir, verbose = _use_case
-        key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
-        all_models = read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
+        st1, st2, et1, et2, seuil_pos, df_1minute, models_dir, lookback_jours, verbose = _use_case
+        t2 = time.time()
+        key_dict = _get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
+        all_models = _read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
+        t3 = time.time()
         groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
         total_jours = len(groupes_par_jour)
-        date_2_result = {}
-        test_date_t1 = pd.to_datetime(sorted(list(set([am[0].train_test_dates['test_dates'][0] for am in all_models])))[-1])
-        # 2. On itère sur le nombre de jours à reculer (ex: de 1 jour à (total - 3) jours)
-        for lookback_jours in range(0, total_jours - 3):
-            # On sélectionne uniquement les jours restants (on exclut les 'lookback_jours' derniers jours)
-            jours_restants = groupes_par_jour if 0 == lookback_jours else groupes_par_jour[:-lookback_jours]
-            date_derniere_journee, df_dernier_jour = jours_restants[-1]
 
-            # 2. Valeur de l'Open de la dernière journée (première ligne du jour)
-            open_derniere_journee = df_dernier_jour["Open"].iloc[0]
-            #print(f"Open du {date_derniere_journee} : {open_derniere_journee}")
+        if test_date_t1 is None:
+            test_date_t1 = pd.to_datetime(sorted(list(set([am[0].train_test_dates['test_dates'][0] for am in all_models])))[-1])
 
-            # Affichage des infos globales pour ce lookback
-            date_debut = jours_restants[0][0]
-            date_fin   = jours_restants[-1][0]
-            df_filtre = pd.concat([df_jour for _, df_jour in jours_restants])
-            if df_filtre.index[-1].tz_localize(None) < test_date_t1: continue
-            # print(f" >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
-            # print(f" \t >>> {df_filtre.index[0]} --> {df_filtre.index[-1]}")
-            pred_results = compute_prediction(df_=df_filtre, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir))
-            result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
+        # On sélectionne uniquement les jours restants (on exclut les 'lookback_jours' derniers jours)
+        jours_restants = groupes_par_jour if 0 == lookback_jours else groupes_par_jour[:-lookback_jours]
+        if 0 == len(jours_restants): continue
+        date_derniere_journee, df_dernier_jour = jours_restants[-1]
 
-            #print(f"PUT CREDIT SPREAD  : {result_pcs['result']['predicted_class'].values[0]}  {result_pcs['result']['median_probability'].values[0]:.0%}")
-            #print(f"CALL CREDIT SPREAD : {result_ccs['result']['predicted_class'].values[0]}  {result_ccs['result']['median_probability'].values[0]:.0%}")
+        # 2. Valeur de l'Open de la dernière journée (première ligne du jour)
+        open_derniere_journee = df_dernier_jour["Open"].iloc[0]
+        #print(f"Open du {date_derniere_journee} : {open_derniere_journee}")
 
-            #print(f"Open du {date_derniere_journee} : {open_derniere_journee}")
-            #print(f"ccs: {open_derniere_journee} --> {best_model_ccs.get_adjusted_strike_price(open_derniere_journee)}")
-            #print(f"pcs: {open_derniere_journee} --> {best_model_pcs.get_adjusted_strike_price(open_derniere_journee)}")
-            #print(f"Toujours la même valeur parce que même seuil_pos")
-            assert best_model_ccs.get_adjusted_strike_price(open_derniere_journee) == best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
-            strike_price = best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
+        # Affichage des infos globales pour ce lookback
+        df_filtre = pd.concat([df_jour for _, df_jour in jours_restants])
+        if df_filtre.index[-1].tz_localize(None) < test_date_t1: continue
+        date_debut = jours_restants[0][0]
+        date_fin = jours_restants[-1][0]
+        if verbose: print(f"[{os.getpid()}] >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
+        if verbose: print(f"[{os.getpid()}]  \t >>> {df_filtre.index[0]} --> {df_filtre.index[-1]}")
+        if lookback_jours > total_jours: continue
+        t4 = time.time()
+        pred_results = _compute_prediction(df_=df_filtre, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir))
+        result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
+        t5 = time.time()
 
-            # 3. Valeurs entre 15h.. et 16h00 de la dernière journée
-            et1, et2 = best_model_ccs.get_et1_et2()
-            df_fin_journee = df_dernier_jour.between_time(et1, et2)
-            # Affichage des valeurs (par exemple la colonne 'Open' ou 'Close' selon vos besoins)
-            #print(f"\nValeurs entre {et1} et {et2} pour le {date_derniere_journee} :")
-            #print(df_fin_journee["Close"])
-            # 2. On extrait le minimum et le maximum (Exemple basé sur les colonnes High et Low)
-            prix_min = df_fin_journee["Low"].min()
-            prix_max = df_fin_journee["High"].max()
-            #print(f"Entre {et1} et {et2} le {date_derniere_journee} :")
-            #print(f" - Prix Minimum (Low) : {prix_min}")
-            #print(f" - Prix Maximum (High) : {prix_max}")
-            assert best_model_ccs.get_adjusted_strike_price(open_derniere_journee) == best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
+        #print(f"PUT CREDIT SPREAD  : {result_pcs['result']['predicted_class'].values[0]}  {result_pcs['result']['median_probability'].values[0]:.0%}")
+        #print(f"CALL CREDIT SPREAD : {result_ccs['result']['predicted_class'].values[0]}  {result_ccs['result']['median_probability'].values[0]:.0%}")
 
-            # Si PCS==1 et CCS==0 --> valeur à la fin de la journée devrait être supérieure à strike_price
-            if   1 == result_pcs["result"]["predicted_class"].values[0] and 0 == result_ccs["result"]["predicted_class"].values[0]:
-                win = 1 if prix_max >= strike_price else 0
-            # Si PCS==0 et CCS==1 --> valeur à la fin de la journée devrait être inférieure à strike_price
-            elif 0 == result_pcs["result"]["predicted_class"].values[0] and 1 == result_ccs["result"]["predicted_class"].values[0]:
-                win = 1 if prix_min <= strike_price else 0
-            else:
-                win = -1
-            date_2_result.update({date_derniere_journee: win})
+        #print(f"Open du {date_derniere_journee} : {open_derniere_journee}")
+        #print(f"ccs: {open_derniere_journee} --> {best_model_ccs.get_adjusted_strike_price(open_derniere_journee)}")
+        #print(f"pcs: {open_derniere_journee} --> {best_model_pcs.get_adjusted_strike_price(open_derniere_journee)}")
+        #print(f"Toujours la même valeur parce que même seuil_pos")
+        assert best_model_ccs.get_adjusted_strike_price(open_derniere_journee) == best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
+        strike_price = best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
 
-        # 1. On compte les occurrences de chaque résultat (1, 0, -1) dans le dictionnaire
-        statistiques = Counter(date_2_result.values())
-        total_signal_activated = statistiques.get(1, 0) + statistiques.get(0, 0)
-        try:
-            win_rate = statistiques.get(1, 0) / total_signal_activated
-        except ZeroDivisionError as ee:
-            win_rate = 0.
-        assert key_dict not in resultats_dct
-        resultats_dct.update({key_dict: win_rate})
+        # 3. Valeurs entre 15h.. et 16h00 de la dernière journée
+        et1, et2       = best_model_ccs.get_et1_et2()
+        df_fin_journee = df_dernier_jour.between_time(et1, et2)
+        # Affichage des valeurs (par exemple la colonne 'Open' ou 'Close' selon vos besoins)
+        # print(f"[{os.getpid()}]  \t >>>\nValeurs entre {et1} et {et2} pour le {date_derniere_journee} :")
+        # print(f"[{os.getpid()}]  \t >>> {df_fin_journee['Close']}")
+        # 2. On extrait le minimum et le maximum (Exemple basé sur les colonnes High et Low)
+        future_price_min = df_fin_journee["Low"].min()
+        future_price_max = df_fin_journee["High"].max()
+        # print(f"[{os.getpid()}]  \t >>>Entre {et1} et {et2} le {date_derniere_journee} :")
+        # print(f"[{os.getpid()}]  \t >>> - Prix Minimum (Low) : {prix_min}")
+        # print(f"[{os.getpid()}]  \t >>> - Prix Maximum (High) : {prix_max}")
+        assert best_model_ccs.get_adjusted_strike_price(open_derniere_journee) == best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
+
+        win_dict = _compute_win_situation_from_computed_predictions(result_pcs=result_pcs, result_ccs=result_ccs, future_price_max=future_price_max, future_price_min=future_price_min, strike_price=strike_price)
+
+        if lookback_jours not in resultats_dct: resultats_dct.update({lookback_jours: {}})
+        if key_dict not in resultats_dct[lookback_jours]: resultats_dct[lookback_jours].update({key_dict: []})
+        resultats_dct[lookback_jours][key_dict].append({date_derniere_journee: win_dict["win"]})
+
+        t6 = time.time()
+        if verbose: print(f"[{os.getpid()}]  \t >>> {format_execution_time(t2 - t1)} / {format_execution_time(t3 - t2)} / {format_execution_time(t4 - t3)} "
+                          f"/ {format_execution_time(t5 - t4)} / {format_execution_time(t6 - t5)}")
     out__shared.put(resultats_dct)
+
+
+def _compute_win_situation_from_computed_predictions(result_pcs, result_ccs, future_price_max, future_price_min, strike_price):
+    pcs__predicted_class    = result_pcs["result"]["predicted_class"].values[0]
+    pcs__median_probability = result_pcs["result"]["median_probability"].values[0]
+    pcs__std_probability    = result_pcs["result"]["std_probability"].values[0]
+    ccs__predicted_class    = result_ccs["result"]["predicted_class"].values[0]
+    ccs__median_probability = result_ccs["result"]["median_probability"].values[0]
+    ccs__std_probability    = result_ccs["result"]["std_probability"].values[0]
+
+    #######################################################################
+    #######################################################################
+    # Si PCS==1 et CCS==0 --> valeur à la fin de la journée devrait être supérieure à strike_price
+    if ((1 == pcs__predicted_class and pcs__median_probability > 0.65 and pcs__std_probability < 0.1) and
+            (0 == ccs__predicted_class and ccs__median_probability < 0.35 and ccs__std_probability < 0.1)):
+        action = "PUT_CREDIT_SPREAD"
+        if future_price_max is not None:
+            win = 1 if future_price_max >= strike_price else 0
+        else: win = 1
+    #######################################################################
+    # Si PCS==0 et CCS==1 --> valeur à la fin de la journée devrait être inférieure à strike_price
+    elif ((0 == pcs__predicted_class and pcs__median_probability < 0.35 and pcs__std_probability < 0.1) and
+          (1 == ccs__predicted_class and ccs__median_probability > 0.65 and ccs__std_probability < 0.1)):
+        action = "CALL_CREDIT_SPREAD"
+        if future_price_max is not None:
+            win = 1 if future_price_min <= strike_price else 0
+        else: win = 1
+    else:
+        action = "PASS"
+        win = -1
+    #######################################################################
+    #######################################################################
+
+    return {"win": win, "action": action}
 
 
 def entry(args):
     if args.realtime:
-        return realtime(ticker=args.ticker, st1=args.st1, st2=args.st2, et1=args.et1, et2=args.et2, seuil_pos=args.seuil_pos, models_dir=args.models_dir, verbose=getattr(args, "verbose", False))
+        return _realtime(ticker=args.ticker, st1=args.st1, st2=args.st2, et1=args.et1, et2=args.et2, seuil_pos=args.seuil_pos, models_dir=args.models_dir, verbose=getattr(args, "verbose", False))
 
     ###########################################################################
     # Lecture des données
@@ -271,11 +305,12 @@ def entry(args):
     ###########################################################################
     assert len(args.st1)==len(args.st2)==len(args.et1)==len(args.et2)==len(args.seuil_pos)
 
-    use_cases, tmp_lst = [], []
+    use_cases, tmp_lst, total_jours = [], [], 365
     for st1, st2, et1, et2, seuil_pos in tqdm(zip(args.st1, args.st2, args.et1, args.et2, args.seuil_pos)):
-        key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
+        key_dict = _get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
         if key_dict in tmp_lst: continue  # Pass it. Already computed (because generated cases for et-gt-open==0 and ==1)
-        use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir, args.verbose))
+        for lookback_jours in range(0, total_jours - 3):
+            use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir, lookback_jours, args.verbose))
         tmp_lst.append(key_dict)
     print(f"Got {len(use_cases)} use cases to process with {nb_worker} workers...")
     data_from_workers = []
@@ -295,21 +330,33 @@ def entry(args):
     # Récupération des résultats
     for k in range(0, nb_worker):
         data_from_workers.append(out__shared[k].get())
-    # 1. Filtrer pour enlever les dictionnaires vides
     filtered_data = [d for d in data_from_workers if d]
-    dict_unique = {}
-    for d in filtered_data:
-        dict_unique |= d
+    key_dict__2__results, key_dict__2__win_rate = {}, {}
+    for _fd in filtered_data:
+        for lookback_jours, _tmp_dict in _fd.items():
+            for key_dict, _pv in _tmp_dict.items():
+                assert 1 == len(_pv)
+                assert 1 == len(_pv[0])
+                date_derniere_journee, win = next(iter(_pv[0].items()))
+                if key_dict not in key_dict__2__results: key_dict__2__results.update({key_dict: []})
+                key_dict__2__results[key_dict].append(win)
+    for k, v in key_dict__2__results.items():
+        stats = (lambda d: {"total": len(d), "wins": d.count(1), "losses": d.count(0), "passes": d.count(-1),
+                            "test_density": round((d.count(1) + d.count(0)) / (d.count(1) + d.count(0) + d.count(-1)), 4) if (d.count(1) + d.count(0)) else 0})(v)
+        stats["test_win_rate"] = stats['wins'] / (stats['total'] - stats['passes'])
+        print(f"{k=}   {stats=}")
+        key_dict__2__win_rate.update({k: stats["test_win_rate"]})
+    print(key_dict__2__win_rate)
     if not os.path.exists(os.path.join(args.models_dir, "win_rate.json")):
         with open(os.path.join(args.models_dir, "win_rate.json"), "w", encoding="utf-8") as f:
-            json.dump(dict_unique, f, indent=4)
+            json.dump(key_dict__2__win_rate, f, indent=4)
     else:
         with open(os.path.join(args.models_dir, "NEW__win_rate.json"), "w", encoding="utf-8") as f:
-            json.dump(dict_unique, f, indent=4)
+            json.dump(key_dict__2__win_rate, f, indent=4)
     return None
 
 
 if __name__ == "__main__":
     freeze_support()
-    args = parse_arguments()
+    args = _parse_arguments()
     entry(args=args)

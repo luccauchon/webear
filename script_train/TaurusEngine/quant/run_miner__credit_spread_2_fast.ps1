@@ -5,7 +5,7 @@ $scriptPython1 = ".\quant_morning_alpha_miner.py"
 $scriptPython2 = ".\quant_morning_beta_miner_realtime_and_backtesting.py"
 
 # Paramètres fixes du script
-$workers = 10
+$workers = 12
 $featureDim = 15
 $nsplit = 0.8
 $et1 = "15:59"
