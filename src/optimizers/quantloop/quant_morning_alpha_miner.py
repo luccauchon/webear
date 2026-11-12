@@ -34,6 +34,7 @@ from multiprocessing import Process, Queue, freeze_support, Value
 import warnings
 import argparse
 from argparse import Namespace
+import joblib
 # Ignore cet avertissement spécifique lié à sklearn parallel
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.parallel")
 warnings.filterwarnings("ignore", message="The least populated class in y has only")
@@ -308,16 +309,23 @@ class TopNEnsembleModel:
         if directory:
             os.makedirs(directory, exist_ok=True)
 
-        with open(filepath, 'wb') as f:
-            pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+        try:
+            with open(filepath, 'wb') as f:
+                joblib.dump(self, f, compress=3)
+            return True
+        except:
+            return False
 
     @staticmethod
     def load(filepath):
         """
         Charge un modèle agrégé depuis le disque.
         """
-        with open(filepath, 'rb') as f:
-            return pickle.load(f)
+        try:
+            model = joblib.load(filepath)
+            return model
+        except:
+            return None
 
 
 def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
@@ -414,7 +422,9 @@ def parse_arguments():
 
     # Définition de la cible (target)
     parser.add_argument('--seuil-pos', type=float, default=1., help="Seuil multiplicateur du Daily Open pour la cible. Si >1, arrondi au 5 supérieur et si <1, arrondi au 5 inférieur")
-    parser.add_argument('--et-gt-open', type=int, default=1, help="1 si la cible est High > (Open * seuil), 0 si High < (Open * seuil).")
+    parser.add_argument('--et-gt-open', type=int, default=1,
+                        help="1 si la cible est High > (Open * seuil) "
+                             "0 si la cible est High < (Open * seuil) ")
     parser.add_argument('--target-definition', type=str, default="open_as_level", choices=["open_as_level", "last_morning_close_as_level", "last_morning_vwap_as_level"], help="Définition de la cible à utiliser")
     parser.add_argument("--n-split", type=float, default=0.90, help="Train/Test split ratio (default: 0.80).")
 
@@ -430,14 +440,14 @@ def parse_arguments():
 def run_realtime(modelfile, verbose, daily_df_precomputed):
     # Load model
     model = TopNEnsembleModel.load(modelfile)
-
+    if model is None: return {"result": None, "model_args": None}
     # Load data
     daily_df = daily_df_precomputed
     if daily_df is None:
         daily_df = factory_load_data(_dataset_id=model.args.dataset_id, _ticker=model.args.ticker, _args={"realtime": True})
         if isinstance(daily_df.columns, pd.MultiIndex): daily_df.columns = daily_df.columns.get_level_values(0)
         daily_df = daily_df.sort_index()
-    if verbose: print(f"{len(daily_df)} :: {daily_df.index[0]} --> {daily_df.index[-1]}")
+    if verbose: print(f"Dataset :: {daily_df.index[0]} --> {daily_df.index[-1]}")
 
     # Build dataset
     X_new = build_df(df=daily_df, args=Namespace(st1=model.args.st1, st2=model.args.st2, ema9=model.args.ema9, ema21=model.args.ema21, rsi14=model.args.rsi14,
@@ -445,7 +455,9 @@ def run_realtime(modelfile, verbose, daily_df_precomputed):
                                                  n_split=getattr(model.args, "n_split", 0.9), # Backward compatibility
                                                  target_definition=getattr(model.args, "target_definition", "open_as_level"),),
                      generate_for_realtime=True)
+    if verbose: print(f"Journée de la prédiction: {X_new.index[-1:]}")
     agg = model.predict_aggregated(X_new.iloc[-1:])
+    if verbose: print(f"Prédiction: {agg[['median_probability', 'std_probability', 'predicted_class']]}")
     return {"result": agg[['median_probability', 'std_probability', 'predicted_class']], "model_args": model.args}
 
 
@@ -483,6 +495,7 @@ def build_df(df, args, generate_for_realtime):
 
     # 3. Récupérer le "High" (plus haut) de cette fenêtre.
     max_high_15ish_16ish = df_afternoon.groupby(df_afternoon.index.date)['High'].max()
+    min_low_15ish_16ish  = df_afternoon.groupby(df_afternoon.index.date)['Low'].min()
 
     # ---------------------------------------------------------
     # 2. Analyse de la fenêtre et Feature Engineering
@@ -618,6 +631,8 @@ def build_df(df, args, generate_for_realtime):
     if generate_for_realtime:
         X = daily_df[feature_cols].copy()
         if getattr(args, "verbose", True): print(f"[REALTIME] [{len(X):5d}]  {X.index[0].strftime('%Y-%m-%d')} --> {X.index[-1].strftime('%Y-%m-%d')}")
+        if getattr(args, "verbose", True): print(f"[REALTIME] Fenetre analyse: {fenetre_analysee}")
+        if getattr(args, "verbose", True): print(f"[REALTIME] Fenetre cible  : {(time_15ish, time_16ish)}")
         return X
 
     # ---------------------------------------------------------
@@ -955,10 +970,11 @@ def entry(args):
 
         ensemble_filename = os.path.join(
             args.output_dir,
-            f'_{name_top}_ensemble_model__{experience_str_desc}__tf1_{agg_test_f1:.8f}.pkl'
+            f'_{name_top}_ensemble_model__{experience_str_desc}__tf1_{agg_test_f1:.8f}.joblib'
         )
 
-        final_top_n_model.save(ensemble_filename)
+        while not final_top_n_model.save(ensemble_filename):
+            final_top_n_model.save(ensemble_filename)
 
         print(f"✅ Modèle agrégé {name_top} sauvegardé: {ensemble_filename}")
         print("Réutilisation:")
@@ -966,6 +982,7 @@ def entry(args):
         print("    agg = model.predict_aggregated(X_new)")
         print("    # agg[['median_probability', 'std_probability', 'predicted_class']]")
     return None
+
 
 if __name__ == "__main__":
     freeze_support()

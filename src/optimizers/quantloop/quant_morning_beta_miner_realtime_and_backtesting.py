@@ -33,7 +33,7 @@ from argparse import Namespace
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="")
-
+    parser.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     # Ticker de l'actif financier (ex: ^GSPC)
     parser.add_argument('--ticker', type=str, default="^GSPC", help="Ticker de l'actif à analyser.")
 
@@ -57,29 +57,34 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir):
+def realtime(ticker, st1, st2, et1, et2, seuil_pos, models_dir, verbose):
     df_1minute = factory_load_data(_dataset_id="intraday-1min", _ticker=ticker, _args={"realtime": True})
     if isinstance(df_1minute.columns, pd.MultiIndex): df_1minute.columns = df_1minute.columns.get_level_values(0)
     df_1minute = df_1minute.sort_index()
-    with open(os.path.join(models_dir, "win_rate.json"), "r", encoding="utf-8") as fichier:
-        computed_win_rate = json.load(fichier)
+    winrate_file = os.path.join(models_dir, "win_rate.json")
+    if os.path.exists(winrate_file):
+        with open(winrate_file, "r", encoding="utf-8") as fichier:
+            computed_win_rate = json.load(fichier)
+    else: computed_win_rate = None
     all_models = read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
-    pred_results = compute_prediction(df_=df_1minute, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir))
+    pred_results = compute_prediction(df_=df_1minute, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir, verbose=verbose))
     result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
     groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
     date_derniere_journee, df_dernier_jour = groupes_par_jour[-1]
     open_derniere_journee = df_dernier_jour["Open"].iloc[0]
     strike_price = int(best_model_pcs.get_adjusted_strike_price(open_derniere_journee))
     key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
-    win_rate = [v for k, v in computed_win_rate.items() if key_dict==k]
+    win_rate = [0.] if computed_win_rate is None else [v for k, v in computed_win_rate.items() if key_dict==k]
     assert len(win_rate) == 1, f"La donnees {key_dict} devrait exister dans le fichier {os.path.join(models_dir, 'win_rate.json')}"
     win_rate = win_rate[0]
     # Repris du code du backtesting
     if 1 == result_pcs["result"]["predicted_class"].values[0] and 0 == result_ccs["result"]["predicted_class"].values[0]:
-        return {"action": "PUT_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
-    if 0 == result_pcs["result"]["predicted_class"].values[0] and 1 == result_ccs["result"]["predicted_class"].values[0]:
-        return {"action": "CALL_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
-    return {"action": "PASS", "strike_price": strike_price, "win_rate": 0}
+        dict_returned = {"action": "PUT_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
+    elif 0 == result_pcs["result"]["predicted_class"].values[0] and 1 == result_ccs["result"]["predicted_class"].values[0]:
+        dict_returned = {"action": "CALL_CREDIT_SPREAD", "strike_price": strike_price, "win_rate": win_rate}
+    else: dict_returned = {"action": "PASS", "strike_price": strike_price, "win_rate": 0}
+    if verbose: print(f"{dict_returned=}")
+    return dict_returned
 
 
 def get_models_from_parameters(all_models, **kwargs):
@@ -87,7 +92,10 @@ def get_models_from_parameters(all_models, **kwargs):
     for a_model, a_filename in all_models:
         keep_model = True
         for k, v in kwargs.items():
-            if not hasattr(a_model.args, k) or str(getattr(a_model.args, k)) != str(v): keep_model = False
+            if isinstance(v, (list, tuple)):
+                if not hasattr(a_model.args, k) or str(getattr(a_model.args, k)) != str(v[0]): keep_model = False
+            else:
+                if not hasattr(a_model.args, k) or str(getattr(a_model.args, k)) != str(v): keep_model = False
         if keep_model: results.append((a_model, a_filename))
     return results
 
@@ -120,35 +128,38 @@ def get_best_model(models):
 
 def compute_prediction(df_, all_models_, args_):
     models_for_ccs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 0})
-    if 0 == len(models_for_ccs):
-        models_for_ccs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 0})
-        if 0 == len(models_for_ccs): raise Exception(f"Aucun modèle pour le CALL CREDIT SPREAD (et-gt-open=0) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
+    if 0 == len(models_for_ccs): raise Exception(f"Aucun modèle pour le CALL CREDIT SPREAD (et-gt-open=0) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
     models_for_pcs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 1})
-    if 0 == len(models_for_pcs):
-        models_for_pcs = get_models_from_parameters(all_models_, **{"st1": args_.st1, "st2": args_.st2, "et1": args_.et1, "et2": args_.et2, "seuil_pos": args_.seuil_pos, "et_gt_open": 1})
-        if 0 == len(models_for_pcs): raise Exception(f"Aucun modèle pour le PUT CREDIT SPREAD (et-gt-open=1) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
+    if 0 == len(models_for_pcs): raise Exception(f"Aucun modèle pour le PUT CREDIT SPREAD (et-gt-open=1) dans {getattr('models_dir', args_.models_dir, None)}. Revoir les paramètres utilisés.")
     best_model_ccs, file_model_ccs = get_best_model(models=models_for_ccs)
     best_model_pcs, file_model_pcs = get_best_model(models=models_for_pcs)
-    result_ccs = entry_quant_morning_alpha_miner(args=Namespace(modelfile=file_model_ccs, realtime=True, daily_df_precomputed=df_, verbose=False))
-    result_pcs = entry_quant_morning_alpha_miner(args=Namespace(modelfile=file_model_pcs, realtime=True, daily_df_precomputed=df_, verbose=False))
+    if getattr(args_, "verbose", False): print(f"{'='*80}\nCALL CREDIT SPREAD\n{'='*80}")
+    result_ccs = entry_quant_morning_alpha_miner(args=Namespace(modelfile=file_model_ccs, realtime=True, daily_df_precomputed=df_.copy(), verbose=getattr(args_, "verbose", False)))
+    if getattr(args_, "verbose", False): print(f"{'='*80}\nPUT CREDIT SPREAD\n{'='*80}")
+    result_pcs = entry_quant_morning_alpha_miner(args=Namespace(modelfile=file_model_pcs, realtime=True, daily_df_precomputed=df_.copy(), verbose=getattr(args_, "verbose", False)))
     return {'result_ccs': result_ccs, 'best_model_ccs': best_model_ccs, 'result_pcs': result_pcs, 'best_model_pcs': best_model_pcs, 'file_model_ccs': file_model_ccs, 'file_model_pcs': file_model_pcs}
 
 
 def read_models(st1, st2, et1, et2, seuil_pos, models_dir):
     all_models = []
-    file_paths = [Path(root) / file for root, _, files in os.walk(models_dir) for file in files if file.endswith(".pkl")]
-    for file_path in file_paths:
-        ensemble_filename = str(file_path)
-        if f"_ensemble_model__{seuil_pos}__{st1}-{st2}__{et1}00-{et2}00".replace(':', '') in ensemble_filename:
+    file_paths = [Path(root) / file for root, _, files in os.walk(models_dir) for file in files if file.endswith(".joblib")]
+    key_to_look_for = f"_ensemble_model__{seuil_pos}__{st1}-{st2}__{et1}00-{et2}00".replace(':', '')
+    if isinstance(seuil_pos, (list, tuple)):
+        key_to_look_for = f"_ensemble_model__{seuil_pos[0]}__{st1[0]}-{st2[0]}__{et1[0]}00-{et2[0]}00".replace(':', '')
+    for ensemble_filename in file_paths:
+        ensemble_filename = str(ensemble_filename)
+        if key_to_look_for in ensemble_filename:
             try:
                 model = TopNEnsembleModel.load(ensemble_filename)
-                all_models.append((model, ensemble_filename))
+                if model is not None: all_models.append((model, ensemble_filename))
             except Exception:
                 pass # Pour l'instant.
     return all_models
 
 
 def get_key_from_parameters(st1, st2, et1, et2, seuil_pos):
+    if isinstance(st1, (list, tuple)):
+        return f"{st1[0]} :: {st2[0]} | {et1[0]} :: {et2[0]} | {seuil_pos[0]}"
     return f"{st1} :: {st2} | {et1} :: {et2} | {seuil_pos}"
 
 
@@ -189,11 +200,10 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             # Affichage des infos globales pour ce lookback
             date_debut = jours_restants[0][0]
             date_fin   = jours_restants[-1][0]
-            #print(f" >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
             df_filtre = pd.concat([df_jour for _, df_jour in jours_restants])
+            if df_filtre.index[-1].tz_localize(None) < test_date_t1: continue
+            # print(f" >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
             # print(f" \t >>> {df_filtre.index[0]} --> {df_filtre.index[-1]}")
-            if df_filtre.index[-1].tz_localize(None) < test_date_t1:
-                continue
             pred_results = compute_prediction(df_=df_filtre, all_models_=all_models, args_=Namespace(et1=et1, et2=et2, st1=st1, st2=st2, seuil_pos=seuil_pos, models_dir=models_dir))
             result_pcs, result_ccs, best_model_ccs, best_model_pcs = pred_results['result_pcs'], pred_results['result_ccs'], pred_results['best_model_ccs'], pred_results['best_model_pcs']
 
@@ -234,7 +244,10 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
         # 1. On compte les occurrences de chaque résultat (1, 0, -1) dans le dictionnaire
         statistiques = Counter(date_2_result.values())
         total_signal_activated = statistiques.get(1, 0) + statistiques.get(0, 0)
-        win_rate = statistiques.get(1, 0) / total_signal_activated
+        try:
+            win_rate = statistiques.get(1, 0) / total_signal_activated
+        except ZeroDivisionError as ee:
+            win_rate = 0.
         assert key_dict not in resultats_dct
         resultats_dct.update({key_dict: win_rate})
     out__shared.put(resultats_dct)
@@ -242,7 +255,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
 def entry(args):
     if args.realtime:
-        return realtime(ticker=args.ticker, st1=args.st1, st2=args.st2, et1=args.et1, et2=args.et2, seuil_pos=args.seuil_pos, models_dir=args.models_dir)
+        return realtime(ticker=args.ticker, st1=args.st1, st2=args.st2, et1=args.et1, et2=args.et2, seuil_pos=args.seuil_pos, models_dir=args.models_dir, verbose=getattr(args, "verbose", False))
 
     ###########################################################################
     # Lecture des données
@@ -287,8 +300,12 @@ def entry(args):
     dict_unique = {}
     for d in filtered_data:
         dict_unique |= d
-    with open(os.path.join(args.models_dir, "win_rate.json"), "w", encoding="utf-8") as f:
-        json.dump(dict_unique, f, indent=4)
+    if not os.path.exists(os.path.join(args.models_dir, "win_rate.json")):
+        with open(os.path.join(args.models_dir, "win_rate.json"), "w", encoding="utf-8") as f:
+            json.dump(dict_unique, f, indent=4)
+    else:
+        with open(os.path.join(args.models_dir, "NEW__win_rate.json"), "w", encoding="utf-8") as f:
+            json.dump(dict_unique, f, indent=4)
     return None
 
 
