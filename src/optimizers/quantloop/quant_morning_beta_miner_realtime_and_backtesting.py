@@ -180,7 +180,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             _use_case = item
         except:
             break  # Queue is empty or no more items within timeout
-        st1, st2, et1, et2, seuil_pos, df_1minute, models_dir = _use_case
+        st1, st2, et1, et2, seuil_pos, df_1minute, models_dir, verbose = _use_case
         key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
         all_models = read_models(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos, models_dir=models_dir)
         groupes_par_jour = list(df_1minute.groupby(df_1minute.index.date))
@@ -230,7 +230,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             #print(f" - Prix Minimum (Low) : {prix_min}")
             #print(f" - Prix Maximum (High) : {prix_max}")
             assert best_model_ccs.get_adjusted_strike_price(open_derniere_journee) == best_model_pcs.get_adjusted_strike_price(open_derniere_journee)
-            win = -1
+
             # Si PCS==1 et CCS==0 --> valeur à la fin de la journée devrait être supérieure à strike_price
             if   1 == result_pcs["result"]["predicted_class"].values[0] and 0 == result_ccs["result"]["predicted_class"].values[0]:
                 win = 1 if prix_max >= strike_price else 0
@@ -240,7 +240,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
             else:
                 win = -1
             date_2_result.update({date_derniere_journee: win})
-            #input("ENTER")
+
         # 1. On compte les occurrences de chaque résultat (1, 0, -1) dans le dictionnaire
         statistiques = Counter(date_2_result.values())
         total_signal_activated = statistiques.get(1, 0) + statistiques.get(0, 0)
@@ -275,7 +275,7 @@ def entry(args):
     for st1, st2, et1, et2, seuil_pos in tqdm(zip(args.st1, args.st2, args.et1, args.et2, args.seuil_pos)):
         key_dict = get_key_from_parameters(st1=st1, st2=st2, et1=et1, et2=et2, seuil_pos=seuil_pos)
         if key_dict in tmp_lst: continue  # Pass it. Already computed (because generated cases for et-gt-open==0 and ==1)
-        use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir))
+        use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir, args.verbose))
         tmp_lst.append(key_dict)
     print(f"Got {len(use_cases)} use cases to process with {nb_worker} workers...")
     data_from_workers = []
