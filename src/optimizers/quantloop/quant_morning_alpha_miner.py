@@ -35,6 +35,7 @@ import warnings
 import argparse
 from argparse import Namespace
 import joblib
+from operator import itemgetter
 # Ignore cet avertissement spécifique lié à sklearn parallel
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.parallel")
 warnings.filterwarnings("ignore", message="The least populated class in y has only")
@@ -689,7 +690,16 @@ def build_df(df, args, generate_for_realtime):
     if getattr(args, "verbose", True):
         print(f"[TRAIN] [{len(X_train):5d}]  {X_train.index[0].strftime('%Y-%m-%d')} --> {X_train.index[-1].strftime('%Y-%m-%d')}")
         print(f"[TEST]  [{len(X_test):5d}]  {X_test.index[0].strftime('%Y-%m-%d')} --> {X_test.index[-1].strftime('%Y-%m-%d')}\n")
-    return X, y, X_train, X_test, y_train, y_test, feature_cols, experience_str_desc
+    return {
+        "X": X,
+        "y": y,
+        "X_train": X_train,
+        "X_test": X_test,
+        "y_train": y_train,
+        "y_test": y_test,
+        "feature_cols": feature_cols,
+        "experience_str_desc": experience_str_desc
+    }
 
 
 def entry(args):
@@ -722,7 +732,11 @@ def entry(args):
     # ---------------------------------------------------------
     #
     # ---------------------------------------------------------
-    X, y, X_train, X_test, y_train, y_test, feature_cols, experience_str_desc = build_df(df=df, args=args, generate_for_realtime=False)
+    data = build_df(df=df, args=args, generate_for_realtime=False)
+    X, y, X_train, X_test, y_train, y_test, feature_cols, experience_str_desc = itemgetter(
+        "X", "y", "X_train", "X_test", "y_train", "y_test", "feature_cols", "experience_str_desc"
+    )(data)
+
     train_t1, train_t2 = X_train.index[0].strftime('%Y-%m-%d'), X_train.index[-1].strftime('%Y-%m-%d')
     test_t1, test_t2   = X_test.index[0].strftime('%Y-%m-%d'), X_test.index[-1].strftime('%Y-%m-%d')
     print(f"Features ({len(feature_cols)}): {str(feature_cols)[1:-2]}\n")
