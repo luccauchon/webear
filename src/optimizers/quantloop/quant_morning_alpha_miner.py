@@ -682,7 +682,7 @@ def build_df(df, args, generate_for_realtime):
     X = daily_df[feature_cols].copy()
     y = daily_df['target'].copy()
 
-    # Split temporel strict (90% Train pour CV / 10% Test pour évaluation finale)
+    # Split temporel strict
     split_idx = int(len(daily_df) * float(args.n_split))
 
     X_train, X_test = X.iloc[:split_idx].copy(), X.iloc[split_idx:].copy()
