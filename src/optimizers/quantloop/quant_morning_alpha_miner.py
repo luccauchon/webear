@@ -426,7 +426,7 @@ def parse_arguments():
                         help="1 si la cible est High > (Open * seuil) "
                              "0 si la cible est High < (Open * seuil) ")
     parser.add_argument('--target-definition', type=str, default="open_as_level", choices=["open_as_level", "last_morning_close_as_level", "last_morning_vwap_as_level"], help="Définition de la cible à utiliser")
-    parser.add_argument("--n-split", type=float, default=0.90, help="Train/Test split ratio (default: 0.80).")
+    parser.add_argument("--n-split", type=float, default=0.90, help="Train/Test split ratio (default: 0.90).")
 
     # Sélection des features
     parser.add_argument('--limit-feature-dim', type=int, default=10, help="Nombre min de features à utiliser. Plus petit == plus de combinaisons à évaluer.")
@@ -642,8 +642,9 @@ def build_df(df, args, generate_for_realtime):
     round_method = lambda x: x
     if seuil_pos > 1:    round_method = round_price_for_call_credit_spread
     elif seuil_pos < 1 : round_method = round_price_for_put_credit_spread
-    target_definition = getattr(args, "target_definition", "open_as_level")
+    target_definition, str_target_def = getattr(args, "target_definition", "open_as_level"), ""
     if "open_as_level" == target_definition:
+        str_target_def = "Daily Open"
         if 1 == strict_sup:
             seuil_calcule      = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
@@ -651,6 +652,7 @@ def build_df(df, args, generate_for_realtime):
             seuil_calcule      = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
     elif "last_morning_close_as_level" == target_definition:
+        str_target_def = "Daily Close"
         if 1 == strict_sup:
             seuil_calcule      = round_method(df_morning__last_close_value * seuil_pos)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
@@ -658,6 +660,7 @@ def build_df(df, args, generate_for_realtime):
             seuil_calcule      = round_method(df_morning__last_close_value * seuil_pos)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
     elif "last_morning_vwap_as_level" == target_definition:
+        str_target_def = "Daily VWAP Close"
         if 1 == strict_sup:
             seuil_calcule      = round_method(df_morning__last_vwap_value * seuil_pos)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
@@ -667,7 +670,7 @@ def build_df(df, args, generate_for_realtime):
 
     daily_df = daily_df.dropna()
 
-    if getattr(args, "verbose", True): print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} Daily Open * {seuil_pos}")
+    if getattr(args, "verbose", True): print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} {str_target_def} * {seuil_pos}")
 
     experience_str_desc = (f"{seuil_pos}__{heure_debut_str}-{heure_fin_str}__{time_15ish}-{time_16ish}_High_{strict_sup}_Open__"
         f"{ema_9}{ema_21}{rsi_14}{macd_5}__").replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_').replace(':', '')
