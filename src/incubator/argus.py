@@ -212,7 +212,7 @@ def entry():
     quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2_fast"
     def extraire_quant_parameters_from_filename(output_directory):
         quant_st2, quant_seuil_pos = [], []
-        for a_file in [r for r in os.listdir(output_directory) if r.endswith(".pkl")]:
+        for a_file in [r for r in os.listdir(output_directory) if r.endswith(".joblib")]:
             # print(a_file.split("_ensemble_model__"))
             # print(a_file.split("_ensemble_model__")[1].split("__"))
             seuil_pos = a_file.split("_ensemble_model__")[1].split("__")[0]
