@@ -47,6 +47,8 @@ import psutil
 import gc
 import json
 from datetime import datetime, date
+import random
+import string
 
 
 def clean_console():
@@ -56,7 +58,7 @@ def clean_console():
         subprocess.run(['clear'])
 
 
-def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
+def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
     # Attendre le Go du master
     while True:
         with master_cmd__shared.get_lock():
@@ -73,6 +75,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
                 item = use_cases__shared.get(timeout=0.123)
                 use_case_batch.append(item)
             except:
+                out__shared.put([{"worker_status": {f"w{_jjj}": "Idle"}}])
                 break  # Queue is empty or no more items within timeout
         with master_cmd__shared.get_lock():
             if 2 == master_cmd__shared.value:
@@ -84,6 +87,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
         for use_case in use_case_batch:
             assert 1 == len(use_case)
             k, v = next(iter(use_case.items()))
+            out__shared.put([{"worker_status": {f"w{_jjj}": f"{k}:{v}"}}])
             try:
                 #print(f"[{os.getpid()}] ------Processing {k} --------------{v}")
                 #out__shared.put({"info_computing": f"[{os.getpid()}] Processing {k}:{v}"})
@@ -194,18 +198,18 @@ def entry():
     high_col  = ('High', ticker)
     low_col   = ('Low', ticker)
 
-    starter_auth = {'bouclier_spx': False, "realtime": True, "trend_ema": True, "horizontal_lines": False, "vera": True,
-                    "splash_screen": False,
-                    "gap": False,  # Pas utilise
-                    "day_streaker": True, "week_streaker": False, "historian": True, "quant": True,
-                    "activer_console": True, "activer_random_update": False, }
+    starter_auth = {'bouclier_spx': False, "realtime": True, "trend_ema": True, "horizontal_lines": True, "vera": True,
+                    "splash_screen": True,
+                    "gap": False,  "week_streaker": False, # Pas utilises
+                    "day_streaker": True, "historian": True, "quant": True,
+                    "activer_console": True, "activer_random_update": False, "activer_task_info": True}
 
     vera__tightness_weight, vera__n_trials, vera__n_split = 0.33, 250, 0.9
     horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.333, 0.666, 0.999, 2, 16], 999
     horizontal_lines__max_lines, horizontal_lines__max_lines_h0, horizontal_lines__max_week_h5 = 3, 5, 4
     hirozontal_lines__n_split_year_h240, hirozontal_lines__n_split_quarter_h80, hirozontal_lines__n_split = 0.88, 0.88, 0.9
     historian__output_dir, historian__accumulator = HISTORIAN_ARGUS, []
-    quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2"
+    quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2_fast"
     def extraire_quant_parameters_from_filename(output_directory):
         quant_st2, quant_seuil_pos = [], []
         for a_file in [r for r in os.listdir(output_directory) if r.endswith(".pkl")]:
@@ -224,6 +228,7 @@ def entry():
             quant_st2.append(st2)
         return tuple(sorted(set(quant_st2), key=lambda x: datetime.strptime(x, "%H:%M").time())), tuple(sorted(set(quant_seuil_pos)))
     quant__st2, quant__seuil_pos = extraire_quant_parameters_from_filename(quant__models_dir)
+    quant__kwargs = {"ticker": ticker, "st1": "09:30", "et1": "15:59", "et2": "16:00", "realtime": True, "models_dir": quant__models_dir}
     argus__nb_worker = 2
 
     if starter_auth["activer_console"]: clean_console()
@@ -232,7 +237,7 @@ def entry():
     out__shared = [Queue(640) for k in range(0, argus__nb_worker)]
     # Lancement des workers
     for k in range(0, argus__nb_worker):
-        p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k],))
+        p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k], k, ))
         p.start()
     # Autoriser les workers à traiter
     with master_cmd__shared.get_lock():
@@ -666,7 +671,8 @@ def entry():
             return str_trend
 
         print(f"{gras}{f'THE {TITLE_WEBEAR} COMPANY'.center(console_length, '=')}{reset}")
-        bouclier_spx = f"{gras}SPX:{info['bouclier_spx']}{reset}"
+        task_mgr = dict(sorted({str(k): str(v)[:console_length//3]+" | " for k, v in info['worker_status'].items()}.items())) if starter_auth["activer_task_info"] else ""
+        bouclier_spx = f"{gras}SPX:{info['bouclier_spx']}{reset}{task_mgr}"
         tech_info_trie = dict(sorted(info["persistance_conditionelle"].items(),key=lambda item: item[1]['proba'],reverse=True))
         persistance_conditionnelle = ""
         for e, (k, v) in enumerate(tech_info_trie.items()):
@@ -713,7 +719,7 @@ def entry():
         previous_now_txt = previous_now.strftime('%Y-%m-%d')
         info = {'now': now, 'now_txt': now_txt, 'previous_now': previous_now, 'previous_now_txt': previous_now_txt, 'ticker': ticker,
                 'max_horizontal_lines': horizontal_lines__max_lines, 'max_horizontal_lines_h0': horizontal_lines__max_lines_h0,
-                'max_horizontal_lines_week_h5': horizontal_lines__max_week_h5,
+                'max_horizontal_lines_week_h5': horizontal_lines__max_week_h5, 'worker_status': {},
                 'display_qtrend_info': False,
                 'df__60min': None, 'df__240min': None, 'df__day': None, 'df__week': None, 'df__month': None,
                 'open': 0, 'high': 0, 'low': 0, 'close': 0, 'energy_above_vwap': 0, 'energy_below_vwap': 0,
@@ -755,6 +761,7 @@ def entry():
 
     def random_update_info(info, **kwargs):
         now = datetime.now()
+        info.update({'worker_status': {f'w{u}': "".join(random.choices(string.ascii_letters + string.digits, k=8)) for u in range(0, argus__nb_worker)}})
         now_txt = now.strftime('%Y-%m-%d %Hh%Mm%Ss')
         previous_now = get_next_step(now, "day", -1)
         previous_now_txt = previous_now.strftime('%Y-%m-%d')
@@ -1001,7 +1008,6 @@ def entry():
     def setup_quant():
         def request_for_quant(**kwargs):
             use_cases__shared.put({"quant": kwargs})
-        kwargs = {"ticker": ticker, "st1":"09:30", "et1":"15:59", "et2":"16:00", "realtime": True, "models_dir": quant__models_dir}
         for st2 in quant__st2:
             for seuil_pos in quant__seuil_pos:
                 # 1. Convertir la chaîne "HH:MM" en objet datetime pour manipuler le temps facilement
@@ -1011,17 +1017,8 @@ def entry():
                 # 3. Extraire l'heure et la minute calculées (sous forme d'entiers)
                 cron_hour = cron_time.hour
                 cron_minute = cron_time.minute
-                scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour=cron_hour, minute=cron_minute, kwargs={**kwargs, "st2":st2, "seuil_pos":seuil_pos})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 0.999})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 0.9975})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 0.9950})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 0.9925})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 0.99})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 1.001})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 1.0025})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 1.0050})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 1.0075})
-        # scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour="11", minute="*/1", kwargs={**kwargs, "st2": "11:30", "seuil_pos": 1.01})
+                scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour=cron_hour, minute=cron_minute,
+                                  kwargs={**quant__kwargs, "st2":st2, "seuil_pos":seuil_pos})
     if starter_auth["quant"]: setup_quant()
 
     ###########################################################################
@@ -1261,6 +1258,8 @@ def entry():
                 argus__information_displayed['quant_meta_info'].update({'timestamp': datetime.now().strftime('%Hh%Mm%Ss')})
             if k == "cleaner":
                 gc.collect()
+            if k == "worker_status":
+                argus__information_displayed['worker_status'].update(**v)
         now = datetime.now()
         now_txt = now.strftime('%Y-%m-%d %Hh%Mm%Ss')
         previous_now = get_next_step(now, "day", -1)
