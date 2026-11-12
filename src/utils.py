@@ -19,9 +19,9 @@ from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
 import shutil
-from datetime import date, datetime, timedelta
-from datetime import datetime, date, timedelta
 import calendar
+from datetime import datetime, time as dt_time, timedelta
+from zoneinfo import ZoneInfo
 
 os_name = platform.system()
 
@@ -1567,20 +1567,24 @@ def compute_break_even_credit(win_rate, spread_width):
     return breakeven_credit
 
 
-def minutes_jusqua_16h():
-    # Récupère l'heure actuelle
+def minutes_jusqua_16h() -> int:
     maintenant = datetime.now()
-    heure = maintenant.hour
-    minute = maintenant.minute
-
-    # Calcule le total de minutes depuis minuit
-    minutes_actuelles = (heure * 60) + minute
-    minutes_cible = 16 * 60  # 16h00 vaut 960 minutes
-
-    # Calcule la différence
+    minutes_actuelles = maintenant.hour * 60 + maintenant.minute
+    minutes_cible = 16 * 60
     restant = minutes_cible - minutes_actuelles
+    return max(0, restant)
 
-    if restant < 0:
-        return 0
 
-    return restant
+def is_market_open(current_dt=None):
+    # Par défaut, prend l'heure actuelle à New York (heure des marchés US)
+    if current_dt is None:
+        current_dt = datetime.now(ZoneInfo("America/New_York"))
+
+    # 1. Vérifier le jour de la semaine (0 = Lundi, ..., 4 = Vendredi, 5 = Samedi, 6 = Dimanche)
+    est_jour_semaine = current_dt.weekday() < 5
+
+    # 2. Vérifier l'heure (entre 09:30 et 16:00 inclusivement)
+    heure_actuelle = current_dt.time()
+    est_heure_ouverture = dt_time(9, 30) <= heure_actuelle <= dt_time(16, 0)
+
+    return est_jour_semaine and est_heure_ouverture

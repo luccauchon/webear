@@ -31,24 +31,26 @@ import re
 import os
 import random
 import subprocess
-from datetime import datetime
-from utils import get_next_step, get_month_range,get_week_range, minutes_jusqua_16h, get_quarter_range, get_year_range, compute_break_even_credit
+from utils import is_market_open, get_next_step, get_month_range,get_week_range, minutes_jusqua_16h, get_quarter_range, get_year_range, compute_break_even_credit
 from fetchers.data_factory import factory_load_data
 import schedule
 import traceback
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.jobstores.memory import MemoryJobStore
 import numpy as np
 from scipy.integrate import trapezoid
 import pyarrow as pa
 import pyarrow.parquet as pq
 import copy
-from datetime import datetime, timedelta
 import psutil
 import gc
 import json
-from datetime import datetime, date
 import random
 import string
+import sys
+import diskcache as dc
+from datetime import datetime, time as dt_time, timedelta, date as dt_date
 
 
 def clean_console():
@@ -66,13 +68,17 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                 break
         time.sleep(0.333)
 
+    def taille_objet(obj):
+        if hasattr(obj, "memory_usage"):  # Pour les DataFrames / Series pandas
+            return obj.memory_usage(deep=True).sum()
+        return sys.getsizeof(obj)
     # Traitement des requêtes
-    request_batch_size = 1
+    request_batch_size, cache_disque = 1, dc.Cache(f"./cache_argus_wx", size_limit=1 * 1024 ** 3, eviction_policy="least-recently-used")
     while True:
         use_case_batch = []
         while len(use_case_batch) < request_batch_size:
             try:
-                item = use_cases__shared.get(timeout=0.123)
+                item = use_cases__shared.get(timeout=0.456)
                 use_case_batch.append(item)
             except:
                 out__shared.put([{"worker_status": {f"w{_jjj}": "Idle"}}])
@@ -81,16 +87,15 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
             if 2 == master_cmd__shared.value:
                 break  # On quitte
         if 0 == len(use_case_batch):
-            #out__shared.put({"info_computing": f""})
+            out__shared.put([{"worker_status": {f"w{_jjj}": "Idle"}}])
             continue
-        all_results_computed = []
         for use_case in use_case_batch:
             assert 1 == len(use_case)
             k, v = next(iter(use_case.items()))
             out__shared.put([{"worker_status": {f"w{_jjj}": f"{k}:{v}"}}])
             try:
-                #print(f"[{os.getpid()}] ------Processing {k} --------------{v}")
-                #out__shared.put({"info_computing": f"[{os.getpid()}] Processing {k}:{v}"})
+                all_results_computed = []
+                # print(f"[{os.getpid()}] ------Processing {k} --------------{v}")
                 if k == "bouclier_spx":
                     res_bouclier_spx = spx_drop_player_entry(args_player=Namespace(update_dataset=v["update_dataset"], production_setup=False, verbose=False, send_email=False))
                     all_results_computed.append({"bouclier_spx": res_bouclier_spx})
@@ -142,19 +147,32 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     dict_tmp["realtime_values"].update({"energy_above_vwap": aire_au_dessus, "energy_below_vwap": aire_en_dessous})
                     all_results_computed.append(dict_tmp)
                 if k == "horizontal_lines":
-                    data_from_atr_probability_zone = atr_probability_zone(args=Namespace(production_setup=False, ticker=v["ticker"], dataset_id=v["dataset_id"],
-                                                                                         n_split=v["n_split"], n_trials=v["n_trials"],
-                                                                                         use_close_for_range=True, no_email=True, verbose=False,
-                                                                                         tightness_weights=v["tightness_weights"], nb_worker=v["nb_worker"]))
-                    all_results_computed.append({v["key_id"]: data_from_atr_probability_zone})
+                    if is_market_open():
+                        key_for_hl_request = f'{v["key_id"]}____{datetime.now().strftime('%Y-%m-%d')}'
+                        _payload = None
+                        with cache_disque as cache:
+                            with cache.transact():
+                                if key_for_hl_request in cache:
+                                    _payload = cache[key_for_hl_request]
+                        if _payload is None:
+                            data_from_atr_probability_zone = atr_probability_zone(args=Namespace(production_setup=False, ticker=v["ticker"], dataset_id=v["dataset_id"],
+                                                                                                 n_split=v["n_split"], n_trials=v["n_trials"],
+                                                                                                 use_close_for_range=True, no_email=True, verbose=False,
+                                                                                                 tightness_weights=v["tightness_weights"], nb_worker=v["nb_worker"]))
+                            with cache_disque as cache:
+                                with cache.transact():
+                                    cache[key_for_hl_request] = data_from_atr_probability_zone
+                            all_results_computed.append({v["key_id"]: data_from_atr_probability_zone})
+                        else:
+                            all_results_computed.append({v["key_id"]: _payload})
                 if k == "vera":
-                    min_16h = minutes_jusqua_16h()+1
-                    # time.sleep(61)  # Make sure that we don't get "Exception: Realtime mode activated. Please run after 10:20:00." exception
-                    vera_results = vera_entry_point(args=Namespace(realtime=True, intraday_candle_space=min_16h, ticker=v["ticker"], verbose_print_results=False,
-                                                                   tightness_weight=v["tightness_weight"], n_trials=v["n_trials"], n_split=v["n_split"], ))
-                    assert 1 == len(vera_results["inf_resulting"])  # Realtime
-                    vera_results["inf_resulting"][0].update({"minutes_jusqua_16h": min_16h})
-                    all_results_computed.append({k: vera_results["inf_resulting"][0]})
+                    if is_market_open():
+                        min_16h = minutes_jusqua_16h()+1
+                        vera_results = vera_entry_point(args=Namespace(realtime=True, intraday_candle_space=min_16h, ticker=v["ticker"], verbose_print_results=False,
+                                                                       tightness_weight=v["tightness_weight"], n_trials=v["n_trials"], n_split=v["n_split"], ))
+                        assert 1 == len(vera_results["inf_resulting"])  # Realtime
+                        vera_results["inf_resulting"][0].update({"minutes_jusqua_16h": min_16h})
+                        all_results_computed.append({k: vera_results["inf_resulting"][0]})
                 if k == "gap":
                     gap_results = conditional_gap_persistence_entry(args=Namespace(ticker=v["ticker"], epsilon=0., dataset_id="day", use_realtime_data=True, verbose=False))
                     all_results_computed.append({k: gap_results["tech_info"]})
@@ -165,10 +183,26 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     streaker_results = streak_probability_entry(args=Namespace(ticker=v["ticker"], dataset_id=v["dataset_id"], send_email=False, realtime=v["realtime"], production_setup=False, clip_n=v["clip_n"]))
                     all_results_computed.append({k: (streaker_results["proba_txt"] , {"realtime": v["realtime"]}) })
                 if k == "quant":
-                    result_quant = quant_morning_beta_miner(args=Namespace(realtime=True, ticker=v["ticker"], st1=v["st1"], st2=v["st2"], et1=v["et1"], et2=v["et2"], seuil_pos=v["seuil_pos"], models_dir=v["models_dir"]))
-                    action, strike_price, win_rate, timestamp = result_quant["action"], result_quant["strike_price"], result_quant["win_rate"], datetime.now().time()
-                    tmp_lst = [{'strike_price': int(strike_price), 'win_rate': win_rate, 'action': action, 'timestamp': timestamp}]
-                    all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
+                    if is_market_open():
+                        # Trouver la valeur maximale strictement inférieure à 'maintenant'
+                        st2 = max((h for h in v["quant__st2"] if h <= datetime.now().strftime('%H:%M')), default=None)
+                        key_for_quant_request = f'{st2}_{v["seuil_pos"]}____{datetime.now().strftime('%Y-%m-%d')}'
+                        _payload = ()
+                        with cache_disque as cache:
+                            with cache.transact():
+                                if key_for_quant_request in cache:
+                                    _payload = cache[key_for_quant_request]
+                        if 0 == len(_payload) or _payload is None:
+                            result_quant = quant_morning_beta_miner(args=Namespace(realtime=True, ticker=v["ticker"], st1=v["st1"], st2=st2, et1=v["et1"], et2=v["et2"], seuil_pos=v["seuil_pos"], models_dir=v["models_dir"]))
+                            action, strike_price, win_rate, timestamp = result_quant["action"], result_quant["strike_price"], result_quant["win_rate"], datetime.now().time()
+                            tmp_lst = [{'strike_price': int(strike_price), 'win_rate': win_rate, 'action': action, 'timestamp': timestamp}]
+                            with cache_disque as cache:
+                                with cache.transact():
+                                    cache[key_for_quant_request] = (strike_price, tmp_lst)
+                            all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
+                        else:
+                            strike_price, tmp_lst = _payload
+                            all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
                 if k == "cleaner":
                     gc.collect()
                     # Récupérer l'identifiant du processus actuel
@@ -178,6 +212,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     # Convertir en Mégaoctets (Mo) pour une lecture plus facile
                     memoire_mo = memoire_octets / (1024 ** 2)
                     all_results_computed.append({k:memoire_mo})
+                    if not is_market_open(): cache_disque.clear()
                 out__shared.put(all_results_computed)  # Send back information for displaying
             except Exception as eee:
                 print(eee)
@@ -187,7 +222,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     fichier_log.write(f"Erreur : {eee}\n")
                     fichier_log.write(traceback.format_exc())
                     fichier_log.write("\n" + "=" * 80 + "\n")  # Séparateur visuel entre les erreurs
-
+    cache_disque.close()
     # Quit
 
 
@@ -199,17 +234,22 @@ def entry():
     low_col   = ('Low', ticker)
 
     starter_auth = {'bouclier_spx': False, "realtime": True, "trend_ema": True, "horizontal_lines": True, "vera": True,
-                    "splash_screen": True,
+                    "splash_screen": False,
                     "gap": False,  "week_streaker": False, # Pas utilises
                     "day_streaker": True, "historian": True, "quant": True,
                     "activer_console": True, "activer_random_update": False, "activer_task_info": True}
 
-    vera__tightness_weight, vera__n_trials, vera__n_split = 0.33, 250, 0.9
-    horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.333, 0.666, 0.999, 2, 16], 999
+    # VERA
+    vera__kwargs = {"ticker": ticker, "tightness_weight": 0.33, "n_trials": 250, "n_split": 0.8}
+    # ATR ZONE
+    horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.333, 0.5, 0.666, 0.999, 2, 16], 1250
     horizontal_lines__max_lines, horizontal_lines__max_lines_h0, horizontal_lines__max_week_h5 = 3, 5, 4
     hirozontal_lines__n_split_year_h240, hirozontal_lines__n_split_quarter_h80, hirozontal_lines__n_split = 0.88, 0.88, 0.9
+    # HISTORIAN
     historian__output_dir, historian__accumulator = HISTORIAN_ARGUS, []
+    # QUANT
     quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2_fast"
+    assert os.path.exists(quant__models_dir)
     def extraire_quant_parameters_from_filename(output_directory):
         quant_st2, quant_seuil_pos = [], []
         for a_file in [r for r in os.listdir(output_directory) if r.endswith(".joblib")]:
@@ -228,13 +268,15 @@ def entry():
             quant_st2.append(st2)
         return tuple(sorted(set(quant_st2), key=lambda x: datetime.strptime(x, "%H:%M").time())), tuple(sorted(set(quant_seuil_pos)))
     quant__st2, quant__seuil_pos = extraire_quant_parameters_from_filename(quant__models_dir)
-    quant__kwargs = {"ticker": ticker, "st1": "09:30", "et1": "15:59", "et2": "16:00", "realtime": True, "models_dir": quant__models_dir}
-    argus__nb_worker = 2
+    quant__kwargs = {"ticker": ticker, "st1": "09:30", "et1": "15:59", "et2": "16:00", "realtime": True, "quant__st2": quant__st2,
+                     "models_dir": quant__models_dir}
+    # ARGUS
+    argus__nb_worker = 3
 
     if starter_auth["activer_console"]: clean_console()
     argus__information_displayed = {}  # Data used to create and update the display
-    use_cases__shared, master_cmd__shared = Queue(640), Value("i", 0)
-    out__shared = [Queue(640) for k in range(0, argus__nb_worker)]
+    use_cases__shared, master_cmd__shared = Queue(65536), Value("i", 0)
+    out__shared = [Queue(65536) for k in range(0, argus__nb_worker)]
     # Lancement des workers
     for k in range(0, argus__nb_worker):
         p = Process(target=_worker_processor, args=(use_cases__shared, master_cmd__shared, out__shared[k], k, ))
@@ -894,8 +936,16 @@ def entry():
 
     argus__information_displayed = initialize_info(ticker)
     argus__information_displayed = random_update_info(argus__information_displayed, **{"skip_quant": True})  # Quant accumule les mesures
-    scheduler = BackgroundScheduler()
 
+    scheduler = BackgroundScheduler(
+        jobstores={'default': MemoryJobStore()},
+        executors={'default': ThreadPoolExecutor(max_workers=48)},
+        job_defaults={
+            'coalesce': True,  # ne pas rejouer les déclenchements manqués en rafale
+            'max_instances': 1,  # 1 seule instance d'un même job à la fois
+            'misfire_grace_time': 120,  # tolère 2 min de retard, sinon skip
+        },
+    )
     ###########################################################################
     # Realtime value
     ###########################################################################
@@ -932,11 +982,9 @@ def entry():
     def setup_trend_ema():
         def request_for_trend_computation(**kwargs):
             use_cases__shared.put({"trend_computation": kwargs})
-        # 1. Gère les déclenchements de 9h30, puis toutes les heures de 10h30 à 15h30
-        scheduler.add_job(request_for_trend_computation,'cron',day_of_week='mon-fri',hour='9-15',minute='0,30',kwargs={"ticker": ticker})
-        # 2. Gère le déclenchement final à 16h00 pile
-        scheduler.add_job(request_for_trend_computation,'cron',day_of_week='mon-fri',hour=16,minute=0,kwargs={"ticker": ticker})
-        scheduler.add_job(request_for_trend_computation,'date',kwargs={'ticker': ticker})
+        scheduler.add_job(request_for_trend_computation, 'cron', day_of_week='mon-fri', hour=9, minute=30, kwargs={"ticker": ticker})
+        scheduler.add_job(request_for_trend_computation, 'cron', day_of_week='mon-fri', hour='10-15', minute=30, kwargs={"ticker": ticker})
+        scheduler.add_job(request_for_trend_computation, 'date', kwargs={'ticker': ticker})
     if starter_auth["trend_ema"]: setup_trend_ema()
 
     ###########################################################################
@@ -961,14 +1009,14 @@ def entry():
     def setup_vera():
         def request_for_vera(**kwargs):
             # Vérification stricte de l'heure courante
-            maintenant = datetime.now().time()
+            maintenant  = datetime.now().time()
             heure_debut = datetime.strptime("09:45", "%H:%M").time()
-            heure_fin = datetime.strptime("16:00", "%H:%M").time()
+            heure_fin   = datetime.strptime("16:00", "%H:%M").time()
             if maintenant < heure_debut or maintenant > heure_fin:
                 return  # Ignore l'exécution si on est hors de la plage
             use_cases__shared.put({"vera": kwargs})
-        kwargs = {"ticker": ticker, "tightness_weight": vera__tightness_weight, "n_trials": vera__n_trials, "n_split": vera__n_split}
-        scheduler.add_job(request_for_vera,'cron',day_of_week='mon-fri',hour='9-16',minute='*/5 ',kwargs=kwargs)
+        scheduler.add_job(request_for_vera,'cron',day_of_week='mon-fri',hour='9-16',minute='*',kwargs=vera__kwargs)
+        scheduler.add_job(request_for_vera, 'date', kwargs=vera__kwargs)
     if starter_auth["vera"]: setup_vera()
 
     ###########################################################################
@@ -994,6 +1042,7 @@ def entry():
         scheduler.add_job(request_for_day_streaker,'cron',day_of_week='mon-fri',hour='9-15',minute='30',kwargs=kwargs)
         scheduler.add_job(request_for_day_streaker, 'date', kwargs=kwargs)
     if starter_auth["day_streaker"]: setup_day_streaker()
+
     def setup_week_streaker():
         def request_for_week_streaker(**kwargs):
             use_cases__shared.put({"week_streaker": kwargs})
@@ -1008,17 +1057,12 @@ def entry():
     def setup_quant():
         def request_for_quant(**kwargs):
             use_cases__shared.put({"quant": kwargs})
-        for st2 in quant__st2:
-            for seuil_pos in quant__seuil_pos:
-                # 1. Convertir la chaîne "HH:MM" en objet datetime pour manipuler le temps facilement
-                time_obj = datetime.strptime(st2, "%H:%M")
-                # 2. Ajouter 1 minute à cet horaire
-                cron_time = time_obj + timedelta(minutes=1)
-                # 3. Extraire l'heure et la minute calculées (sous forme d'entiers)
-                cron_hour = cron_time.hour
-                cron_minute = cron_time.minute
-                scheduler.add_job(request_for_quant, 'cron', day_of_week='mon-fri', hour=cron_hour, minute=cron_minute,
-                                  kwargs={**quant__kwargs, "st2":st2, "seuil_pos":seuil_pos})
+        for seuil_pos in quant__seuil_pos:
+            _tmp_kwargs = {**quant__kwargs, "seuil_pos":seuil_pos}
+            scheduler.add_job(request_for_quant, 'cron',day_of_week='mon-fri', hour='9', minute='45,50,55',kwargs=_tmp_kwargs)
+            scheduler.add_job(request_for_quant, 'cron',day_of_week='mon-fri', hour='10-14', minute='*/5',kwargs=_tmp_kwargs)
+            scheduler.add_job(request_for_quant, 'cron',day_of_week='mon-fri', hour='15', minute='0,5,10,15,20,25,30',kwargs=_tmp_kwargs)
+            scheduler.add_job(request_for_quant, 'date', kwargs=_tmp_kwargs)
     if starter_auth["quant"]: setup_quant()
 
     ###########################################################################
@@ -1026,22 +1070,25 @@ def entry():
     ###########################################################################
     def setup_historian():
         def _convertir(donnees):
-            """Parcourt récursivement la structure pour transformer les datetime et date en string.
+            """Parcourt récursivement la structure pour transformer les datetime, date et time en string.
 
             Laisse intacts les types de base (str, int, float, bool, None).
             """
             if isinstance(donnees, dict):
                 return {cle: _convertir(valeur) for cle, valeur in donnees.items()}
 
-            elif isinstance(donnees, list):
+            elif isinstance(donnees, (list, tuple, set)):
                 return [_convertir(element) for element in donnees]
 
             # datetime hérite de date, il faut donc vérifier datetime EN PREMIER
             elif isinstance(donnees, datetime):
                 return donnees.strftime("%Y-%m-%d %H:%M:%S")
 
-            elif isinstance(donnees, date):
+            elif isinstance(donnees, dt_date):
                 return donnees.strftime("%Y-%m-%d")
+
+            elif isinstance(donnees, dt_time):
+                return donnees.strftime("%H:%M:%S")
 
             # Retourne inchangés les str, int, float, bool, None, etc.
             return donnees
@@ -1175,104 +1222,113 @@ def entry():
     # =============================================================================
     if starter_auth["activer_console"]: clean_console()
     while True:
-        if starter_auth["activer_console"]: print("\033[H", end="")  # déplace le curseur textuel tout en haut à gauche du terminal (la position "Home")
-        if starter_auth["activer_random_update"]: argus__information_displayed = random_update_info(info=argus__information_displayed)
-        resuls_from_worker = []
-        # Get the computed data, if any
-        for k in range(0, argus__nb_worker):
-            try:
-                resuls_from_worker.extend(out__shared[k].get(timeout=0.1))
-            except:
-                pass
-        # Add values to info
-        for one_result_from_worker in resuls_from_worker:
-            assert 1 == len(one_result_from_worker)
-            k, v = next(iter(one_result_from_worker.items()))
-            if k == "bouclier_spx":
-                if v['avg_score'] <= 3.5:
-                    argus__information_displayed['bouclier_spx'] = "🟢 Environnement favorable"
-                # synthese_globale = "🟢 Environnement favorable. Les indicateurs de risque sont faibles. La poursuite des stratégies standards est justifiée."
-                elif v['avg_score'] <= 6.5:
-                    argus__information_displayed['bouclier_spx'] = "🟡 Prudence requise"
-                else:
-                    argus__information_displayed['bouclier_spx'] = "🔴 Alerte de risque élevée"
-            if k == "trend_computation":
-                for k2, v2 in v.items():
-                    argus__information_displayed[k2] = v2
-            if k == "realtime_values":
-                for k2, v2 in v.items():
-                    argus__information_displayed[k2] = f"{v2:.0f}"
-            if k in ["hyear","h240","hquarter","h80","h20", "hmonth", "h15", "h10", "h5", "hweek", "h0", "h2"]:
-                argus__information_displayed[f"{k}_down"] = []
-                argus__information_displayed[f"{k}_up"] = []
-                if k in ["h240", "h80", "h20", "h15", "h10", "h5", "h2"]: dte_date = get_next_step(datetime.now(), "day", int(k[1:]) - 1).strftime('%Y-%m-%d')
-                if k == "h0": dte_date = datetime.now().strftime('%Y-%m-%d')
-                if k == "hyear": dte_date = get_year_range(datetime.now())[1].strftime('%Y-%m-%d')
-                if k == "hquarter": dte_date = get_quarter_range(datetime.now())[1].strftime('%Y-%m-%d')
-                if k == "hmonth": dte_date = get_month_range(datetime.now())[1].strftime('%Y-%m-%d')
-                if k == "hweek": dte_date = get_week_range(datetime.now())[1].strftime('%Y-%m-%d')
-                #print(f"{dte_date}   {k} :: {v}\n\n\n")
-                for a_dict in v['low']: argus__information_displayed[f"{k}_down"].append({"price": a_dict['predicted_low'], "proba": float(a_dict['probability_predicted_low'])/100., "date": dte_date})
-                while len(argus__information_displayed[f"{k}_down"]) < argus__information_displayed["max_horizontal_lines"]: argus__information_displayed[f"{k}_down"].append({"price": 1, "proba": 0, "date": dte_date})
-                for a_dict in v['high']: argus__information_displayed[f"{k}_up"].append({"price": a_dict['predicted_high'], "proba": float(a_dict['probability_predicted_high'])/100., "date": dte_date})
-                while len(argus__information_displayed[f"{k}_up"]) < argus__information_displayed["max_horizontal_lines"]: argus__information_displayed[f"{k}_up"].append({"price": 99999, "proba": 0, "date": dte_date})
-            if k == "vera":
-                argus__information_displayed["vera"] = v
-            if k == "gap":
-                argus__information_displayed.update({'persistance_conditionelle': v})
-            def extraire_info_streaker(texte):
-                # Expression régulière pour capturer :
-                # 1. Le pourcentage (ex: 28.9)
-                # 2. La flèche (↑ ou ↓)
-                # 3. Le chiffre après le 'B' (ex: 2)
-                motif = r"(\d+(?:\.\d+)?)%([↑↓])\s*\(B(\d+)\)"
+        try:
+            if starter_auth["activer_console"]: print("\033[H", end="")  # déplace le curseur textuel tout en haut à gauche du terminal (la position "Home")
+            if starter_auth["activer_random_update"]: argus__information_displayed = random_update_info(info=argus__information_displayed)
+            resuls_from_worker = []
+            # Get the computed data, if any
+            for k in range(0, argus__nb_worker):
+                try:
+                    while True: resuls_from_worker.extend(out__shared[k].get(timeout=0.123))
+                except:
+                    pass
+            # Add values to info
+            for one_result_from_worker in resuls_from_worker:
+                assert 1 == len(one_result_from_worker)
+                k, v = next(iter(one_result_from_worker.items()))
+                if k == "bouclier_spx":
+                    if v['avg_score'] <= 3.5:
+                        argus__information_displayed['bouclier_spx'] = "🟢 Environnement favorable"
+                    # synthese_globale = "🟢 Environnement favorable. Les indicateurs de risque sont faibles. La poursuite des stratégies standards est justifiée."
+                    elif v['avg_score'] <= 6.5:
+                        argus__information_displayed['bouclier_spx'] = "🟡 Prudence requise"
+                    else:
+                        argus__information_displayed['bouclier_spx'] = "🔴 Alerte de risque élevée"
+                if k == "trend_computation":
+                    for k2, v2 in v.items():
+                        argus__information_displayed[k2] = v2
+                if k == "realtime_values":
+                    for k2, v2 in v.items():
+                        argus__information_displayed[k2] = f"{v2:.0f}"
+                if k in ["hyear","h240","hquarter","h80","h20", "hmonth", "h15", "h10", "h5", "hweek", "h0", "h2"]:
+                    argus__information_displayed[f"{k}_down"] = []
+                    argus__information_displayed[f"{k}_up"] = []
+                    if k in ["h240", "h80", "h20", "h15", "h10", "h5", "h2"]: dte_date = get_next_step(datetime.now(), "day", int(k[1:]) - 1).strftime('%Y-%m-%d')
+                    if k == "h0": dte_date = datetime.now().strftime('%Y-%m-%d')
+                    if k == "hyear": dte_date = get_year_range(datetime.now())[1].strftime('%Y-%m-%d')
+                    if k == "hquarter": dte_date = get_quarter_range(datetime.now())[1].strftime('%Y-%m-%d')
+                    if k == "hmonth": dte_date = get_month_range(datetime.now())[1].strftime('%Y-%m-%d')
+                    if k == "hweek": dte_date = get_week_range(datetime.now())[1].strftime('%Y-%m-%d')
+                    #print(f"{dte_date}   {k} :: {v}\n\n\n")
+                    for a_dict in v['low']: argus__information_displayed[f"{k}_down"].append({"price": a_dict['predicted_low'], "proba": float(a_dict['probability_predicted_low'])/100., "date": dte_date})
+                    while len(argus__information_displayed[f"{k}_down"]) < argus__information_displayed["max_horizontal_lines"]: argus__information_displayed[f"{k}_down"].append({"price": 1, "proba": 0, "date": dte_date})
+                    for a_dict in v['high']: argus__information_displayed[f"{k}_up"].append({"price": a_dict['predicted_high'], "proba": float(a_dict['probability_predicted_high'])/100., "date": dte_date})
+                    while len(argus__information_displayed[f"{k}_up"]) < argus__information_displayed["max_horizontal_lines"]: argus__information_displayed[f"{k}_up"].append({"price": 99999, "proba": 0, "date": dte_date})
+                if k == "vera":
+                    argus__information_displayed["vera"] = v
+                if k == "gap":
+                    argus__information_displayed.update({'persistance_conditionelle': v})
+                def extraire_info_streaker(texte):
+                    # Expression régulière pour capturer :
+                    # 1. Le pourcentage (ex: 28.9)
+                    # 2. La flèche (↑ ou ↓)
+                    # 3. Le chiffre après le 'B' (ex: 2)
+                    motif = r"(\d+(?:\.\d+)?)%([↑↓])\s*\(B(\d+)\)"
 
-                match = re.search(motif, texte)
-                assert match
-                pourcentage_str, fleche, valeur_b = match.groups()
-                #print(texte)
-                #print(f"{pourcentage_str}, {fleche}, {valeur_b}")
-                # a) Conversion du pourcentage en probabilité (0 à 1)
-                proba = float(pourcentage_str) / 100.0
+                    match = re.search(motif, texte)
+                    assert match
+                    pourcentage_str, fleche, valeur_b = match.groups()
+                    #print(texte)
+                    #print(f"{pourcentage_str}, {fleche}, {valeur_b}")
+                    # a) Conversion du pourcentage en probabilité (0 à 1)
+                    proba = float(pourcentage_str) / 100.0
 
-                # b) Détermination de 'up' ou 'down' selon la flèche
-                direction = "up" if fleche.strip() == "↑" else "down"
+                    # b) Détermination de 'up' ou 'down' selon la flèche
+                    direction = "up" if fleche.strip() == "↑" else "down"
 
-                # c) Conversion de la valeur après le B en entier
-                valeur_b = int(valeur_b)
+                    # c) Conversion de la valeur après le B en entier
+                    valeur_b = int(valeur_b)
 
-                return {
-                    "proba": proba,
-                    "direction": direction,
-                    "valeur_b": valeur_b
-                }
-            if k == "day_streaker":
-                dd_tmp = extraire_info_streaker(v[0])
-                argus__information_displayed.update({'day_streaker': {'b': dd_tmp["valeur_b"], 'proba': dd_tmp["proba"], 'dir': dd_tmp["direction"]} | v[1], })
-            if k == "week_streaker":
-                dd_tmp = extraire_info_streaker(v[0])
-                argus__information_displayed.update({'week_streaker': {'b': dd_tmp["valeur_b"], 'proba': dd_tmp["proba"], 'dir': dd_tmp["direction"]} | v[1], })
-            if k == "quant":
-                strike_price_str, tmp_dict = v
-                argus__information_displayed["quant"].setdefault(strike_price_str, []).extend(tmp_dict)
-                argus__information_displayed['quant_meta_info'].update({'timestamp': datetime.now().strftime('%Hh%Mm%Ss')})
-            if k == "cleaner":
-                gc.collect()
-            if k == "worker_status":
-                argus__information_displayed['worker_status'].update(**v)
-        now = datetime.now()
-        now_txt = now.strftime('%Y-%m-%d %Hh%Mm%Ss')
-        previous_now = get_next_step(now, "day", -1)
-        previous_now_txt = previous_now.strftime('%Y-%m-%d')
-        argus__information_displayed.update({'now': now, 'now_txt': now_txt, 'previous_now': previous_now, 'previous_now_txt': previous_now_txt, 'ticker': ticker, 'max_horizontal_lines': 3,})
+                    return {
+                        "proba": proba,
+                        "direction": direction,
+                        "valeur_b": valeur_b
+                    }
+                if k == "day_streaker":
+                    dd_tmp = extraire_info_streaker(v[0])
+                    argus__information_displayed.update({'day_streaker': {'b': dd_tmp["valeur_b"], 'proba': dd_tmp["proba"], 'dir': dd_tmp["direction"]} | v[1], })
+                if k == "week_streaker":
+                    dd_tmp = extraire_info_streaker(v[0])
+                    argus__information_displayed.update({'week_streaker': {'b': dd_tmp["valeur_b"], 'proba': dd_tmp["proba"], 'dir': dd_tmp["direction"]} | v[1], })
+                if k == "quant":
+                    strike_price_str, tmp_dict = v
+                    argus__information_displayed["quant"].setdefault(strike_price_str, []).extend(tmp_dict)
+                    argus__information_displayed['quant_meta_info'].update({'timestamp': datetime.now().strftime('%Hh%Mm%Ss')})
+                if k == "cleaner":
+                    gc.collect()
+                if k == "worker_status":
+                    argus__information_displayed['worker_status'].update(**v)
+            now = datetime.now()
+            now_txt = now.strftime('%Y-%m-%d %Hh%Mm%Ss')
+            previous_now = get_next_step(now, "day", -1)
+            previous_now_txt = previous_now.strftime('%Y-%m-%d')
+            argus__information_displayed.update({'now': now, 'now_txt': now_txt, 'previous_now': previous_now, 'previous_now_txt': previous_now_txt, 'ticker': ticker, 'max_horizontal_lines': 3,})
 
-        # Display info
-        if starter_auth["activer_console"]:
-            if 0 != len(resuls_from_worker): clean_console()
-            make_display(info=argus__information_displayed)
+            # Display info
+            if starter_auth["activer_console"]:
+                if 0 != len(resuls_from_worker): clean_console()
+                make_display(info=argus__information_displayed)
 
-        # Wait
-        time.sleep(3)
+            # Wait
+            time.sleep(3)
+        except Exception as eee:
+            print(eee)
+            traceback.print_exc()
+            with open("erreurs_dans_boucle_affichage.txt", "a", encoding="utf-8") as fichier_log:
+                fichier_log.write(f"{k=}  {v=}\n")
+                fichier_log.write(f"Erreur : {eee}\n")
+                fichier_log.write(traceback.format_exc())
+                fichier_log.write("\n" + "=" * 80 + "\n")  # Séparateur visuel entre les erreurs
 
 
 if __name__ == "__main__":
