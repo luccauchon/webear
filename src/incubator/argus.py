@@ -993,8 +993,9 @@ def entry():
     def setup_horizontal_lines():
         def request_for_horizontal_lines(**kwargs):
             use_cases__shared.put({"horizontal_lines": kwargs})
-        for _dataset_id, _key_id in zip(["year",  "extraday-240days", "quarter",  "extraday-80days", "extraday-20days", "month",  "extraday-15days", "extraday-10days", "extraday-5days", "extraday-2days", "week",  "day"],
-                                                      ["hyear", "h240",             "hquarter", "h80",             "h20",             "hmonth", "h15",             "h10",             "h5",             "h2",             "hweek", "h0"]):
+        for _dataset_id, _key_id in zip(
+                ["year",  "extraday-240days", "quarter",  "extraday-80days", "extraday-20days", "month",  "extraday-15days", "extraday-10days", "extraday-5days", "extraday-2days", "week",  "day"],
+                ["hyear", "h240",             "hquarter", "h80",             "h20",             "hmonth", "h15",             "h10",             "h5",             "h2",             "hweek", "h0"]):
             n_split = hirozontal_lines__n_split_year_h240 if _key_id in ["hyear", "h240", ] else (hirozontal_lines__n_split_quarter_h80 if _key_id in ["hquarter", "h80"] else hirozontal_lines__n_split)
             kwargs = {'dataset_id': _dataset_id, "key_id": _key_id, "ticker": ticker, "n_split": n_split, "n_trials": horizontal_lines__n_trials,
                       "tightness_weights": horizontal_lines__tightness_weights, "nb_worker": horizontal_lines__nb_worker}
