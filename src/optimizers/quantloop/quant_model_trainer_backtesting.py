@@ -675,12 +675,27 @@ def entry(args):
     df_mom = factory_load_data(_dataset_id=dataset_id, _ticker=ticker, _args={}, )
 
     args.quant_dataset = r"D:\Finance\compiled_models\quant\2026.05.06\generated__combined_month_macro.data"
-    args.quant_model = r"D:\Finance\compiled_models\quant\2026.05.06\best_model_RandomForestClassifier_soft_higher_20260506_004718.pkl"
+    args.quant_model   = r"D:\Finance\compiled_models\quant\2026.05.06\best_model_RandomForestClassifier_soft_higher_20260506_004718.pkl"
 
     end_go_back_length__2__optimal_target_percentage = _run_iterate_backtesting(args=args, df_mom=df_mom, go_back_ranges=[6,12,24,36,48,60,72], squeeze=False)
-    #output_filename_result = os.path.join(Path(args.quant_dataset).parent, "optimal_target_percentage.json")
-    #with open(output_filename_result, "w", encoding="utf-8") as f: json.dump(end_go_back_length__2__optimal_target_percentage, f, indent=4, sort_keys=True)
 
+    output_filename_result = os.path.join(Path(args.quant_dataset).parent, "optimal_target_percentage.json")
+    with open(output_filename_result, "w", encoding="utf-8") as f:
+        json.dump(end_go_back_length__2__optimal_target_percentage, f, indent=4, sort_keys=True)
+    print(f"Data written to {output_filename_result}")
+    print(f"{'='*80}")
+    for look_back_length, opt in end_go_back_length__2__optimal_target_percentage.items():
+        pred_0, pred_1 = opt["pred_0"], opt["pred_1"]
+        print(f"Backtest {look_back_length} last months")
+        for pred_type, pred_data in zip(["0", "1"], [pred_0, pred_1]):
+            print(f"\tPRED {pred_type} {'*'*40}")
+            for win_rate, override_target_percentage in pred_data.items():
+                print(f"\t For a win rate of {win_rate:.2%} , do:")
+                command_line = (f"python quant_model_trainer.py --real-time --clip "
+                                f"--model-path {args.quant_model} --dataset {args.quant_dataset} "
+                                f"--override-target-percentage {override_target_percentage}")
+                print(f"\t\t {command_line}")
+    print(f"{'=' * 80}")
 
 if __name__ == "__main__":
     args = parse_arg()
