@@ -409,6 +409,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--train-ratio', type=float, default=0.8)
     opt_group.add_argument('--optimize', type=str, choices=list(METRIC_MAP.keys()), default='hold_floor')
     opt_group.add_argument('--n-trials', type=int, default=999)
+    opt_group.add_argument('--n-split', type=int, default=20)
     opt_group.add_argument('--timeout', type=int, default=300)
     opt_group.add_argument('--output-dir', type=str, default='models')
     opt_group.add_argument('--storage', type=str, default=None,
@@ -679,7 +680,7 @@ def entry(args):
     n_trials = args.n_trials
     timeout = args.timeout
     required_signal_density = args.min_signal_density
-
+    n_split = getattr(args, "n_split", 20)
     METRIC_TO_SIGNAL_TYPE = {
         'hold_floor': 1, 'finish_above': 1, 'hold_floor_half_B': 1,
         'hold_ceiling': -1, 'finish_below': -1,
@@ -703,8 +704,15 @@ def entry(args):
             bandwidth = trial.suggest_float('bandwidth', bandwidth_min, bandwidth_max, step=bandwidth_step)
             threshold = trial.suggest_float('threshold', threshold_min, threshold_max, step=threshold_step)
             _lookahead_bars = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars)
-            enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
-            enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
+            if signal_type == 1:
+                enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
+                enable_below_baseline = trial.suggest_int('enable_above_baseline', 0, 0)  # irrelevant: long-only
+            elif signal_type == -1:
+                enable_above_baseline = trial.suggest_int('enable_below_baseline', 0, 0)  # irrelevant: short-only
+                enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
+            else:  # signal_type == 0, both matter
+                enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
+                enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
 
             strat = AutoTuneStrategy(
                 window=window, bandwidth=bandwidth, threshold=threshold,
@@ -717,7 +725,7 @@ def entry(args):
             df = results.copy()
 
             # 🆕 Apply TimeSeriesSplit for cross-validation
-            tscv = TimeSeriesSplit(n_splits=20)
+            tscv = TimeSeriesSplit(n_splits=n_split)
             col_fmt = METRIC_MAP[optimize]['col'].format(_lookahead_bars)
 
             fold_scores = []
