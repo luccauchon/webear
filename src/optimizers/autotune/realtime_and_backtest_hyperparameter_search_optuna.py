@@ -755,9 +755,13 @@ def entry(args):
                 else:
                     fold_scores.append(obj)
 
-            # Return the mean score across all 20 folds
-            alpha = 1.0
-            final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
+            # Return the mean score across all folds
+            if n_split > 10:
+                std_stabilise = np.std(fold_scores[5:])
+                final_score = np.mean(fold_scores) - (0.2 * std_stabilise)
+            else:
+                alpha = 0.5
+                final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
             return float(final_score)
 
         except Exception as e:
