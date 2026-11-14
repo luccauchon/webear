@@ -706,9 +706,9 @@ def entry(args):
             _lookahead_bars = trial.suggest_int('lookahead_bars', lookahead_bars, lookahead_bars)
             if signal_type == 1:
                 enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
-                enable_below_baseline = trial.suggest_int('enable_above_baseline', 0, 0)  # irrelevant: long-only
+                enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 0)  # irrelevant: long-only
             elif signal_type == -1:
-                enable_above_baseline = trial.suggest_int('enable_below_baseline', 0, 0)  # irrelevant: short-only
+                enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 0)  # irrelevant: short-only
                 enable_below_baseline = trial.suggest_int('enable_below_baseline', 0, 1)
             else:  # signal_type == 0, both matter
                 enable_above_baseline = trial.suggest_int('enable_above_baseline', 0, 1)
