@@ -500,7 +500,7 @@ def entry_point(args):
             _str_left_tmp  = f"{round_price_for_put_credit_spread(last_value * (1 - _target_pourcentage_used)):.0f}" if _realtime_prediction == 1 else '?'
             _str_right_tmp = f"{round_price_for_call_credit_spread(last_value * (1 + _target_pourcentage_used)):.0f}" if _realtime_prediction == 1 else '?'
             if verbose: print(f"📊 Prediction      : {'RANGE' if _realtime_prediction == 1 else '!RANGE'} @ {proba:.2%} : on {ff_date}, {_str_left_tmp} < price < {_str_right_tmp}")
-        if verbose: print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.2%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
+        if verbose: print(f"📈 Parameters      : {_target_type_used} @{_target_pourcentage_used:.4%}  LA:{_look_ahead_used}  Dataset:{_dataset_filename_used}")
         if verbose: print("═" * 50)
         if verbose: print(f"🔑 Features Used   : {feat_cols}")
         if verbose: print(f"   Scorer: {setup_to_use['scorer']}")
@@ -509,11 +509,11 @@ def entry_point(args):
         test_score_str = f"{setup_to_use.get('test_score', 'N/A'):.2%}" if isinstance(setup_to_use.get('test_score'), (int, float)) else setup_to_use.get('test_score', 'N/A')
         if verbose: print(f"   CV/Test scores: {cv_score_str}/{test_score_str}")
         if verbose: print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
-        if verbose: print(f"   Target: {_target_type_used} @{_target_pourcentage_used:.2%}")
-        if verbose: print(f"   Out of sample performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
+        if verbose: print(f"   Target: {_target_type_used} @{_target_pourcentage_used:.4%}")
+        if verbose: print(f"   Out of sample (Test) performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
                           f"    y    : {setup_to_use['y_test_final'].values}\n"
                           f"    y_hat: {setup_to_use['y_hat_test_final']}")
-        if verbose: print("Confusion Matrix:")
+        if verbose: print("Test Confusion Matrix:")
         if verbose: print(confusion_matrix(setup_to_use['y_test_final'], setup_to_use['y_hat_test_final']))
         if verbose: print("═" * 50)
         return {"realtime_prediction": _realtime_prediction, "last_date": last_date, "last_value": last_value, "now": _now_timestamp,
