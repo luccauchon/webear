@@ -1371,6 +1371,8 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument('--use-jit-signals', action='store_true', default=True, help='Enable JIT acceleration for signal generation (recommended for large datasets)')
     algo_grp.add_argument("--n-trials", type=int, default=50, help="Number of trials for Optuna optimization")
     algo_grp.add_argument("--n-split", type=int, default=10, help="")
+    algo_grp.add_argument("--alpha", type=float, default=1, help="")
+    algo_grp.add_argument("--beta", type=float, default=4, help="")
     algo_grp.add_argument('--timeout', type=int, default=120, help='Max runtime (seconds)')
     algo_grp.add_argument(
         "--optuna-db",
@@ -1586,8 +1588,8 @@ def entry(args):
         assert 0 <= density_penalty <= 1
 
         # Alpha controls how much we punish inconsistency across different time periods
-        alpha = 1.
-        beta = 4.
+        alpha = getattr(args, "alpha", 1.)
+        beta  = getattr(args, "beta", 4.)
         final_score = mean_score - (alpha * std_score) - (beta * density_penalty)
         return final_score
 
