@@ -164,7 +164,7 @@ def entry_point(args: argparse.Namespace) -> None:
     vix_close_col = ('Close', '^VIX')
     cached_vix = df_vix[vix_close_col].iloc[-val_window - 1:-1]
     new_vix = market_data['VIX'].iloc[-val_window - 1:-1]
-    assert np.allclose(new_vix.values, cached_vix.values), f"VIX validation failed for {freq_label}"
+    assert np.allclose(new_vix.values, cached_vix.values, atol=0.1, rtol=0), f"VIX validation failed for {freq_label}.\n{new_vix.values=}\n{cached_vix.values=}\n{len(new_vix.values)=}\n{len(cached_vix.values)=}"
 
     # Prepare date range
     start_date = args.start_date

@@ -242,13 +242,13 @@ def _run_backtest(prices: np.ndarray, dc_series: np.ndarray, min_corr_series: np
         below_baseline = hp[i] < 0 if enable_below_baseline else True
 
         if signal_type == 1:
-            if long_cross and strong_cycle and below_baseline: signals[i] = 1.0
+            if long_cross and strong_cycle and above_baseline: signals[i] = 1.0
         elif signal_type == -1:
-            if short_cross and strong_cycle and above_baseline: signals[i] = -1.0
-        else:
-            if long_cross and strong_cycle and below_baseline:
+            if short_cross and strong_cycle and below_baseline: signals[i] = -1.0
+        else:  # signal_type == 0 (both)
+            if long_cross and strong_cycle and above_baseline:
                 signals[i] = 1.0
-            elif short_cross and strong_cycle and above_baseline:
+            elif short_cross and strong_cycle and below_baseline:
                 signals[i] = -1.0
 
     forward_returns = np.zeros(n)
@@ -725,6 +725,11 @@ def entry(args):
                 # Slice the results for the current test fold
                 fold_df = df.iloc[test_idx]
                 fold_signals = fold_df[fold_df['signal'] != 0].copy()
+
+                # 🛡️ Prevent data leakage across CV folds
+                max_allowed_idx = max(test_idx)
+                valid_mask = fold_signals.index + _lookahead_bars <= max_allowed_idx
+                fold_signals = fold_signals[valid_mask]
 
                 n_signals = len(fold_signals)
                 if n_signals == 0:
