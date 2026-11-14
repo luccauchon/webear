@@ -297,7 +297,7 @@ def entry(args):
     df_1minute = factory_load_data(_dataset_id="intraday-1min", _ticker=args.ticker, _args={})
     if isinstance(df_1minute.columns, pd.MultiIndex): df_1minute.columns = df_1minute.columns.get_level_values(0)
     df_1minute = df_1minute.sort_index()
-    close_col = 'Close'
+
     nb_worker = getattr(args, "nb_worker", 12)
 
     ###########################################################################
@@ -312,7 +312,8 @@ def entry(args):
         for lookback_jours in range(0, total_jours - 3):
             use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir, lookback_jours, args.verbose))
         tmp_lst.append(key_dict)
-    print(f"Got {len(use_cases)} use cases to process with {nb_worker} workers...")
+    print(f"Got {len(use_cases)} use cases to process with {nb_worker} workers... (a lot will be discarded because we handle only those "
+          f"that has a date that is in the range of test)")
     data_from_workers = []
     use_cases__shared, master_cmd__shared = Queue(), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, nb_worker)]
