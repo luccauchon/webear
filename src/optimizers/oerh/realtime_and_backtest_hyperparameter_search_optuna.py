@@ -1370,6 +1370,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument('--train-ratio', type=float, default=0.9, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
     algo_grp.add_argument('--use-jit-signals', action='store_true', default=True, help='Enable JIT acceleration for signal generation (recommended for large datasets)')
     algo_grp.add_argument("--n-trials", type=int, default=50, help="Number of trials for Optuna optimization")
+    algo_grp.add_argument("--n-split", type=int, default=10, help="")
     algo_grp.add_argument('--timeout', type=int, default=120, help='Max runtime (seconds)')
     algo_grp.add_argument(
         "--optuna-db",
@@ -1508,7 +1509,7 @@ def entry(args):
         one_euro_factor = trial.suggest_float("one_euro_factor", 0.01, 1.0)
         cooldown_bars = trial.suggest_int("cooldown_bars", 0, 12)
 
-        tscv = TimeSeriesSplit(n_splits=10)
+        tscv = TimeSeriesSplit(n_splits=getattr(args, "n_split", 10))
         fold_scores = []
         fold_densities = []
         n_samples = len(df_train)
