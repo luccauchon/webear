@@ -448,7 +448,10 @@ def entry(args):
     # 🔄 REAL-TIME MODE
     # =============================================================================
     if real_time:
-        model_path = getattr(args, "modelpath", getattr(args, "model_path", None))
+        # Récupère le premier qui existe, ou None si aucun n'est présent
+        model_path = getattr(args, "modelpath", None) or getattr(args, "model_path", None)
+        if not model_path or not os.path.exists(str(model_path)):
+            raise FileNotFoundError("Le chemin du modèle est introuvable ou invalide.")
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Specified model not found: {model_path}")
         if verbose and not verbose_short:
