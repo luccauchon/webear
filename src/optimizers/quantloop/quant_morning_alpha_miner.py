@@ -36,6 +36,7 @@ import argparse
 from argparse import Namespace
 import joblib
 from operator import itemgetter
+from pathlib import Path
 # Ignore cet avertissement spécifique lié à sklearn parallel
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.parallel")
 warnings.filterwarnings("ignore", message="The least populated class in y has only")
@@ -356,13 +357,13 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, k):
         try:
             with io.BytesIO(tmp) as memoire:
                 # On recharge le tuple et on réaffecte chaque variable dans le même ordre
-                pipe, X_train_sub, y_train, tscv, scoring, features_str, model_name, combo_list = pickle.load(memoire)
+                pipe, X_train_sub, y_train, tscv, scoring, features_str, model_name, combo_list, alpha = pickle.load(memoire)
 
             cv_scores = cross_val_score(pipe, X_train_sub, y_train, cv=tscv, scoring='f1_weighted', n_jobs=1)
             mean_cv_f1 = cv_scores.mean()
             std_cv_f1 = cv_scores.std()
-            penalty_factor = 1.0
-            adjusted_score = mean_cv_f1 - (penalty_factor * std_cv_f1)
+
+            adjusted_score = mean_cv_f1 - (alpha * std_cv_f1)
 
             # On s'assure que le score ne devienne pas négatif par accident
             adjusted_score = max(0.0, adjusted_score)
@@ -417,15 +418,15 @@ def parse_arguments():
     parser.add_argument('--st1', type=str, default="09:30", help="Heure de début de la fenêtre d'analyse (HH:MM).")
     parser.add_argument('--st2', type=str, default="10:00", help="Heure de fin de la fenêtre d'analyse (HH:MM).")
 
-    # Fenêtre cible après-midi (calcul du High pour la target)
+    # Fenêtre cible après-midi (calcul du MaxHigh/MinLow pour la target)
     parser.add_argument('--et1', type=str, default="15:55", help="Heure de début de la fenêtre cible (HH:MM).")
     parser.add_argument('--et2', type=str, default="16:00", help="Heure de fin de la fenêtre cible (HH:MM).")
 
     # Définition de la cible (target)
     parser.add_argument('--seuil-pos', type=float, default=1., help="Seuil multiplicateur du Daily Open pour la cible. Si >1, arrondi au 5 supérieur et si <1, arrondi au 5 inférieur")
     parser.add_argument('--et-gt-open', type=int, default=1,
-                        help="1 si la cible est High > (Open * seuil) "
-                             "0 si la cible est High < (Open * seuil) ")
+                        help="1 si la cible est: MinLow  > (Open * seuil)  pour <option_credit_spread_style>"
+                             "0 si la cible est: MaxHigh < (Open * seuil)  pour <option_credit_spread_style>")
     parser.add_argument('--target-definition', type=str, default="open_as_level", choices=["open_as_level", "last_morning_close_as_level", "last_morning_vwap_as_level"], help="Définition de la cible à utiliser")
     parser.add_argument("--n-split", type=float, default=0.90, help="Train/Test split ratio (default: 0.90).")
 
@@ -435,6 +436,11 @@ def parse_arguments():
     parser.add_argument("--realtime", action="store_true", default=False, help="Run in real-time mode to check for live signals using a saved model.")
     parser.add_argument("--modelfile", type=str, default=None, help="Specific model filename to load in real-time mode. If not provided, loads the latest model.")
     parser.add_argument("--output-dir", type=str, default="quant", help="Model save directory")
+
+    # Optimisation
+    parser.add_argument("--n-splits-tscv", type=int, default=6, help="")
+    parser.add_argument("--alpha", type=float, default=1., help="")
+
     return parser.parse_args()
 
 
@@ -462,7 +468,7 @@ def run_realtime(modelfile, verbose, daily_df_precomputed):
     return {"result": agg[['median_probability', 'std_probability', 'predicted_class']], "model_args": model.args}
 
 
-def build_df(df, args, generate_for_realtime):
+def build_df(df, args, generate_for_realtime=False):
     # Récupérer les variables du shell
     heure_debut_str = str(args.st1)
     heure_fin_str = str(args.st2)
@@ -471,6 +477,8 @@ def build_df(df, args, generate_for_realtime):
     time_fin = datetime.strptime(heure_fin_str, "%H:%M").time()
 
     assert time_debut < time_fin and time_debut >= datetime.strptime("09:30", "%H:%M").time()
+    assert time_fin >=  datetime.strptime("09:45", "%H:%M").time()
+    assert (df.index[1] - df.index[0]).seconds == 60
 
     ema_9 = int(args.ema9)
     ema_21 = int(args.ema21)
@@ -494,7 +502,7 @@ def build_df(df, args, generate_for_realtime):
 
     assert time_15ish < time_16ish <= datetime.strptime("16:00", "%H:%M").time()
 
-    # 3. Récupérer le "High" (plus haut) de cette fenêtre.
+    # 3. Récupérer le "MaxHigh" (plus haut) de cette fenêtre et son équivalent "MinLow".
     max_high_15ish_16ish = df_afternoon.groupby(df_afternoon.index.date)['High'].max()
     min_low_15ish_16ish  = df_afternoon.groupby(df_afternoon.index.date)['Low'].min()
 
@@ -503,7 +511,6 @@ def build_df(df, args, generate_for_realtime):
     # ---------------------------------------------------------
     morning_mask = (df.index.time >= fenetre_analysee[0]) & (df.index.time <= fenetre_analysee[1])
     df_morning = df[morning_mask].copy()
-    df_morning__last_close_value = df_morning.iloc[-1]['Close']
     df_morning['typical_price'] = (df_morning['High'] + df_morning['Low'] + df_morning['Close']) / 3.0
     df_morning['tp_vol'] = df_morning['typical_price'] * df_morning['Volume']
     df_morning['up_volume'] = np.where(df_morning['Close'] > df_morning['Open'], df_morning['Volume'], 0)
@@ -516,7 +523,7 @@ def build_df(df, args, generate_for_realtime):
     df_morning['vwap'] = np.where(df_morning['cum_vol'] > 0, df_morning['cum_tp_vol'] / df_morning['cum_vol'], np.nan)
     df_morning['vwap_slope'] = daily_morning_groups['vwap'].diff()
     df_morning['vwap_deriv'] = daily_morning_groups['vwap_slope'].diff()
-    df_morning__last_vwap_value = df_morning['vwap'].iloc[-1]
+
     morning_groups = df_morning.groupby(df_morning.index.date)
 
     def calc_rsi(series, period=14):
@@ -535,6 +542,9 @@ def build_df(df, args, generate_for_realtime):
     df_morning['macd_signal'] = morning_groups['macd_line'].transform(lambda x: x.ewm(span=macd_5, adjust=False).mean())
     df_morning['macd_hist'] = df_morning['macd_line'] - df_morning['macd_signal']
     df_morning['ema_diff'] = df_morning['ema_9'] - df_morning['ema_21']
+
+    df_morning__last_close_value = morning_groups['Close'].last()
+    df_morning__last_vwap_value  = morning_groups['vwap'].last()
 
     # Agrégation journalière
     df_morning['is_above_vwap'] = df_morning['Close'] > df_morning['vwap']
@@ -598,6 +608,7 @@ def build_df(df, args, generate_for_realtime):
         'macd_hist_delta': macd_hist_delta,
         'Morning_Open': daily_morning_open,
         'Morning_Close': daily_morning_close,
+        'Morning_VWAP': df_morning__last_vwap_value,
         'gap_pct': ((daily_morning_open - prev_daily_morning_close) / prev_daily_morning_close) * 100,
         'prev_day_return_t1': ((daily_morning_close - prev_daily_morning_close) / prev_daily_morning_close) * 100,
         'prev_day_return_t2': ((daily_morning_close - prev_daily_morning_close.shift(1)) / prev_daily_morning_close.shift(1)) * 100,
@@ -627,6 +638,7 @@ def build_df(df, args, generate_for_realtime):
         # 'prev_day_return_t4',
         # 'Morning_Open',
         # 'Morning_Close',
+        # 'Morning_VWAP',
     ]
     if getattr(args, "verbose", True): print(f"X is: Features computed from {heure_debut_str} and {heure_fin_str} and from previous days")
     if generate_for_realtime:
@@ -640,41 +652,50 @@ def build_df(df, args, generate_for_realtime):
     # 2.5 APPLICATION DE LA NOUVELLE CIBLE
     # ---------------------------------------------------------
     strict_sup = int(args.et_gt_open)
+    assert strict_sup in [0, 1]
     round_method = lambda x: x
     if seuil_pos > 1:    round_method = round_price_for_call_credit_spread
     elif seuil_pos < 1 : round_method = round_price_for_put_credit_spread
+    style_execution = getattr(args, "style_execution", "option_credit_spread_style")
     target_definition, str_target_def = getattr(args, "target_definition", "open_as_level"), ""
-    if "open_as_level" == target_definition:
-        str_target_def = "Daily Open"
-        if 1 == strict_sup:
+    if style_execution == "option_credit_spread_style":
+        assert 0.9 < seuil_pos < 1.1
+        if "open_as_level" == target_definition:
+            str_target_def     = "Daily Open"
             seuil_calcule      = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
-            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
-        else:
-            seuil_calcule      = (daily_open.reindex(daily_df.index) * seuil_pos).apply(round_method)
-            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
-    elif "last_morning_close_as_level" == target_definition:
-        str_target_def = "Daily Close"
+        elif "last_morning_close_as_level" == target_definition:
+            str_target_def     = "Daily Morning Close"
+            seuil_calcule      = (df_morning__last_close_value.reindex(daily_df.index) * seuil_pos).apply(round_method)
+        elif "last_morning_vwap_as_level" == target_definition:
+            str_target_def     = "Daily Morning VWAP Close"
+            seuil_calcule      = (df_morning__last_vwap_value.reindex(daily_df.index) * seuil_pos).apply(round_method)
+        else: assert False
+        assert str_target_def is not None
         if 1 == strict_sup:
-            seuil_calcule      = round_method(df_morning__last_close_value * seuil_pos)
-            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
+            daily_df['target'] = (min_low_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
         else:
-            seuil_calcule      = round_method(df_morning__last_close_value * seuil_pos)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
-    elif "last_morning_vwap_as_level" == target_definition:
-        str_target_def = "Daily VWAP Close"
+    if style_execution == "trader_style":
+        assert seuil_pos < .1
+        if "last_morning_close_as_level" == target_definition:
+            seuil_calcule = df_morning__last_vwap_value.reindex(daily_df.index) + (df_morning__last_vwap_value.reindex(daily_df.index) * seuil_pos)
+        else: assert False
         if 1 == strict_sup:
-            seuil_calcule      = round_method(df_morning__last_vwap_value * seuil_pos)
             daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) > seuil_calcule).astype(int)
         else:
-            seuil_calcule      = round_method(df_morning__last_vwap_value * seuil_pos)
-            daily_df['target'] = (max_high_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
+            daily_df['target'] = (min_low_15ish_16ish.reindex(daily_df.index) < seuil_calcule).astype(int)
 
-    daily_df = daily_df.dropna()
-
+    daily_df = daily_df.dropna(subset=feature_cols + ['target'])
     if getattr(args, "verbose", True): print(f"Y is: There is a value between {time_15ish} and {time_16ish} that is {'>' if 1 == strict_sup else '<'} {str_target_def} * {seuil_pos}")
 
-    experience_str_desc = (f"{seuil_pos}__{heure_debut_str}-{heure_fin_str}__{time_15ish}-{time_16ish}_High_{strict_sup}_Open__"
-        f"{ema_9}{ema_21}{rsi_14}{macd_5}__").replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_').replace(':', '')
+    experience_str_desc = ""
+    if style_execution == "option_credit_spread_style":
+        experience_str_desc = (f"{seuil_pos}__{heure_debut_str}-{heure_fin_str}__{time_15ish}-{time_16ish}_High_{strict_sup}_Open__"
+            f"{ema_9}{ema_21}{rsi_14}{macd_5}__").replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_').replace(':', '')
+    if style_execution == "trader_style":
+        _str_2 = f"MaxHigh" if 1 == strict_sup else "MinLow"
+        experience_str_desc = (f"{seuil_pos}__{heure_debut_str}-{heure_fin_str}__{time_15ish}-{time_16ish}__{_str_2}__"
+            f"{ema_9}{ema_21}{rsi_14}{macd_5}__").replace('datetime.time', '').replace('(', '').replace(')', '').replace(',', '').replace(' ', '_').replace(':', '')
 
     # ---------------------------------------------------------
     # 3. Préparation des données et Split Temporel
@@ -690,6 +711,7 @@ def build_df(df, args, generate_for_realtime):
     if getattr(args, "verbose", True):
         print(f"[TRAIN] [{len(X_train):5d}]  {X_train.index[0].strftime('%Y-%m-%d')} --> {X_train.index[-1].strftime('%Y-%m-%d')}")
         print(f"[TEST]  [{len(X_test):5d}]  {X_test.index[0].strftime('%Y-%m-%d')} --> {X_test.index[-1].strftime('%Y-%m-%d')}\n")
+    assert len(X>0) and len(X)==len(y)
     return {
         "X": X,
         "y": y,
@@ -743,9 +765,9 @@ def entry(args):
     # ---------------------------------------------------------
     # 4. Configuration de la Cross-Validation et des Modèles
     # ---------------------------------------------------------
-    tscv = TimeSeriesSplit(n_splits=6)
+    tscv = TimeSeriesSplit(n_splits=getattr(args, "n_splits_tscv", 6))
 
-    def get_models():
+    def _get_models():
         """
         Retourne une instance fraîche de chaque modèle et son type de prétraitement.
 
@@ -764,13 +786,13 @@ def entry(args):
             #'MLP': ("scaled",MLPClassifier(hidden_layer_sizes=(32,),activation="relu",solver="adam",alpha=1e-3,max_iter=9999,random_state=42,early_stopping=False,),),
         }
 
-    def get_models_for_ensemble():
+    def _get_models_for_ensemble():
         """
         Factory utilisée pour l'agrégat final.
         On active probability=True pour les SVM afin de pouvoir calculer
         la médiane et l'écart-type des probabilités.
         """
-        return get_models()
+        return _get_models()
 
     # ---------------------------------------------------------
     # 5. Évaluation de toutes les combinaisons via Cross-Validation
@@ -791,7 +813,7 @@ def entry(args):
         )
         p.start()
 
-    print(f"Evaluation CV de {len(combo_to_be_processed) * len(get_models())} combinaisons avec {nb_worker} workers...")
+    print(f"Evaluation CV de {len(combo_to_be_processed) * len(_get_models())} combinaisons avec {nb_worker} workers...")
     print(f"Starting training now...")
     with master_cmd__shared.get_lock():
         master_cmd__shared.value = 1
@@ -800,7 +822,7 @@ def entry(args):
     for combo_list in pbar:
         X_train_sub = X_train[combo_list]
         features_str = "|".join(combo_list)
-        for model_name, (data_type, model) in get_models().items():
+        for model_name, (data_type, model) in _get_models().items():
             if data_type == 'scaled':
                 pipe = Pipeline([('scaler', StandardScaler()), ('model', model)])
             else:
@@ -816,12 +838,22 @@ def entry(args):
                         'f1_weighted',
                         features_str,
                         model_name,
-                        combo_list
+                        combo_list,
+                        getattr(args,"alpha", 1.0),
                     ),
                     memoire
                 )
                 bytes_donnees = memoire.getvalue()
 
+
+            # TODO  si l'expérience existe , skip it
+            # args.output_dir
+            # fichiers_trouves = [
+            #     str(fichier) for fichier in Path(args.output_dir).iterdir()
+            #     if fichier.is_file() and experience_str_desc in fichier.name
+            # ]
+            # on a 5 experience: ["top_5", "top_10", "top_50", "top_100", "top_250", ]
+            # if len(fichiers_trouves) < 5:
             use_cases__shared.put(bytes_donnees)
 
     for k in range(0, nb_worker):
@@ -857,7 +889,7 @@ def entry(args):
         X_train_sub = X_train[combo_list]
         X_test_sub = X_test[combo_list]
 
-        data_type, model = get_models()[model_name]
+        data_type, model = _get_models()[model_name]
 
         if data_type == 'scaled':
             scaler = StandardScaler()
@@ -926,14 +958,13 @@ def entry(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     # ---------------------------------------------------------
-    # 10. Création du modèle agrégé TOP 10, 50, 250
+    # 10. Création du modèle agrégé TOP
     # ---------------------------------------------------------
     top_5   = df_sorted_results.head(5).copy()
     top_10  = df_sorted_results.head(10).copy()
     top_50  = df_sorted_results.head(50).copy()
     top_100 = df_sorted_results.head(100).copy()
     top_250 = df_sorted_results.head(250).copy()
-    # top_500 = df_sorted_results.head(500).copy()
     for name_top, top_n in zip(["top_5", "top_10", "top_50", "top_100", "top_250", ], [top_5, top_10, top_50, top_100, top_250, ]):
         if len(top_n) == 0:
             print(f"[WARN] Aucun modèle disponible pour construire l'agrégat {name_top}.")
@@ -955,7 +986,7 @@ def entry(args):
                 X=X_train,
                 y=y_train,
                 top_models_df=top_n,
-                model_factory=get_models_for_ensemble
+                model_factory=_get_models_for_ensemble
             )
 
             agg_test = eval_top_n_model.predict_aggregated(X_test)
@@ -982,7 +1013,7 @@ def entry(args):
             X=X,
             y=y,
             top_models_df=top_n,
-            model_factory=get_models_for_ensemble
+            model_factory=_get_models_for_ensemble
         )
 
         ensemble_filename = os.path.join(
