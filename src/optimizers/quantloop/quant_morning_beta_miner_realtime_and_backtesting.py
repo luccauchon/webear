@@ -206,7 +206,7 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared):
 
         # Affichage des infos globales pour ce lookback
         df_filtre = pd.concat([df_jour for _, df_jour in jours_restants])
-        if df_filtre.index[-1].tz_localize(None) < test_date_t1: continue
+        if df_filtre.index[-1].tz_localize(None) < test_date_t1: continue # On utilise seulement les données de test
         date_debut = jours_restants[0][0]
         date_fin = jours_restants[-1][0]
         if verbose: print(f"[{os.getpid()}] >>> {date_debut}::{date_fin} --> {len(jours_restants)} jours restants")
@@ -313,7 +313,7 @@ def entry(args):
             use_cases.append((st1, st2, et1, et2, seuil_pos, df_1minute, args.models_dir, lookback_jours, args.verbose))
         tmp_lst.append(key_dict)
     print(f"Got {len(use_cases)} use cases to process with {nb_worker} workers... (a lot will be discarded because we handle only those "
-          f"that has a date that is in the range of test)")
+          f"that has a date that is in the range of test; now we use a window of {total_jours} days. To be increased in 2027.)")
     data_from_workers = []
     use_cases__shared, master_cmd__shared = Queue(), Value("i", 0)
     out__shared = [Queue(1) for k in range(0, nb_worker)]
@@ -332,7 +332,7 @@ def entry(args):
     for k in range(0, nb_worker):
         data_from_workers.append(out__shared[k].get())
     filtered_data = [d for d in data_from_workers if d]
-    key_dict__2__results, key_dict__2__win_rate = {}, {}
+    key_dict__2__results, key_dict__2__win_rate, key_dict__2__stats = {}, {}, {}
     for _fd in filtered_data:
         for lookback_jours, _tmp_dict in _fd.items():
             for key_dict, _pv in _tmp_dict.items():
@@ -346,14 +346,20 @@ def entry(args):
                             "test_density": round((d.count(1) + d.count(0)) / (d.count(1) + d.count(0) + d.count(-1)), 4) if (d.count(1) + d.count(0)) else 0})(v)
         stats["test_win_rate"] = stats['wins'] / (stats['total'] - stats['passes'])
         print(f"{k=}   {stats=}")
+        key_dict__2__stats.update({k: stats})
         key_dict__2__win_rate.update({k: stats["test_win_rate"]})
-    print(key_dict__2__win_rate)
     if not os.path.exists(os.path.join(args.models_dir, "win_rate.json")):
         with open(os.path.join(args.models_dir, "win_rate.json"), "w", encoding="utf-8") as f:
             json.dump(key_dict__2__win_rate, f, indent=4)
     else:
         with open(os.path.join(args.models_dir, "NEW__win_rate.json"), "w", encoding="utf-8") as f:
             json.dump(key_dict__2__win_rate, f, indent=4)
+    if not os.path.exists(os.path.join(args.models_dir, "stats.json")):
+        with open(os.path.join(args.models_dir, "stats.json"), "w", encoding="utf-8") as f:
+            json.dump(key_dict__2__stats, f, indent=4)
+    else:
+        with open(os.path.join(args.models_dir, "NEW__stats.json"), "w", encoding="utf-8") as f:
+            json.dump(key_dict__2__stats, f, indent=4)
     return None
 
 
