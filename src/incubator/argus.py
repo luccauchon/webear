@@ -107,23 +107,45 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     df__month  = factory_load_data(_dataset_id=f"month", _ticker=v["ticker"], _args={"realtime": True})
                     all_results_computed.append({"trend_computation":{"df__60min": df__60min, "df__240min": df__240min, "df__day": df__day, "df__week": df__week, "df__month": df__month}})
                 if k == "realtime_values":
-                    df = factory_load_data(_dataset_id="day", _ticker=v["ticker"], _args={"realtime": True})
+                    df_daily = factory_load_data(_dataset_id="day", _ticker=v["ticker"], _args={"realtime": True})
                     open_col = ('Open', v["ticker"])
                     close_col = ('Close', v["ticker"])
                     high_col = ('High', v["ticker"])
                     low_col = ('Low', v["ticker"])
                     volume_col = ('Volume', v["ticker"])
-                    dict_tmp = {"realtime_values": {'close_t_m1': df[close_col].iloc[-2], 'open': df[open_col].iloc[-1], 'high': df[high_col].iloc[-1],
-                                                    'low': df[low_col].iloc[-1], 'close': df[close_col].iloc[-1],}}
-                    df = factory_load_data(_dataset_id="intraday-1min", _ticker=v["ticker"], _args={"realtime": True})
+                    dict_tmp = {"realtime_values": {'close_t_m1': df_daily[close_col].iloc[-2],
+                                                    'open': df_daily[open_col].iloc[-1], 'high': df_daily[high_col].iloc[-1],
+                                                    'low': df_daily[low_col].iloc[-1], 'close': df_daily[close_col].iloc[-1],}}
+                    df_1min = factory_load_data(_dataset_id="intraday-1min", _ticker=v["ticker"], _args={"realtime": True})
                     # 1. Filtrer le DataFrame pour la dernière journée à partir de 9h30
-                    last_day_df = df.loc[df.index.date == df.index.date[-1]].between_time("09:30", "16:00").copy()
+                    last_day_df = df_1min.loc[df_1min.index.date == df_1min.index.date[-1]].between_time("09:30", "16:00").copy()
 
                     # 2. Extraire les colonnes nécessaires pour cette journée
                     high_series = last_day_df[high_col]
                     low_series = last_day_df[low_col]
                     close_series = last_day_df[close_col]
                     volume_series = last_day_df[volume_col]
+
+                    # --- AJOUT : Calcul du RSI (14 périodes) ---
+                    rsi_period = 14
+                    # Calcul des variations de prix
+                    rsi_delta = close_series.diff().copy()
+
+                    # Séparation des gains (up) et des pertes (down)
+                    up = rsi_delta.clip(lower=0)
+                    down = -rsi_delta.clip(upper=0)
+
+                    # Moyenne mobile exponentielle (EMA) pour le lissage Wilder
+                    ma_up = up.ewm(com=rsi_period - 1, adjust=False).mean()
+                    ma_down = down.ewm(com=rsi_period - 1, adjust=False).mean()
+
+                    # Éviter la division par zéro
+                    rs = np.where(ma_down != 0, ma_up / ma_down, np.nan)
+                    rsi_series = np.where(ma_down == 0, 100, 100 - (100 / (1 + rs)))
+
+                    # Récupération de la dernière valeur du RSI
+                    current_rsi = rsi_series[-1] if not np.isnan(rsi_series[-1]) else 50.0
+                    # --------------------------------------------
 
                     # 3. Calculer le Prix Typique (Typical Price)
                     typical_price = (high_series + low_series + close_series) / 3
@@ -142,9 +164,8 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     aire_au_dessus = trapezoid(delta_above, dx=1)
                     aire_en_dessous = trapezoid(delta_below, dx=1)
 
-                    #print(f"Aire quand le prix est AU-DESSUS du VWAP : {aire_au_dessus:.4f}")
-                    #print(f"Aire quand le prix est EN DESSOUS du VWAP : {aire_en_dessous:.4f}")
-                    dict_tmp["realtime_values"].update({"energy_above_vwap": aire_au_dessus, "energy_below_vwap": aire_en_dessous})
+                    dict_tmp["realtime_values"].update({"energy_above_vwap": aire_au_dessus, "energy_below_vwap": aire_en_dessous,
+                                                        "rsi": current_rsi})
                     all_results_computed.append(dict_tmp)
                 if k == "horizontal_lines":
                     if is_market_open():
@@ -242,7 +263,7 @@ def entry():
     # VERA
     vera__kwargs = {"ticker": ticker, "tightness_weight": 0.33, "n_trials": 250, "n_split": 0.8}
     # ATR ZONE
-    horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.333, 0.5, 0.666, 0.999, 2, 16], 1250
+    horizontal_lines__nb_worker, horizontal_lines__tightness_weights, horizontal_lines__n_trials = 4, [0., 0.1, 0.2, 0.333, 0.5, 0.666, 0.777, 0.999, 2, 16], 1250
     horizontal_lines__max_lines, horizontal_lines__max_lines_h0, horizontal_lines__max_week_h5 = 3, 5, 4
     hirozontal_lines__n_split_year_h240, hirozontal_lines__n_split_quarter_h80, hirozontal_lines__n_split = 0.88, 0.88, 0.9
     # HISTORIAN
@@ -488,17 +509,21 @@ def entry():
             #######################################################################
             # WEEK/H5
             #######################################################################
-            def week_h5():
+            def week_h5_qtrend():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
                 quant_dataset = [[] for luco in range(0, info['max_horizontal_lines_week_h5'])]  # Chaque colonne est représentée par une liste
                 liste_des_strike_prices_tries = sorted(list(info["quant"].keys()), key=int)
-                assert len(liste_des_strike_prices_tries) <= 10
+                assert len(liste_des_strike_prices_tries) <= 14
                 for e, strike_price in enumerate(liste_des_strike_prices_tries):
                     information_for_price_level = sorted(info["quant"][f"{strike_price}"], key=lambda x: x['timestamp'])
                     most_recent_information_for_price_level = information_for_price_level[-1]
                     strike_price, win_rate, action, timestamp = most_recent_information_for_price_level['strike_price'], most_recent_information_for_price_level['win_rate'], most_recent_information_for_price_level['action'], most_recent_information_for_price_level['timestamp']
-                    if e in [0, 1, 2, 3, 4]: quant_dataset[1].append((strike_price, win_rate, action, timestamp))
-                    if e in [5, 6, 7, 8, 9]: quant_dataset[2].append((strike_price, win_rate, action, timestamp))
+                    if len(liste_des_strike_prices_tries)   <= 10:
+                        if e in [0, 1, 2, 3, 4]: quant_dataset[1].append((strike_price, win_rate, action, timestamp))
+                        if e in [5, 6, 7, 8, 9]: quant_dataset[2].append((strike_price, win_rate, action, timestamp))
+                    elif len(liste_des_strike_prices_tries) <= 14:
+                        if e in [0, 1, 2, 3, 4, 5, 6]: quant_dataset[1].append((strike_price, win_rate, action, timestamp))
+                        if e in [7, 8, 9, 10, 11, 12, 13]: quant_dataset[2].append((strike_price, win_rate, action, timestamp))
                 dates, ee = [], 0
                 for hweek_data, h5_data, quant_data in zip(trier_par_prix_decroissant(info["hweek_up"])[:info['max_horizontal_lines_week_h5']],
                                                            trier_par_prix_decroissant(info["h5_up"])[:info['max_horizontal_lines_week_h5']],
@@ -532,7 +557,7 @@ def entry():
                                f"QTREND (@{info['quant_meta_info']['timestamp']}) {qtrend_info}" + saut_ligne + bloc_weekH5)
                 return bloc_weekH5
 
-            return quarter_year_h80_h240() + saut_ligne + month_h20() + saut_ligne + h10_h15() + saut_ligne + week_h5()
+            return quarter_year_h80_h240() + saut_ligne + month_h20() + saut_ligne + h10_h15() + saut_ligne + week_h5_qtrend()
 
         def make_lower_limits(info):
             #######################################################################
@@ -583,10 +608,11 @@ def entry():
             def week_h5_h2():
                 bloc_weekH5, bloc_weekH5_length = "", (console_length//7, console_length//7)
                 dates = []
-                for hweek_data, h5_data, h2_down_data, h2_down_up in zip(trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines_week_h5']],
-                                                                         trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines_week_h5']],
-                                                                         trier_par_prix_decroissant(info["h2_down"])[:info['max_horizontal_lines_week_h5']],
-                                                                         trier_par_prix_croissant(info["h2_up"])[:info['max_horizontal_lines_week_h5']],
+                for hweek_data, h5_data, h2_down_data, h2_down_up in zip(
+                        trier_par_prix_decroissant(info["hweek_down"])[:info['max_horizontal_lines_week_h5']],
+                        trier_par_prix_decroissant(info["h5_down"])[:info['max_horizontal_lines_week_h5']],
+                        trier_par_prix_decroissant(info["h2_down"])[:info['max_horizontal_lines_week_h5']],
+                        trier_par_prix_croissant(info["h2_up"])[:info['max_horizontal_lines_week_h5']],
                                                                          ):
                     #  C1
                     limit_price, proba, date = hweek_data["price"], hweek_data["proba"], hweek_data["date"]
@@ -733,7 +759,8 @@ def entry():
         color_week_streaker, tmr_week_streaker = f"{rouge_clair}" if info['week_streaker']['dir'] == 'down' and info["close"] > info["close_t_m1"] else (f"{rouge_clair}" if info['week_streaker']['dir'] == 'up' and info["close"] < info["close_t_m1"] else f"{vert}"), info["week_streaker"]["realtime"]
         ligne_previous_close_bar_week_streaker = f"{color_week_streaker}{info['week_streaker']['proba']:.0%}{fleche_haut if info['week_streaker']['dir'] == 'up' else fleche_bas}(W{info['week_streaker']['b']}){reset}"
         ligne_previous_close_bar = (f"({gras}{info['previous_now_txt']}) CLOSE:{int(previous_close)}{reset} | {ligne_previous_close_bar_day_streaker} | "
-                                    f"E-VWAP {fleche_haut_pleine}{info["energy_above_vwap"]}/{fleche_bas_pleine}{info["energy_below_vwap"]}").center(console_length + len(gras) + len(reset), "=")
+                                    f"E-VWAP {fleche_haut_pleine}{info["energy_above_vwap"]}/{fleche_bas_pleine}{info["energy_below_vwap"]} | "
+                                    f"RSI {info['rsi']}").center(console_length + len(gras) + len(reset), "=")
         if previous_close > actual_close: print(ligne_previous_close_bar)
         else: print(f"{'='*console_length}")
         print(make_upper_H0_limits(info).ljust(console_length, ' '))
@@ -764,7 +791,7 @@ def entry():
                 'max_horizontal_lines_week_h5': horizontal_lines__max_week_h5, 'worker_status': {},
                 'display_qtrend_info': False,
                 'df__60min': None, 'df__240min': None, 'df__day': None, 'df__week': None, 'df__month': None,
-                'open': 0, 'high': 0, 'low': 0, 'close': 0, 'energy_above_vwap': 0, 'energy_below_vwap': 0,
+                'open': 0, 'high': 0, 'low': 0, 'close': 0, 'energy_above_vwap': 0, 'energy_below_vwap': 0, 'rsi': 0,
                 'bouclier_spx': '-',
                 'vera': {'atr_predicted_low': 0, 'atr_prob_down': 0, 'atr_predicted_high':0, 'atr_prob_up': 0, 'minutes_jusqua_16h': 0},
                 'persistance_conditionelle': {1: {'close_t': 0, 'thres': 0, 'sign': '<', 'proba': 0}, 3: {'close_t': 0, 'thres': 0, 'sign': '<', 'proba': 0},
@@ -809,7 +836,7 @@ def entry():
         previous_now_txt = previous_now.strftime('%Y-%m-%d')
         info.update({'now': now, 'now_txt': now_txt, 'previous_now': previous_now, 'previous_now_txt': previous_now_txt, 'ticker': ticker,})
         info.update({'df__60min': None, 'df__240min': None, 'df__day': None, 'df__week': None, 'df__month': None,})
-        info.update({'energy_above_vwap': random.randint(0, 999), 'energy_below_vwap': random.randint(0, 999),})
+        info.update({'energy_above_vwap': random.randint(0, 999), 'energy_below_vwap': random.randint(0, 999), 'rsi': random.randint(0, 999),})
         info.update({'open': random.randint(7750, 7850), 'high': random.randint(7750, 7850), 'low': random.randint(7750, 7850), 'close': random.randint(7750, 7850),
                 'close_t_m1': random.randint(7750, 7850),
                 'bouclier_spx': '*',})
@@ -999,8 +1026,7 @@ def entry():
             n_split = hirozontal_lines__n_split_year_h240 if _key_id in ["hyear", "h240", ] else (hirozontal_lines__n_split_quarter_h80 if _key_id in ["hquarter", "h80"] else hirozontal_lines__n_split)
             kwargs = {'dataset_id': _dataset_id, "key_id": _key_id, "ticker": ticker, "n_split": n_split, "n_trials": horizontal_lines__n_trials,
                       "tightness_weights": horizontal_lines__tightness_weights, "nb_worker": horizontal_lines__nb_worker}
-            scheduler.add_job(request_for_horizontal_lines, 'cron', day_of_week='mon-fri', hour=7, minute=0, kwargs=kwargs)
-            scheduler.add_job(request_for_horizontal_lines, 'cron', day_of_week='mon-fri', hour=9, minute=31, kwargs=kwargs)
+            scheduler.add_job(request_for_horizontal_lines, 'cron', day_of_week='mon-fri', hour=9, minute=33, kwargs=kwargs)
             scheduler.add_job(request_for_horizontal_lines, 'date', kwargs=kwargs)
     if starter_auth["horizontal_lines"]: setup_horizontal_lines()
 
@@ -1124,7 +1150,7 @@ def entry():
         scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='9', minute='30-59', kwargs=kwargs)
         scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='10-15', minute='*', kwargs=kwargs)
         scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='16', minute='0', kwargs=kwargs)
-        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='11,13,16', minute='0', kwargs=kwargs | {"dump_acc": True})
+        scheduler.add_job(request_for_historian_dump, 'cron', day_of_week='mon-fri', hour='11,13,16', minute='1', kwargs=kwargs | {"dump_acc": True})
     if starter_auth["historian"]: setup_historian()
 
     def setup_cleaner():
