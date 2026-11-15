@@ -683,19 +683,40 @@ def entry(args):
     with open(output_filename_result, "w", encoding="utf-8") as f:
         json.dump(end_go_back_length__2__optimal_target_percentage, f, indent=4, sort_keys=True)
     print(f"Data written to {output_filename_result}")
-    print(f"{'='*80}")
-    for look_back_length, opt in end_go_back_length__2__optimal_target_percentage.items():
+
+    # 1. Construction de la chaîne de caractères (string)
+    output_lines = []
+    output_lines.append(f"{'=' * 80}")
+    for (
+            look_back_length,
+            opt,
+    ) in end_go_back_length__2__optimal_target_percentage.items():
         pred_0, pred_1 = opt["pred_0"], opt["pred_1"]
-        print(f"Backtest {look_back_length} last months")
+        output_lines.append(f"Backtest {look_back_length} last months")
+
         for pred_type, pred_data in zip(["0", "1"], [pred_0, pred_1]):
-            print(f"\tPRED {pred_type} {'*'*40}")
+            output_lines.append(f"\tPRED {pred_type} {'*' * 40}")
+
             for win_rate, override_target_percentage in pred_data.items():
-                print(f"\t For a win rate of {win_rate:.2%} , do:")
-                command_line = (f"python quant_model_trainer.py --real-time --clip "
-                                f"--model-path {args.quant_model} --dataset {args.quant_dataset} "
-                                f"--override-target-percentage {override_target_percentage}")
-                print(f"\t\t {command_line}")
-    print(f"{'=' * 80}")
+                output_lines.append(f"\t For a win rate of {win_rate:.2%} , do:")
+                command_line = (
+                    f"python quant_model_trainer.py --real-time --clip "
+                    f"--model-path {args.quant_model} --dataset {args.quant_dataset} "
+                    f"--override-target-percentage {override_target_percentage}"
+                )
+                output_lines.append(f"\t\t {command_line}")
+    output_lines.append(f"{'=' * 80}")
+
+    # Fusion de toutes les lignes en une seule string
+    final_string = "\n".join(output_lines)
+
+    # 2. Print dans la console
+    print(final_string)
+    output_filename_str = os.path.join(Path(args.quant_dataset).parent, "backtest_results.txt")
+    # 3. Écriture dans le fichier
+    with open(output_filename_str, "w", encoding="utf-8") as f:
+        f.write(final_string)
+
 
 if __name__ == "__main__":
     args = parse_arg()
