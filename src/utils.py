@@ -1,5 +1,5 @@
 from constants import FYAHOO__OUTPUTFILENAME_DAY, FYAHOO__OUTPUTFILENAME_MONTH, FYAHOO__OUTPUTFILENAME_WEEK, FYAHOO__OUTPUTFILENAME_QUARTER, FYAHOO__OUTPUTFILENAME_YEAR
-from constants import BASE_YFINANCE_1MIN_DAILY_SERIALIZER_DIR, EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY, CLAUSE_NON_RESPONSABILITE, IS_RUNNING_HOME_SWEET_HOME
+from constants import EMAIL_SENDER_WEBEAR, PWD_GOOGLE_API, TAURUS_V1_BASE_DIRECTORY, CLAUSE_NON_RESPONSABILITE, IS_RUNNING_HOME_SWEET_HOME, TAURUS_V2_BASE_DIRECTORY
 import sys
 from types import SimpleNamespace
 import platform
@@ -1549,6 +1549,42 @@ def get_taurus_v1_models():
     for a_file in os.listdir(os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\dgdr\models")):
         model_name = Path(a_file).stem
         result['dgdr'][model_name] = {"name": model_name, "version": 1, "filepath": os.path.join(TAURUS_V1_BASE_DIRECTORY, r"2026.08.20\optimizers\dgdr\models", a_file),}
+    return result
+
+
+def get_taurus_v2_models():
+    result= {"oerh": {},
+             "autotune": {},
+             "apcs": {},
+             "dgdr": {},
+            }
+    autotune_dir = os.path.join(TAURUS_V2_BASE_DIRECTORY, r"autotune")
+    if os.path.isdir(autotune_dir):
+        for a_file in os.listdir(autotune_dir):
+            model_name = Path(a_file).stem
+            result['autotune'][model_name] = {"name": model_name, "version": 1,
+                                              "filepath": os.path.join(autotune_dir, a_file),}
+
+    oerh_dir = os.path.join(TAURUS_V2_BASE_DIRECTORY, r"oerh")
+    if os.path.isdir(oerh_dir):
+        for a_file in os.listdir(oerh_dir):
+            model_name = Path(a_file).stem
+            result['oerh'][model_name] = {"name": model_name, "version": 1,
+                                          "filepath": os.path.join(oerh_dir, a_file),}
+
+    apcs_dir = os.path.join(TAURUS_V2_BASE_DIRECTORY, r"apcs")
+    if os.path.isdir(apcs_dir):
+        for a_file in os.listdir(apcs_dir):
+            model_name = Path(a_file).stem
+            result['apcs'][model_name] = {"name": model_name, "version": 1,
+                                          "filepath": os.path.join(apcs_dir, a_file),}
+
+    dgdr_dir = os.path.join(TAURUS_V2_BASE_DIRECTORY, r"dgdr")
+    if os.path.isdir(apcs_dir):
+        for a_file in os.listdir(apcs_dir):
+            model_name = Path(a_file).stem
+            result['dgdr'][model_name] = {"name": model_name, "version": 1,
+                                          "filepath": os.path.join(apcs_dir, a_file),}
     return result
 
 

@@ -37,7 +37,7 @@ from optimizers.oerh.realtime_and_backtest_hyperparameter_search_optuna import e
 from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import entry as apcs_entry_point
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune_entry_point
 from optimizers.dgdr.realtime_and_backtest_hyperparameter_search_optuna import entry as dgdr_entry_point
-from utils import get_taurus_v1_models, get_next_step, round_price_for_put_credit_spread, compute_break_even_credit
+from utils import get_taurus_v1_models, get_taurus_v2_models, get_next_step, round_price_for_put_credit_spread, compute_break_even_credit
 
 
 def setup_argparse() -> argparse.ArgumentParser:
@@ -46,6 +46,7 @@ def setup_argparse() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--version", type=str, default="v1", choices=["v1", "v2"])
     return parser
 
 
@@ -57,12 +58,13 @@ def entry(args):
     trade_detected = False
     msg_str = ""
     spread_width = 500
-
+    func_models = get_taurus_v1_models
+    if getattr(args, "version", "v1") == "v2": func_models = get_taurus_v2_models
     ###########################################################################
     # APCS
     ###########################################################################
     msg_str = dual_print(f"Models APCS", msg_str)
-    apcs_models = get_taurus_v1_models()["apcs"]
+    apcs_models = func_models()["apcs"]
     for model_name, model_info in apcs_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
@@ -75,7 +77,7 @@ def entry(args):
     # DGDR
     ###########################################################################
     msg_str = dual_print(f"Models DGDR", msg_str)
-    dgdr_models = get_taurus_v1_models()["dgdr"]
+    dgdr_models = func_models()["dgdr"]
     for model_name, model_info in dgdr_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
@@ -88,7 +90,7 @@ def entry(args):
     # AUTOTUNE
     ###########################################################################
     msg_str = dual_print(f"Models AutoTune", msg_str)
-    autotune_models = get_taurus_v1_models()["autotune"]
+    autotune_models = func_models()["autotune"]
     for model_name, model_info in autotune_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
@@ -101,7 +103,7 @@ def entry(args):
     # OERH
     ###########################################################################
     msg_str = dual_print(f"Models OERH", msg_str)
-    oerh_models = get_taurus_v1_models()["oerh"]
+    oerh_models = func_models()["oerh"]
     for model_name, model_info in oerh_models.items():
         model_path = model_info["filepath"]
         config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
