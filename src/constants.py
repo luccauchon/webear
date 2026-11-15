@@ -46,6 +46,7 @@ if IS_RUNNING_MAC:
 # Ensure the directory exists (optional, but helpful if you're writing later)
 os.makedirs(str(BASE_YFINANCE_DIR), exist_ok=True)
 TAURUS_V1_BASE_DIRECTORY                = os.path.join(BASE_FINANCE_COMPILED_MODELS, "taurus", "v1")
+TAURUS_V2_BASE_DIRECTORY                = os.path.join(BASE_FINANCE_COMPILED_MODELS, "taurus", "v2")
 # Define output filenames using the base directory
 FYAHOO__OUTPUTFILENAME         = os.path.join(str(BASE_YFINANCE_DIR), "snapshot.pkl")
 FYAHOO__OUTPUTFILENAME_DAY     = os.path.join(str(BASE_YFINANCE_DIR), "snapshot_day.pkl")
