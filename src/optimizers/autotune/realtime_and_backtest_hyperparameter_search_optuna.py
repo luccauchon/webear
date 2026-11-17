@@ -410,6 +410,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     opt_group.add_argument('--optimize', type=str, choices=list(METRIC_MAP.keys()), default='hold_floor')
     opt_group.add_argument('--n-trials', type=int, default=999)
     opt_group.add_argument('--n-split', type=int, default=20)
+    opt_group.add_argument('--alpha', type=float, default=1.)
     opt_group.add_argument('--timeout', type=int, default=300)
     opt_group.add_argument('--output-dir', type=str, default='models')
     opt_group.add_argument('--storage', type=str, default=None,
@@ -681,6 +682,7 @@ def entry(args):
     timeout = args.timeout
     required_signal_density = args.min_signal_density
     n_split = getattr(args, "n_split", 20)
+    alpha   = getattr(args, "alpha", 1.)
     METRIC_TO_SIGNAL_TYPE = {
         'hold_floor': 1, 'finish_above': 1, 'hold_floor_half_B': 1,
         'hold_ceiling': -1, 'finish_below': -1,
@@ -755,13 +757,7 @@ def entry(args):
                 else:
                     fold_scores.append(obj)
 
-            # Return the mean score across all folds
-            if n_split > 10:
-                std_stabilise = np.std(fold_scores[5:])
-                final_score = np.mean(fold_scores) - (0.2 * std_stabilise)
-            else:
-                alpha = 0.5
-                final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
+            final_score = np.mean(fold_scores) - (alpha * np.std(fold_scores))
             return float(final_score)
 
         except Exception as e:
