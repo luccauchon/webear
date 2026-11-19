@@ -168,24 +168,23 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                                                         "rsi": current_rsi})
                     all_results_computed.append(dict_tmp)
                 if k == "horizontal_lines":
-                    if is_market_open():
-                        key_for_hl_request = f'{v["key_id"]}____{datetime.now().strftime('%Y-%m-%d')}'
-                        _payload = None
+                    key_for_hl_request = f'{v["key_id"]}____{datetime.now().strftime('%Y-%m-%d')}'
+                    _payload = None
+                    with cache_disque as cache:
+                        with cache.transact():
+                            if key_for_hl_request in cache:
+                                _payload = cache[key_for_hl_request]
+                    if _payload is None and is_market_open():
+                        data_from_atr_probability_zone = atr_probability_zone(args=Namespace(production_setup=False, ticker=v["ticker"], dataset_id=v["dataset_id"],
+                                                                                             n_split=v["n_split"], n_trials=v["n_trials"],
+                                                                                             use_close_for_range=True, no_email=True, verbose=False,
+                                                                                             tightness_weights=v["tightness_weights"], nb_worker=v["nb_worker"]))
                         with cache_disque as cache:
                             with cache.transact():
-                                if key_for_hl_request in cache:
-                                    _payload = cache[key_for_hl_request]
-                        if _payload is None:
-                            data_from_atr_probability_zone = atr_probability_zone(args=Namespace(production_setup=False, ticker=v["ticker"], dataset_id=v["dataset_id"],
-                                                                                                 n_split=v["n_split"], n_trials=v["n_trials"],
-                                                                                                 use_close_for_range=True, no_email=True, verbose=False,
-                                                                                                 tightness_weights=v["tightness_weights"], nb_worker=v["nb_worker"]))
-                            with cache_disque as cache:
-                                with cache.transact():
-                                    cache[key_for_hl_request] = data_from_atr_probability_zone
-                            all_results_computed.append({v["key_id"]: data_from_atr_probability_zone})
-                        else:
-                            all_results_computed.append({v["key_id"]: _payload})
+                                cache[key_for_hl_request] = data_from_atr_probability_zone
+                        all_results_computed.append({v["key_id"]: data_from_atr_probability_zone})
+                    else:
+                        all_results_computed.append({v["key_id"]: _payload})
                 if k == "vera":
                     if is_market_open():
                         min_16h = minutes_jusqua_16h()+1
@@ -204,26 +203,29 @@ def _worker_processor(use_cases__shared, master_cmd__shared, out__shared, _jjj):
                     streaker_results = streak_probability_entry(args=Namespace(ticker=v["ticker"], dataset_id=v["dataset_id"], send_email=False, realtime=v["realtime"], production_setup=False, clip_n=v["clip_n"]))
                     all_results_computed.append({k: (streaker_results["proba_txt"] , {"realtime": v["realtime"]}) })
                 if k == "quant":
-                    if is_market_open():
-                        # Trouver la valeur maximale strictement inférieure à 'maintenant'
-                        st2 = max((h for h in v["quant__st2"] if h <= datetime.now().strftime('%H:%M')), default=None)
-                        key_for_quant_request = f'{st2}_{v["seuil_pos"]}____{datetime.now().strftime('%Y-%m-%d')}'
-                        _payload = ()
+                    if v.get("compute_win_rate", False):
+                        quant_morning_beta_miner(args=Namespace(realtime=False, ticker=v["ticker"], st1="", st2="", et1="", et2="", seuil_pos="", models_dir="",
+                                                                extract_experiences_configuration=v["models_dir"]))
+
+                    # Trouver la valeur maximale strictement inférieure à 'maintenant'
+                    st2 = max((h for h in v["quant__st2"] if h <= datetime.now().strftime('%H:%M')), default=None)
+                    key_for_quant_request = f'{st2}_{v["seuil_pos"]}____{datetime.now().strftime('%Y-%m-%d')}'
+                    _payload = ()
+                    with cache_disque as cache:
+                        with cache.transact():
+                            if key_for_quant_request in cache:
+                                _payload = cache[key_for_quant_request]
+                    if (0 == len(_payload) or _payload is None) and is_market_open():
+                        result_quant = quant_morning_beta_miner(args=Namespace(realtime=True, ticker=v["ticker"], st1=v["st1"], st2=st2, et1=v["et1"], et2=v["et2"], seuil_pos=v["seuil_pos"], models_dir=v["models_dir"]))
+                        action, strike_price, win_rate, timestamp = result_quant["action"], result_quant["strike_price"], result_quant["win_rate"], datetime.now().time()
+                        tmp_lst = [{'strike_price': int(strike_price), 'win_rate': win_rate, 'action': action, 'timestamp': timestamp}]
                         with cache_disque as cache:
                             with cache.transact():
-                                if key_for_quant_request in cache:
-                                    _payload = cache[key_for_quant_request]
-                        if 0 == len(_payload) or _payload is None:
-                            result_quant = quant_morning_beta_miner(args=Namespace(realtime=True, ticker=v["ticker"], st1=v["st1"], st2=st2, et1=v["et1"], et2=v["et2"], seuil_pos=v["seuil_pos"], models_dir=v["models_dir"]))
-                            action, strike_price, win_rate, timestamp = result_quant["action"], result_quant["strike_price"], result_quant["win_rate"], datetime.now().time()
-                            tmp_lst = [{'strike_price': int(strike_price), 'win_rate': win_rate, 'action': action, 'timestamp': timestamp}]
-                            with cache_disque as cache:
-                                with cache.transact():
-                                    cache[key_for_quant_request] = (strike_price, tmp_lst)
-                            all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
-                        else:
-                            strike_price, tmp_lst = _payload
-                            all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
+                                cache[key_for_quant_request] = (strike_price, tmp_lst)
+                        all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
+                    else:
+                        strike_price, tmp_lst = _payload
+                        all_results_computed.append({k: (str(int(strike_price)), tmp_lst)})
                 if k == "cleaner":
                     gc.collect()
                     # Récupérer l'identifiant du processus actuel
@@ -271,7 +273,7 @@ def entry():
     # QUANT
     quant__models_dir = r"D:\Finance\compiled_models\taurus\v1\2026.10.22\quant\miner1__credit_spread_2_fast"
     assert os.path.exists(quant__models_dir)
-    def extraire_quant_parameters_from_filename(output_directory):
+    def _extraire_quant_parameters_from_filename(output_directory):
         quant_st2, quant_seuil_pos = [], []
         for a_file in [r for r in os.listdir(output_directory) if r.endswith(".joblib")]:
             # print(a_file.split("_ensemble_model__"))
@@ -288,7 +290,7 @@ def entry():
             st2 = f"{st2[:2]}:{st2[2:]}"
             quant_st2.append(st2)
         return tuple(sorted(set(quant_st2), key=lambda x: datetime.strptime(x, "%H:%M").time())), tuple(sorted(set(quant_seuil_pos)))
-    quant__st2, quant__seuil_pos = extraire_quant_parameters_from_filename(quant__models_dir)
+    quant__st2, quant__seuil_pos = _extraire_quant_parameters_from_filename(quant__models_dir)
     quant__kwargs = {"ticker": ticker, "st1": "09:30", "et1": "15:59", "et2": "16:00", "realtime": True, "quant__st2": quant__st2,
                      "models_dir": quant__models_dir}
     # ARGUS
@@ -343,6 +345,7 @@ def entry():
         # Flèches pleines (géométriques)
         fleche_haut_pleine = "▲"
         fleche_bas_pleine = "▼"
+        fleche_neutre_pleine = "■"  # "▶" Ou "■" (carré) / "▬" (barre) selon votre préférence
 
         previous_close = float(info["close_t_m1"])
         def compute_distance(a, b):
@@ -548,7 +551,7 @@ def entry():
                         tmp_str = f"{strike_price} ({format_proba(win_rate)})"
                         if action == "PUT_CREDIT_SPREAD": tmp_str = f"{vert}{fleche_haut_pleine}{tmp_str}{reset}"
                         elif action == "CALL_CREDIT_SPREAD": tmp_str = f"{rouge_clair}{fleche_bas_pleine}{tmp_str}{reset}"
-                        elif action == "PASS": tmp_str = f"{gris_fonce}{barre}{fleche_haut_pleine}{tmp_str}{reset}"
+                        elif action == "PASS": tmp_str = f"{gris_fonce}{barre}{fleche_neutre_pleine}{tmp_str}{reset}"
                         texte_l1_c3 += f"{tmp_str}" if e == len(quant_data)-1 else f"{tmp_str} | "
                     # C1 + C2 + C3
                     bloc_weekH5 += make_bloc_line_3(texte_l1_c1, texte_l1_c2, texte_l1_c3, True if ee < info['max_horizontal_lines_week_h5'] else False)
@@ -755,12 +758,13 @@ def entry():
         print(make_trend(info))
         print(make_upper_limits(info))
         color_day_streaker, tmr_day_streaker = f"{rouge_clair}" if info['day_streaker']['dir']=='down' and info["close"] > info["close_t_m1"] else (f"{rouge_clair}" if info['day_streaker']['dir']=='up' and info["close"] < info["close_t_m1"] else f"{vert}"), info["day_streaker"]["realtime"]
-        ligne_previous_close_bar_day_streaker  = f"{color_day_streaker}{info['day_streaker']['proba']:.0%}{fleche_haut if info['day_streaker']['dir']=='up' else fleche_bas}(D{info['day_streaker']['b']}){reset}"
+        ligne_previous_close_bar_day_streaker  = f"{color_day_streaker}{info['day_streaker']['proba']:.2%}{fleche_haut if info['day_streaker']['dir']=='up' else fleche_bas}(D{info['day_streaker']['b']}){reset}"
         color_week_streaker, tmr_week_streaker = f"{rouge_clair}" if info['week_streaker']['dir'] == 'down' and info["close"] > info["close_t_m1"] else (f"{rouge_clair}" if info['week_streaker']['dir'] == 'up' and info["close"] < info["close_t_m1"] else f"{vert}"), info["week_streaker"]["realtime"]
         ligne_previous_close_bar_week_streaker = f"{color_week_streaker}{info['week_streaker']['proba']:.0%}{fleche_haut if info['week_streaker']['dir'] == 'up' else fleche_bas}(W{info['week_streaker']['b']}){reset}"
+        _rsi_str = f"RSI {rouge_clair if int(info['rsi']) < 30 or int(info['rsi'])>70 else ''}{info['rsi']}{reset}"
         ligne_previous_close_bar = (f"({gras}{info['previous_now_txt']}) CLOSE:{int(previous_close)}{reset} | {ligne_previous_close_bar_day_streaker} | "
                                     f"E-VWAP {fleche_haut_pleine}{info["energy_above_vwap"]}/{fleche_bas_pleine}{info["energy_below_vwap"]} | "
-                                    f"RSI {info['rsi']}").center(console_length + len(gras) + len(reset), "=")
+                                    f"{_rsi_str}").center(console_length + len(gras) + len(reset), "=")
         if previous_close > actual_close: print(ligne_previous_close_bar)
         else: print(f"{'='*console_length}")
         print(make_upper_H0_limits(info).ljust(console_length, ' '))
@@ -789,7 +793,7 @@ def entry():
         info = {'now': now, 'now_txt': now_txt, 'previous_now': previous_now, 'previous_now_txt': previous_now_txt, 'ticker': ticker,
                 'max_horizontal_lines': horizontal_lines__max_lines, 'max_horizontal_lines_h0': horizontal_lines__max_lines_h0,
                 'max_horizontal_lines_week_h5': horizontal_lines__max_week_h5, 'worker_status': {},
-                'display_qtrend_info': False,
+                'display_qtrend_info': True,
                 'df__60min': None, 'df__240min': None, 'df__day': None, 'df__week': None, 'df__month': None,
                 'open': 0, 'high': 0, 'low': 0, 'close': 0, 'energy_above_vwap': 0, 'energy_below_vwap': 0, 'rsi': 0,
                 'bouclier_spx': '-',
@@ -1089,6 +1093,7 @@ def entry():
             scheduler.add_job(request_for_quant, 'cron',day_of_week='mon-fri', hour='9', minute='45,50,55',kwargs=_tmp_kwargs)
             scheduler.add_job(request_for_quant, 'cron',day_of_week='mon-fri', hour='10-14', minute='*/5',kwargs=_tmp_kwargs)
             scheduler.add_job(request_for_quant, 'cron',day_of_week='mon-fri', hour='15', minute='0,5,10,15,20,25,30',kwargs=_tmp_kwargs)
+            scheduler.add_job(request_for_quant,'cron',day_of_week='fri',hour=21,minute=0,kwargs=_tmp_kwargs|{"compute_win_rate": True})
             scheduler.add_job(request_for_quant, 'date', kwargs=_tmp_kwargs)
     if starter_auth["quant"]: setup_quant()
 
@@ -1347,7 +1352,7 @@ def entry():
                 make_display(info=argus__information_displayed)
 
             # Wait
-            time.sleep(3)
+            time.sleep(9)
         except Exception as eee:
             print(eee)
             traceback.print_exc()
