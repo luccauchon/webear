@@ -47,7 +47,7 @@ def setup_argparse() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--version", type=str, default="v1", choices=["v1", "v2"])
+    parser.add_argument("--version", type=str, default="v2", choices=["v1", "v2"])
     parser.add_argument('--clip-n', type=int, default=0, help="Do a .iloc[:-n] on the loaded dataset. A value of greater than 0 enable it.")
     parser.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     return parser
@@ -62,7 +62,7 @@ def entry(args):
     msg_str = ""
     spread_width = 500
     func_models = get_taurus_v1_models
-    if getattr(args, "version", "v1") == "v2": func_models = get_taurus_v2_models
+    if getattr(args, "version", "v2") == "v2": func_models = get_taurus_v2_models
     ###########################################################################
     # APCS
     ###########################################################################
