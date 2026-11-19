@@ -62,7 +62,8 @@ def entry(args):
     msg_str = ""
     spread_width = 500
     func_models = get_taurus_v1_models
-    if getattr(args, "version", "v2") == "v2": func_models = get_taurus_v2_models
+    version = getattr(args, "version", "v2")
+    if version == "v2": func_models = get_taurus_v2_models
     ###########################################################################
     # APCS
     ###########################################################################
@@ -138,10 +139,10 @@ def entry(args):
             if verbose: msg_str = dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)
 
     if trade_detected:
-        dct_results = yamaha_backtesting(args=Namespace(retro_bars_n=90, version=getattr(args, "version", "v1"), verbose=False))
+        dct_results = yamaha_backtesting(args=Namespace(retro_bars_n=90, version=version, verbose=False))
         destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
         msg_str += f"\n\n{dct_results['txt']['oerh']}"
-        send_html_email(destinataires=destinataires, sujet=GET_SUBJECT("YAMAHA", args.production_setup), corps=msg_str)
+        send_html_email(destinataires=destinataires, sujet=GET_SUBJECT(f"YAMAHA {version}", args.production_setup), corps=msg_str)
 
 
 if __name__ == "__main__":
