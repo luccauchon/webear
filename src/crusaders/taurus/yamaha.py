@@ -38,6 +38,7 @@ from optimizers.apcs.realtime_and_backtest_hyperparameter_search_optuna import e
 from optimizers.autotune.realtime_and_backtest_hyperparameter_search_optuna import entry as autotune_entry_point
 from optimizers.dgdr.realtime_and_backtest_hyperparameter_search_optuna import entry as dgdr_entry_point
 from utils import get_taurus_v1_models, get_taurus_v2_models, get_next_step, round_price_for_put_credit_spread, compute_break_even_credit
+from crusaders.taurus.yamaha_backtesting import entry as yamaha_backtesting
 
 
 def setup_argparse() -> argparse.ArgumentParser:
@@ -47,6 +48,8 @@ def setup_argparse() -> argparse.ArgumentParser:
     )
     parser.add_argument("--production-setup", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--version", type=str, default="v1", choices=["v1", "v2"])
+    parser.add_argument('--clip-n', type=int, default=0, help="Do a .iloc[:-n] on the loaded dataset. A value of greater than 0 enable it.")
+    parser.add_argument('--verbose', action=argparse.BooleanOptionalAction, default=False, help='Verbose output')
     return parser
 
 
@@ -106,23 +109,28 @@ def entry(args):
     oerh_models = func_models()["oerh"]
     for model_name, model_info in oerh_models.items():
         model_path = model_info["filepath"]
-        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=0)
+        config = Namespace(realtime=True, model_path=model_path, use_realtime_data=True, verbose=verbose, return_values_as_dict=True, clip_n=getattr(args, "clip_n", 0))
         result_oerh = oerh_entry_point(args=config)
         emoji = "🟢" if result_oerh["signal"] == 1 else "🔴"
         if 1 == result_oerh["signal"]:
-            assert 'long_accuracy::any_half_B' == result_oerh['metric_target_type']
             lookahead_bars = result_oerh['lookahead_bars']
             entry_price = result_oerh['current_price'] * (1 + result_oerh['threshold_pct'])
             assert math.isclose(entry_price, result_oerh['target_price'], abs_tol=0.1)
-            date_future_t_half_lookahead = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars//2)
+            assert result_oerh['dataset_id'] == "day"
+            if 'long_accuracy::any_half_B' == result_oerh['metric_target_type']:
+                date_future_t_lookahead = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars//2)
+            elif 'long_accuracy::exact' == result_oerh['metric_target_type']:
+                date_future_t_lookahead = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars)
+            else: assert False, f"{result_oerh['metric_target_type']}  {model_path}"
             now = datetime.now().strftime("%Y%m%d_%Hh%Mm%Ss")
             test_win_rate = result_oerh["val_win_rate"]
             str_strike_price = f"{round_price_for_put_credit_spread(entry_price):.0f}"
-            assert datetime.strptime(result_oerh['current_date'], "%Y-%m-%d").strftime("%Y%m%d") == datetime.now().strftime("%Y%m%d")
+            if 0 == getattr(args, "clip_n", 0):
+                assert datetime.strptime(result_oerh['current_date'], "%Y-%m-%d").strftime("%Y%m%d") == datetime.now().strftime("%Y%m%d")
             days_to_expiration = get_next_step(the_date=result_oerh['current_date'], dataset_id=result_oerh['dataset_id'], nn=lookahead_bars).strftime("%Y%m%d")
             break_even = compute_break_even_credit(test_win_rate,spread_width)
-            msg_str = dual_print(f"\t{emoji}Today @{now} , buy a Put Credit Spread located at {str_strike_price} expiring on {days_to_expiration} (LA of {lookahead_bars}B), "
-                                 f"and get profit starting on {date_future_t_half_lookahead.strftime("%Y%m%d")} , "
+            msg_str = dual_print(f"\t{emoji}Today @{result_oerh['current_date']} , buy a Put Credit Spread located at {str_strike_price} expiring on {days_to_expiration} (LA of {lookahead_bars}B), "
+                                 f"and get profit starting on {date_future_t_lookahead.strftime("%Y%m%d")} , "
                                  f"targetting that price shall be above {str_strike_price} at that point on, grabbing time decay.\n\t"
                                  f"Model has a {test_win_rate:.1%} Test Win Rate. Break Even is {break_even:.0f}$ for {spread_width:.0f}$ Credit Spread", msg_str)
             trade_detected = True
@@ -130,7 +138,9 @@ def entry(args):
             if verbose: msg_str = dual_print(f"\t{model_name} ({Path(model_path).stem}) has not triggered a signal", msg_str)
 
     if trade_detected:
+        dct_results = yamaha_backtesting(args=Namespace(retro_bars_n=90, version=getattr(args, "version", "v1"), verbose=False))
         destinataires = GET_EMAILS() if args.production_setup else GET_EMAILS(dev=True)
+        msg_str += f"\n\n{dct_results['txt']['oerh']}"
         send_html_email(destinataires=destinataires, sujet=GET_SUBJECT("YAMAHA", args.production_setup), corps=msg_str)
 
 
