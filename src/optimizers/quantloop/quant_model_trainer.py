@@ -52,7 +52,7 @@ from sklearn.exceptions import InconsistentVersionWarning
 warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 
 
-def parse_arguments():
+def _parse_arguments():
     """
     Parse command-line arguments for the market/macro prediction script.
     """
@@ -292,8 +292,10 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
         # We explicitly restore NaNs where future_close is missing so dropna() works as expected.
         _df_fusionned.loc[future_close.isna(), "Target"] = np.nan
 
-        # Drop only rows with invalid targets (preserves rows where other features might be NaN)
+        # Drop only rows with invalid targets (like the current row)
         _df_fusionned = _df_fusionned.dropna(subset=["Target"])
+        # Drop also the first rows where there might be some missing features.
+        _df_fusionned = _df_fusionned.dropna()
     else:
         # Real-time mode: only drop rows with missing features
         _df_fusionned = _df_fusionned.dropna()
@@ -301,15 +303,17 @@ def build_features_and_target(_df_market, _df_macro, _rsi_window, _vix_lag, _rsi
     if _verbose:
         print(f"Dates in DF (features only):  {_df_fusionned.index[0].strftime('%Y-%m-%d')} :: {_df_fusionned.index[-1].strftime('%Y-%m-%d')}")
 
-    return _df_fusionned
+    return _df_fusionned.copy()
 
 
-def save_best_model(best_setup, args, output_dir, command_line, verbose=True):
+def _save_best_model(best_setup, args, output_dir, command_line, verbose=True):
     """Saves the best model configuration AND training parameters to a pickle file."""
     os.makedirs(output_dir, exist_ok=True)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     est_name = args.the_estimator.__name__
     target_name = args.target_type
+
     filename = f"best_model_{est_name}_{target_name}_{timestamp}.pkl"
     filepath = os.path.join(output_dir, filename)
 
@@ -404,6 +408,7 @@ def entry_point(args):
         _type_of_target=type_of_target, _verbose=verbose,
         create_target=not (getattr(args, "real_time", False) or getattr(args, "realtime", False))  # Skip target creation in real-time mode
     )
+    assert 0==df.isna().any(axis=1).sum()
     # ─────────────────────────────────────────────────────────────────────────
     # 🚀 REAL-TIME PREDICTION MODE
     # ─────────────────────────────────────────────────────────────────────────
@@ -525,7 +530,7 @@ def entry_point(args):
     # ─────────────────────────────────────────────────────────────────────────
     total_combinations = (2 ** len(features)) - 1
     if verbose:
-        print(f"Nombre de features disponibles : {len(features)}")
+        print(f"Nombre de features disponibles : {len(features)} (en mode exhaustif)")
         if training_mode == "random":
             print(f"Nombre de features minimums : {minimum_features}")
         print(f"Total des combinaisons de features possibles : {total_combinations:,}  \n"
@@ -536,10 +541,11 @@ def entry_point(args):
     if time_limit and verbose:
         print(f"⏱️ Time limit set to: {time_limit} seconds")
 
-    def get_feature_combinations(_features, _mode, _minimum_features, _max_random_iterations):
+    def _get_feature_combinations(_features, _mode, _minimum_features, _max_random_iterations):
         if _mode == "exhaustive":
             for r in range(1, len(_features) + 1):
                 for combo in itertools.combinations(_features, r):
+                    if len(combo) < _minimum_features: continue
                     yield list(combo)
         elif _mode == "random":
             history = set()
@@ -560,7 +566,7 @@ def entry_point(args):
             for a_feartures_set in provided_features:
                 yield a_feartures_set
 
-    feature_iterator = get_feature_combinations(_features=features, _mode=training_mode, _minimum_features=minimum_features, _max_random_iterations=max_random_iterations)
+    feature_iterator = _get_feature_combinations(_features=features, _mode=training_mode, _minimum_features=minimum_features, _max_random_iterations=max_random_iterations)
     total_to_process = total_combinations if training_mode == "exhaustive" else max_random_iterations
 
     # 🔧 ENHANCED: Single dictionary tracking the best model based on Cross-Validation score.
@@ -654,7 +660,7 @@ def entry_point(args):
             cv=tscv,
             n_jobs=args.nb_worker,
             random_state=SEED,
-            verbose=1 if args.verbose else 0,
+            verbose=0,
             refit=True,
         )
 
@@ -725,12 +731,12 @@ def entry_point(args):
 
             saved_preds = data['model'].predict(data['X_test_scaled'])
             assert np.array_equal(saved_preds, data['y_hat_test_final']), "Sanity check failed!"
-            print(f"\nClassification Report (Test Set - Unbiased):")
+            print(f"\nClassification Report (TEST SET):")
             print(classification_report(data['y_test_final'], saved_preds, zero_division=0))
             print(f"\n"
                   f"y    : {data['y_test_final'].values}\n"
                   f"y_hat: {saved_preds}\n")
-            print("Confusion Matrix:")
+            print("Confusion Matrix - TEST SET:")
             print(confusion_matrix(data['y_test_final'], saved_preds))
             print("═" * 128)
         displayed_output_once = True
@@ -741,7 +747,7 @@ def entry_point(args):
     # 💾 Save the best model after loop finishes or breaks
     # ─────────────────────────────────────────────────────────────────────────
     if best_setup_found is not None and best_setup_found.get('cv'):
-        save_best_model(best_setup=best_setup_found, args=args, output_dir=output_dir, command_line=command_line, verbose=verbose)
+        _save_best_model(best_setup=best_setup_found, args=args, output_dir=output_dir, command_line=command_line, verbose=verbose)
     else:
         if verbose:
             print("\n⚠️ No valid model was trained. Nothing to save.")
@@ -750,5 +756,5 @@ def entry_point(args):
 
 
 if __name__ == "__main__":
-    parsed_args = parse_arguments()
+    parsed_args = _parse_arguments()
     entry_point(parsed_args)
