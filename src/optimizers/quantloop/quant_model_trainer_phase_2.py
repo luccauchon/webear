@@ -41,7 +41,7 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import (classification_report, confusion_matrix, fbeta_score, f1_score, make_scorer)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
-from optimizers.quantloop.quant_model_trainer import _save_best_model, _build_features_and_target
+from optimizers.quantloop.quant_model_trainer import _save_best_model, build_features_and_target
 
 
 def _parse_arguments():
@@ -132,7 +132,7 @@ def _parse_arguments():
     )
     model_grp.add_argument(
         "--scorer", "-sc", type=str, default="F0.5",
-        choices=["F0.5", "F", "F2"],
+        choices=["F0.25", "F0.5", "F", "F2"],
         help="Metric used for hyperparameter optimization and evaluation."
     )
     model_grp.add_argument(
@@ -263,7 +263,9 @@ def _run_training_pipeline(_df, _selected_features, _args):
     tscv_n_split = getattr(_args, "n_splits", 5)
     tscv = TimeSeriesSplit(n_splits=tscv_n_split)
     scoring_sl1, scoring_sl2 = None, None
-    if the_scorer == 'F0.5':
+    if the_scorer == 'F0.25':
+        scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=0.25, zero_division=0), fbeta_score
+    elif the_scorer == 'F0.5':
         scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=0.5, zero_division=0), fbeta_score
     elif the_scorer == 'F2':
         scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=2, zero_division=0), fbeta_score
@@ -292,8 +294,10 @@ def _run_training_pipeline(_df, _selected_features, _args):
     cv_score = random_search.best_score_
 
     test_preds = best_model.predict(X_test_scaled)
-    assert the_scorer in ["F0.5", "F", "F2"]
-    if the_scorer == 'F0.5':
+    assert the_scorer in ["F0.25", "F0.5", "F", "F2"]
+    if the_scorer == 'F0.25':
+        test_score = scoring_sl2(y_test_final, test_preds, beta=0.25, zero_division=0)
+    elif the_scorer == 'F0.5':
         test_score = scoring_sl2(y_test_final, test_preds, beta=0.5, zero_division=0)
     elif the_scorer == 'F2':
         test_score = scoring_sl2(y_test_final, test_preds, beta=2, zero_division=0)
@@ -342,7 +346,8 @@ def entry_point(args):
     command_line = f"python " + " ".join(sys.argv)
     if verbose:
         print(f"Beta    Priorite    Philosophie\n"
-              f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis.'\n"
+              f"0.25    Precision   'Je ne veux pas me tromper quand j\'investis  (Précision 4x plus importante).'\n"
+              f"0.5     Precision   'Je ne veux pas me tromper quand j\'investis  (Précision 2x plus importante).'\n"
               f"1.0     Equilibre   'Je veux un bon melange de fiabilite et d\'opportunites.'\n"
               f"2.0     Rappel      'Je ne veux surtout pas rater une hausse du marche.")
         print(f"Scorer: {the_scorer}")
@@ -371,7 +376,7 @@ def entry_point(args):
         _vix_l = trial.suggest_int("vix_lag", args.optuna_lag_min, args.optuna_lag_max)
         _rsi_l = trial.suggest_int("rsi_lag", args.optuna_lag_min, args.optuna_lag_max)
 
-        _df = _build_features_and_target(
+        _df = build_features_and_target(
             _df_market=df_market, _df_macro=df_macro, _rsi_window=_rsi_w, _vix_lag=_vix_l, _rsi_lag=_rsi_l,
             _look_head_for_prediction=look_head_for_prediction, _percentage_of_type_target=percentage_of_type_target, _type_of_target=type_of_target,
             _verbose=False, create_target=True
@@ -392,7 +397,7 @@ def entry_point(args):
 
     # Final train with best parameters
     best_params = study.best_trial.params
-    df_best = _build_features_and_target(
+    df_best = build_features_and_target(
         _df_market=df_market, _df_macro=df_macro,
         _rsi_window=best_params['rsi_window'], _vix_lag=best_params['vix_lag'], _rsi_lag=best_params['rsi_lag'],
         _look_head_for_prediction=look_head_for_prediction, _percentage_of_type_target=percentage_of_type_target, _type_of_target=type_of_target,

@@ -515,7 +515,7 @@ def entry_point(args):
         if verbose: print(f"   CV/Test scores: {cv_score_str}/{test_score_str}")
         if verbose: print(f"   Train : {setup_to_use['train_t1']}::{setup_to_use['train_t2']}")
         if verbose: print(f"   Target: {_target_type_used} @{_target_pourcentage_used:.4%}")
-        if verbose: print(f"   Out of sample (Test) performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']}): \n"
+        if verbose: print(f"   Out of sample (Test) performance ({setup_to_use['test_t1']}::{setup_to_use['test_t2']} -- At the time of training --): \n"
                           f"    y    : {setup_to_use['y_test_final'].values}\n"
                           f"    y_hat: {setup_to_use['y_hat_test_final']}")
         if verbose: print("Test Confusion Matrix:")
