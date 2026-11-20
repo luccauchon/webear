@@ -165,6 +165,10 @@ def entry_point(args: argparse.Namespace) -> None:
     cached_vix = df_vix[vix_close_col].iloc[-val_window - 1:-1]
     new_vix = market_data['VIX'].iloc[-val_window - 1:-1]
     assert np.allclose(new_vix.values, cached_vix.values, atol=0.1, rtol=0), f"VIX validation failed for {freq_label}.\n{new_vix.values=}\n{cached_vix.values=}\n{len(new_vix.values)=}\n{len(cached_vix.values)=}"
+    market_data = market_data.ffill()
+    market_data = market_data.bfill()
+    market_data_resampled = market_data.resample(pd_freq).last().ffill()
+    assert len(market_data_resampled) == len(market_data_resampled.dropna()), f"{len(market_data_resampled)=} == {len(market_data_resampled.dropna())=}"
 
     # Prepare date range
     start_date = args.start_date
@@ -182,11 +186,12 @@ def entry_point(args: argparse.Namespace) -> None:
     # 4. Resample and align macro data
     # .ffill() is added to propagate the last known value through weeks without releases
     macro_resampled = macro_data.resample(pd_freq).last().ffill()
+    assert len(macro_resampled) == len(macro_resampled.dropna()), f"{len(macro_resampled)=} == {len(macro_resampled.dropna())=}"
 
     # Combine datasets
     combined_data = {
-        "market_data": market_data,
-        "macro_data": macro_resampled
+        "market_data": market_data_resampled.copy(),
+        "macro_data": macro_resampled.copy()
     }
 
     # Determine output filename
