@@ -2,7 +2,7 @@ import os
 import random
 import numpy as np
 import optuna
-
+import sys
 # ─────────────────────────────────────────────────────────────────────────
 # 🔒 DETERMINISM SETUP
 # ─────────────────────────────────────────────────────────────────────────
@@ -38,16 +38,13 @@ from sklearn.exceptions import ConvergenceWarning, EfficiencyWarning
 from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import (classification_report, confusion_matrix,
-                             fbeta_score, f1_score, make_scorer)
+from sklearn.metrics import (classification_report, confusion_matrix, fbeta_score, f1_score, make_scorer)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler
-from tqdm import tqdm
-from utils import get_next_step
-from optimizers.quantloop.quant_model_trainer import save_best_model, build_features_and_target
+from optimizers.quantloop.quant_model_trainer import _save_best_model, _build_features_and_target
 
 
-def parse_arguments():
+def _parse_arguments():
     """
     Parse command-line arguments for the market/macro prediction script.
     """
@@ -138,6 +135,9 @@ def parse_arguments():
         choices=["F0.5", "F", "F2"],
         help="Metric used for hyperparameter optimization and evaluation."
     )
+    model_grp.add_argument(
+        "--tscv-n-split", type=int, default=5, help=""
+    )
 
     # ─────────────────────────────────────────────────────────────────────────
     # OPTUNA CONFIGURATION (Fixed Mode Only)
@@ -201,7 +201,7 @@ def parse_arguments():
     return args
 
 
-def run_training_pipeline(_df, _selected_features, _args):
+def _run_training_pipeline(_df, _selected_features, _args):
     """Reusable function to scale data, run CV hyperparameter search, and evaluate."""
     n_test = _args.n_test
     my_scaler = _args.my_scaler
@@ -260,8 +260,8 @@ def run_training_pipeline(_df, _selected_features, _args):
         }
     else:
         assert False, f"{the_estimator}"
-
-    tscv = TimeSeriesSplit(n_splits=5)
+    tscv_n_split = getattr(_args, "n_splits", 5)
+    tscv = TimeSeriesSplit(n_splits=tscv_n_split)
     scoring_sl1, scoring_sl2 = None, None
     if the_scorer == 'F0.5':
         scoring_sl1, scoring_sl2 = make_scorer(fbeta_score, beta=0.5, zero_division=0), fbeta_score
@@ -277,7 +277,7 @@ def run_training_pipeline(_df, _selected_features, _args):
         estimator=the_estimator(random_state=SEED),
         param_distributions=param_dist,
         scoring=scoring_sl1,
-        n_iter=100,
+        n_iter=500,
         cv=tscv,
         n_jobs=-1,
         random_state=SEED,
@@ -359,7 +359,6 @@ def entry_point(args):
     # ─────────────────────────────────────────────────────────────────────────
     # 📚 STANDARD TRAINING / OPTUNA LOGIC
     # ─────────────────────────────────────────────────────────────────────────
-    best_setup_found = {'train': {'cv_score': 0, 'test_score': 0}, 'test': {'cv_score': 0, 'test_score': 0}}
     start_time = time.time()
 
     assert training_mode == "fixed"
@@ -372,14 +371,14 @@ def entry_point(args):
         _vix_l = trial.suggest_int("vix_lag", args.optuna_lag_min, args.optuna_lag_max)
         _rsi_l = trial.suggest_int("rsi_lag", args.optuna_lag_min, args.optuna_lag_max)
 
-        _df = build_features_and_target(
+        _df = _build_features_and_target(
             _df_market=df_market, _df_macro=df_macro, _rsi_window=_rsi_w, _vix_lag=_vix_l, _rsi_lag=_rsi_l,
             _look_head_for_prediction=look_head_for_prediction, _percentage_of_type_target=percentage_of_type_target, _type_of_target=type_of_target,
             _verbose=False, create_target=True
         )
-
+        assert 0 == _df.isna().any(axis=1).sum()
         # ✅ CHANGED: Optimize on CV score, not test score (prevents data leakage)
-        _, cv_sc = run_training_pipeline(_df=_df, _selected_features=features, _args=args)
+        _, cv_sc = _run_training_pipeline(_df=_df, _selected_features=features, _args=args)
         return cv_sc
 
     if verbose:
@@ -393,13 +392,13 @@ def entry_point(args):
 
     # Final train with best parameters
     best_params = study.best_trial.params
-    df_best = build_features_and_target(
+    df_best = _build_features_and_target(
         _df_market=df_market, _df_macro=df_macro,
         _rsi_window=best_params['rsi_window'], _vix_lag=best_params['vix_lag'], _rsi_lag=best_params['rsi_lag'],
         _look_head_for_prediction=look_head_for_prediction, _percentage_of_type_target=percentage_of_type_target, _type_of_target=type_of_target,
         _verbose=verbose, create_target=True
     )
-    final_snapshot, _ = run_training_pipeline(_df=df_best, _selected_features=features, _args=args)
+    final_snapshot, _ = _run_training_pipeline(_df=df_best, _selected_features=features, _args=args)
 
     # Match structure expected by save_best_model
     best_setup_found = {'test': final_snapshot, 'train': None}
@@ -424,13 +423,14 @@ def entry_point(args):
     # ─────────────────────────────────────────────────────────────────────────
     if best_setup_found is not None:
         # , args, output_dir, command_line, verbose=True
-        save_best_model(best_setup=best_setup_found, args=args, output_dir=output_dir, verbose=verbose, command_line=command_line)
+        _save_best_model(best_setup=best_setup_found, args=args, output_dir=output_dir, verbose=verbose, command_line=command_line)
     else:
         if verbose:
             print("\n⚠️ No valid model was trained. Nothing to save.")
     print(f"\nScript was executed in {Path.cwd()}")
+    print(f"\n Command Line: {command_line}")
 
 
 if __name__ == "__main__":
-    parsed_args = parse_arguments()
+    parsed_args = _parse_arguments()
     entry_point(parsed_args)
