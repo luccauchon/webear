@@ -5,6 +5,9 @@ echo  TRAINING COMMAND:   python quant_model_trainer_phase_2.py --training-mode 
 echo ==========================================================================
 python .\market_and_macro_data_collector.py --output-dir D:\Finance\compiled_models\quant\2026.05.06 --filename generated__combined_month_macro.data --freq month
 echo ==========================================================================
+python .\quant_model_trainer_backtesting.py --quant-model D:\Finance\compiled_models\quant\2026.05.06\best_model_RandomForestClassifier_soft_higher_20260506_004718.pkl --quant-dataset D:\Finance\compiled_models\quant\2026.05.06\generated__combined_month_macro.data
+echo ==========================================================================
 python .\quant_model_trainer.py --real-time --clip --model-path D:\Finance\compiled_models\quant\2026.05.06\best_model_RandomForestClassifier_soft_higher_20260506_004718.pkl --dataset D:\Finance\compiled_models\quant\2026.05.06\generated__combined_month_macro.data
+start "" "D:\Finance\compiled_models\quant\2026.05.06\backtest_results.txt"
 pause
 
