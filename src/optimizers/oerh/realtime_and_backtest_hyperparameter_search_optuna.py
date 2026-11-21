@@ -1494,7 +1494,7 @@ def entry(args):
     if args.verbose:
         print(f"\n🏷️  Pre-computed labels using target_type='{args.target_type}' "
               f"(direction={_direction}) :: {_describe_target_mode(args.target_type, args.lookahead_bars)}")
-        print(f"\n🚀 Starting Optuna Optimization with TimeSeriesSplit(n_splits=10) for {args.n_trials} trials...")
+        print(f"\n🚀 Starting Optuna Optimization with TimeSeriesSplit(n_splits={args.n_split}) for {args.n_trials} trials...")
         print(f"🎯 Optimization Target: {args.optimize_target.upper()} signals only")
 
     is_short_target = is_short_target_type(args.target_type)
