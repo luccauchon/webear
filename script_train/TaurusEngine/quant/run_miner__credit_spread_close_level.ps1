@@ -5,16 +5,16 @@ $scriptPython1 = ".\quant_morning_alpha_miner.py"
 $scriptPython2 = ".\quant_morning_beta_miner_realtime_and_backtesting.py"
 
 # Paramètres fixes du script
-$workers = 10
+$workers = 8
 $featureDim = 14
-$et1 = "15:45"
+$et1 = "15:55"
 $outputDir = "quant\miner1__credit_spread_close_level"
 
 # Variables d'environnement
 $env:Q__DISPLAY_RATE = 1000
 
 # --- Listes des valeurs variables ---
-$listeSt2      = @("09:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", "11:45", "12:00", "12:15", "12:30", "12:45", "13:00", "13:15", "13:30", "13:45", "14:00", "14:15", "14:30", "14:45", "15:00", "15:15", "15:30", "15:45")
+$listeSt2      = @("10:00", "11:00", "12:00", "13:00", "14:00", "15:00")
 $listeSeuil    = @(0.999, 1.001)
 $listeEtGtOpen = @(0, 1)
 
