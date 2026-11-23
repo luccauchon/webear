@@ -911,7 +911,7 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, default="^GSPC", help="Ticker symbol")
     parser.add_argument("--dataset-id", type=str, default="day", choices=DATASET_AVAILABLE, help="Frequency")
     parser.add_argument("--lookback-years", type=int, default=99999, help="Years of history (0 = all)")
-    parser.add_argument("--output-dir", type=str, default="models", help="Model save directory")
+    parser.add_argument("--output-dir", type=str, default="models-regime-intrabar", help="Model save directory")
 
     # Optuna config
     parser.add_argument("--study-name", type=str, default="bullish_clustering", help="Optuna study name")

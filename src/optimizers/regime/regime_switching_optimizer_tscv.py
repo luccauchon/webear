@@ -775,7 +775,7 @@ if __name__ == "__main__":
         help="Years of historical data to use (0 = full history). Recommended: 10-15 for daily data"
     )
     parser.add_argument(
-        "--output-dir", type=str, default="models_tscv",
+        "--output-dir", type=str, default="models-regime-switching-optimizer-tscv",
         help=f"Directory where to save the model"
     )
 
