@@ -1504,11 +1504,12 @@ def entry(args):
 
     df_train = df.iloc[:train_end_idx].copy()
     df_test = df.iloc[train_end_idx:].copy()
+    cooldown_bars_values = (0, 60)
     if args.verbose:
         str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
         str_te = f"({df_test.index[0].strftime('%Y-%m-%d_%H%M')}::{df_test.index[-1].strftime('%Y-%m-%d_%H%M')})"
-        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Test={len(df_test)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
-        print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: optimized [0, 12]")
+        print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Test={len(df_test)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id} | N-split: {getattr(args, 'n_split', 10)}")
+        print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: optimized {cooldown_bars_values}")
         if args.ignore_overnight:
             print(f"🌙 Ignore-Overnight: ENABLED (trades extending past market close/midnight will be filtered out)")
 
@@ -1541,7 +1542,7 @@ def entry(args):
         macd_signal = trial.suggest_int("macd_signal", 5, 15)
         one_euro_min = trial.suggest_float("one_euro_min", 1.0, 50.0)
         one_euro_factor = trial.suggest_float("one_euro_factor", 0.01, 1.0)
-        cooldown_bars = trial.suggest_int("cooldown_bars", 0, 60)
+        cooldown_bars = trial.suggest_int("cooldown_bars", cooldown_bars_values[0], cooldown_bars_values[1])
 
         tscv = TimeSeriesSplit(n_splits=getattr(args, "n_split", 10))
         fold_scores = []
