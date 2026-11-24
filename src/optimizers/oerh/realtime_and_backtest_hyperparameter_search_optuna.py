@@ -1504,8 +1504,7 @@ def entry(args):
 
     df_train = df.iloc[:train_end_idx].copy()
     df_test = df.iloc[train_end_idx:].copy()
-    assert int(args.lookahead_bars) > 0
-    cooldown_bars_values = (0, int(args.lookahead_bars))
+    cooldown_bars_values = (0, 60)
     if args.verbose:
         str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
         str_te = f"({df_test.index[0].strftime('%Y-%m-%d_%H%M')}::{df_test.index[-1].strftime('%Y-%m-%d_%H%M')})"
