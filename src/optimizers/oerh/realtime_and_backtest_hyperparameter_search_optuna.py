@@ -2,6 +2,7 @@
 🎯 RULE-BASED TECHNICAL FORECASTING SYSTEM (JIT-ACCELERATED)
 ====================================================================================================
 🔧 ENHANCED: Added "floor", "short_any", "ceiling", "any_2B", "any_2B_for_sell", "any_4B" and "any_4B_for_sell" target modes
+🌙 NEW: Added `--ignore-overnight` flag to automatically filter out trades that span across trading days/midnight.
 
 📋 OVERVIEW
 -----------
@@ -81,6 +82,7 @@ A trading signal is generated when ALL of the following conditions align:
    ✓ MACD Histogram < 0 AND decreasing vs. previous bar (bearish momentum)
 
 ⚪ NO SIGNAL (Signal = 0): Default when conditions are not met
+🌙 OVERNIGHT FILTER: Signals entering near market close that extend into the next day are forced to 0 if `--ignore-overnight` is set.
 
 📊 EVALUATION METRICS
 ---------------------
@@ -353,7 +355,8 @@ def save_best_model(output_dir, best_params, metrics_train, metrics_val, args, s
             'ticker': args.ticker,
             'threshold_pct': args.threshold_pct,
             'target_type': args.target_type,
-            'metric': metric
+            'metric': metric,
+            'ignore_overnight': getattr(args, 'ignore_overnight', False)
         },
         'user_attrs': {
             'signal_ratio': signal_density,
@@ -469,7 +472,8 @@ def run_realtime(model_path: str, output_signal_only: bool, verbose: bool, clip_
     ]}
     assert 'target_type' in metadata
     target_type = metadata['target_type']
-    valid_params.update({'target_type': target_type})
+    ignore_overnight = metadata.get('ignore_overnight', False)
+    valid_params.update({'target_type': target_type, 'ignore_overnight': ignore_overnight})
 
     # Run forecast on the window
     df_results, _ = run_forecast(
@@ -941,6 +945,7 @@ class ForecastSystem:
                  lookahead_bars: int = 5, threshold_pct: float = 0.01,
                  rsi_mode: str = "momentum", target_type: str = "any",
                  use_jit_signals: bool = False, cooldown_bars: int = 0,
+                 ignore_overnight: bool = False,
                  precomputed_labels: Optional[pd.Series] = None):
         self.rsi_period = rsi_period
         self.rsi_oversold = rsi_oversold
@@ -956,6 +961,7 @@ class ForecastSystem:
         self.target_type = target_type
         self.use_jit_signals = use_jit_signals  # Enable JIT for signal generation
         self.cooldown_bars = cooldown_bars
+        self.ignore_overnight = ignore_overnight
         self.precomputed_labels = precomputed_labels
 
     def generate_signals(self, df: pd.DataFrame, price_col, ticker) -> pd.DataFrame:
@@ -997,6 +1003,18 @@ class ForecastSystem:
             )
             # Pass 2: Sequential Cooldown
             signal_array = _apply_cooldown(candidates, self.cooldown_bars)
+
+            # 🌙 OVERNIGHT FILTER (JIT PATH)
+            if self.ignore_overnight:
+                try:
+                    all_dates = df.index.date
+                    future_dates = pd.Series(all_dates).shift(-self.lookahead_bars).values
+                    is_overnight = (all_dates != future_dates)
+                    is_overnight = np.where(pd.isna(future_dates), False, is_overnight)
+                    signal_array[is_overnight] = 0
+                except Exception:
+                    pass
+
             df['Signal'] = signal_array
         else:
             # Original vectorized pandas approach
@@ -1033,6 +1051,17 @@ class ForecastSystem:
                 df['Signal'] = signals
             else:
                 df['Signal'] = df['Candidate']
+
+            # 🌙 OVERNIGHT FILTER (PANDAS PATH)
+            if self.ignore_overnight:
+                try:
+                    all_dates = df.index.date
+                    future_dates = pd.Series(all_dates).shift(-self.lookahead_bars).values
+                    is_overnight = (all_dates != future_dates)
+                    is_overnight = np.where(pd.isna(future_dates), False, is_overnight)
+                    df.loc[is_overnight, 'Signal'] = 0
+                except Exception:
+                    pass
 
             # Clean up temp column
             df.drop(columns=['Candidate'], inplace=True, errors='ignore')
@@ -1163,7 +1192,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
                  one_euro_min: float = 10.0, one_euro_factor: float = 0.2,
                  lookahead_bars: int = 5, threshold_pct: float = 0.01,
                  target_type: str = "any", use_jit_signals: bool = False,
-                 cooldown_bars: int = 0,
+                 cooldown_bars: int = 0, ignore_overnight: bool = False,
                  precomputed_labels: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, dict]:
     if not pd.api.types.is_numeric_dtype(df[price_col].to_numpy().dtype if isinstance(df[price_col], pd.DataFrame) else df[price_col].dtype):
         df[price_col] = df[price_col].apply(pd.to_numeric, errors='coerce')
@@ -1175,7 +1204,7 @@ def run_forecast(df: pd.DataFrame, price_col, ticker: str = "^GSPC",
         one_euro_min=one_euro_min, one_euro_factor=one_euro_factor,
         lookahead_bars=lookahead_bars, threshold_pct=threshold_pct,
         target_type=target_type, use_jit_signals=use_jit_signals,
-        cooldown_bars=cooldown_bars,
+        cooldown_bars=cooldown_bars, ignore_overnight=ignore_overnight,
         precomputed_labels=precomputed_labels
     )
     df_signals = system.generate_signals(df=df, price_col=price_col, ticker=ticker)
@@ -1369,6 +1398,7 @@ def setup_argparse() -> argparse.ArgumentParser:
     algo_grp.add_argument("--density-target", type=float, default=0.04, help="Target trade density (signals per bar) for optimization penalty. A 0 value disable it.")
     algo_grp.add_argument('--train-ratio', type=float, default=0.9, help='Ratio of data to use for training (rest for validation). Use 1.0 to disable split.')
     algo_grp.add_argument('--use-jit-signals', action='store_true', default=True, help='Enable JIT acceleration for signal generation (recommended for large datasets)')
+    algo_grp.add_argument('--ignore-overnight', action='store_true', default=False, help='Ignore trades that span overnight (entry date != date at entry+lookahead_bars)')
     algo_grp.add_argument("--n-trials", type=int, default=50, help="Number of trials for Optuna optimization")
     algo_grp.add_argument("--n-split", type=int, default=10, help="")
     algo_grp.add_argument("--alpha", type=float, default=1, help="")
@@ -1473,12 +1503,14 @@ def entry(args):
     train_end_idx = max(train_end_idx, min_history)
 
     df_train = df.iloc[:train_end_idx].copy()
-    df_test  = df.iloc[train_end_idx:].copy()
+    df_test = df.iloc[train_end_idx:].copy()
     if args.verbose:
         str_tr = f"({df_train.index[0].strftime('%Y-%m-%d_%H%M')}::{df_train.index[-1].strftime('%Y-%m-%d_%H%M')})"
         str_te = f"({df_test.index[0].strftime('%Y-%m-%d_%H%M')}::{df_test.index[-1].strftime('%Y-%m-%d_%H%M')})"
         print(f"🔀 Data Split: Train={len(df_train)} bars ({args.train_ratio * 100:.1f}%) {str_tr}, Test={len(df_test)} bars ({(1 - args.train_ratio) * 100:.1f}%) {str_te} | Dataset: {args.dataset_id}")
         print(f"🔀 Lookahead bars: {args.lookahead_bars} | Threshold: {args.threshold_pct} | Win Condition: {args.target_type} | Optimize: {args.optimize_target} | Target Density: {args.density_target} | Cooldown bars: optimized [0, 12]")
+        if args.ignore_overnight:
+            print(f"🌙 Ignore-Overnight: ENABLED (trades extending past market close/midnight will be filtered out)")
 
     # ✅ PRE-COMPUTE LABELS ONCE (Before Optuna)
     # Since target generation does NOT depend on RSI/MACD/OneEuro parameters,
@@ -1537,6 +1569,7 @@ def entry(args):
             target_type=args.target_type,
             use_jit_signals=args.use_jit_signals,
             cooldown_bars=cooldown_bars,
+            ignore_overnight=args.ignore_overnight,
             precomputed_labels=precomputed_labels
         )
 
@@ -1589,7 +1622,7 @@ def entry(args):
 
         # Alpha controls how much we punish inconsistency across different time periods
         alpha = getattr(args, "alpha", 1.)
-        beta  = getattr(args, "beta", 4.)
+        beta = getattr(args, "beta", 4.)
         final_score = mean_score - (alpha * std_score) - (beta * density_penalty)
         return final_score
 
@@ -1677,6 +1710,7 @@ def entry(args):
             target_type=args.target_type,
             use_jit_signals=args.use_jit_signals,
             cooldown_bars=params.get('cooldown_bars', 0),
+            ignore_overnight=args.ignore_overnight,
             precomputed_labels=labels_to_use
         )
         if not args.disable_print:
