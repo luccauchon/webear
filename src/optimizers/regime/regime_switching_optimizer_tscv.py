@@ -174,6 +174,7 @@ def entry_main(args):
         cutoff = args.lookback_years * rows_per_year
         print(f"📅 Using {args.lookback_years}-year lookback: ~{cutoff} rows")
         df = df.iloc[-cutoff:].copy()
+    print(f"  ({df.index[0].strftime("%Y-%m-%d")} :: {df.index[-1].strftime("%Y-%m-%d")})")
     minimum_train_data, minimum_test_data = 1000, 200
     if args.dataset_id == 'week':
         minimum_train_data, minimum_test_data = minimum_train_data // 5, minimum_test_data // 5
