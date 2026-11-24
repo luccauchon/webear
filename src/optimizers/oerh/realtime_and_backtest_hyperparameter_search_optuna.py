@@ -1541,7 +1541,7 @@ def entry(args):
         macd_signal = trial.suggest_int("macd_signal", 5, 15)
         one_euro_min = trial.suggest_float("one_euro_min", 1.0, 50.0)
         one_euro_factor = trial.suggest_float("one_euro_factor", 0.01, 1.0)
-        cooldown_bars = trial.suggest_int("cooldown_bars", 0, 12)
+        cooldown_bars = trial.suggest_int("cooldown_bars", 0, 60)
 
         tscv = TimeSeriesSplit(n_splits=getattr(args, "n_split", 10))
         fold_scores = []
